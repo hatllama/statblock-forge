@@ -91,6 +91,22 @@ for (const file of ['worms-day.json', 'bandit-day.json']) {
   }
 }
 
+section('Area templates');
+{
+  const cells = (shape, size, tx, ty, placed) => Tac.areaCells({ shape, size, explicit: true, placed: !!placed, width: 5 }, 20, 20, tx, ty, 41, 41);
+  const sph = cells('sphere', 20, 30, 20), cone = cells('cone', 30, 26, 20), line = cells('line', 40, 28, 20), em = cells('emanation', 10, 20, 20);
+  check(sph.length === 61 && !sph.some(([x, y]) => x === 26 && y === 24), `sphere r20 is round (${sph.length} squares)`);
+  check(cone.length === 30 && cone.every(([x]) => x > 20), `30-ft cone is a triangle in front (${cone.length} squares)`);
+  check(line.length === 8 && line.every(([, y]) => y === 20), `40-ft line is 1 square wide (${line.length})`);
+  check(em.length === 20 && !em.some(([x, y]) => x === 20 && y === 20), 'emanation spares its source');
+  let bad = 0;
+  for (const c of [['sphere', 20], ['cone', 15], ['line', 60], ['cube', 15], ['emanation', 10]]) for (let k = 0; k < 30; k++) {
+    const tx = (k * 7) % 41, ty = (k * 13) % 41, set = new Set(cells(c[0], c[1], tx, ty).map(String));
+    for (let y = 0; y < 41; y++) for (let x = 0; x < 41; x++) if (set.has(x + ',' + y) !== Tac.inArea({ shape: c[0], size: c[1], explicit: true, width: 5 }, 20, 20, tx, ty, x, y)) bad++;
+  }
+  check(bad === 0, `inArea agrees with areaCells (${bad} mismatches)`);
+}
+
 section('Statblock parser (no AI)');
 {
   const dir = path.join(__dirname, 'statblocks');
@@ -124,6 +140,7 @@ section('Statblock parser (no AI)');
   expect(os && os.name === 'Osric Aldermarch' && os.ext.legendaryResistance === 3 && os.ext.legendaryActions === 3, 'Osric: name, legendary resistance and actions');
   expect(act('osric-homebrew.txt', /Bought Off/).type === 'debuff' && act('osric-homebrew.txt', /Bought Off/).ext.selfOnly, 'Osric: Bought Off reaction');
   expect(act('osric-homebrew.txt', /Gilded Weight/).ext.legendaryCost === 2 && act('osric-homebrew.txt', /Gilded Weight/).ext.onHit.noReactions, 'Osric: Gilded Weight');
+  expect(parsed['wolf-2014.txt'].ext.packTactics && !act('wolf-2014.txt', /Pack Tactics/), 'wolf Pack Tactics is a trait, not an action');
   expect(os.actions.filter(a => a.actionSlot === 3).length === 3 && act('osric-homebrew.txt', /Ruinous/).ext.zone.difficult, 'Osric: lair actions and difficult terrain');
   // every parsed creature can fight in both simulators
   const party = fixture('worms-day.json').players;

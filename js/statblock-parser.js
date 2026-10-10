@@ -390,11 +390,11 @@ function readSaveEffect(entry, nm, notes, h) {
     if (mv) Object.assign(a.ext, mv);
     a._avg = 4 * targets;
   } else if (mv) {
-    // only movement / reactions: the War Table models it, BattleSim has nothing to apply
+    // only movement / reactions: modelled on the War Table, with no other effect to export
     Object.assign(a, { type: 'debuff', saveDC: sv.dc, buff: { duration: durationIn(t, null) } });
     Object.assign(a.ext, mv, { wtOnly: true });
     a._avg = 2 * targets;
-    notes.push(`${nm.name}: ${mv.speedBonus ? (mv.speedBonus <= -60 ? 'stops movement' : 'slows') : ''}${mv.speedBonus && mv.onHit ? ' and ' : ''}${mv.onHit ? 'blocks reactions' : ''} on the War Table only (BattleSim has no movement).`);
+    notes.push(`${nm.name}: ${mv.speedBonus ? (mv.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mv.speedBonus && mv.onHit ? ' and ' : ''}${mv.onHit ? 'blocks its reactions' : ''} — War Table only; the exported day has no movement.`);
   } else {
     notes.push(`${nm.name}: a save with no damage or condition the simulator can use; left out.`);
     return null;
@@ -521,7 +521,7 @@ function readTrait(entry, h, notes, out) {
   const nm = nameAndUsage(entry.raw), t = entry.text, low = nm.name.toLowerCase();
   if (/^spellcasting|innate spellcasting/i.test(nm.name)) return 'spell';
   if (/magic resistance/i.test(low)) { out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', condition: 'Saves with Advantage' }, ext: { range: 0 } }); return true; }
-  if (/pack tactics/i.test(low)) { out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', toHit: 3 }, ext: { range: 0, wtSkip: true } }); notes.push('Pack Tactics: +3 to hit for BattleSim (it has no positions); the War Table leaves it out.'); return true; }
+  if (/pack tactics/i.test(low)) { h.ext.packTactics = true; return true; }
   if (/nimble escape|cunning action/i.test(low)) { h.ext.bonusDisengage = true; out.push(hideAction(h, 'Hide (' + nm.name + ')')); return true; }
   if (/regeneration/i.test(low) || /regains? \d+ hit points at the start of (?:its|each of its) turn/i.test(t)) {
     const m = t.match(/regains?\s*(\d+)\s*hit points/i);
@@ -552,7 +552,7 @@ function readTrait(entry, h, notes, out) {
   if (/legendary resistance/i.test(low)) {
     const m = (entry.raw + ' ' + t).match(/(\d+)\s*\/\s*Day/i);
     h.ext.legendaryResistance = m ? +m[1] : 3;
-    notes.push(`${nm.name}: the War Table turns the first ${h.ext.legendaryResistance} failed saves that matter into successes; BattleSim has no equivalent.`);
+    notes.push(`${nm.name}: on the War Table it turns failed saves against dangerous effects (disabling conditions, or damage that would drop it or cost a big share of its hit points) into successes, ${h.ext.legendaryResistance}/day.`);
     return true;
   }
   // pure flavour: no numbers, dice, saves or rules words
@@ -773,7 +773,7 @@ function parseOne(block) {
     all.push({ name: h.damageMult < 1 ? 'Damage resistances' : 'Damage vulnerabilities', actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', damageTakenMultiplier: h.damageMult }, ext: { range: 0 } });
     notes.push(`Damage taken ×${h.damageMult} (${h.resText}) — the simulators don't track damage types, so it's averaged over a typical party.`);
   }
-  // passive self-buffs (Magic Resistance, resistances, Pack Tactics…) merge into one, so they all apply in BattleSim's two passive slots
+  // passive self-buffs (Magic Resistance, resistances…) merge into one, so they all fit the two passive slots
   const passBuffs = all.filter(a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.duration === 'entire encounter' && !(a.ext && a.ext.wtSkip));
   if (passBuffs.length > 1) {
     const merged = { name: passBuffs.map(a => a.name).join(' + '), actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter' }, ext: { range: 0 } };
@@ -795,7 +795,7 @@ function parseOne(block) {
     const isDefault = a => a.condition === 'default' && a.freq === 'at will' && !(a.ext && (a.ext.wtOnly || a.ext.swallow || a.ext.onlyIfEnemiesSurprised));
     const defs = list.filter(isDefault);
     if (defs.length > 1) {
-      // keep the hardest-hitting melee/at-range option as the BattleSim default, the rest War Table only
+      // keep the hardest-hitting option as the exported default; the rest stay War Table alternatives
       const worth = a => (a._avg || 0) * (a.useSaves || a.type !== 'atk' ? 1 : (a.targets || 1) > 1 && a.name.startsWith('Multiattack') ? 1 : (a.targets || 1)) * (a._melee ? 1.3 : 1);
       const keep = defs.slice().sort((p, q) => worth(q) - worth(p))[0];
       defs.forEach(a => { if (a !== keep) { a.ext.wtOnly = true; if (a._ranged && keep._melee) a.ext.range = a._ranged; } });
@@ -809,9 +809,7 @@ function parseOne(block) {
   const mon = { name: h.name, type: h.type, cr: h.cr, src: 'Custom', count: 1, hp: h.hp, AC: h.AC, saveBonus: h.saveBonus, ext: h.ext, actions: out.map(stripPriv) };
   if (spellbook) mon.ext.spellbook = spellbook;
   if (!mon.actions.length && !spellbook) notes.push('No usable actions found — add them in the editor.');
-  if (body.intro && /legendary actions?/i.test(body.intro)) notes.push(`Legendary actions: the War Table spends ${h.ext.legendaryActions || 3} per round after other creatures' turns; BattleSim uses one per round.`);
-  if (parsedBySection['lair actions'].length) notes.push('Lair actions run on initiative 20' + (noRepeatLair ? ', never the same one twice in a row' : '') + '.');
-  else if (/lair action/i.test(flat)) notes.push('Lair actions found but none could be converted.');
+  if (!parsedBySection['lair actions'].length && /lair action/i.test(flat)) notes.push('Lair actions found but none could be converted.');
   if (parsedBySection.actions.some(a => a._noteExtra)) notes.push('Extra save-for-damage on hits is folded into the hit damage at its usual success rate.');
   mon._notes = notes;
   return mon;

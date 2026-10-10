@@ -2,7 +2,7 @@
 
 A D&D 5e encounter-prep workshop that runs entirely in the browser. It has two views:
 
-- **Forge** turns monster statblocks and character sheets into [BattleSim](https://github.com/Trekiros/battleSim)-compatible JSON. Pasted statblocks are read by a built-in parser with no AI and no network: 2014 and 2024 layouts, D&D Beyond and 5etools copy-pastes, and Homebrewery markdown. Claude can optionally be used instead with your own API key. It has a visual editor, spellbooks with slots, six saving throws, terrain-aware ranges, and an autosave.
+- **Forge** turns monster statblocks and character sheets into simulator-ready JSON. Pasted statblocks are read by a built-in parser with no AI and no network: 2014 and 2024 layouts, D&D Beyond and 5etools copy-pastes, and Homebrewery markdown. Claude can optionally be used instead with your own API key. It has a visual editor, spellbooks with slots, six saving throws, terrain-aware ranges, and an autosave.
 - **War Table** is an original tactical engine. It plays every fight out with real dice on a grid that has walls, high ground, difficult terrain, cover and fog. Party and monsters use a tactical AI, and you can run the odds over hundreds of fights or replay any single one turn by turn.
 
 There's no build step and there are no dependencies. Open `index.html` directly or serve the folder.
@@ -50,12 +50,12 @@ party data → spell data → statblock parser → forge → tactical engine →
 | How pasted statblocks are read | `js/statblock-parser.js` (header, sections, attacks, save effects, multiattack, traits, spellcasting) and `js/spell-data.js` for spells. Add a sample to `tests/statblocks/` and run `npm test` |
 | The built-in party | `data/party.js`. Bump `PARTY_VERSION` and add the ids to `PARTY_UPDATES` in `js/forge.js` so saved workspaces pick up the change |
 | Editor fields for actions and creatures | `js/forge.js`, around `actionEditor`, `mechanicsPanel` (War Table fields) and `handleFieldChange` |
-| Validation and BattleSim export | `js/forge.js`, around `validateMonster`, `checkRealSchema`, `exportCreature`, `compileSpellbook` |
+| Validation and export | `js/forge.js`, around `validateMonster`, `checkRealSchema`, `exportCreature`, `compileSpellbook` |
 | How War Table creatures choose what to do | `js/engine/tactical-engine.js`, especially `tacticalTurnInner` (where to stand), `optionValue` / `rankSpells` (which spell), `targetValue` (who to hit) |
 | Rules: attacks, saves, damage, conditions | `js/engine/tactical-engine.js`: `attackRoll`, `saveRoll`, `damage`, `addBuff` |
 | Board drawing and replay | `js/war-table.js` |
 
-Extra data that BattleSim doesn't know about goes in an `ext` object on creatures and actions, such as ranges, areas, saves, spellbooks and on-hit effects. BattleSim ignores it, and `exportCreature` strips or compiles it for the BattleSim export.
+Extra data beyond the base save format goes in an `ext` object on creatures and actions, such as ranges, areas, saves, spellbooks and on-hit effects. `exportCreature` strips or compiles it for the export.
 
 ## Saved data
 
@@ -64,4 +64,3 @@ The workspace autosaves to `localStorage` under `forge-workspace-v1`, per browse
 ## Credits
 
 - Everything here (Forge, statblock reader, War Table engine and UI) was written for this project.
-- The export format is the save-file format of [BattleSim](https://github.com/Trekiros/battleSim) by Trekiros, so a day built here can be loaded on that site. None of BattleSim's code is included.

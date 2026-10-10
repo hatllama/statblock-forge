@@ -1,6 +1,6 @@
 /* =====================================================================
    TACTICAL ENGINE — plays fights out with real dice on a grid.
-   Reads the same day JSON as BattleSim / the Statblock Forge.
+   Reads the day JSON exported by the Statblock Forge.
    Pure JS, no DOM. Exposes global `TacEngine`.
    ===================================================================== */
 (function (root) {
@@ -53,6 +53,8 @@ function avgDice(expr) {
 
 /* ---------------- constants ---------------- */
 const INCAP = ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious'];
+// conditions worth burning Lucky or Legendary Resistance on
+const DANGER_CONDS = ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified', 'Restrained', 'Blinded', 'Frightened', 'Attacks and saves with Disadvantage'];
 const ADV_TARGET = ['Blinded', 'Paralyzed', 'Restrained', 'Stunned', 'Unconscious', 'Petrified', 'Is attacked with Advantage', 'Attacks and is attacked with Advantage'];
 const ADV_SELF = ['Invisible', 'Attacks with Advantage', 'Attacks and is attacked with Advantage'];
 const DIS_TARGET = ['Invisible', 'Is attacked with Disadvantage'];
@@ -113,7 +115,10 @@ function areaSpec(a) {
   const ar = a.ext && a.ext.area;
   if (ar && AREA_SHAPES.includes(ar.shape)) {
     const def = { sphere: 20, cone: 15, line: 60, cube: 15, emanation: 10 }[ar.shape];
-    return { shape: ar.shape, size: Math.max(5, Number(ar.size) || def), explicit: true };
+    const size = Math.max(5, Number(ar.size) || def);
+    // a cube or square set down at a point (Shattering Display, Faerie Fire) is centred there; a cube with range = size starts at the caster (Thunderwave)
+    const placed = ar.shape === 'cube' && (a._range || 0) > size + 5;
+    return { shape: ar.shape, size, explicit: true, placed, width: Number(ar.width) || 5 };
   }
   if ((a.targets || 1) < 2) return null;
   const n = (a.name || '').toLowerCase();
@@ -124,18 +129,31 @@ function areaSpec(a) {
 }
 /* the grid squares an area covers, cast from (ox,oy) and aimed at (tx,ty) */
 function areaCells(spec, ox, oy, tx, ty, W, H) {
+  /* Grid templates, measured from square centres (1 square = 5 ft):
+       sphere     every square whose centre is within the radius of the point (a round blob, not a box)
+       emanation  the same, measured from the creature, which isn't caught by its own emanation
+       cone       from the creature, as long as its size and as wide at any distance as that distance (5e rule)
+       line       from the creature, its size long and 5 ft (or ext.area.width) wide
+       cube       next to the creature in the aimed direction, or centred on a point when set down at range */
   const out = [];
   const add = (x, y) => { if (x >= 0 && y >= 0 && x < W && y < H) out.push([x, y]); };
   const n = Math.round(spec.size / 5);
-  if (spec.shape === 'emanation') {     // Arms of Hadar, Spirit Guardians…: everything within size ft of the caster
-    for (let y = oy - n; y <= oy + n; y++) for (let x = ox - n; x <= ox + n; x++) if (x !== ox || y !== oy) add(x, y);
-    return out;
-  }
-  if (spec.shape === 'sphere') {
-    for (let y = ty - n; y <= ty + n; y++) for (let x = tx - n; x <= tx + n; x++) add(x, y);
+  const R2 = (n + 0.45) * (n + 0.45);
+  if (spec.shape === 'emanation' || spec.shape === 'sphere') {
+    const cx = spec.shape === 'emanation' ? ox : tx, cy = spec.shape === 'emanation' ? oy : ty;
+    for (let y = cy - n; y <= cy + n; y++) for (let x = cx - n; x <= cx + n; x++) {
+      if (spec.shape === 'emanation' && x === ox && y === oy) continue;
+      const dx = x - cx, dy = y - cy;
+      if (dx * dx + dy * dy <= R2) add(x, y);
+    }
     return out;
   }
   if (spec.shape === 'cube') {
+    if (spec.placed) {
+      const x0 = tx - Math.floor((n - 1) / 2), y0 = ty - Math.floor((n - 1) / 2);
+      for (let y = y0; y < y0 + n; y++) for (let x = x0; x < x0 + n; x++) add(x, y);
+      return out;
+    }
     let x0, y0;
     const dx = tx - ox, dy = ty - oy;
     if (Math.abs(dx) >= Math.abs(dy)) {
@@ -148,20 +166,55 @@ function areaCells(spec, ox, oy, tx, ty, W, H) {
     for (let y = y0; y < y0 + n; y++) for (let x = x0; x < x0 + n; x++) add(x, y);
     return out;
   }
+  // cones and lines: measured along the aimed direction from the edge of the creature's square
   const vx = tx - ox, vy = ty - oy, vl = Math.hypot(vx, vy) || 1;
   const ux = vx / vl, uy = vy / vl;
-  for (let y = oy - n; y <= oy + n; y++) for (let x = ox - n; x <= ox + n; x++) {
+  const halfW = Math.max(0.5, (spec.width || 5) / 10);
+  for (let y = oy - n - 1; y <= oy + n + 1; y++) for (let x = ox - n - 1; x <= ox + n + 1; x++) {
     if (x === ox && y === oy) continue;
     const wx = x - ox, wy = y - oy;
-    const along = wx * ux + wy * uy;
-    if (along <= 0) continue;
-    if (Math.max(Math.abs(wx), Math.abs(wy)) > n) continue;
+    const along = wx * ux + wy * uy;                  // distance out along the aim
+    const perp = Math.abs(wx * uy - wy * ux);         // distance off the centre line
+    // length counts squares the way movement does (a diagonal square is 5 ft), so a 15-ft cone reaches 3 squares out
+    if (along <= 0.05 || Math.max(Math.abs(wx), Math.abs(wy)) > n) continue;
     if (spec.shape === 'cone') {
-      const cos = along / Math.hypot(wx, wy);
-      if (cos >= 0.86 || (x === tx && y === ty)) add(x, y);             // ~30° either side, like a 5e cone on a grid
-    } else if (Math.abs(wx * uy - wy * ux) <= 0.55 || (x === tx && y === ty)) add(x, y);   // 5-ft-wide line
+      if (perp <= along / 2 + 0.5 || (x === tx && y === ty)) add(x, y);     // as wide as it is far
+    } else if (perp <= halfW + 0.05 || (x === tx && y === ty)) add(x, y);
   }
   return out;
+}
+
+/* whether square (x,y) is inside the area — the same templates as areaCells, for one square */
+function inArea(spec, ox, oy, tx, ty, x, y) {
+  const n = Math.round(spec.size / 5);
+  if (spec.shape === 'emanation' || spec.shape === 'sphere') {
+    if (spec.shape === 'emanation' && x === ox && y === oy) return false;
+    const cx = spec.shape === 'emanation' ? ox : tx, cy = spec.shape === 'emanation' ? oy : ty;
+    const dx = x - cx, dy = y - cy;
+    return dx * dx + dy * dy <= (n + 0.45) * (n + 0.45);
+  }
+  if (spec.shape === 'cube') {
+    let x0, y0;
+    if (spec.placed) { x0 = tx - Math.floor((n - 1) / 2); y0 = ty - Math.floor((n - 1) / 2); }
+    else {
+      const dx = tx - ox, dy = ty - oy;
+      if (Math.abs(dx) >= Math.abs(dy)) {
+        x0 = dx >= 0 ? ox + 1 : ox - n;
+        y0 = oy - Math.floor((n - 1) / 2); if (ty < y0) y0 = ty; if (ty > y0 + n - 1) y0 = ty - n + 1;
+      } else {
+        y0 = dy >= 0 ? oy + 1 : oy - n;
+        x0 = ox - Math.floor((n - 1) / 2); if (tx < x0) x0 = tx; if (tx > x0 + n - 1) x0 = tx - n + 1;
+      }
+    }
+    return x >= x0 && x < x0 + n && y >= y0 && y < y0 + n;
+  }
+  if (x === ox && y === oy) return false;
+  const vx = tx - ox, vy = ty - oy, vl = Math.hypot(vx, vy) || 1;
+  const ux = vx / vl, uy = vy / vl, wx = x - ox, wy = y - oy;
+  const along = wx * ux + wy * uy, perp = Math.abs(wx * uy - wy * ux);
+  if (along <= 0.05 || Math.max(Math.abs(wx), Math.abs(wy)) > n) return false;
+  if (x === tx && y === ty) return true;
+  return spec.shape === 'cone' ? perp <= along / 2 + 0.5 : perp <= Math.max(0.5, (spec.width || 5) / 10) + 0.05;
 }
 
 /* ---------------- unit construction ---------------- */
@@ -180,7 +233,7 @@ function autoAI(tpl) {
 /* ---------------- spellbooks ----------------
    ext.spellbook = { slots: [L1, L2, … L9], slotReset: 'lr' | 'sr', conSave?: n,
                      spells: [ { ...an ordinary action, level: 0-9, concentration?: true, upcast?: '1d8' } ] }
-   On the War Table a caster with a spellbook ignores the actions compiled from it for BattleSim
+   On the War Table a caster with a spellbook ignores the actions compiled from it for the export
    (ext.fromSpellbook) and instead picks, every turn, whichever spell is worth the slot right now. */
 function spellbookOf(tpl) {
   const sb = tpl && tpl.ext && tpl.ext.spellbook;
@@ -211,7 +264,7 @@ function recoverSlots(u) {
 function makeUnit(tpl, team, idx, count, isPC) {
   const ex = tpl.ext || {};
   const sb = spellbookOf(tpl);
-  const baseActs = (tpl.actions || []).filter(a => !(sb && a.ext && a.ext.fromSpellbook) && !(a.ext && a.ext.wtSkip));   // wtSkip: BattleSim-only stand-ins for features simulated natively here
+  const baseActs = (tpl.actions || []).filter(a => !(sb && a.ext && a.ext.fromSpellbook) && !(a.ext && a.ext.wtSkip));   // wtSkip: export-only stand-ins for features simulated natively here
   const actions = baseActs.map(finalizeAction).filter(Boolean).concat(sb ? spellActions(sb) : []).map(a => {
     const r = inferRange(a);
     return Object.assign({}, a, { _range: r.range, _rangeInferred: r.inferred });
@@ -232,6 +285,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     luckMax: typeof ex.luck === 'number' ? ex.luck : 0,
     legResMax: typeof ex.legendaryResistance === 'number' ? ex.legendaryResistance : 0,   // Legendary Resistance uses per day                     // Lucky feat points per long rest
     steadyAim: !!ex.steadyAim,
+    packTactics: !!ex.packTactics,                                          // advantage when an ally is next to the target
     speed: Math.max(typeof ex.speed === 'number' ? ex.speed : 30, typeof ex.fly === 'number' ? ex.fly : 0),
     size: ex.size || 'Medium',
     blindsight: !!ex.blindsight, elvenAccuracy: !!ex.elvenAccuracy,
@@ -449,19 +503,25 @@ Sim.prototype.living = function (u) { return !u.dead; };
 Sim.prototype.enemiesOf = function (u) { return this.units.filter(x => x.team !== u.team); };
 Sim.prototype.alliesOf = function (u) { return this.units.filter(x => x.team === u.team); };
 /* who an area aimed at t from (ox,oy) would catch, besides t; spec/cells are returned for drawing */
-Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
-  const spec = areaSpec(a);
-  if (!spec) return null;
-  let cells = areaCells(spec, ox, oy, t.x, t.y, this.W, this.H);
-  if (this.T.any) {
-    const cx = spec.shape === 'sphere' ? t.x : ox, cy = spec.shape === 'sphere' ? t.y : oy;   // emanations radiate from the caster
-    cells = cells.filter(([x, y]) => !this.T.wall[x + y * this.W] && this.los(cx, cy, x, y));
+Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast) {
+  // fast: only work out who is caught (no list of squares) — used while searching for the best aim
+  const fromPoint = spec.shape === 'sphere' || (spec.shape === 'cube' && spec.placed);
+  const cx = fromPoint ? ax : ox, cy = fromPoint ? ay : oy;
+  let isIn, cells = null;
+  if (fast) {
+    const W = this.W, inb = (x, y) => x >= 0 && y >= 0 && x < W && y < this.H;
+    isIn = o => inb(o.x, o.y) && inArea(spec, ox, oy, ax, ay, o.x, o.y) && (!this.T.any || (!this.T.wall[o.x + o.y * W] && this.los(cx, cy, o.x, o.y)));
+  } else {
+    cells = areaCells(spec, ox, oy, ax, ay, this.W, this.H);
+    // walls stop an area; a sphere or a set-down cube spreads from its point, everything else from the creature
+    if (this.T.any) cells = cells.filter(([x, y]) => !this.T.wall[x + y * this.W] && this.los(cx, cy, x, y));
+    const N = this.W * this.H;
+    if (!this._mark || this._mark.length !== N) { this._mark = new Int32Array(N); this._stamp = 0; }
+    const st = ++this._stamp, mark = this._mark, W = this.W;
+    for (const c of cells) mark[c[0] + c[1] * W] = st;
+    isIn = o => mark[o.x + o.y * W] === st;
   }
-  const N = this.W * this.H;
-  if (!this._mark || this._mark.length !== N) { this._mark = new Int32Array(N); this._stamp = 0; }
-  const st = ++this._stamp, mark = this._mark, W = this.W;
-  for (const c of cells) mark[c[0] + c[1] * W] = st;
-  const isIn = o => mark[o.x + o.y * W] === st;
+  if (!isIn(t)) return null;
   let extra = pool.filter(o => o !== t && o.onBoard && isIn(o));
   if (!spec.explicit) extra = this.orderBySelector(extra, a.target).sort((p, q) => this.dist(p, t) - this.dist(q, t)).slice(0, Math.max(0, (a.targets || 1) - 1));
   // an area hurts everyone in it, the caster's own side included (cones, lines, cubes and emanations start at the caster and spare it)
@@ -469,7 +529,54 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
   if (caster && !(a.ext && a.ext.area && a.ext.area.selective) && !(a.ext && a.ext.zone && a.ext.zone.fog)) {
     friends = this.alliesOf(caster).filter(o => o.onBoard && !o.dead && !o.swallowedBy && isIn(o) && (o !== caster || spec.shape === 'sphere'));
   }
-  return { spec, cells, extra, friends };
+  return { spec, cells, extra, friends, ax, ay };
+};
+/* Who an area aimed at t catches, besides t. With a caster given, it also looks for a better aim that still
+   catches t: a sphere's point can sit anywhere within range that keeps t inside, a cone or line can swing
+   a little either side. Better = more enemies, fewer allies (a downed ally counts heavily). */
+Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
+  const spec = areaSpec(a);
+  if (!spec) return null;
+  let best = this.areaAt(a, spec, t, ox, oy, t.x, t.y, pool, caster);
+  if (!best) best = { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y };   // walls in the way: just the target
+  if (!caster || !spec.explicit || spec.shape === 'emanation' || (spec.shape === 'cube' && !spec.placed)) return best;
+  const score = r => r ? r.extra.length * 10 - r.friends.reduce((s, f) => s + (f.hp <= 0 ? 60 : 16), 0) - (Math.abs(r.ax - t.x) + Math.abs(r.ay - t.y)) * 0.01 : -Infinity;
+  let bs = score(best);
+  const n = Math.round(spec.size / 5), range = Math.max(5, a._range || spec.size) / 5;
+  if (spec.shape === 'sphere' || spec.shape === 'cube') {
+    // nothing to gain if nobody else is near enough to matter
+    const close = o => o !== t && o.onBoard && Math.max(Math.abs(o.x - t.x), Math.abs(o.y - t.y)) <= n * 2;
+    const foesNear = pool.filter(close);
+    if (!foesNear.length && !this.alliesOf(caster).some(o => close(o) && !o.dead)) return best;
+    for (let y = t.y - n; y <= t.y + n; y++) for (let x = t.x - n; x <= t.x + n; x++) {
+      if ((x === t.x && y === t.y) || x < 0 || y < 0 || x >= this.W || y >= this.H) continue;
+      // cheap bound first: enemies this aim could catch, walls ignored and allies not counted
+      let ub = -(Math.abs(x - t.x) + Math.abs(y - t.y)) * 0.01;
+      if (!inArea(spec, ox, oy, x, y, t.x, t.y)) continue;
+      for (const o of foesNear) if (inArea(spec, ox, oy, x, y, o.x, o.y)) ub += 10;
+      if (ub <= bs) continue;
+      if (Math.max(Math.abs(x - ox), Math.abs(y - oy)) > range || this.isWall(x, y)) continue;
+      if (this.T.any && !this.los(ox, oy, x, y)) continue;
+      const r = this.areaAt(a, spec, t, ox, oy, x, y, pool, caster, true);
+      const sc = score(r);
+      if (sc > bs) { best = r; bs = sc; }
+    }
+  } else {
+    // swing the cone or line: aim points around the target's bearing
+    const base = Math.atan2(t.y - oy, t.x - ox), L = Math.max(n, 1);
+    for (const d of [-0.5, -0.33, -0.17, 0.17, 0.33, 0.5]) {
+      const ax = Math.round(ox + Math.cos(base + d) * L), ay = Math.round(oy + Math.sin(base + d) * L);
+      if (ax === t.x && ay === t.y) continue;
+      if (!inArea(spec, ox, oy, ax, ay, t.x, t.y)) continue;
+      let ub = -(Math.abs(ax - t.x) + Math.abs(ay - t.y)) * 0.01;
+      for (const o of pool) if (o !== t && o.onBoard && inArea(spec, ox, oy, ax, ay, o.x, o.y)) ub += 10;
+      if (ub <= bs) continue;
+      const r = this.areaAt(a, spec, t, ox, oy, ax, ay, pool, caster, true);
+      const sc = score(r);
+      if (sc > bs) { best = r; bs = sc; }
+    }
+  }
+  return best.cells ? best : (this.areaAt(a, spec, t, ox, oy, best.ax, best.ay, pool, caster) || best);
 };
 /* height counts toward distance, unless one side flies (it simply rises or dips to meet the other) */
 Sim.prototype.dist = function (a, b) {
@@ -512,7 +619,7 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   if (ax.endsOnIncap) b.endsOnIncap = true;
   if (ax.endsOnDamage) b.endsOnDamage = true;
   if (typeof ax.grantFly === 'number' && holder === src) { holder.fly = Math.max(holder.fly || 0, ax.grantFly); holder.speed = Math.max(holder.speed, ax.grantFly); }
-  if (typeof ax.mirror === 'number') { b.mirror = ax.mirror; delete b.data.damageTakenMultiplier; }   // real duplicates here, an average for BattleSim
+  if (typeof ax.mirror === 'number') { b.mirror = ax.mirror; delete b.data.damageTakenMultiplier; }   // real duplicates here, an average in the export
   if (extra) Object.assign(b, extra);
   // Hiding (self-applied Invisible) lasts until the creature attacks or its next turn ends (2024 Hide)
   if (holder === src && data.condition === 'Invisible' && data.duration === '1 round') { b.expiry = 'hide'; b.madeOnTurn = holder.turnNo || 0; }
@@ -684,7 +791,7 @@ Sim.prototype.meleeReach = function (u) {
   return r;
 };
 Sim.prototype.adjacentEnemies = function (u, x, y) {
-  return this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && this.distXY(x, y, e) <= this.meleeReach(e));
+  return this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && this.distXY(x, y, e) <= this.meleeReach(e) && this.los(e.x, e.y, x, y));   // a reach weapon can't strike round a wall corner
 };
 
 /* ----- expected outcomes, used by the tactical AI ----- */
@@ -1063,8 +1170,10 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
           if (weigh && overall && boundOf(pl, t) - pl.cost <= overall.net) continue;
           // from this square: who the area really catches, allies included
           let ac = pl.sphere ? pl.acCache.get(t.uid) : null, friends;
+          if (ac && Math.max(Math.abs(ac.ax - x), Math.abs(ac.ay - y)) * 5 > pl.range) ac = null;
           if (!ac) {
             ac = this.areaCatch(pl.act, t, x, y, pl.pool.filter(o => o.hp > 0), u);
+            if (!ac) continue;
             if (pl.sphere) { ac.cellSet = new Set(ac.cells.map(c => c[0] + ',' + c[1])); ac.others = ac.friends.filter(f => f !== u); pl.acCache.set(t.uid, ac); }
           }
           friends = pl.sphere ? (ac.cellSet.has(x + ',' + y) ? ac.others.concat([u]) : ac.others) : ac.friends;
@@ -1075,8 +1184,11 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
           if (friends.length) { v -= this.friendPenalty(u, pl.act, friends); if (v <= 0) continue; }
           catches = ac.extra.length > 0;
         } else if (pl.area || (t.hp <= 0 && pl.a.type === 'atk')) {
-          // Fog Cloud, or finishing a downed foe: the full valuation from this square
-          const tv = this.targetValue(u, pl.act, t, pl.pool, x, y); v = tv.val; why = tv.why;
+          // Fog Cloud, or finishing a downed foe: the full valuation (a cloud's worth hardly depends on where it's cast from, so once per target)
+          let tv;
+          if (pl.area) { if (!pl.tvCache) pl.tvCache = new Map(); tv = pl.tvCache.get(t.uid); if (!tv) { tv = this.targetValue(u, pl.act, t, pl.pool, x, y); pl.tvCache.set(t.uid, tv); } }
+          else tv = this.targetValue(u, pl.act, t, pl.pool, x, y);
+          v = tv.val; why = tv.why;
         }
         if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere) v *= 0.6;     // shooting in melee
         if (pl.limited && pl.aoe && !catches && !weigh) continue;   // no single-target fireballs (casters weigh it against the slot instead)
@@ -1362,7 +1474,7 @@ Sim.prototype.planInner = function (u, a, budget) {
     if (ac) {
       targets.push(...ac.extra);
       return { friends: ac.friends, dest: { x: d.x, y: d.y }, path: this.pathTo(rm, d.x, d.y), targets, why: ac.extra.length ? (why === 'cluster' || !why ? 'cluster' : why) : why,
-               area: { shape: ac.spec.shape, size: ac.spec.size, ox: d.x, oy: d.y, tx: t.x, ty: t.y, cells: ac.cells } };
+               area: { shape: ac.spec.shape, size: ac.spec.size, ox: d.x, oy: d.y, tx: ac.ax, ty: ac.ay, cells: ac.cells } };
     }
     if (n > 1 && (a.useSaves || a.type === 'debuff' || a.type === 'buff' || a.type === 'heal')) {
       // area / multi-target: extra creatures clustered near the first one (allies: anyone within range of the caster)
@@ -1483,9 +1595,11 @@ Sim.prototype.saveRoll = function (t, dc, src, ab) {
     if (r2 > r) { total += r2 - r; r = r2; }
     this.ev('react', `${t.name} spends a luck point on the save`, { uid: t.uid });
   }
-  // Legendary Resistance: turn a failed save into a success when it matters (a disabling condition or a big hit)
-  if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 &&
-      ((this._saveStakes || 0) >= 1 || (this._saveDmg || 0) >= Math.min(t.hp * 0.3, t.maxHp * 0.15))) {
+  // Legendary Resistance: only when failing would be dangerous — a disabling condition (paralysed, stunned,
+  // restrained, frightened, blinded…), or damage that would drop it or take a big bite out of what it has left
+  const failDmg = this._saveDmg || 0;
+  const dangerous = (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
+  if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
     this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
@@ -1498,6 +1612,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab) {
 Sim.prototype.featureAdv = function (att, tgt) {
   if (att.assassinate && this.round === 1 && !tgt.tookTurn) return 'assassinate';
   if (att.vex && att.vex.t === tgt.uid) return 'vex';
+  if (att.packTactics && this.alliesOf(att).some(o => o !== att && o.onBoard && this.alive(o) && !this.incap(o) && this.dist(o, tgt) <= 5)) return 'pack';
   return '';
 };
 Sim.prototype.attackRoll = function (att, tgt, a, opt) {
@@ -1741,7 +1856,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     for (const t of targets) {
       if (t.dead) continue;
       this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1);
-      if (a.riderEffect && a.riderEffect.buff && ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified', 'Restrained'].includes(a.riderEffect.buff.condition)) this._saveStakes = 1;
+      if (a.riderEffect && a.riderEffect.buff && DANGER_CONDS.includes(a.riderEffect.buff.condition)) this._saveStakes = 1;
       const s = this.saveRoll(t, Number(avgDice(a.toHit)), u, a.ext && a.ext.saveAbility);
       this._saveDmg = 0; this._saveStakes = 0;
       const at = this.mark();
@@ -1774,7 +1889,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     if (!cur || cur.dead || (cur.hp <= 0 && !cur.isPC) || (cur.hp <= 0 && !opt.finishDowned)) {
       opt = Object.assign({}, opt, { finishDowned: false });
       const range = Math.max(5, a._range || 5);
-      const opts = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && (opt.inside ? e.uid === u.swallowedBy : this.dist(u, e) <= range));
+      const opts = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && (opt.inside ? e.uid === u.swallowedBy : this.dist(u, e) <= range && this.canSee(u.x, u.y, e)));
       if (!opts.length) break;
       cur = this.orderBySelector(opts, a.target)[0];
     }
@@ -1816,7 +1931,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
     raw *= this.multBuff(u, 'damageMultiplier');
     dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, crit: r.crit });
   }
-  const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '');
+  const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : r.fa === 'pack' ? ', Pack Tactics' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '');
   this.ev('attack', `${u.name} → ${t.name}: ${a.name}${tag}, ${r.total} vs AC ${r.ac} — ${r.crit && r.hit ? 'CRIT' : r.hit ? 'hit' : r.mirror ? 'image' : 'miss'}${r.hit ? `, ${dealt} damage` : ''}`,
     { uid: u.uid, target: t.uid, hit: r.hit, crit: r.crit && r.hit, dmg: dealt, ranged: this.dist(u, t) > 5, oa: !!opt.oa });
   this.hoist(at);
@@ -1904,7 +2019,9 @@ Sim.prototype.applyRider = function (u, t, a) {
   const re = a.riderEffect;
   const rab = a.ext && (a.ext.riderSave || a.ext.saveAbility);
   if (re.dc < 99) {
+    this._saveStakes = re.buff && DANGER_CONDS.includes(re.buff.condition) ? 1 : 0;
     const s = this.saveRoll(t, re.dc, u, rab);
+    this._saveStakes = 0;
     if (s.success) { this.ev('save', `${t.name} resists ${a.name}'s effect (${s.total} vs DC ${re.dc})`, { uid: t.uid }); return; }
   }
   this.addBuff(t, u, a, re.buff, { dc: re.dc, saveAbility: rab });
@@ -2039,7 +2156,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
     for (const t of targets) {
       const dc = Number(avgDice(a.saveDC));
       const sab = a.ext && a.ext.saveAbility;
-      this._saveStakes = a.buff && ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified', 'Restrained'].includes(a.buff.condition) ? 1 : 0;
+      this._saveStakes = a.buff && DANGER_CONDS.includes(a.buff.condition) ? 1 : 0;
       const s = this.saveRoll(t, dc, u, sab);
       this._saveStakes = 0;
       if (!s.success) { this.addBuff(t, u, a, a.buff, { dc, saveAbility: sab }); if (a.ext && a.ext.onHit) this.onHitEffects(u, t, a, 0); }
@@ -2652,5 +2769,5 @@ function previewPlacement(day, encIndex, layout, opts) {
   return sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, x: u.x, y: u.y, maxHp: u.maxHp, size: u.size, auras: aurasOf(u), areas: areasOf(u) }));
 }
 
-root.TacEngine = { areaSpec, areaCells, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

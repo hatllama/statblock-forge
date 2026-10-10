@@ -2,7 +2,7 @@
   "name": "statblock-forge",
   "version": "1.0.0",
   "private": true,
-  "description": "D&D encounter-prep workshop: statblock → BattleSim JSON and a tactical grid simulator.",
+  "description": "D&D encounter-prep workshop: statblock → simulator JSON and a tactical grid simulator.",
   "scripts": {
     "test": "node tests/run.js",
     "start": "python3 -m http.server 8000"

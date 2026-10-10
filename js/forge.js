@@ -1,9 +1,9 @@
 /* ---------------------------------------------------------
    System prompt for the AI conversion call
 --------------------------------------------------------- */
-const SYSTEM_PROMPT = `You convert Dungeons & Dragons 5e monster statblocks into JSON objects for a combat simulator called BattleSim. You will be given free text (one or more statblocks, possibly messy or copy-pasted from a PDF or D&D Beyond). Output a JSON ARRAY of monster objects, one per statblock, and nothing else — no markdown fences, no commentary, no explanation.
+const SYSTEM_PROMPT = `You convert Dungeons & Dragons 5e monster statblocks into JSON objects for a combat simulator. You will be given free text (one or more statblocks, possibly messy or copy-pasted from a PDF or D&D Beyond). Output a JSON ARRAY of monster objects, one per statblock, and nothing else — no markdown fences, no commentary, no explanation.
 
-This schema is validated with Zod against a strict set of enums. Do not invent values outside the lists given below — anything else will fail validation.
+This schema is validated against a strict set of enums. Do not invent values outside the lists given below — anything else will fail validation.
 
 ===========================================================
 HOW THE SIMULATOR ACTUALLY PICKS AN ACTION — READ THIS FIRST
@@ -156,7 +156,7 @@ If a statblock uses a non-standard die size (d3, d7, d9, d11 — anything that i
 ===========================================================
 EXTENDED MECHANICS ("ext") — grapples, swallowing, size, ambush, blindsight
 ===========================================================
-This tool's simulator supports a few mechanics beyond the base schema, written as optional "ext" objects. They are ignored by the BattleSim website (extra keys are dropped there), so they never cause a validation failure — use them whenever the statblock has these features instead of approximating:
+This tool's simulator supports a few mechanics beyond the base schema, written as optional "ext" objects. Plain exports drop or ignore them, so they never cause a validation failure — use them whenever the statblock has these features instead of approximating:
 
 Creature level (on the monster object):
   "ext": { "size": "Tiny"|"Small"|"Medium"|"Large"|"Huge"|"Gargantuan",  (always include size from the statblock's first line)
@@ -218,7 +218,7 @@ Note how "Infernal Breath" (condition "is available") sits ABOVE "Claw Flurry" (
 Now convert the statblock(s) the user gives you. Multiple statblocks in one message may be separated by blank lines or dashes - return one array entry per creature. Include ONLY actions the statblock actually describes, and order every slot's actions from most-conditional to most-generic. Output ONLY the JSON array.`;
 
 /* ---------------------------------------------------------
-   Validation — mirrors the real Zod enums from BattleSim's
+   Validation — mirrors the enums of the day save-file format's
    src/model/enums.ts, so problems surface here instead of
    as a bare "Invalid schema" on the actual site.
 --------------------------------------------------------- */
@@ -237,7 +237,7 @@ function isDiceFormula(v){
   if(v.trim() === '') return false;
   if(!isNaN(+v)) return true;
   // permissive dice-notation check: numbers, d, +, -, *, /, spaces, parens
-  // labelled dice like 1d6[HEX] are valid in BattleSim's dice parser
+  // labelled dice like 1d6[HEX] are valid in the save format's dice
   return /^[\d\sd+\-*/().]+$/i.test(v.replace(/\[[^\]]*\]/g,'').trim());
 }
 
@@ -486,7 +486,7 @@ function describeAction(a){
   if(ex.retaliate) bits.push(`${ex.retaliate.dmg}${ex.retaliate.perLevel ? '/slot level' : ''} back at melee attackers`);
   if(ex.tempBuff && ex.tempBuff.ac) bits.push(`+${ex.tempBuff.ac} AC while temp HP lasts`);
   if(ex.wtOnly) bits.push('War Table only');
-  if(ex.wtSkip) bits.push('BattleSim only');
+  if(ex.wtSkip) bits.push('export only');
   if(typeof ex.range === 'number') bits.push(ex.range <= 5 ? 'melee' : `${ex.range} ft`);
   bits.push(freqLabel(a.freq));
   if(a.condition && a.condition !== 'default') bits.push(`when: ${a.condition}`);
@@ -552,7 +552,7 @@ function actionForm(mi, a){
     return `<div class="ae-form"><div class="help" style="margin-top:8px;font-size:13px;color:var(--parchment-faint);">Built-in template: ${escapeHtml(a.templateOptions?.templateName||'?')}.</div>${spellFields(mi, a)}</div>`;
   }
   if(a.type === 'template'){
-    return `<div class="ae-form"><div class="help" style="margin-top:8px;font-size:13px;color:var(--parchment-faint);">This uses one of BattleSim's built-in templates (${escapeHtml(a.templateOptions?.templateName||'?')}). Only its frequency and condition are editable here; use Advanced JSON for anything else.</div>
+    return `<div class="ae-form"><div class="help" style="margin-top:8px;font-size:13px;color:var(--parchment-faint);">This uses one of the save format's built-in templates (${escapeHtml(a.templateOptions?.templateName||'?')}). Only its frequency and condition are editable here; use Advanced JSON for anything else.</div>
       <div class="ae-grid">${freqFields(mi,a)}${fSelect('Use when', mi, a.id, 'condition', 'str', VALID_CONDITIONS.map(c=>[c, CONDITION_LABELS[c]||c]), a.condition)}</div></div>`;
   }
   const isEnemyT = a.type === 'atk' || a.type === 'debuff';
@@ -618,7 +618,7 @@ const SIZE_OPTS = ['Tiny','Small','Medium','Large','Huge','Gargantuan'].map(z=>[
 function mechanicsPanel(mi, a){
   const ex = a.ext || {};
   const g = ex.grapple, sw = ex.swallow;
-  let html = `<div class="ae-sub"><div class="ae-sub-title">Special mechanics <span class="ext-note">used by the War Table; the BattleSim export leaves them out</span></div>`;
+  let html = `<div class="ae-sub"><div class="ae-sub-title">Special mechanics <span class="ext-note">used by the War Table; the export leaves them out</span></div>`;
   if(a.type === 'atk'){
     html += fCheck('Grapples the target on a hit', mi, a.id, '__grappleOn', !!g);
     if(g) html += `<div class="ae-grid">
@@ -676,7 +676,7 @@ function mechanicsPanel(mi, a){
   }
   if(a.type === 'atk' && a.useSaves){
     html += `<div class="ae-grid">
-      ${fInput('Ongoing damage instead', mi, a.id, 'ext.dot.dice', 'optdice', ex.dot && ex.dot.dice, 'Tasha\'s Caustic Brew: 2d4 at the start of each of its turns (War Table). Damage above stays the BattleSim estimate.')}
+      ${fInput('Ongoing damage instead', mi, a.id, 'ext.dot.dice', 'optdice', ex.dot && ex.dot.dice, 'Tasha\'s Caustic Brew: 2d4 at the start of each of its turns (War Table). Damage above stays the export estimate.')}
       ${ex.dot ? fInput('Ongoing: extra per higher slot', mi, a.id, 'ext.dot.upcast', 'optdice', ex.dot.upcast) : ''}
     </div>`;
   }
@@ -684,7 +684,7 @@ function mechanicsPanel(mi, a){
     html += `<div class="ae-grid">
       ${fInput('Speed bonus (ft)', mi, a.id, 'ext.speedBonus', 'optnum', ex.speedBonus, 'Bladesong +10, Longstrider +10')}
       ${fInput('Concentration save bonus', mi, a.id, 'ext.concBonus', 'optnum', ex.concBonus, 'Bladesong: + Int modifier')}
-      ${fInput('Mirror Image duplicates', mi, a.id, 'ext.mirror', 'optnum', ex.mirror, 'War Table rolls each hit against the duplicates; BattleSim uses the damage-taken × above')}
+      ${fInput('Mirror Image duplicates', mi, a.id, 'ext.mirror', 'optnum', ex.mirror, 'War Table rolls each hit against the duplicates; the export uses the damage-taken × above')}
       ${fInput('Teleport (ft)', mi, a.id, 'ext.teleport', 'optnum', ex.teleport, 'Misty Step 30: the War Table uses it to get out of melee without provoking, then still acts')}
       ${fInput('Grants a fly speed (ft)', mi, a.id, 'ext.grantFly', 'optnum', ex.grantFly, 'Heavenly Wings, Fly: 30 or 60')}
     </div>
@@ -698,8 +698,8 @@ function mechanicsPanel(mi, a){
   if(a.actionSlot === 4 && a.type === 'debuff') html += fCheck('Only protects itself (not its allies)', mi, a.id, '__x:selfOnly', !!ex.selfOnly);
   if(a.type === 'debuff') html += `<div class="ae-grid">${fInput('Target speed change (ft)', mi, a.id, 'ext.speedBonus', 'optnum', ex.speedBonus, 'e.g. -15 for halved speed, -60 to stop movement (War Table)')}</div>
     ${fCheck('Target can\'t take reactions while affected', mi, a.id, '__x:onHit.noReactions', !!(ex.onHit && ex.onHit.noReactions))}`;
-  html += fCheck('War Table only (left out of the BattleSim export)', mi, a.id, '__x:wtOnly', !!ex.wtOnly);
-  html += fCheck('BattleSim only (the War Table simulates this natively, e.g. an Assassinate stand-in)', mi, a.id, '__x:wtSkip', !!ex.wtSkip);
+  html += fCheck('War Table only (left out of the export)', mi, a.id, '__x:wtOnly', !!ex.wtOnly);
+  html += fCheck('Export only (the War Table simulates this natively, e.g. an Assassinate stand-in)', mi, a.id, '__x:wtSkip', !!ex.wtSkip);
   html += `<div class="ae-grid">${fInput('Range / reach (ft)', mi, a.id, 'ext.range', 'optnum', ex.range, 'For the War Table. Blank = guessed from the name')}
     ${(a.type === 'atk' || a.type === 'debuff') ? fInput('Only works on', mi, a.id, '__targetTypes', 'str', (ex.targetTypes || []).join(', '), 'Creature types, e.g. humanoid (Hold Person). Blank = anyone. PCs count as humanoid.') : ''}</div>`;
   if((a.useSaves || a.type === 'debuff') && a.actionSlot !== 5 && a.actionSlot !== 6){
@@ -782,7 +782,7 @@ function actionEditor(mi, m){
 /* ---------------------------------------------------------
    Spellcasting: spell slots + a spell list (ext.spellbook)
    The War Table picks a spell every turn from the whole list, by what the situation needs and what
-   the slot is worth. BattleSim (the exported JSON) only understands fixed actions, so on
+   the slot is worth. The exported JSON only understands fixed actions, so on
    export the list is compiled into ordinary limited-use actions (ext.fromSpellbook): the slots are
    shared out between the levelled spells and each gets a sensible "use when" condition.
 --------------------------------------------------------- */
@@ -838,7 +838,7 @@ function compileSpellbook(c){
     const mine = own.filter(a=>a.actionSlot === slot && a.type === 'atk' && a.freq === 'at will' && a.condition === 'default').reduce((m,a)=>Math.max(m, spellDamage(a)), 0);
     if(spellDamage(best) > mine) comp.push(mk(best, 'at will'));
   });
-  // each compiled action goes above the first at-will "default" action of its slot (BattleSim reads top-down)
+  // each compiled action goes above the first at-will "default" action of its slot (the export is read top-down)
   const out = own.slice();
   comp.forEach(ca=>{
     const i = out.findIndex(x=>x.actionSlot === ca.actionSlot && x.freq === 'at will' && x.condition === 'default' && !(x.ext && x.ext.fromSpellbook));
@@ -886,7 +886,7 @@ function spellbookPanel(key, c){
       <div class="ae-f"><label>Concentration save bonus</label><input type="number" step="0.5" data-sb-con data-owner="${key}" value="${typeof sb.conSave === 'number' ? sb.conSave : ''}" placeholder="= save bonus"><div class="help">Con save + anything that adds to it (Bladesong, War Caster…)</div></div>
     </div>
     ${actionEditor(key + '~sb', { actions: sb.spells || [] })}
-    <div class="help" style="margin-top:6px;">${total} slot${total === 1 ? '' : 's'}, ${(sb.spells || []).length} spell${(sb.spells || []).length === 1 ? '' : 's'}. The War Table uses the list and slots directly. In the exported JSON for the BattleSim site it becomes ${comp.length} fixed action${comp.length === 1 ? '' : 's'}: ${escapeHtml(comp.map(a=>(a.name || a.templateOptions?.templateName) + (a.freq && a.freq.uses ? ' ×' + a.freq.uses : a.freq === 'at will' ? ' (at will)' : '')).join(', ') || 'none')}.</div>
+    <div class="help" style="margin-top:6px;">${total} slot${total === 1 ? '' : 's'}, ${(sb.spells || []).length} spell${(sb.spells || []).length === 1 ? '' : 's'}. The War Table uses the list and slots directly. In the exported JSON it becomes ${comp.length} fixed action${comp.length === 1 ? '' : 's'}: ${escapeHtml(comp.map(a=>(a.name || a.templateOptions?.templateName) + (a.freq && a.freq.uses ? ' ×' + a.freq.uses : a.freq === 'at will' ? ' (at will)' : '')).join(', ') || 'none')}.</div>
     <div class="row-btns"><button class="mini-btn danger" data-sb-off="${key}">Remove spellcasting</button></div>
   </div>`;
 }
@@ -1151,10 +1151,10 @@ function handleEditorClick(ev){
 }
 
 /* ---------- action audit: "when should this fire?" ----------
-   BattleSim uses the first usable action whose condition matches. A lot of statblocks come in
+   The export format uses the first usable action whose condition matches. A lot of statblocks come in
    with everything on "default", which makes creatures re-cast running buffs, heal healthy allies,
    drink potions at full HP or drop an area spell on a lone enemy. Each tip carries a one-click fix
-   that only uses conditions the BattleSim schema accepts. */
+   that only uses conditions the save format accepts. */
 function auditActions(c){
   const tips = [];
   (c.actions||[]).forEach(a=>{
@@ -1214,8 +1214,8 @@ function warningsHtml(m, key){
 
 
 /* ---------- the six saving throws (ext.saves) ----------
-   BattleSim only knows one average "saveBonus". The six real saves live in ext.saves; whenever all six
-   are filled in, saveBonus is kept equal to their average so BattleSim's own maths stays right. */
+   The save format only knows one average "saveBonus". The six real saves live in ext.saves; whenever all six
+   are filled in, saveBonus is kept equal to their average so the exported maths stays right. */
 const SAVE_ABS = [['str','STR'],['dex','DEX'],['con','CON'],['int','INT'],['wis','WIS'],['cha','CHA']];
 function savesField(key, c){
   const sv = (c.ext && c.ext.saves) || {};
@@ -1259,7 +1259,7 @@ function setCreatureExt(c, key, val){
       if(el.checked === named) delete c.ext.bonusDisengage; else c.ext.bonusDisengage = el.checked;   // only store it when it overrides the name
       if(!Object.keys(c.ext).length) delete c.ext;
     }
-    else if(k === 'blindsight' || k === 'elvenAccuracy' || k === 'initAdvantage' || k === 'steadyAim') setCreatureExt(c, k, el.checked || undefined);
+    else if(k === 'blindsight' || k === 'elvenAccuracy' || k === 'initAdvantage' || k === 'steadyAim' || k === 'packTactics') setCreatureExt(c, k, el.checked || undefined);
     else if(k === 'assassinate'){
       setCreatureExt(c, k, el.checked || undefined);
       if(c.ext && c.ext.sneakAttack){ if(el.checked) c.ext.sneakAttack.assassinate = (c.class && c.class.level) || c.ext.sneakAttack.assassinate || 0; else delete c.ext.sneakAttack.assassinate; }
@@ -1372,7 +1372,7 @@ function renderParty(){
         <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="p${i}" type="number" step="5" min="0" placeholder="—" value="${(p.ext&&p.ext.fly!==undefined)?p.ext.fly:''}" title="Fly speed. Flyers ignore difficult ground, low cover and climbing, and can reach creatures on high ground."></div>
         <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.luck!==undefined)?p.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
         <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.legendaryResistance!==undefined)?p.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
-        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="p${i}" type="number" step="1" min="0" placeholder="3" value="${(p.ext&&p.ext.legendaryActions!==undefined)?p.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). BattleSim uses one per round."></div>
+        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="p${i}" type="number" step="1" min="0" placeholder="3" value="${(p.ext&&p.ext.legendaryActions!==undefined)?p.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). The export counts one per round."></div>
         ${savesField('p'+i, p)}
         <div class="field"><label>Initiative</label><input data-ext="initBonus" data-owner="p${i}" type="number" placeholder="+0" value="${(p.ext&&p.ext.initBonus!==undefined)?p.ext.initBonus:''}" title="Initiative bonus, used by the War Table."></div>
         <div class="field"><label>Init. advantage</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="initAdvantage" data-owner="p${i}" ${(p.ext&&p.ext.initAdvantage)?'checked':''}> Rolls with adv.</label></div>
@@ -1534,10 +1534,11 @@ function renderMonsters(){
         <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="${i}" type="number" step="5" min="0" placeholder="—" value="${(m.ext&&m.ext.fly!==undefined)?m.ext.fly:''}" title="Fly speed. Flyers ignore difficult ground, low cover and climbing, and can reach creatures on high ground."></div>
         <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.luck!==undefined)?m.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
         <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.legendaryResistance!==undefined)?m.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
-        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="${i}" type="number" step="1" min="0" placeholder="3" value="${(m.ext&&m.ext.legendaryActions!==undefined)?m.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). BattleSim uses one per round."></div>
+        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="${i}" type="number" step="1" min="0" placeholder="3" value="${(m.ext&&m.ext.legendaryActions!==undefined)?m.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). The export counts one per round."></div>
         ${savesField(String(i), m)}
         <div class="field"><label>Initiative</label><input data-ext="initBonus" data-owner="${i}" type="number" placeholder="+0" value="${(m.ext&&m.ext.initBonus!==undefined)?m.ext.initBonus:''}" title="Initiative bonus, used by the War Table."></div>
         <div class="field"><label>Init. advantage</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="initAdvantage" data-owner="${i}" ${(m.ext&&m.ext.initAdvantage)?'checked':''}> Rolls with adv.</label></div>
+        <div class="field"><label>Pack Tactics</label><label class="ae-check" style="margin-top:4px;" title="War Table: advantage on attacks against a creature that has one of its allies (not incapacitated) within 5 ft"><input type="checkbox" data-ext="packTactics" data-owner="${i}" ${(m.ext&&m.ext.packTactics)?'checked':''}> Adv. with an ally close</label></div>
         <div class="field"><label>Mobility</label><label class="ae-check" style="margin-top:4px;" title="Can Disengage as a bonus action (Cunning Action, Nimble Escape…). Detected automatically from a bonus action with one of those names."><input type="checkbox" data-ext="bonusDisengage" data-owner="${i}" ${((m.ext&&m.ext.bonusDisengage===true) || (!(m.ext&&m.ext.bonusDisengage===false) && (m.actions||[]).some(a=>a.actionSlot===1&&/cunning action|nimble escape|disengage/i.test(a.name||''))))?'checked':''}> Bonus Disengage</label></div>
         <div class="field"><label>War Table AI</label><select data-ext="ai" data-owner="${i}" title="How it fights on the War Table">${[['auto','Auto (by type)'],['regular','Regular'],['tactical','Tactical'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${(((m.ext&&m.ext.ai)||'auto')===v)?'selected':''}>${l}</option>`).join('')}</select></div>
       </div>
@@ -1819,7 +1820,7 @@ function renderAll(){
 }
 
 /* ---------------------------------------------------------
-   Real schema check — uses BattleSim's own Zod schema, bundled
+   Real schema check — the Forge's own save-format validators
    in the engine script above, so "valid here" = "loads on the site".
 --------------------------------------------------------- */
 function describePath(day, path){
@@ -1836,7 +1837,7 @@ function describePath(day, path){
   return parts.join(' › ');
 }
 
-/* Checks a day against the BattleSim save-file format using the Forge's own validators
+/* Checks a day against the day save-file format using the Forge's own validators
    (the same rules the cards' warnings use: required fields, allowed values, number formats). */
 function checkRealSchema(day){
   const errors = [];
@@ -1864,10 +1865,10 @@ function updateSchemaStatus(){
   const res = checkRealSchema(buildDayObject());
   if(res.ok){
     el.className = 'status ok';
-    el.innerHTML = '✓ Passes the Forge\'s BattleSim format checks — ready to load on the BattleSim site.';
+    el.innerHTML = '✓ Passes the Forge\'s save-file format checks — ready to export.';
   } else {
     el.className = 'status err';
-    el.innerHTML = `✕ This file has ${res.errors.length} format issue${res.errors.length===1?'':'s'} BattleSim may reject:<ul class="schema-errors">${res.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+    el.innerHTML = `✕ This file has ${res.errors.length} format issue${res.errors.length===1?'':'s'}:<ul class="schema-errors">${res.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
   }
 }
 
@@ -1876,7 +1877,7 @@ function updateSchemaStatus(){
 --------------------------------------------------------- */
 let currentView = 'forge';
 const PAGES = {
-  forge: { title: 'Statblock <span>Forge</span>', sub: 'Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then play them out on the War Table.' },
+  forge: { title: 'Statblock <span>Forge</span>', sub: 'Paste a monster statblock, get back simulator-ready JSON. Build out full encounters, then play them out on the War Table.' },
   war:   { title: 'War <span>Table</span>', sub: 'Fights played out with real dice, real initiative and real positions. Run a fight hundreds of times for the odds, then watch any one of them unfold.' },
 };
 function showView(view, fromHash){
@@ -1909,7 +1910,7 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
   if(!check.ok){
     const el = document.getElementById('loadStatus');
     el.className = 'status err';
-    el.innerHTML = `"${escapeHtml(file.name)}" doesn't look like a BattleSim day file (${check.errors.length} issue${check.errors.length===1?'':'s'}):<ul class="schema-errors">${check.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+    el.innerHTML = `"${escapeHtml(file.name)}" doesn't look like a day save file (${check.errors.length} issue${check.errors.length===1?'':'s'}):<ul class="schema-errors">${check.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
     return;
   }
   PARTY_PLAYERS.splice(0, PARTY_PLAYERS.length, ...day.players);

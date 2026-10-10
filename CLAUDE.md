@@ -7,10 +7,10 @@
 - `js/engine/tactical-engine.js` must stay DOM-free: it also runs under Node in `tests/run.js`.
 - After changing engine rules or AI, run `npm test` (checks wall/LoS violations, actors that are dead,
   hidden in plain sight, odds sanity) and play a fight on the War Table to eyeball the replay.
-- There is no BattleSim code in this repo. Exports follow BattleSim's save-file format, checked by `checkRealSchema`
-  and `validateMonster` in `js/forge.js`; keep those in step with BattleSim's format if it changes.
-- Creature/action extras live under `ext`; BattleSim ignores them. Anything War-Table-only that would
-  confuse BattleSim gets `ext.wtOnly`; BattleSim-only stand-ins get `ext.wtSkip`.
+- Exports follow the day save-file format checked by `checkRealSchema` and `validateMonster` in `js/forge.js`;
+  keep those checks in step with any format change.
+- Creature/action extras live under `ext`; plain exports ignore them. Anything War-Table-only that would
+  confuse the export gets `ext.wtOnly`; export-only stand-ins get `ext.wtSkip`.
 - Changing the built-in party: edit `data/party.js`, bump `PARTY_VERSION` in `js/forge.js` and list the
   changed ids in `PARTY_UPDATES` so saved workspaces update.
 - Browser support: keep to syntax older Safari/iOS can run — no regex lookbehind (`(?<=` / `(?<!`), no `??=`/`||=`, no `structuredClone`.

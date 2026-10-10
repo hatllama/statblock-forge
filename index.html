@@ -6,7 +6,7 @@
 <title>Statblock Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20261010d">
+<link rel="stylesheet" href="css/styles.css?v=20261010e">
 
 </head>
 <body>
@@ -15,7 +15,7 @@
   <header>
     <div class="eyebrow" id="siteEyebrow">D&amp;D encounter workshop</div>
     <h1 id="siteTitle">Statblock <span>Forge</span></h1>
-    <p class="subhead" id="siteSub">Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then play them out on the War Table or export a day for the BattleSim site.</p>
+    <p class="subhead" id="siteSub">Paste a monster statblock, get back simulator-ready JSON. Build out full encounters, then play them out on the War Table or export a day as JSON.</p>
     <div class="divider"></div>
   </header>
 
@@ -162,7 +162,7 @@
       <div class="status" id="schemaStatus" style="margin-bottom:10px;"></div>
       <div class="export-actions">
         <label class="ghost-btn file-btn">Load Day JSON<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
-        <span class="hint">Loads a BattleSim or Forge save file, replacing the party and encounters.</span>
+        <span class="hint">Loads a Forge day save file, replacing the party and encounters.</span>
       </div>
       <div class="status" id="loadStatus" style="margin-bottom:10px;"></div>
       <div class="preview-toggle" id="previewToggle">▸ show JSON preview</div>
@@ -172,15 +172,14 @@
   </div>
 
   <footer>Work autosaves; export a JSON now and then as a portable backup.<br>
-  Exports use the save-file format of <a href="https://github.com/Trekiros/battleSim" target="_blank" rel="noopener">BattleSim</a> by Trekiros, so a day can be loaded there too.<br>
   Statblock reader and War Table engine: original, written for this site.</footer>
 </div>
 
-<script src="data/party.js?v=20261010d"></script>
-<script src="js/spell-data.js?v=20261010d"></script>
-<script src="js/statblock-parser.js?v=20261010d"></script>
-<script src="js/forge.js?v=20261010d"></script>
-<script src="js/engine/tactical-engine.js?v=20261010d"></script>
-<script src="js/war-table.js?v=20261010d"></script>
+<script src="data/party.js?v=20261010e"></script>
+<script src="js/spell-data.js?v=20261010e"></script>
+<script src="js/statblock-parser.js?v=20261010e"></script>
+<script src="js/forge.js?v=20261010e"></script>
+<script src="js/engine/tactical-engine.js?v=20261010e"></script>
+<script src="js/war-table.js?v=20261010e"></script>
 </body>
 </html>
