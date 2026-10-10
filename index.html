@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Statblock Forge</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+
+</head>
+<body>
+<div class="wrap">
+
+  <header>
+    <div class="eyebrow" id="siteEyebrow">D&amp;D encounter workshop</div>
+    <h1 id="siteTitle">Statblock <span>Forge</span></h1>
+    <p class="subhead" id="siteSub">Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then simulate them right here or export a day for the BattleSim site.</p>
+    <div class="divider"></div>
+  </header>
+
+  <nav class="view-nav">
+    <button class="view-btn active" data-view="forge">⚒ Forge</button>
+    <button class="view-btn" data-view="sim">⚖ Simulate</button>
+    <button class="view-btn" data-view="war">♟ War Table</button>
+  </nav>
+  <div class="save-bar"><span id="saveStatus">Loading saved work…</span><button class="link-btn" id="resetSavedBtn">Reset to defaults</button></div>
+
+  <div class="party-label">Your Party</div>
+  <div class="party-bar" id="partyBar"></div>
+
+  <div id="viewSim" style="display:none;">
+    <section>
+      <div class="section-title">Simulation</div>
+      <div class="sim-controls">
+        <div class="luck-box">
+          <label for="luckSlider">Party luck <b id="luckValue">50%</b></label>
+          <input type="range" id="luckSlider" min="0" max="1" step="0.05" value="0.5">
+          <div class="luck-scale"><span>Dice hate them</span><span>Average</span><span>Dice love them</span></div>
+          <div class="sim-opt">
+            <label for="escapePolicy">When grappled</label>
+            <select id="escapePolicy">
+              <option value="smart">Escape only if the grappler can swallow (or similar follow-up)</option>
+              <option value="always">Always spend the Action escaping</option>
+              <option value="never">Never escape, keep attacking (restrained)</option>
+            </select>
+          </div>
+          <div class="sim-opt">
+            <label for="surpriseRules">Surprise rules</label>
+            <select id="surpriseRules">
+              <option value="2024">2024: surprised creatures still act, but after the ambushers</option>
+              <option value="2014">2014: surprised creatures lose round 1 (as on the BattleSim site)</option>
+            </select>
+          </div>
+          <div class="sim-opt">
+            <label for="smartActions">Action choice</label>
+            <select id="smartActions">
+              <option value="on">Smart: skip wasted casts, and spellcasters pick from their spell list and slots each round</option>
+              <option value="off">Exact: always the first matching action, as on the BattleSim site (spell lists use their fixed export)</option>
+            </select>
+          </div>
+        </div>
+        <div class="sim-load">
+          <label class="ghost-btn file-btn">Load Day JSON<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
+          <div class="hint">Loads any BattleSim save file, replacing the party and encounters in the Forge too.</div>
+        </div>
+      </div>
+      <div class="status" id="simStatus"></div>
+      <div id="simSummary"></div>
+      <div id="simResults"></div>
+    </section>
+  </div>
+
+  <div id="viewWar" style="display:none;">
+<div class="toolbar">
+    <div class="day" id="wt-dayName">—</div>
+    <div class="tb-right">
+      <span class="save" id="wt-saveStatus"></span>
+      <span class="help" style="font-size:13px;">Uses the party and encounters from the Forge.</span>
+    </div>
+  </div>
+
+  <div class="tabs" id="wt-encTabs"></div>
+
+  <div class="stage">
+    <div class="board-card" id="wt-boardCard">
+      <div class="board-head">
+        <span class="mode-label" id="wt-modeLabel">Setup · drag tokens to set starting positions</span>
+        <span class="round-badge" id="wt-roundBadge"></span>
+      </div>
+      <svg id="wt-board" viewBox="0 0 864 576" role="img" aria-label="Battle map"></svg>
+      <div class="terrain-legend" id="wt-terrainLegend" style="display:none;"><span><i style="background:#4b4036;border:1px solid #6d5d4c"></i>wall</span><span><i style="background:repeating-linear-gradient(45deg,rgba(150,170,110,.55) 0 2px,transparent 2px 5px)"></i>difficult</span><span><i style="background:#8a7558"></i>low cover (+2 AC)</span><span><i style="background:rgba(214,178,98,.35)"></i>raised ground (ft)</span><span><i style="background:rgba(60,90,130,.45)"></i>lowered ground</span></div>
+      <div class="aoe-legend"><span><i style="background:rgba(224,80,60,.45)"></i>damage area</span><span><i style="background:rgba(155,107,214,.5)"></i>condition area</span><span><i class="dash"></i>aura</span></div>
+      <div class="now" id="wt-nowLine"></div>
+      <div class="controls" id="wt-playControls" style="display:none;">
+        <button class="mini-btn icon" id="wt-btnStart" title="Back to the start">⏮</button>
+        <button class="mini-btn icon" id="wt-btnBack" title="Step back">◀</button>
+        <button class="mini-btn icon" id="wt-btnPlay" title="Play / pause">▶</button>
+        <button class="mini-btn icon" id="wt-btnStep" title="Step forward">▶|</button>
+        <input type="range" id="wt-scrub" min="0" max="0" value="0" aria-label="Position in the fight">
+        <span class="speed">Speed <select id="wt-speed"><option value="0.5">½×</option><option value="1" selected>1×</option><option value="2">2×</option><option value="4">4×</option></select></span>
+        <button class="mini-btn" id="wt-btnSetup">Back to setup</button>
+      </div>
+    </div>
+
+    <aside class="side" id="wt-side">
+      <div id="wt-setupPanel">
+        <h3>Setup</h3>
+        <p class="help" style="margin-bottom:12px;">Drag tokens to place everyone, or let the table line them up. Positions are saved per encounter.</p>
+        <div class="opt"><label for="wt-gap">Starting distance <span class="mono" id="wt-gapVal">30 ft</span></label><input type="range" id="wt-gap" min="10" max="90" step="5" value="30"></div>
+        <div class="opt"><label>Map tools</label>
+          <div class="tool-row" id="wt-tools">
+            <button data-tool="move" class="on" title="Drag tokens to place them">✥ Tokens</button>
+            <button data-tool="wall" title="Blocks movement, sight, spells and auras">▇ Wall</button>
+            <button data-tool="difficult" title="Costs double movement">≋ Difficult</button>
+            <button data-tool="cover" title="Low wall or rubble: difficult to cross, +2 AC against ranged attacks across it">▭ Low cover</button>
+            <button data-tool="up" title="Raise the ground 5 ft per stroke">▲ Raise</button>
+            <button data-tool="down" title="Lower the ground 5 ft per stroke">▼ Lower</button>
+            <button data-tool="erase" title="Back to flat open ground">⌫ Erase</button>
+          </div>
+          <p class="help" id="wt-toolHelp" style="margin:0 0 6px;">Click or drag across squares to paint. Each encounter has its own map.</p>
+          <button class="mini-btn" id="wt-btnClearTerrain">Clear terrain</button>
+        </div>
+        <div class="row" style="margin-bottom:14px;"><button class="mini-btn" id="wt-btnReset">Reset positions</button>
+          <select id="wt-mapSize" class="mini-btn" style="padding:5px;" aria-label="Map size"><option value="20x14">Map 20×14</option><option value="24x16" selected>Map 24×16</option><option value="30x20">Map 30×20</option></select></div>
+        <div class="opt"><label for="wt-surprise">Surprise rules</label><select id="wt-surprise"><option value="2024">2024 — surprised roll initiative with disadvantage</option><option value="2014">2014 — surprised lose round 1</option></select></div>
+        <div class="opt"><label for="wt-escape">When grappled</label><select id="wt-escape"><option value="smart">Escape if the grappler can swallow</option><option value="always">Always try to escape</option><option value="never">Never escape</option></select></div>
+        <div class="opt"><label for="wt-partyAI">Party plays</label><select id="wt-partyAI"><option value="tactical">Tactical: focus fire, finish foes, protect the healers</option><option value="regular">Regular: follow each action's targeting</option></select></div>
+        <div class="opt"><label for="wt-runs">Fights to simulate</label><select id="wt-runs"><option>100</option><option>250</option><option selected>500</option><option>1000</option></select></div>
+        <div class="row"><button class="primary-btn" id="wt-btnRun">Run the odds</button><button class="ghost-btn" id="wt-btnOne">Play one fight</button></div>
+        <div class="progress" id="wt-progress"><div></div></div>
+        <div class="save" id="wt-runStatus" style="margin-top:8px;"></div>
+      </div>
+      <div id="wt-replayPanel" style="display:none;">
+        <h3>Initiative</h3>
+        <div class="init" id="wt-initList"></div>
+        <h3 style="margin-top:14px;">Fight log</h3>
+        <div class="log" id="wt-log"></div>
+      </div>
+    </aside>
+  </div>
+
+  <section class="block" id="wt-oddsBlock">
+    <div class="section-title">The odds</div>
+    <div id="wt-odds"><div class="empty">Run the odds to see how this fight tends to go.</div></div>
+  </section>
+
+  <section class="block">
+    <details class="stats" id="wt-statsBox">
+      <summary>Tactical stats <span>speed, initiative and the range of every action</span></summary>
+      <p class="help" style="margin-top:10px;">Ranges in <i>italics</i> are guessed from the action's name; type a number to set it for real. Edits here change the creature in the Forge too.</p>
+      <div id="wt-statsBody"></div>
+    </details>
+  </section>
+
+    <p class="help" style="text-align:center;margin-top:30px;font-size:12.5px;color:var(--parchment-faint);">Dice are real: every run differs. Simplifications: every creature fills one square, areas hit the target plus creatures within 10 ft of it, and monsters ignore downed PCs unless something swallowed them.</p>
+  </div>
+
+  <div id="viewForge">
+  <section>
+    <div class="section-title">Party</div>
+    <div class="monster-grid" id="partyGrid"></div>
+    <div class="ae-add"><button class="mini-btn" id="addPlayerBtn">+ Add party member</button></div>
+  </section>
+
+  <section>
+    <div class="section-title">Encounters</div>
+    <div class="tabs" id="tabs"></div>
+    <div class="encounter-opts" id="encounterOpts"></div>
+    <div class="monster-grid" id="monsterGrid"></div>
+  </section>
+
+  <section>
+    <div class="section-title">Add a Monster</div>
+    <div class="parse-box">
+      <textarea id="statblockInput" placeholder="Paste one or more statblocks here (from the Monster Manual, D&amp;D Beyond, a homebrew doc, whatever you've got). Separate multiple statblocks with a blank line or a line of dashes ---."></textarea>
+      <div class="hint">The AI reads the statblock and fills in HP, AC, saves, attacks, saves-based abilities, buffs, and recharge/limited-use effects in BattleSim's format. Review the result below before exporting — it's a strong first draft, not gospel.</div>
+      <div class="parse-row">
+        <span class="status" id="parseStatus"></span>
+        <button class="primary-btn" id="parseBtn">Forge Statblock</button>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <div class="section-title">Export Adventuring Day</div>
+    <div class="export-shell">
+      <div class="dayname">
+        <label>Day Name</label>
+        <input id="dayNameInput" type="text" value="Level 4 Party Full">
+      </div>
+      <div class="export-actions">
+        <button class="ghost-btn" id="downloadBtn">Download JSON</button>
+        <button class="ghost-btn" id="copyBtn">Copy to Clipboard</button>
+      </div>
+      <div class="status" id="schemaStatus" style="margin-bottom:10px;"></div>
+      <div class="preview-toggle" id="previewToggle">▸ show JSON preview</div>
+      <pre id="jsonPreview" style="display:none;"></pre>
+    </div>
+  </section>
+  </div>
+
+  <footer>Work autosaves; export a JSON now and then as a portable backup.<br>
+  War Table engine: original, written for this site.<br>
+  Averages engine (Simulate): <a href="https://github.com/Trekiros/battleSim" target="_blank" rel="noopener">BattleSim</a> by Trekiros, used under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>, extended here with grapples, swallowing, size limits, ambush and blindsight (modifications also under CC BY-NC-SA 4.0). Surprise defaults to 2024 rules and action choice to "smart"; with "2014" and "exact" selected, creatures that don't use these extensions simulate exactly as on the BattleSim site.</footer>
+</div>
+
+<script src="vendor/battlesim/battlesim-engine.js"></script>
+<script src="data/party.js"></script>
+<script src="js/forge.js"></script>
+<script src="js/engine/tactical-engine.js"></script>
+<script src="js/war-table.js"></script>
+</body>
+</html>
