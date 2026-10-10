@@ -1681,9 +1681,19 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
   btn.disabled = true;
   if(!useClaude){
     // built-in parser: instant, offline, free
-    const r = StatblockParser.parse(text);
-    monsters = r.monsters;
-    failed = r.skipped.map(msg=>({ err: new Error(msg), b: '' }));
+    if(typeof StatblockParser === 'undefined'){
+      setStatus('parseStatus', "The statblock reader didn't load in this browser. Refresh the page (Ctrl+Shift+R, or Cmd+Shift+R on a Mac); if it still fails, update the browser.", 'err');
+      btn.disabled = false;
+      return;
+    }
+    try{
+      const r = StatblockParser.parse(text);
+      monsters = r.monsters;
+      failed = r.skipped.map(msg=>({ err: new Error(msg), b: '' }));
+    }catch(err){
+      console.error(err);
+      failed = [{ err, b: text }];
+    }
   } else {
     const blocks = splitStatblocks(text);
     document.getElementById('parseStatus').className = 'status';

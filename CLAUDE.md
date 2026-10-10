@@ -13,3 +13,6 @@
   confuse BattleSim gets `ext.wtOnly`; BattleSim-only stand-ins get `ext.wtSkip`.
 - Changing the built-in party: edit `data/party.js`, bump `PARTY_VERSION` in `js/forge.js` and list the
   changed ids in `PARTY_UPDATES` so saved workspaces update.
+- Browser support: keep to syntax older Safari/iOS can run — no regex lookbehind (`(?<=` / `(?<!`), no `??=`/`||=`.
+  One unsupported regex makes the whole script fail to load.
+- Every release: bump the `?v=` on the script/style tags in `index.html` so visitors don't keep a cached old copy.

@@ -6,7 +6,7 @@
 <title>Statblock Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css">
+<link rel="stylesheet" href="css/styles.css?v=20261010b">
 
 </head>
 <body>
@@ -214,12 +214,13 @@
   Averages engine (Simulate): <a href="https://github.com/Trekiros/battleSim" target="_blank" rel="noopener">BattleSim</a> by Trekiros, used under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>, extended here with grapples, swallowing, size limits, ambush and blindsight (modifications also under CC BY-NC-SA 4.0). Surprise defaults to 2024 rules and action choice to "smart"; with "2014" and "exact" selected, creatures that don't use these extensions simulate exactly as on the BattleSim site.</footer>
 </div>
 
-<script src="vendor/battlesim/battlesim-engine.js"></script>
-<script src="data/party.js"></script>
-<script src="js/spell-data.js"></script>
-<script src="js/statblock-parser.js"></script>
-<script src="js/forge.js"></script>
-<script src="js/engine/tactical-engine.js"></script>
-<script src="js/war-table.js"></script>
+<script>/* older Safari/iOS: no structuredClone */ if (typeof structuredClone !== 'function') window.structuredClone = v => JSON.parse(JSON.stringify(v));</script>
+<script src="vendor/battlesim/battlesim-engine.js?v=20261010b"></script>
+<script src="data/party.js?v=20261010b"></script>
+<script src="js/spell-data.js?v=20261010b"></script>
+<script src="js/statblock-parser.js?v=20261010b"></script>
+<script src="js/forge.js?v=20261010b"></script>
+<script src="js/engine/tactical-engine.js?v=20261010b"></script>
+<script src="js/war-table.js?v=20261010b"></script>
 </body>
 </html>

@@ -52,7 +52,7 @@ function normalize(text) {
     .replace(/\r/g, '')
     // markdown from Homebrewery / GM Binder / 5etools exports
     .replace(/^\s*>\s?/gm, '').replace(/^\s*#{1,6}\s*/gm, '').replace(/^\s*_{3,}\s*$/gm, '').replace(/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/gm, '')
-    .replace(/\*\*\*?|__/g, '').replace(/(^|\s)\*(?=\S)|(?<=\S)\*(?=\s|[.,:;]|$)/gm, '$1').replace(/\|/g, ' ')
+    .replace(/\*\*\*?|__/g, '').replace(/(^|\s)\*(?=\S)/gm, '$1').replace(/(\S)\*(?=\s|[.,:;]|$)/gm, '$1').replace(/\|/g, ' ')
     .replace(/^\s*[-•]\s+(?=[A-Z])/gm, '')
     .replace(/[−‒–—](?=\s*\d)/g, '-')          // −1, –1 → -1 (minus signs before numbers)
     .replace(/(\d)\s*[–—]\s*(\d)/g, '$1-$2')             // Recharge 5–6 → 5-6
@@ -536,7 +536,7 @@ function hideAction(h, name) {
 
 /* ---------- Multiattack: which attacks, how many of each ---------- */
 function readMultiattack(entry, attacks, notes, others) {
-  const t = entry.text.replace(/\.$/, '').split(/(?<=\.)\s+/).filter(x => !/in place of|instead of|can replace|can use its [\w ]+ (?:in place|instead)/i.test(x)).join(' ');
+  const t = entry.text.replace(/\.$/, '').split(/\.\s+/).filter(x => !/in place of|instead of|can replace|can use its [\w ]+ (?:in place|instead)/i.test(x)).join('. ');
   const swaps = /in place of|instead of|can replace/i.test(entry.text);
   const byName = attacks.filter(a => a.type === 'atk' && !a.useSaves);
   const find = phrase => {
