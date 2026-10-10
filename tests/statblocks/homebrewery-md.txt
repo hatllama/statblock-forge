@@ -1,0 +1,30 @@
+___
+> ## Ash Wight
+>*Medium undead, neutral evil*
+> ___
+> - **Armor Class** 14 (studded leather)
+> - **Hit Points** 45 (6d8 + 18)
+> - **Speed** 30 ft.
+>___
+>|STR|DEX|CON|INT|WIS|CHA|
+>|:---:|:---:|:---:|:---:|:---:|:---:|
+>|15 (+2)|14 (+2)|16 (+3)|10 (+0)|13 (+1)|15 (+2)|
+>___
+> - **Skills** Perception +3, Stealth +4
+> - **Damage Resistances** necrotic; bludgeoning, piercing, and slashing from nonmagical attacks
+> - **Damage Immunities** poison
+> - **Condition Immunities** exhaustion, poisoned
+> - **Senses** darkvision 60 ft., passive Perception 13
+> - **Languages** the languages it knew in life
+> - **Challenge** 3 (700 XP)
+> ___
+> ***Sunlight Sensitivity.*** While in sunlight, the wight has disadvantage on attack rolls.
+>
+> ### Actions
+> ***Multiattack.*** The wight makes two longsword attacks or two longbow attacks. It can use its Life Drain in place of one longsword attack.
+>
+> ***Life Drain.*** *Melee Weapon Attack:* +4 to hit, reach 5 ft., one creature. *Hit:* 5 (1d6 + 2) necrotic damage. The target must succeed on a DC 13 Constitution saving throw or its hit point maximum is reduced by an amount equal to the damage taken.
+>
+> ***Longsword.*** *Melee Weapon Attack:* +4 to hit, reach 5 ft., one target. *Hit:* 6 (1d8 + 2) slashing damage, or 7 (1d10 + 2) slashing damage if used with two hands.
+>
+> ***Longbow.*** *Ranged Weapon Attack:* +4 to hit, range 150/600 ft., one target. *Hit:* 6 (1d8 + 2) piercing damage.

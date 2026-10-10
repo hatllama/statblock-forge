@@ -1,0 +1,20 @@
+Stagnation Blight of the Arbiter
+Large elemental, lawful neutral
+Armor Class 14
+Hit Points 52 (7d10 + 14)
+Speed 30 ft.
+STR DEX CON INT WIS CHA
+14 (+2) 12 (+1) 14 (+2) 8 (-1) 12 (+1) 6 (-2)
+Damage Resistances force, radiant
+Condition Immunities frightened, charmed
+Senses blindsight 30 ft., passive Perception 11
+Languages understands Primordial but can't speak
+Challenge 3 (700 XP)
+Edict of Stillness. Any creature that ends its turn within 10 feet of the blight without having moved at least 15 feet during that turn takes 7 (2d6) force damage.
+Death Throes. When the blight dies, it bursts. Each creature within 10 feet of it must make a DC 12 Constitution saving throw, taking 10 (3d6) force damage on a failed save, or half as much on a successful one.
+Actions
+Multiattack. The blight makes two Force Lash attacks.
+Force Lash. Melee Weapon Attack: +4 to hit, reach 10 ft., one target. Hit: 9 (2d6 + 2) force damage. If the target is a creature, it must succeed on a DC 12 Strength saving throw or be knocked prone.
+Edict of Forced Relocation (Recharge 4–6). The blight targets up to two creatures it can see within 30 feet. Each target must succeed on a DC 12 Wisdom saving throw or be restrained until the end of its next turn.
+Reactions
+Inertia Punishment. When a creature within 10 feet of the blight moves, the blight can force it to make a DC 12 Constitution saving throw, taking 7 (2d6) force damage on a failed save.

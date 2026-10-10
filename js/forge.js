@@ -1179,6 +1179,8 @@ function tipsHtml(c, key){
 }
 ['monsterGrid','partyGrid'].forEach(gridId=>{
   document.getElementById(gridId).addEventListener('click', ev=>{
+    const clr = ev.target.closest('[data-clear-notes]');
+    if(clr){ ev.stopPropagation(); const c = creatureByKey(clr.dataset.clearNotes); if(c){ delete c._notes; rerenderFor(clr.dataset.clearNotes); if(typeof scheduleSave === 'function') scheduleSave(); } return; }
     const one = ev.target.closest('[data-tipfix]'), all = ev.target.closest('[data-tipall]');
     if(!one && !all) return;
     ev.stopPropagation();
@@ -1192,8 +1194,12 @@ function tipsHtml(c, key){
   });
 });
 
+function notesHtml(m, key){
+  if(!m._notes || !m._notes.length) return '';
+  return `<details class="parse-notes"><summary>${m._notes.length} parser note${m._notes.length===1?'':'s'} — what was assumed or left out</summary><ul>${m._notes.map(n=>`<li>${escapeHtml(n)}</li>`).join('')}</ul>${key !== undefined ? `<button class="mini-btn" data-clear-notes="${escapeAttr(String(key))}">Dismiss</button>` : ''}</details>`;
+}
 function warningsHtml(m, key){
-  const tips = tipsHtml(m, key);
+  const tips = tipsHtml(m, key) + notesHtml(m, key);
   if(!m._warnings || !m._warnings.length) return tips;
   return `<div class="warnings"><div class="warnings-title">⚠ ${m._warnings.length} possible issue${m._warnings.length===1?'':'s'}</div><ul>${m._warnings.map(w=>`<li>${escapeHtml(w)}</li>`).join('')}</ul></div>` + tips;
 }
@@ -1590,6 +1596,78 @@ function renderMonsters(){
 /* ---------------------------------------------------------
    Parse statblocks via Claude API
 --------------------------------------------------------- */
+/* Where the request goes: inside a Claude artifact the page can call the API without a key;
+   anywhere else (GitHub Pages, a local copy) it needs the user's own Anthropic API key, which is kept
+   only in this browser's localStorage and sent only to api.anthropic.com. */
+const API_KEY_STORE = 'forge-anthropic-key', API_MODEL_STORE = 'forge-anthropic-model', API_USE_STORE = 'forge-use-claude';
+const DEFAULT_MODEL = 'claude-sonnet-5-5';
+function lsGet(k){ try{ return localStorage.getItem(k) || ''; }catch(e){ return ''; } }
+function lsSet(k, v){ try{ if(v) localStorage.setItem(k, v); else localStorage.removeItem(k); }catch(e){} }
+(function initApiSettings(){
+  const key = document.getElementById('apiKeyInput'), model = document.getElementById('apiModelInput');
+  if(!key || !model) return;
+  key.value = lsGet(API_KEY_STORE);
+  const use = document.getElementById('useClaudeInput');
+  if(use){ use.checked = lsGet(API_USE_STORE) === '1' && !!key.value; use.addEventListener('change', ()=>{ if(use.checked && !key.value.trim()){ use.checked = false; setStatus('parseStatus', 'Add an API key first to convert with Claude.', 'err'); } lsSet(API_USE_STORE, use.checked ? '1' : ''); }); }
+  model.value = lsGet(API_MODEL_STORE) || DEFAULT_MODEL;
+  key.addEventListener('change', ()=>{ lsSet(API_KEY_STORE, key.value.trim()); setStatus('parseStatus', key.value.trim() ? 'API key saved in this browser.' : 'API key removed.', 'ok'); });
+  model.addEventListener('change', ()=>lsSet(API_MODEL_STORE, model.value.trim()));
+
+})();
+
+/* Split pasted text into separate statblocks on lines of dashes, so each one is its own request
+   (long multi-monster pastes no longer run out of room in a single answer). */
+function splitStatblocks(text){
+  return text.split(/\n\s*-{3,}\s*\n/).map(t=>t.trim()).filter(t=>t.length > 0);
+}
+
+async function forgeOne(text){
+  const key = lsGet(API_KEY_STORE);
+  const headers = { 'Content-Type': 'application/json' };
+  if(key){ headers['x-api-key'] = key; headers['anthropic-version'] = '2023-06-01'; headers['anthropic-dangerous-direct-browser-access'] = 'true'; }
+  let res;
+  try{
+    res = await fetch('https://api.anthropic.com/v1/messages', {
+      method: 'POST', headers,
+      body: JSON.stringify({ model: lsGet(API_MODEL_STORE) || DEFAULT_MODEL, max_tokens: 16000, system: SYSTEM_PROMPT, messages: [{ role: 'user', content: text }] })
+    });
+  }catch(err){
+    throw new Error(key ? "Couldn't reach the Anthropic API (network or browser blocked the request)." : 'This copy of the site needs an Anthropic API key — add one under "API key" below the box.');
+  }
+  let data = null;
+  try{ data = await res.json(); }catch(e){}
+  if(!res.ok || (data && data.type === 'error')){
+    const msg = data && data.error && data.error.message ? data.error.message : `HTTP ${res.status}`;
+    if(res.status === 401 || res.status === 403) throw new Error(key ? `The API key was refused (${msg}).` : 'This copy of the site needs an Anthropic API key — add one under "API key" below the box.');
+    throw new Error(`The API returned an error: ${msg}`);
+  }
+  const out = (data.content || []).filter(b=>b.type === 'text').map(b=>b.text).join('\n');
+  if(data.stop_reason === 'max_tokens') throw new Error('The statblock was too long to convert in one go — split it with a line of --- between monsters, or trim lore text.');
+  let clean = out.replace(/```json/gi, '').replace(/```/g, '').trim();
+  const fb = clean.indexOf('['), lb = clean.lastIndexOf(']'), fo = clean.indexOf('{'), lo = clean.lastIndexOf('}');
+  if(fb !== -1 && lb > fb && (fo === -1 || fb < fo)) clean = clean.slice(fb, lb + 1);
+  else if(fo !== -1 && lo > fo) clean = clean.slice(fo, lo + 1);
+  let parsed;
+  try{ parsed = JSON.parse(clean); }
+  catch(e){
+    try{ parsed = JSON.parse(clean.replace(/,\s*([\]}])/g, '$1')); }      // trailing commas
+    catch(e2){ throw new Error('The AI answered, but not with valid JSON (' + e.message + ').'); }
+  }
+  return Array.isArray(parsed) ? parsed : [parsed];
+}
+
+function finishParsed(monsters){
+  monsters.forEach(m=>{
+    m.id = uid();
+    m.mode = 'custom';
+    if(!m.count) m.count = 1;
+    sanitizeMonster(m);
+    (m.actions||[]).forEach(a=>{ a.id = uid(); });
+    if(m.ext && m.ext.spellbook) (m.ext.spellbook.spells||[]).forEach(sp=>{ sp.id = uid(); });
+    m._warnings = validateMonster(m);
+  });
+  return monsters;
+}
 document.getElementById('parseBtn').addEventListener('click', async ()=>{
   const input = document.getElementById('statblockInput');
   const text = input.value.trim();
@@ -1598,56 +1676,37 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     return;
   }
   const btn = document.getElementById('parseBtn');
+  const useClaude = document.getElementById('useClaudeInput') && document.getElementById('useClaudeInput').checked;
+  let monsters = [], failed = [];
   btn.disabled = true;
-  setStatus('parseStatus', '<span class="spinner"></span>Forging...', '');
-  document.getElementById('parseStatus').innerHTML = '<span class="spinner"></span>Forging...';
-
-  try{
-    const res = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-6",
-        max_tokens: 4000,
-        system: SYSTEM_PROMPT,
-        messages: [{ role: "user", content: text }]
-      })
-    });
-    const data = await res.json();
-    const textBlocks = (data.content || []).filter(b=>b.type==='text').map(b=>b.text).join('\\n');
-    let clean = textBlocks.replace(/```json/gi,'').replace(/```/g,'').trim();
-    const firstBracket = clean.indexOf('[');
-    const lastBracket = clean.lastIndexOf(']');
-    if(firstBracket !== -1 && lastBracket !== -1) clean = clean.slice(firstBracket, lastBracket+1);
-
-    let monsters = JSON.parse(clean);
-    if(!Array.isArray(monsters)) monsters = [monsters];
-
-    monsters.forEach(m=>{
-      m.id = uid();
-      m.mode = 'custom';
-      if(!m.count) m.count = 1;
-      sanitizeMonster(m);
-      (m.actions||[]).forEach(a=>{ a.id = uid(); });
-      m._warnings = validateMonster(m);
-    });
-
-    encounters[activeIdx].monsters.push(...monsters);
-    input.value = '';
-    const totalWarnings = monsters.reduce((sum,m)=>sum+m._warnings.length,0);
-    if(totalWarnings > 0){
-      setStatus('parseStatus', `Added ${monsters.length} monster${monsters.length===1?'':'s'}, but flagged ${totalWarnings} possible schema issue${totalWarnings===1?'':'s'} — check the warnings on the card${monsters.length===1?'':'s'} below before exporting.`, 'err');
-    } else {
-      setStatus('parseStatus', `Added ${monsters.length} monster${monsters.length===1?'':'s'}: ${monsters.map(m=>m.name).join(', ')}. No schema issues found.`, 'ok');
-    }
-    renderMonsters();
-    refreshPreview();
-  }catch(err){
-    console.error(err);
-    setStatus('parseStatus', "Couldn't parse that — try again, or simplify the pasted text.", 'err');
-  }finally{
-    btn.disabled = false;
+  if(!useClaude){
+    // built-in parser: instant, offline, free
+    const r = StatblockParser.parse(text);
+    monsters = r.monsters;
+    failed = r.skipped.map(msg=>({ err: new Error(msg), b: '' }));
+  } else {
+    const blocks = splitStatblocks(text);
+    document.getElementById('parseStatus').className = 'status';
+    document.getElementById('parseStatus').innerHTML = `<span class="spinner"></span>Asking Claude${blocks.length > 1 ? ` about ${blocks.length} statblocks` : ''}...`;
+    const results = await Promise.all(blocks.map((b, i)=>
+      new Promise(r=>setTimeout(r, i * 400)).then(()=>forgeOne(b)).then(ms=>({ ok: true, ms }), err=>({ ok: false, err, b }))));
+    results.forEach(r=>{ if(r.ok) monsters.push(...r.ms); else failed.push(r); });
+    failed.forEach(f=>console.error(f.err));
   }
+  finishParsed(monsters);
+  if(monsters.length) encounters[activeIdx].monsters.push(...monsters);
+  // keep only what failed in the box, so it can be retried
+  input.value = useClaude ? failed.map(f=>f.b).join('\n\n---\n\n') : (monsters.length ? '' : input.value);
+
+  const totalWarnings = monsters.reduce((sum,m)=>sum+m._warnings.length,0);
+  const totalNotes = monsters.reduce((sum,m)=>sum+((m._notes||[]).length),0);
+  const parts = [];
+  if(monsters.length) parts.push(`Added ${monsters.length} creature${monsters.length===1?'':'s'}: ${monsters.map(m=>escapeHtml(m.name || '?')).join(', ')}.` + (totalWarnings ? ` ${totalWarnings} possible schema issue${totalWarnings===1?'':'s'} flagged.` : '') + (totalNotes ? ` Check the parser notes on the card${monsters.length===1?'':'s'}.` : ''));
+  if(failed.length) parts.push(`${failed.length} statblock${failed.length===1?'':'s'} couldn't be converted: ${escapeHtml(failed[0].err.message || String(failed[0].err))}`);
+  if(!monsters.length && !failed.length) parts.push("Couldn't find a statblock in that text.");
+  setStatus('parseStatus', parts.join(' '), failed.length || totalWarnings || !monsters.length ? 'err' : 'ok');
+  if(monsters.length){ renderMonsters(); refreshPreview(); }
+  btn.disabled = false;
 });
 
 function setStatus(id, html, cls){
@@ -1660,7 +1719,7 @@ function setStatus(id, html, cls){
    Export
 --------------------------------------------------------- */
 function stripInternal(m){
-  const { _warnings, ...clean } = m;
+  const { _warnings, _notes, ...clean } = m;
   return clean;
 }
 

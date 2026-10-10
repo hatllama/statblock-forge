@@ -174,11 +174,20 @@
     <div class="section-title">Add a Monster</div>
     <div class="parse-box">
       <textarea id="statblockInput" placeholder="Paste one or more statblocks here (from the Monster Manual, D&amp;D Beyond, a homebrew doc, whatever you've got). Separate multiple statblocks with a blank line or a line of dashes ---."></textarea>
-      <div class="hint">The AI reads the statblock and fills in HP, AC, saves, attacks, saves-based abilities, buffs, and recharge/limited-use effects in BattleSim's format. Review the result below before exporting — it's a strong first draft, not gospel.</div>
+      <div class="hint">Reads 2014 and 2024 statblocks, D&amp;D Beyond and 5etools copy-pastes, and Homebrewery/GM Binder markdown, right here in your browser. HP, AC, saves, attacks, multiattacks, breath weapons and other save effects, recharge and limited uses, legendary actions, resistances, regeneration and spellcasting all come across. Anything it had to guess or leave out is listed as a parser note on the card. Review it before exporting: it's a strong first draft, not gospel.</div>
       <div class="parse-row">
         <span class="status" id="parseStatus"></span>
         <button class="primary-btn" id="parseBtn">Forge Statblock</button>
       </div>
+      <details class="api-settings" id="apiSettings">
+        <summary>Convert with Claude instead (optional)</summary>
+        <label class="api-use"><input type="checkbox" id="useClaudeInput"> Use Claude for the next conversions. Slower and costs a few cents per statblock, but it reads unusual homebrew wording better.</label>
+        <div class="api-grid">
+          <label>Anthropic API key<input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
+          <label>Model<input id="apiModelInput" type="text" spellcheck="false" placeholder="claude-sonnet-5-5"></label>
+        </div>
+        <div class="hint">Only needed if you tick the box above. Get a key from console.anthropic.com. It's stored only in this browser and sent only to api.anthropic.com. Each statblock costs a few cents.</div>
+      </details>
     </div>
   </section>
 
@@ -207,6 +216,8 @@
 
 <script src="vendor/battlesim/battlesim-engine.js"></script>
 <script src="data/party.js"></script>
+<script src="js/spell-data.js"></script>
+<script src="js/statblock-parser.js"></script>
 <script src="js/forge.js"></script>
 <script src="js/engine/tactical-engine.js"></script>
 <script src="js/war-table.js"></script>

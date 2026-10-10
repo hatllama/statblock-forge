@@ -1,0 +1,42 @@
+Vael'thar, the Ember Tyrant
+Large fiend (demon), chaotic evil
+
+Long ago, Vael'thar ruled the Cinder Wastes. Its followers still whisper its name. This text is lore and should simply be ignored by the parser, even though it is long and rambles across several sentences. Nothing here is a mechanic.
+
+Armor Class 18 (natural armor)
+Hit Points 225 (18d10 + 126)
+Speed 40 ft., fly 60 ft.
+STR DEX CON INT WIS CHA
+24 (+7) 14 (+2) 24 (+7) 18 (+4) 16 (+3) 22 (+6)
+Saving Throws Str +12, Con +12, Wis +8, Cha +11
+Skills Intimidation +11, Perception +8
+Damage Resistances cold, lightning; bludgeoning, piercing, and slashing from nonmagical attacks
+Damage Immunities fire, poison
+Condition Immunities poisoned
+Senses truesight 120 ft., passive Perception 18
+Languages Abyssal, telepathy 120 ft.
+Challenge 16 (15,000 XP)
+Proficiency Bonus +5
+Fire Aura. At the start of each of Vael'thar's turns, each creature within 10 feet of it takes 10 (3d6) fire damage, and flammable objects in the aura that aren't being worn or carried ignite. A creature that touches Vael'thar or hits it with a melee attack while within 5 feet of it takes 10 (3d6) fire damage.
+Magic Resistance. Vael'thar has advantage on saving throws against spells and other magical effects.
+Legendary Resistance (3/Day). If Vael'thar fails a saving throw, it can choose to succeed instead.
+Death Throes. When Vael'thar dies, it explodes, and each creature within 30 feet of it must make a DC 20 Dexterity saving throw, taking 70 (20d6) fire damage on a failed save, or half as much damage on a successful one.
+Actions
+Multiattack. Vael'thar makes three attacks: one with its longsword, one with its whip, and one with its tail.
+Longsword. Melee Weapon Attack: +12 to hit, reach 10 ft., one target. Hit: 21 (3d8 + 7) slashing damage plus 13 (3d8) lightning damage. If Vael'thar scores a critical hit, it rolls damage dice three times, instead of twice.
+Whip. Melee Weapon Attack: +12 to hit, reach 30 ft., one target. Hit: 15 (2d6 + 7) slashing damage plus 10 (3d6) fire damage, and the target must succeed on a DC 20 Strength saving throw or be pulled up to 25 feet toward Vael'thar.
+Tail. Melee Weapon Attack: +12 to hit, reach 15 ft., one target. Hit: 16 (2d8 + 7) bludgeoning damage. If the target is a creature, it must succeed on a DC 20 Strength saving throw or be knocked prone.
+Cinder Storm (Recharge 5–6). Vael'thar unleashes a storm of embers in a 30-foot-radius sphere centered on a point it can see within 120 feet of it. Each creature in that area must make a DC 20 Dexterity saving throw. On a failed save, a creature takes 45 (13d6) fire damage and is blinded until the end of its next turn. On a successful save, the creature takes half as much damage and isn't blinded.
+Teleport. Vael'thar magically teleports, along with any equipment it is wearing or carrying, up to 120 feet to an unoccupied space it can see.
+Bonus Actions
+Infernal Command (2/Day). Each ally within 60 feet of Vael'thar that can hear it gains 15 temporary hit points.
+Reactions
+Searing Retort. When a creature within 10 feet of Vael'thar hits it with an attack, Vael'thar can force that creature to make a DC 20 Constitution saving throw, taking 14 (4d6) fire damage on a failed save, or half as much on a success.
+Legendary Actions
+Vael'thar can take 3 legendary actions, choosing from the options below. Only one legendary action option can be used at a time and only at the end of another creature's turn. Vael'thar regains spent legendary actions at the start of its turn.
+Tail Lash. Vael'thar makes a tail attack.
+Ember Burst (Costs 2 Actions). Each creature within 15 feet of Vael'thar must make a DC 20 Constitution saving throw, taking 21 (6d6) fire damage on a failed save, or half as much on a success.
+Terrify (Costs 3 Actions). Each creature of Vael'thar's choice within 60 feet that can see it must succeed on a DC 19 Wisdom saving throw or be frightened until the end of its next turn.
+Lair Actions
+On initiative count 20 (losing initiative ties), Vael'thar takes a lair action to cause one of the following effects:
+Magma erupts from a point on the ground Vael'thar can see within 120 feet of it. Each creature within 10 feet of that point must make a DC 15 Dexterity saving throw, taking 21 (6d6) fire damage on a failed save.

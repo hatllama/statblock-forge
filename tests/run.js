@@ -17,6 +17,11 @@ function loadGlobal(file, name) {
 }
 const Tac = loadGlobal('js/engine/tactical-engine.js', 'TacEngine');
 const Avg = loadGlobal('vendor/battlesim/battlesim-engine.js', 'BattleSimEngine');
+const Parser = (() => {
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  for (const f of ['js/spell-data.js', 'js/statblock-parser.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  return ctx.StatblockParser;
+})();
 const fixture = f => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', f), 'utf8'));
 
 let failures = 0, checks = 0;
@@ -85,6 +90,52 @@ for (const file of ['worms-day.json', 'bandit-day.json']) {
     check(badHide === 0, `${badHide} hides in plain sight`);
     if (incapActs) console.log(`  note: ${incapActs} passive/aura effects from incapacitated creatures`);
   }
+}
+
+section('Statblock parser (no AI)');
+{
+  const dir = path.join(__dirname, 'statblocks');
+  const parsed = {};
+  for (const f of fs.readdirSync(dir)) {
+    const r = Parser.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
+    check(r.monsters.length === 1 && !r.skipped.length, `${f}: expected one creature, got ${r.monsters.length} (${r.skipped.join('; ')})`);
+    const m = r.monsters[0];
+    if (!m) continue;
+    parsed[f] = m;
+    check(m.hp > 0 && m.AC > 0 && (m.actions.length || (m.ext.spellbook && m.ext.spellbook.spells.length)), `${f}: missing HP, AC or actions`);
+    check(['str', 'dex', 'con', 'int', 'wis', 'cha'].every(k => typeof m.ext.saves[k] === 'number'), `${f}: missing saves`);
+  }
+  const act = (f, re) => (parsed[f] && parsed[f].actions || []).find(a => re.test(a.name));
+  const expect = (cond, msg) => check(!!cond, msg);
+  expect(parsed['goblin-2014.txt'].AC === 15 && parsed['goblin-2014.txt'].hp === 7 && act('goblin-2014.txt', /Scimitar/).toHit === 4, 'goblin stats');
+  expect(act('goblin-2014.txt', /Hide/) && parsed['goblin-2014.txt'].ext.bonusDisengage, 'goblin Nimble Escape');
+  const breath = act('adult-red-dragon-2014.txt', /Fire Breath/);
+  expect(breath && breath.toHit === 21 && breath.dpr === '18d6' && breath.halfOnSave && breath.freq.cooldownRounds === 3 && breath.ext.area.shape === 'cone', 'red dragon breath');
+  expect(act('adult-red-dragon-2014.txt', /Multiattack/).targets === 3 && act('adult-red-dragon-2014.txt', /Frightful/).actionSlot === -3, 'red dragon multiattack + Frightful Presence');
+  expect(act('adult-red-dragon-2014.txt', /Tail Attack/).actionSlot === 2, 'red dragon legendary tail');
+  expect(act('troll-2014.txt', /Multiattack/).targets === 3 && act('troll-2014.txt', /Regeneration/).amount === '10', 'troll');
+  expect(act('owlbear-2024.txt', /Multiattack/).targets === 2 && act('owlbear-2024.txt', /Multiattack/).toHit === 7, 'owlbear (2024 format)');
+  expect(act('giant-frog-2014.txt', /Swallow/).ext.swallow && act('giant-frog-2014.txt', /^Bite/).ext.grapple.escapeDC === 11, 'giant frog grapple + swallow');
+  expect(parsed['mage-2014.txt'].ext.spellbook.slots.join() === '4,3,3,3,1,0,0,0,0' && parsed['mage-2014.txt'].ext.spellbook.spells.some(s => s.name === 'Fireball'), 'mage spellbook');
+  expect(act('dragon-legendary-2024.txt', /Lightning Breath/).ext.area.shape === 'line', 'blue dragon line breath (2024)');
+  expect(parsed['homebrewery-md.txt'].AC === 14 && act('homebrewery-md.txt', /Multiattack \(2 Longsword\)/), 'Homebrewery markdown');
+  expect(parsed['ogre-ddb.txt'].hp === 59 && act('ogre-ddb.txt', /Greatclub/).toHit === 6, 'D&D Beyond layout');
+  expect(act('bandit-captain-2014.txt', /Parry/).buff.ac === 2, 'bandit captain parry');
+  // every parsed creature can fight in both simulators
+  const party = fixture('worms-day.json').players;
+  let tacErr = 0, avgErr = 0;
+  for (const [f, m] of Object.entries(parsed)) {
+    const mon = JSON.parse(JSON.stringify(m)); mon.id = f; mon.mode = 'custom';
+    (mon.actions || []).forEach((a, i) => { a.id = f + i; });
+    if (mon.ext.spellbook) mon.ext.spellbook.spells.forEach((s, i) => { s.id = f + 's' + i; });
+    const day = { players: party, encounters: [{ monsters: [mon] }] };
+    try { for (let i = 0; i < 5; i++) Tac.runDay(JSON.parse(JSON.stringify(day)), { seed: 7 + i, partyAI: 'tactical' }); } catch (e) { tacErr++; console.log('  War Table error on', f, e.message); }
+    const exp = Object.assign({}, mon, { actions: (mon.actions || []).filter(a => !(a.ext && a.ext.wtOnly)) });
+    try { Avg.runSimulation(party, [{ monsters: [exp] }], 0.5, { escapePolicy: 'never', surpriseRules: '2024', smartActions: true }); } catch (e) { avgErr++; console.log('  Simulate error on', f, e.message); }
+  }
+  check(tacErr === 0, `${tacErr} parsed creatures broke the War Table`);
+  check(avgErr === 0, `${avgErr} parsed creatures broke the Simulate engine`);
+  console.log(`  ${Object.keys(parsed).length} statblocks parsed`);
 }
 
 section('Averages engine (Simulate page)');
