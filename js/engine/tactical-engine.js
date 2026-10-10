@@ -166,22 +166,15 @@ function areaCells(spec, ox, oy, tx, ty, W, H) {
     for (let y = y0; y < y0 + n; y++) for (let x = x0; x < x0 + n; x++) add(x, y);
     return out;
   }
-  // cones and lines: measured along the aimed direction from the edge of the creature's square
-  const vx = tx - ox, vy = ty - oy, vl = Math.hypot(vx, vy) || 1;
-  const ux = vx / vl, uy = vy / vl;
-  const halfW = Math.max(0.5, (spec.width || 5) / 10);
-  for (let y = oy - n - 1; y <= oy + n + 1; y++) for (let x = ox - n - 1; x <= ox + n + 1; x++) {
-    if (x === ox && y === oy) continue;
-    const wx = x - ox, wy = y - oy;
-    const along = wx * ux + wy * uy;                  // distance out along the aim
-    const perp = Math.abs(wx * uy - wy * ux);         // distance off the centre line
-    // length counts squares the way movement does (a diagonal square is 5 ft), so a 15-ft cone reaches 3 squares out
-    if (along <= 0.05 || Math.max(Math.abs(wx), Math.abs(wy)) > n) continue;
-    if (spec.shape === 'cone') {
-      if (perp <= along / 2 + 0.5 || (x === tx && y === ty)) add(x, y);     // as wide as it is far
-    } else if (perp <= halfW + 0.05 || (x === tx && y === ty)) add(x, y);
-  }
+  // cones and lines: one of the 8 grid directions (see inArea)
+  for (let y = oy - n; y <= oy + n; y++) for (let x = ox - n; x <= ox + n; x++) if (inArea(spec, ox, oy, tx, ty, x, y)) add(x, y);
   return out;
+}
+/* the grid direction (8 ways) nearest to the aim, as a step [sx, sy] */
+function dir8(vx, vy) {
+  if (!vx && !vy) return [1, 0];
+  const k = Math.round(Math.atan2(vy, vx) / (Math.PI / 4));
+  return [Math.round(Math.cos(k * Math.PI / 4)), Math.round(Math.sin(k * Math.PI / 4))];
 }
 
 /* whether square (x,y) is inside the area — the same templates as areaCells, for one square */
@@ -208,13 +201,24 @@ function inArea(spec, ox, oy, tx, ty, x, y) {
     }
     return x >= x0 && x < x0 + n && y >= y0 && y < y0 + n;
   }
+  /* Cones and lines run straight along one of the 8 grid directions, so they never come out jagged.
+       line      a row of squares (or a diagonal of squares), its size long and ext.area.width wide
+       cone      d squares out it covers the d-th row to floor(d/2) squares either side of centre (widths 1, 3, 3,
+                 5, 5, 7…: as wide as it is far); on a diagonal, a triangle of about the same number of squares */
   if (x === ox && y === oy) return false;
-  const vx = tx - ox, vy = ty - oy, vl = Math.hypot(vx, vy) || 1;
-  const ux = vx / vl, uy = vy / vl, wx = x - ox, wy = y - oy;
-  const along = wx * ux + wy * uy, perp = Math.abs(wx * uy - wy * ux);
-  if (along <= 0.05 || Math.max(Math.abs(wx), Math.abs(wy)) > n) return false;
-  if (x === tx && y === ty) return true;
-  return spec.shape === 'cone' ? perp <= along / 2 + 0.5 : perp <= Math.max(0.5, (spec.width || 5) / 10) + 0.05;
+  const sd = dir8(tx - ox, ty - oy), sx = sd[0], sy = sd[1], wx = x - ox, wy = y - oy;
+  const w = Math.max(1, Math.round((spec.width || 5) / 5));
+  if (!sx || !sy) {
+    const along = sx ? wx * sx : wy * sy, side = sx ? wy : wx;
+    if (along < 1 || along > n) return false;
+    if (spec.shape === 'cone') return Math.abs(side) <= Math.floor(along / 2);
+    return side >= -Math.floor((w - 1) / 2) && side <= Math.ceil((w - 1) / 2);
+  }
+  const i = wx * sx, j = wy * sy, d = Math.max(i, j);
+  if (i < 0 || j < 0 || d < 1 || d > n) return false;
+  // a diagonal cone: the wedge between the 1:2 and 2:1 slopes, cut square across the diagonal so it ends in a flat edge
+  if (spec.shape === 'cone') return Math.min(i, j) >= Math.ceil(d / 2) && i + j <= Math.round(1.75 * n);
+  return Math.abs(i - j) <= Math.floor(w * 0.7072 + 0.01) && (w > 1 || Math.min(i, j) >= 1);
 }
 
 /* ---------------- unit construction ---------------- */
@@ -532,12 +536,33 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
   }
   return { spec, cells, extra, friends, ax, ay };
 };
+/* Cones and lines: try each of the 8 grid directions that reaches t and keep the one that catches the most
+   enemies and the fewest allies (ties go to the direction closest to t's bearing). If none reaches t from
+   here, a caster gets null (it should line up from another square). */
+Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
+  const n = Math.max(1, Math.round(spec.size / 5)), bear = Math.atan2(t.y - oy, t.x - ox);
+  let best = null, bs = -Infinity;
+  for (let k = 0; k < 8; k++) {
+    const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4));
+    const ax = ox + sx * n, ay = oy + sy * n;
+    if (!inArea(spec, ox, oy, ax, ay, t.x, t.y)) continue;
+    const r = this.areaAt(a, spec, t, ox, oy, ax, ay, pool, caster, true);
+    if (!r) continue;
+    let off = Math.abs(k * Math.PI / 4 - bear) % (2 * Math.PI); if (off > Math.PI) off = 2 * Math.PI - off;
+    const sc = r.extra.length * 10 - r.friends.reduce((q, f) => q + (f.hp <= 0 ? 60 : 16), 0) - off * 0.01;
+    if (sc > bs) { best = r; bs = sc; }
+  }
+  if (best) return this.areaAt(a, spec, t, ox, oy, best.ax, best.ay, pool, caster) || best;
+  if (caster) return null;
+  return { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y };
+};
 /* Who an area aimed at t catches, besides t. With a caster given, it also looks for a better aim that still
    catches t: a sphere's point can sit anywhere within range that keeps t inside, a cone or line can swing
    a little either side. Better = more enemies, fewer allies (a downed ally counts heavily). */
 Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
   const spec = areaSpec(a);
   if (!spec) return null;
+  if (spec.shape === 'cone' || spec.shape === 'line') return this.aimStraight(a, spec, t, ox, oy, pool, caster);
   let best = this.areaAt(a, spec, t, ox, oy, t.x, t.y, pool, caster);
   if (!best) best = { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y };   // walls in the way: just the target
   if (!caster || !spec.explicit || spec.shape === 'emanation' || (spec.shape === 'cube' && !spec.placed)) return best;
@@ -559,20 +584,6 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
       if (Math.max(Math.abs(x - ox), Math.abs(y - oy)) > range || this.isWall(x, y)) continue;
       if (this.T.any && !this.los(ox, oy, x, y)) continue;
       const r = this.areaAt(a, spec, t, ox, oy, x, y, pool, caster, true);
-      const sc = score(r);
-      if (sc > bs) { best = r; bs = sc; }
-    }
-  } else {
-    // swing the cone or line: aim points around the target's bearing
-    const base = Math.atan2(t.y - oy, t.x - ox), L = Math.max(n, 1);
-    for (const d of [-0.5, -0.33, -0.17, 0.17, 0.33, 0.5]) {
-      const ax = Math.round(ox + Math.cos(base + d) * L), ay = Math.round(oy + Math.sin(base + d) * L);
-      if (ax === t.x && ay === t.y) continue;
-      if (!inArea(spec, ox, oy, ax, ay, t.x, t.y)) continue;
-      let ub = -(Math.abs(ax - t.x) + Math.abs(ay - t.y)) * 0.01;
-      for (const o of pool) if (o !== t && o.onBoard && inArea(spec, ox, oy, ax, ay, o.x, o.y)) ub += 10;
-      if (ub <= bs) continue;
-      const r = this.areaAt(a, spec, t, ox, oy, ax, ay, pool, caster, true);
       const sc = score(r);
       if (sc > bs) { best = r; bs = sc; }
     }
