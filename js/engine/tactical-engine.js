@@ -229,7 +229,8 @@ function makeUnit(tpl, team, idx, count, isPC) {
     fly: typeof ex.fly === 'number' && ex.fly > 0 ? ex.fly : 0,
     sneak: ex.sneakAttack && ex.sneakAttack.dice ? ex.sneakAttack : null,   // { dice: '2d6', assassinate: 4 }
     assassinate: !!ex.assassinate,                                          // advantage vs anyone who hasn't acted yet, round 1
-    luckMax: typeof ex.luck === 'number' ? ex.luck : 0,                     // Lucky feat points per long rest
+    luckMax: typeof ex.luck === 'number' ? ex.luck : 0,
+    legResMax: typeof ex.legendaryResistance === 'number' ? ex.legendaryResistance : 0,   // Legendary Resistance uses per day                     // Lucky feat points per long rest
     steadyAim: !!ex.steadyAim,
     speed: Math.max(typeof ex.speed === 'number' ? ex.speed : 30, typeof ex.fly === 'number' ? ex.fly : 0),
     size: ex.size || 'Medium',
@@ -254,6 +255,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
   }
   u.baseFly = u.fly;
   u.uses.set('__luck', u.luckMax);
+  u.uses.set('__legres', u.legResMax);
   resetFightState(u);
   u.actions.forEach(a => initUses(u, a));
   return u;
@@ -706,7 +708,13 @@ Sim.prototype.expected = function (u, a, t) {
     if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
     return dmg * this.hitChance(u, t, a) * (a.targets || 1);
   }
-  if (a.type === 'debuff') return (1 - saveP(avgDice(a.saveDC))) * this.effectValue(a.buff, t, true);
+  if (a.type === 'debuff') {
+    let v = this.effectValue(a.buff, t, true);
+    const ex = a.ext || {};
+    if (typeof ex.speedBonus === 'number' && ex.speedBonus < 0) v += this.meleeReach(t) > 0 ? t.dpr * (ex.speedBonus <= -30 ? 0.5 : 0.25) : 1;
+    if (ex.onHit && ex.onHit.noReactions) v += 1.5;
+    return (1 - saveP(avgDice(a.saveDC))) * v;
+  }
   return 0;
 };
 
@@ -1475,6 +1483,13 @@ Sim.prototype.saveRoll = function (t, dc, src, ab) {
     if (r2 > r) { total += r2 - r; r = r2; }
     this.ev('react', `${t.name} spends a luck point on the save`, { uid: t.uid });
   }
+  // Legendary Resistance: turn a failed save into a success when it matters (a disabling condition or a big hit)
+  if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 &&
+      ((this._saveStakes || 0) >= 1 || (this._saveDmg || 0) >= Math.min(t.hp * 0.3, t.maxHp * 0.15))) {
+    t.uses.set('__legres', t.uses.get('__legres') - 1);
+    this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
+    return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
+  }
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };
 };
 
@@ -1508,13 +1523,16 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
     const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
     const matters = r === 20 || avgHit >= tgt.maxHp * 0.25 || avgHit >= tgt.hp || (a.ext && (a.ext.grapple || a.ext.swallow)) || !!a.riderEffect;
     const helper = this.alliesOf(tgt).find(h => h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.los(h.x, h.y, att.x, att.y) && (h.ai !== 'tactical' || matters) &&
-      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && this.usable(h, x) && this.condOk(h, x)));
+      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
     if (helper) {
-      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && this.usable(helper, y) && this.condOk(helper, y));
+      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
       helper.reaction = false; this.spend(helper, x);
-      const r2 = Math.min(r, this.R.d(20));
+      const xdc = Number(avgDice(x.saveDC));
+      const resisted = xdc < 99 && this.saveRoll(att, xdc, helper, x.ext && x.ext.saveAbility).success;
+      const r2 = resisted ? r : Math.min(r, this.R.d(20));
+      if (resisted) this.ev('react', `${helper.name} uses ${x.name}, but ${att.name} resists`, { uid: helper.uid, target: att.uid });
+      else this.ev('react', `${helper.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name} rerolls (${r} → ${r2})`, { uid: helper.uid, target: att.uid });
       total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
-      this.ev('react', `${helper.name} casts ${x.name}: ${att.name} rerolls (${r} → ${r2})`, { uid: helper.uid, target: att.uid });
     }
   }
   // Lucky: the target spends a luck point to impose disadvantage on a hit that matters
@@ -1722,7 +1740,10 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     const mult = this.multBuff(u, 'damageMultiplier');
     for (const t of targets) {
       if (t.dead) continue;
+      this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1);
+      if (a.riderEffect && a.riderEffect.buff && ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified', 'Restrained'].includes(a.riderEffect.buff.condition)) this._saveStakes = 1;
       const s = this.saveRoll(t, Number(avgDice(a.toHit)), u, a.ext && a.ext.saveAbility);
+      this._saveDmg = 0; this._saveStakes = 0;
       const at = this.mark();
       const roll = (a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? rollDice(a.ext.dprIfHurt, this.R, false) + this.sumBuff(u, 'damage', true) : dmgRoll;
       let dmg = s.success ? (a.halfOnSave ? Math.floor(roll * mult / 2) : 0) : Math.floor(roll * mult);
@@ -2021,7 +2042,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
       this._saveStakes = a.buff && ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified', 'Restrained'].includes(a.buff.condition) ? 1 : 0;
       const s = this.saveRoll(t, dc, u, sab);
       this._saveStakes = 0;
-      if (!s.success) this.addBuff(t, u, a, a.buff, { dc, saveAbility: sab });
+      if (!s.success) { this.addBuff(t, u, a, a.buff, { dc, saveAbility: sab }); if (a.ext && a.ext.onHit) this.onHitEffects(u, t, a, 0); }
       this.ev('save', `${u.name} → ${t.name}: ${a.name}, DC ${dc >= 99 ? '—' : dc}${sab && sab !== 'strdex' && dc < 99 ? ' ' + sab.toUpperCase() : ''} — ${s.autoFail ? 'auto-fails, ' : ''}${s.success ? 'saved' : 'affected' + (a.buff.condition ? ' (' + a.buff.condition + ')' : '')}`,
         { uid: u.uid, target: t.uid, hit: !s.success, dmg: 0, ranged: this.dist(u, t) > 5 });
     }
@@ -2361,9 +2382,13 @@ Sim.prototype.endTurn = function (u) {
 Sim.prototype.legendary = function (after) {
   for (const u of this.units) {
     if (u === after || u.team === after.team || !this.alive(u) || !u.onBoard || u.legendaryLeft <= 0 || this.incap(u)) continue;
+    // actions that cost more than the uses left are hidden for this pick
+    const hidden = u.actions.filter(a => a.actionSlot === 2 && ((a.ext && a.ext.legendaryCost) || 1) > u.legendaryLeft);
+    hidden.forEach(a => { a.actionSlot = -99; });
     const c = this.choose(u, 2, 0);
+    hidden.forEach(a => { a.actionSlot = 2; });
     if (!c) continue;
-    u.legendaryLeft--;
+    u.legendaryLeft -= (c.a.ext && c.a.ext.legendaryCost) || 1;
     this.spend(u, c.a);
     this.ev('legendary', `${u.name} uses a legendary action: ${c.a.name}`, { uid: u.uid });
     this.doAction(u, c.a, c.p);

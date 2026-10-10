@@ -82,6 +82,7 @@ function parseHeader(lines, flat, notes) {
   const h = { ext: {} };
   // name: the first line that isn't the size/type line
   h.name = lines[0] && !META_RE.test(lines[0]) ? lines[0].replace(/[*_#]/g, '').trim() : 'Unnamed creature';
+  if (h.name === h.name.toUpperCase() && /[A-Z]{3}/.test(h.name)) h.name = h.name.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (m, a, b) => a + b.toUpperCase());
   const meta = lines.find(l => META_RE.test(l)) || '';
   const sm = meta.match(/^(Tiny|Small|Medium|Large|Huge|Gargantuan)/i);
   h.ext.size = sm ? cap(sm[1].toLowerCase()) : 'Medium';
@@ -282,6 +283,9 @@ function areaTargets(a) {
   return 2;
 }
 function conditionIn(txt) {
+  if (/disadvantage on attack rolls|make the attack with disadvantage|makes? (?:the|its|that) attack (?:roll )?with disadvantage|attack rolls? (?:\w+ ){0,3}(?:has|have|are made with) disadvantage/i.test(txt)) return 'Attacks with Disadvantage';
+  if (/(?:attack rolls )?against (?:it|them|the target) (?:have|has|are made with) advantage/i.test(txt)) return 'Is attacked with Advantage';
+  if (/\bcompelled\b|\bmust (?:use its (?:action|turn)|spend its action)/i.test(txt)) return 'Incapacitated';
   for (const [w, c] of CONDITION_WORDS) if (new RegExp('\\b(?:be|is|become|becomes|are|has the|have the|knocked)\\s+(?:\\w+\\s+){0,2}' + w, 'i').test(txt) || new RegExp('\\b' + w + '\\b condition', 'i').test(txt)) return c;
   return null;
 }
@@ -303,6 +307,15 @@ function rangeOf(txt, fallback) {
   m = txt.match(/within\s*(\d+)\s*(?:feet|ft)/i);
   if (m) return { ranged: +m[1] };
   return fallback ? { ranged: fallback } : {};
+}
+
+function movementEffect(txt) {
+  const ext = {};
+  if (/speed (?:is |becomes )?(?:reduced to|becomes|is) 0|speed of 0|can't move|cannot move|spend(?:s)? (?:all )?its movement|uses? (?:all )?its movement/i.test(txt)) ext.speedBonus = -60;
+  else if (/speed (?:is )?halved|half (?:its|their) speed|speed (?:is )?reduced by half/i.test(txt)) ext.speedBonus = -15;
+  else { const m = txt.match(/speed (?:is )?reduced by (\d+) (?:feet|ft)/i); if (m) ext.speedBonus = -(+m[1]); }
+  if (/can't take reactions|unable to take reactions|cannot take reactions|no reactions/i.test(txt)) ext.onHit = { noReactions: true };
+  return Object.keys(ext).length ? ext : null;
 }
 
 /* one attack roll: Melee Weapon Attack: +4 to hit / Melee Attack Roll: +4 */
@@ -362,16 +375,26 @@ function readSaveEffect(entry, nm, notes, h) {
   const upTo = t.match(/(?:up to|choose up to)\s*(\w+)\s*(?:creatures|targets)/i);
   if (upTo && !isNaN(num(upTo[1]))) targets = num(upTo[1]);
   if (/each creature of [^.]{0,30}choice/i.test(t) && !area) targets = 4;
-  const a = { name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: Math.max(1, targets), target: 'enemy with most HP', ext: { range: area && ['cone', 'line', 'cube', 'emanation'].includes(area.shape) ? area.size : (rg.ranged || rg.melee || 60), saveAbility: sv.ab } };
+  const a = { name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: Math.max(1, targets), target: 'enemy with most HP', ext: { range: area && (['cone', 'line', 'emanation'].includes(area.shape) || (area.shape === 'cube' && !/can see|a point|centered|centred|within \d+/i.test(t))) ? area.size : (area ? (rangeOf(t).ranged || 120) : (rg.ranged || rg.melee || 60)), saveAbility: sv.ab } };
   if (area) a.ext.area = { shape: area.shape, size: area.size };
+  if (/difficult terrain/i.test(t) && area) a.ext.zone = { difficult: true };
+  const mv = movementEffect(t);
   if (parts.length) {
     Object.assign(a, { type: 'atk', dpr: cleanDice(parts.map(p => p.dice).join(' + ')), toHit: sv.dc, useSaves: true });
+    if (mv) { if (mv.onHit) a.ext.onHit = Object.assign({}, a.ext.onHit, mv.onHit); if (mv.speedBonus) a.ext.onHit = Object.assign({}, a.ext.onHit, { slow: -mv.speedBonus }); }
     if (/half as much|Success\s*:\s*Half damage|half damage on a success/i.test(t)) a.halfOnSave = true;
     if (cond) a.riderEffect = { dc: 99, buff: { duration: durationIn(t, cond), condition: cond } };
     a._avg = parts.reduce((s, p) => s + p.avg, 0) * targets;
   } else if (cond) {
     Object.assign(a, { type: 'debuff', saveDC: sv.dc, buff: { duration: durationIn(t, cond), condition: cond } });
+    if (mv) Object.assign(a.ext, mv);
     a._avg = 4 * targets;
+  } else if (mv) {
+    // only movement / reactions: the War Table models it, BattleSim has nothing to apply
+    Object.assign(a, { type: 'debuff', saveDC: sv.dc, buff: { duration: durationIn(t, null) } });
+    Object.assign(a.ext, mv, { wtOnly: true });
+    a._avg = 2 * targets;
+    notes.push(`${nm.name}: ${mv.speedBonus ? (mv.speedBonus <= -60 ? 'stops movement' : 'slows') : ''}${mv.speedBonus && mv.onHit ? ' and ' : ''}${mv.onHit ? 'blocks reactions' : ''} on the War Table only (BattleSim has no movement).`);
   } else {
     notes.push(`${nm.name}: a save with no damage or condition the simulator can use; left out.`);
     return null;
@@ -526,7 +549,14 @@ function readTrait(entry, h, notes, out) {
       return true;
     }
   }
-  if (/legendary resistance/i.test(low)) { notes.push(`${nm.name}: not modelled (the simulators don't track spending saves).`); return true; }
+  if (/legendary resistance/i.test(low)) {
+    const m = (entry.raw + ' ' + t).match(/(\d+)\s*\/\s*Day/i);
+    h.ext.legendaryResistance = m ? +m[1] : 3;
+    notes.push(`${nm.name}: the War Table turns the first ${h.ext.legendaryResistance} failed saves that matter into successes; BattleSim has no equivalent.`);
+    return true;
+  }
+  // pure flavour: no numbers, dice, saves or rules words
+  if (!/\d|\bDC\b|advantage|disadvantage|resist|immun|saving throw|hit points|damage|attack|condition|speed|reaction|bonus action|regain/i.test(t)) { notes.push(`"${nm.name}" is flavour text; nothing to model.`); return true; }
   return false;
 }
 function hideAction(h, name) {
@@ -643,10 +673,11 @@ function parseOne(block) {
     }
   }
   // action sections
-  const slotOf = { actions: 0, 'bonus actions': 1, reactions: 4, 'legendary actions': 2, 'mythic actions': 2 };
+  const slotOf = { actions: 0, 'bonus actions': 1, reactions: 4, 'legendary actions': 2, 'mythic actions': 2, 'lair actions': 3 };
+  const noRepeatLair = /can't use the same (?:lair )?(?:action|effect) two rounds in a row|can't (?:use|take) the same one two rounds/i.test(body.intro || '') || /can't use the same lair action two rounds in a row/i.test(flat);
   const parsedBySection = {};
   const multis = [];
-  for (const sec of ['actions', 'bonus actions', 'reactions', 'legendary actions', 'mythic actions']) {
+  for (const sec of ['actions', 'bonus actions', 'reactions', 'legendary actions', 'mythic actions', 'lair actions']) {
     parsedBySection[sec] = [];
     for (const e of body[sec]) {
       e._size = h.ext.size;
@@ -672,6 +703,11 @@ function parseOne(block) {
         continue;
       }
       if (/nimble escape|cunning action/i.test(low) || (/\bHide action\b/i.test(e.text) && sec === 'bonus actions')) { h.ext.bonusDisengage = true; parsedBySection[sec].push(hideAction(h, 'Hide (' + nm.name + ')')); continue; }
+      if (sec === 'reactions' && /attack roll against (?:it|him|her|them)|is targeted by an attack|would hit (?:it|him|her)/i.test(e.text) && /disadvantage/i.test(e.text) && !/to its AC/i.test(e.text)) {
+        const sv = saveInfo(e.text);
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'debuff', saveDC: sv ? sv.dc : 99, target: 'enemy with highest DPR', buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: rangeOf(e.text, 60).ranged || 60, ...(sv ? { saveAbility: sv.ab } : {}), ...(/against (?:it|him|her|them)self|against (?:it|him|her)\b/i.test(e.text) && !/ally|another creature/i.test(e.text) ? { selfOnly: true } : {}) } });
+        continue;
+      }
       if (sec === 'reactions' && /(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to its AC/i.test(e.text)) {
         const ac = +e.text.match(/(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to its AC/i)[1];
         parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', ac }, ext: { range: 0 } });
@@ -686,11 +722,14 @@ function parseOne(block) {
       }
       if (!a) {
         if (/swallow/i.test(low)) a = readSwallow(e, nm, parsedBySection.actions, notes);
+        else if (/\barrive|\bsummons?\b|\bappear(?:s)? in|\bcalls? (?:forth|in)|reinforcements/i.test(e.text)) { notes.push(`"${nm.name}" brings in other creatures — add them to the encounter yourself.`); continue; }
+        else if (/\bmoves? up to|\bteleports?\b|\bfly up to|without provoking/i.test(e.text)) { notes.push(`"${nm.name}" is movement only; the War Table already positions it.`); continue; }
         else { notes.push(`${cap(sec.replace(/s$/, ''))} "${nm.name}" has nothing the simulator can model; left out.`); continue; }
         if (!a) continue;
       }
       a.actionSlot = slotOf[sec];
       if (a.freq === 'at will' && nm.freq !== 'at will') a.freq = nm.freq;
+      if (sec === 'lair actions' && noRepeatLair && a.freq === 'at will') { a.freq = { reset: 'recharge', cooldownRounds: 2 }; a.condition = 'is available'; }
       a._cost = nm.cost;
       if (/swallow/i.test(low) && a.type === 'atk' && !a.ext.swallow) { const s = readSwallow(e, nm, parsedBySection.actions, notes); if (s) a = Object.assign(s, { actionSlot: a.actionSlot }); }
       parsedBySection[sec].push(a);
@@ -722,10 +761,13 @@ function parseOne(block) {
   parsedBySection.actions = slot0;
 
   // assemble every slot
-  const all = actions.concat(parsedBySection.actions, parsedBySection['bonus actions'], parsedBySection.reactions, parsedBySection['legendary actions'], parsedBySection['mythic actions'], spellOut);
+  const all = actions.concat(parsedBySection.actions, parsedBySection['bonus actions'], parsedBySection.reactions, parsedBySection['legendary actions'], parsedBySection['mythic actions'], parsedBySection['lair actions'], spellOut);
   all.forEach(a => { if (!a.condition || a.condition === 'default') a.condition = a._pre ? 'default' : conditionFor(a, a.freq); });
   // legendary actions cost 2+: once in a while
-  all.filter(a => a.actionSlot === 2 && a._cost > 1 && a.freq === 'at will').forEach(a => { a.freq = { reset: 'recharge', cooldownRounds: Math.min(6, 1 + a._cost) }; a.condition = 'is available'; });
+  all.filter(a => a.actionSlot === 2 && a._cost > 1).forEach(a => {
+    a.ext.legendaryCost = a._cost;
+    if (a.freq === 'at will') { a.freq = { reset: 'recharge', cooldownRounds: Math.min(6, 1 + a._cost) }; a.condition = 'is available'; }
+  });
 
   if (h.damageMult !== 1) {
     all.push({ name: h.damageMult < 1 ? 'Damage resistances' : 'Damage vulnerabilities', actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', damageTakenMultiplier: h.damageMult }, ext: { range: 0 } });
@@ -762,11 +804,14 @@ function parseOne(block) {
     list = list.map((a, i) => ({ a, i })).sort((p, q) => rank(p.a) - rank(q.a) || p.i - q.i).map(x => x.a);
     out.push(...list);
   }
+  const lam = flat.match(/can take (\d+) legendary actions|Legendary Action Uses:\s*(\d+)/i);
+  if (lam) h.ext.legendaryActions = +(lam[1] || lam[2]);
   const mon = { name: h.name, type: h.type, cr: h.cr, src: 'Custom', count: 1, hp: h.hp, AC: h.AC, saveBonus: h.saveBonus, ext: h.ext, actions: out.map(stripPriv) };
   if (spellbook) mon.ext.spellbook = spellbook;
   if (!mon.actions.length && !spellbook) notes.push('No usable actions found — add them in the editor.');
-  if (body.intro && /legendary actions/i.test(body.intro)) notes.push('Legendary actions: the simulators use one per round.');
-  if (body['lair actions'].length || /lair action/i.test(flat)) notes.push('Lair actions aren\'t converted.');
+  if (body.intro && /legendary actions?/i.test(body.intro)) notes.push(`Legendary actions: the War Table spends ${h.ext.legendaryActions || 3} per round after other creatures' turns; BattleSim uses one per round.`);
+  if (parsedBySection['lair actions'].length) notes.push('Lair actions run on initiative 20' + (noRepeatLair ? ', never the same one twice in a row' : '') + '.');
+  else if (/lair action/i.test(flat)) notes.push('Lair actions found but none could be converted.');
   if (parsedBySection.actions.some(a => a._noteExtra)) notes.push('Extra save-for-damage on hits is folded into the hit damage at its usual success rate.');
   mon._notes = notes;
   return mon;

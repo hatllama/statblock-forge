@@ -6,7 +6,7 @@
 <title>Statblock Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20261010b">
+<link rel="stylesheet" href="css/styles.css?v=20261010d">
 
 </head>
 <body>
@@ -15,61 +15,18 @@
   <header>
     <div class="eyebrow" id="siteEyebrow">D&amp;D encounter workshop</div>
     <h1 id="siteTitle">Statblock <span>Forge</span></h1>
-    <p class="subhead" id="siteSub">Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then simulate them right here or export a day for the BattleSim site.</p>
+    <p class="subhead" id="siteSub">Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then play them out on the War Table or export a day for the BattleSim site.</p>
     <div class="divider"></div>
   </header>
 
   <nav class="view-nav">
     <button class="view-btn active" data-view="forge">⚒ Forge</button>
-    <button class="view-btn" data-view="sim">⚖ Simulate</button>
     <button class="view-btn" data-view="war">♟ War Table</button>
   </nav>
   <div class="save-bar"><span id="saveStatus">Loading saved work…</span><button class="link-btn" id="resetSavedBtn">Reset to defaults</button></div>
 
   <div class="party-label">Your Party</div>
   <div class="party-bar" id="partyBar"></div>
-
-  <div id="viewSim" style="display:none;">
-    <section>
-      <div class="section-title">Simulation</div>
-      <div class="sim-controls">
-        <div class="luck-box">
-          <label for="luckSlider">Party luck <b id="luckValue">50%</b></label>
-          <input type="range" id="luckSlider" min="0" max="1" step="0.05" value="0.5">
-          <div class="luck-scale"><span>Dice hate them</span><span>Average</span><span>Dice love them</span></div>
-          <div class="sim-opt">
-            <label for="escapePolicy">When grappled</label>
-            <select id="escapePolicy">
-              <option value="smart">Escape only if the grappler can swallow (or similar follow-up)</option>
-              <option value="always">Always spend the Action escaping</option>
-              <option value="never">Never escape, keep attacking (restrained)</option>
-            </select>
-          </div>
-          <div class="sim-opt">
-            <label for="surpriseRules">Surprise rules</label>
-            <select id="surpriseRules">
-              <option value="2024">2024: surprised creatures still act, but after the ambushers</option>
-              <option value="2014">2014: surprised creatures lose round 1 (as on the BattleSim site)</option>
-            </select>
-          </div>
-          <div class="sim-opt">
-            <label for="smartActions">Action choice</label>
-            <select id="smartActions">
-              <option value="on">Smart: skip wasted casts, and spellcasters pick from their spell list and slots each round</option>
-              <option value="off">Exact: always the first matching action, as on the BattleSim site (spell lists use their fixed export)</option>
-            </select>
-          </div>
-        </div>
-        <div class="sim-load">
-          <label class="ghost-btn file-btn">Load Day JSON<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
-          <div class="hint">Loads any BattleSim save file, replacing the party and encounters in the Forge too.</div>
-        </div>
-      </div>
-      <div class="status" id="simStatus"></div>
-      <div id="simSummary"></div>
-      <div id="simResults"></div>
-    </section>
-  </div>
 
   <div id="viewWar" style="display:none;">
 <div class="toolbar">
@@ -203,6 +160,11 @@
         <button class="ghost-btn" id="copyBtn">Copy to Clipboard</button>
       </div>
       <div class="status" id="schemaStatus" style="margin-bottom:10px;"></div>
+      <div class="export-actions">
+        <label class="ghost-btn file-btn">Load Day JSON<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
+        <span class="hint">Loads a BattleSim or Forge save file, replacing the party and encounters.</span>
+      </div>
+      <div class="status" id="loadStatus" style="margin-bottom:10px;"></div>
       <div class="preview-toggle" id="previewToggle">▸ show JSON preview</div>
       <pre id="jsonPreview" style="display:none;"></pre>
     </div>
@@ -210,17 +172,15 @@
   </div>
 
   <footer>Work autosaves; export a JSON now and then as a portable backup.<br>
-  War Table engine: original, written for this site.<br>
-  Averages engine (Simulate): <a href="https://github.com/Trekiros/battleSim" target="_blank" rel="noopener">BattleSim</a> by Trekiros, used under <a href="http://creativecommons.org/licenses/by-nc-sa/4.0/" target="_blank" rel="noopener">CC BY-NC-SA 4.0</a>, extended here with grapples, swallowing, size limits, ambush and blindsight (modifications also under CC BY-NC-SA 4.0). Surprise defaults to 2024 rules and action choice to "smart"; with "2014" and "exact" selected, creatures that don't use these extensions simulate exactly as on the BattleSim site.</footer>
+  Exports use the save-file format of <a href="https://github.com/Trekiros/battleSim" target="_blank" rel="noopener">BattleSim</a> by Trekiros, so a day can be loaded there too.<br>
+  Statblock reader and War Table engine: original, written for this site.</footer>
 </div>
 
-<script>/* older Safari/iOS: no structuredClone */ if (typeof structuredClone !== 'function') window.structuredClone = v => JSON.parse(JSON.stringify(v));</script>
-<script src="vendor/battlesim/battlesim-engine.js?v=20261010b"></script>
-<script src="data/party.js?v=20261010b"></script>
-<script src="js/spell-data.js?v=20261010b"></script>
-<script src="js/statblock-parser.js?v=20261010b"></script>
-<script src="js/forge.js?v=20261010b"></script>
-<script src="js/engine/tactical-engine.js?v=20261010b"></script>
-<script src="js/war-table.js?v=20261010b"></script>
+<script src="data/party.js?v=20261010d"></script>
+<script src="js/spell-data.js?v=20261010d"></script>
+<script src="js/statblock-parser.js?v=20261010d"></script>
+<script src="js/forge.js?v=20261010d"></script>
+<script src="js/engine/tactical-engine.js?v=20261010d"></script>
+<script src="js/war-table.js?v=20261010d"></script>
 </body>
 </html>

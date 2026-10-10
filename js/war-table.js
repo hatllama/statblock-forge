@@ -55,7 +55,7 @@ function renderTabs(){
   el.innerHTML = list.map((x,k)=>{
     const names = [...new Set(x.e.monsters.map(m=>`${m.name}${(m.count||1)>1?' ×'+m.count:''}`))].join(', ');
     return `<button class="tab ${x.i===S.enc?'active':''}" data-enc="${x.i}">Encounter ${k+1}<small>${esc(names)}</small></button>`;
-  }).join('') || '<div class="empty">No monsters yet. Forge an encounter on the Forge page, or load a day file on the Simulate page, and it will appear here.</div>';
+  }).join('') || '<div class="empty">No monsters yet. Forge an encounter on the Forge page, or load a day file there, and it will appear here.</div>';
   el.querySelectorAll('[data-enc]').forEach(b=>b.onclick = ()=>{ stopPlay(); S.enc = +b.dataset.enc; S.replay = null; setMode('setup'); renderAll(); scheduleSave(); });
 }
 

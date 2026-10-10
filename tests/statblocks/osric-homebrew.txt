@@ -1,0 +1,85 @@
+OSRIC ALDERMARCH
+Medium humanoid (human), any alignment
+
+Armor Class 16 (glass-laced coat)
+Hit Points 157 (21d8 + 63)
+Speed 30 ft.
+
+STR 10 (+0)  DEX 14 (+2)  CON 16 (+3)  INT 18 (+4)  WIS 16 (+3)  CHA 20 (+5)
+
+Saving Throws Con +8, Int +9, Wis +8, Cha +10
+Skills Deception +10, Insight +8, Perception +8, Persuasion +10
+Senses passive Perception 18
+Languages Common, Infernal
+Challenge 15 (13,000 XP)    Proficiency Bonus +5
+
+Legendary Resistance (3/Day). If Osric fails a saving throw, he can
+choose to succeed instead.
+
+Burning Through. Everything below comes from Ossendrel's loan. When
+Osric uses it, the lustre of his palms burns straight through his
+gloves — and every use sinks him a little deeper into his debt.
+
+ACTIONS
+Multiattack. Osric makes two Gilded Shard attacks.
+
+Gilded Shard. Ranged Attack: +10 to hit, range 60/240 ft., one target.
+Hit: 14 (2d8 + 5) piercing damage plus 7 (2d6) fire damage. His wealth
+tears out of his palm as a burning, gold-veined shard.
+
+Ruinous Fortune (Recharge 5-6). A fortune in burning, gold-veined
+shards pours down on a 20-foot-radius sphere centred on a point Osric
+can see within 120 feet. Each creature in the area must make a DC 19
+Dexterity saving throw, taking 36 (8d8) slashing damage on a failed
+save, or half as much on a successful one. The area is left littered
+with broken wealth and becomes difficult terrain until it's swept clear.
+
+BONUS ACTIONS
+Covetous Glint. One creature Osric can see within 30 feet must succeed
+on a DC 16 Charisma saving throw or spend its movement on its next turn
+moving toward the nearest valuable object or creature carrying one, and
+trying to take it.
+
+REACTIONS
+Bought Off. When a creature Osric can see makes an attack roll against
+him, he offers it everything it's ever wanted. It must succeed on a
+DC 17 Wisdom saving throw or make the attack with disadvantage.
+
+LEGENDARY ACTIONS
+Osric can take 3 legendary actions, choosing from the options below.
+Only one legendary action can be used at a time, and only at the end of
+another creature's turn. He regains spent legendary actions at the start
+of his turn.
+
+Shard. Osric makes one Gilded Shard attack.
+
+Withdraw. Osric moves up to 30 feet without provoking opportunity
+attacks.
+
+Gilded Weight (Costs 2 Actions). Gold-veined crust creeps over up to two
+creatures Osric can see within 60 feet. Each must succeed on a DC 19
+Strength saving throw or, until the end of its next turn, have its
+speed halved and be unable to take reactions.
+
+LAIR ACTIONS
+Anywhere in Aldermarch Hall, on initiative count 20 (losing initiative
+ties), Osric can take one lair action. He can't use the same lair action
+two rounds in a row.
+
+Shattering Display. The house's display bursts — a glass sculpture, a
+chandelier, a case of fine pieces — over a 20-foot square Osric can see.
+Each creature there must make a DC 15 Dexterity saving throw, taking 16
+(3d10) slashing damage on a failed save, or half as much on a successful
+one. The square becomes difficult terrain.
+
+The Wards Wake. One creature Osric can see must succeed on a DC 18
+Charisma saving throw or be compelled to steal for 1 minute, as though
+it had crossed one of the Hall's wards.
+
+Everything Has a Price. The wealth on every wall calls out. Each
+creature of Osric's choice in the room must succeed on a DC 15 Wisdom
+saving throw or have disadvantage on attack rolls against him until
+initiative count 20 on the next round.
+
+The House Answers. 1d4 household guards (see The Lastlecross Watch)
+arrive at the entrances of the room at initiative count 0.

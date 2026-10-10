@@ -1,5 +1,5 @@
-/* Engine checks. No dependencies: `node tests/run.js` (or `npm test`).
-   Loads the two engines the same way the browser does (plain scripts that set globals),
+/* Engine and parser checks. No dependencies: `node tests/run.js` (or `npm test`).
+   Loads the War Table engine and the statblock parser the same way the browser does (plain scripts that set globals),
    plays a few hundred fights, and fails loudly if a rule is broken. */
 'use strict';
 const fs = require('fs');
@@ -8,7 +8,7 @@ const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
 function loadGlobal(file, name) {
-  const ctx = { console, crypto: require('crypto').webcrypto, structuredClone, globalThis: null };
+  const ctx = { console, globalThis: null };
   ctx.globalThis = ctx;
   vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), ctx, { filename: file });
@@ -16,7 +16,6 @@ function loadGlobal(file, name) {
   return ctx[name];
 }
 const Tac = loadGlobal('js/engine/tactical-engine.js', 'TacEngine');
-const Avg = loadGlobal('vendor/battlesim/battlesim-engine.js', 'BattleSimEngine');
 const Parser = (() => {
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
   for (const f of ['js/spell-data.js', 'js/statblock-parser.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
@@ -121,31 +120,23 @@ section('Statblock parser (no AI)');
   expect(parsed['homebrewery-md.txt'].AC === 14 && act('homebrewery-md.txt', /Multiattack \(2 Longsword\)/), 'Homebrewery markdown');
   expect(parsed['ogre-ddb.txt'].hp === 59 && act('ogre-ddb.txt', /Greatclub/).toHit === 6, 'D&D Beyond layout');
   expect(act('bandit-captain-2014.txt', /Parry/).buff.ac === 2, 'bandit captain parry');
+  const os = parsed['osric-homebrew.txt'];
+  expect(os && os.name === 'Osric Aldermarch' && os.ext.legendaryResistance === 3 && os.ext.legendaryActions === 3, 'Osric: name, legendary resistance and actions');
+  expect(act('osric-homebrew.txt', /Bought Off/).type === 'debuff' && act('osric-homebrew.txt', /Bought Off/).ext.selfOnly, 'Osric: Bought Off reaction');
+  expect(act('osric-homebrew.txt', /Gilded Weight/).ext.legendaryCost === 2 && act('osric-homebrew.txt', /Gilded Weight/).ext.onHit.noReactions, 'Osric: Gilded Weight');
+  expect(os.actions.filter(a => a.actionSlot === 3).length === 3 && act('osric-homebrew.txt', /Ruinous/).ext.zone.difficult, 'Osric: lair actions and difficult terrain');
   // every parsed creature can fight in both simulators
   const party = fixture('worms-day.json').players;
-  let tacErr = 0, avgErr = 0;
+  let tacErr = 0;
   for (const [f, m] of Object.entries(parsed)) {
     const mon = JSON.parse(JSON.stringify(m)); mon.id = f; mon.mode = 'custom';
     (mon.actions || []).forEach((a, i) => { a.id = f + i; });
     if (mon.ext.spellbook) mon.ext.spellbook.spells.forEach((s, i) => { s.id = f + 's' + i; });
     const day = { players: party, encounters: [{ monsters: [mon] }] };
     try { for (let i = 0; i < 5; i++) Tac.runDay(JSON.parse(JSON.stringify(day)), { seed: 7 + i, partyAI: 'tactical' }); } catch (e) { tacErr++; console.log('  War Table error on', f, e.message); }
-    const exp = Object.assign({}, mon, { actions: (mon.actions || []).filter(a => !(a.ext && a.ext.wtOnly)) });
-    try { Avg.runSimulation(party, [{ monsters: [exp] }], 0.5, { escapePolicy: 'never', surpriseRules: '2024', smartActions: true }); } catch (e) { avgErr++; console.log('  Simulate error on', f, e.message); }
   }
   check(tacErr === 0, `${tacErr} parsed creatures broke the War Table`);
-  check(avgErr === 0, `${avgErr} parsed creatures broke the Simulate engine`);
   console.log(`  ${Object.keys(parsed).length} statblocks parsed`);
-}
-
-section('Averages engine (Simulate page)');
-{
-  const day = fixture('worms-day.json');
-  let res = null, err = null;
-  try { res = Avg.runSimulation(day.players, day.encounters, 0.5, { escapePolicy: 'never', surpriseRules: '2024', smartActions: true }); } catch (e) { err = e; }
-  check(!err, 'runSimulation threw: ' + (err && err.message));
-  check(Array.isArray(res) && res.length > 0, 'runSimulation returned results');
-  if (res) console.log(`  ${res.length} result set(s)`);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

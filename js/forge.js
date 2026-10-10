@@ -471,6 +471,10 @@ function describeAction(a){
   if(ex.speedBonus) bits.push(`${ex.speedBonus > 0 ? '+' : ''}${ex.speedBonus} ft speed`);
   if(ex.mirror) bits.push(`${ex.mirror} duplicates`);
   if(ex.onHit && ex.onHit.push) bits.push(`pushes ${ex.onHit.push} ft`);
+  if(ex.legendaryCost > 1) bits.push(`costs ${ex.legendaryCost} legendary actions`);
+  if(ex.selfOnly) bits.push('self only');
+  if(a.type === 'debuff' && ex.speedBonus < 0) bits.push(ex.speedBonus <= -60 ? 'stops movement' : `speed ${ex.speedBonus} ft`);
+  if(a.type === 'debuff' && ex.onHit && ex.onHit.noReactions) bits.push('no reactions');
   if(ex.onHit && ex.onHit.drain) bits.push('drains');
   if(ex.zone && ex.zone.difficult) bits.push('difficult terrain');
   if(ex.zone && ex.zone.fog) bits.push('blocks sight');
@@ -614,7 +618,7 @@ const SIZE_OPTS = ['Tiny','Small','Medium','Large','Huge','Gargantuan'].map(z=>[
 function mechanicsPanel(mi, a){
   const ex = a.ext || {};
   const g = ex.grapple, sw = ex.swallow;
-  let html = `<div class="ae-sub"><div class="ae-sub-title">Special mechanics <span class="ext-note">simulated here; the BattleSim site ignores these</span></div>`;
+  let html = `<div class="ae-sub"><div class="ae-sub-title">Special mechanics <span class="ext-note">used by the War Table; the BattleSim export leaves them out</span></div>`;
   if(a.type === 'atk'){
     html += fCheck('Grapples the target on a hit', mi, a.id, '__grappleOn', !!g);
     if(g) html += `<div class="ae-grid">
@@ -690,7 +694,11 @@ function mechanicsPanel(mi, a){
     ${fInput('Turns on a self effect (name)', mi, a.id, '__grantsBuff', 'str', (ex.grantsBuff && ex.grantsBuff.id) || '', 'e.g. wrath-of-the-sea: manifesting it lets other actions that need it be used')}
     ${fInput('Only while this effect is on', mi, a.id, 'ext.requiresBuff', 'optstr', ex.requiresBuff, 'The same name as above (War Table)')}
   </div>`;
-  html += fCheck('War Table only (left out of the BattleSim export and the Simulate page)', mi, a.id, '__x:wtOnly', !!ex.wtOnly);
+  if(a.actionSlot === 2) html += `<div class="ae-grid">${fInput('Legendary action cost', mi, a.id, 'ext.legendaryCost', 'optnum', ex.legendaryCost, 'Costs 2 Actions → 2 (War Table)')}</div>`;
+  if(a.actionSlot === 4 && a.type === 'debuff') html += fCheck('Only protects itself (not its allies)', mi, a.id, '__x:selfOnly', !!ex.selfOnly);
+  if(a.type === 'debuff') html += `<div class="ae-grid">${fInput('Target speed change (ft)', mi, a.id, 'ext.speedBonus', 'optnum', ex.speedBonus, 'e.g. -15 for halved speed, -60 to stop movement (War Table)')}</div>
+    ${fCheck('Target can\'t take reactions while affected', mi, a.id, '__x:onHit.noReactions', !!(ex.onHit && ex.onHit.noReactions))}`;
+  html += fCheck('War Table only (left out of the BattleSim export)', mi, a.id, '__x:wtOnly', !!ex.wtOnly);
   html += fCheck('BattleSim only (the War Table simulates this natively, e.g. an Assassinate stand-in)', mi, a.id, '__x:wtSkip', !!ex.wtSkip);
   html += `<div class="ae-grid">${fInput('Range / reach (ft)', mi, a.id, 'ext.range', 'optnum', ex.range, 'For the War Table. Blank = guessed from the name')}
     ${(a.type === 'atk' || a.type === 'debuff') ? fInput('Only works on', mi, a.id, '__targetTypes', 'str', (ex.targetTypes || []).join(', '), 'Creature types, e.g. humanoid (Hold Person). Blank = anyone. PCs count as humanoid.') : ''}</div>`;
@@ -774,7 +782,7 @@ function actionEditor(mi, m){
 /* ---------------------------------------------------------
    Spellcasting: spell slots + a spell list (ext.spellbook)
    The War Table picks a spell every turn from the whole list, by what the situation needs and what
-   the slot is worth. BattleSim (Simulate page, exported JSON) only understands fixed actions, so on
+   the slot is worth. BattleSim (the exported JSON) only understands fixed actions, so on
    export the list is compiled into ordinary limited-use actions (ext.fromSpellbook): the slots are
    shared out between the levelled spells and each gets a sensible "use when" condition.
 --------------------------------------------------------- */
@@ -878,7 +886,7 @@ function spellbookPanel(key, c){
       <div class="ae-f"><label>Concentration save bonus</label><input type="number" step="0.5" data-sb-con data-owner="${key}" value="${typeof sb.conSave === 'number' ? sb.conSave : ''}" placeholder="= save bonus"><div class="help">Con save + anything that adds to it (Bladesong, War Caster…)</div></div>
     </div>
     ${actionEditor(key + '~sb', { actions: sb.spells || [] })}
-    <div class="help" style="margin-top:6px;">${total} slot${total === 1 ? '' : 's'}, ${(sb.spells || []).length} spell${(sb.spells || []).length === 1 ? '' : 's'}. The War Table and Simulate (Smart) use the list and slots directly. For the BattleSim site, the exported JSON and Simulate (Exact) it becomes ${comp.length} fixed action${comp.length === 1 ? '' : 's'}: ${escapeHtml(comp.map(a=>(a.name || a.templateOptions?.templateName) + (a.freq && a.freq.uses ? ' ×' + a.freq.uses : a.freq === 'at will' ? ' (at will)' : '')).join(', ') || 'none')}.</div>
+    <div class="help" style="margin-top:6px;">${total} slot${total === 1 ? '' : 's'}, ${(sb.spells || []).length} spell${(sb.spells || []).length === 1 ? '' : 's'}. The War Table uses the list and slots directly. In the exported JSON for the BattleSim site it becomes ${comp.length} fixed action${comp.length === 1 ? '' : 's'}: ${escapeHtml(comp.map(a=>(a.name || a.templateOptions?.templateName) + (a.freq && a.freq.uses ? ' ×' + a.freq.uses : a.freq === 'at will' ? ' (at will)' : '')).join(', ') || 'none')}.</div>
     <div class="row-btns"><button class="mini-btn danger" data-sb-off="${key}">Remove spellcasting</button></div>
   </div>`;
 }
@@ -1261,7 +1269,7 @@ function setCreatureExt(c, key, val){
       if(!t) setCreatureExt(c, 'sneakAttack', undefined);
       else setCreatureExt(c, 'sneakAttack', Object.assign({}, (c.ext && c.ext.sneakAttack) || {}, { dice: t }, c.ext && c.ext.assassinate ? { assassinate: (c.class && c.class.level) || 0 } : {}));
     }
-    else if(k === 'escapeBonus' || k === 'speed' || k === 'initBonus' || k === 'fly' || k === 'luck') setCreatureExt(c, k, el.value.trim() === '' || ((k === 'fly' || k === 'luck') && !(parseFloat(el.value) > 0)) ? undefined : parseFloat(el.value));
+    else if(k === 'escapeBonus' || k === 'speed' || k === 'initBonus' || k === 'fly' || k === 'luck' || k === 'legendaryResistance' || k === 'legendaryActions') setCreatureExt(c, k, el.value.trim() === '' || ((k === 'fly' || k === 'luck' || k === 'legendaryResistance') && !(parseFloat(el.value) > 0)) ? undefined : parseFloat(el.value));
     else if(k === 'ai') setCreatureExt(c, k, el.value === 'auto' ? undefined : el.value);
     else setCreatureExt(c, k, el.value === 'Medium' ? undefined : el.value);   // Medium is the default
     c._warnings = validateMonster(c);
@@ -1329,7 +1337,7 @@ const CLASS_LIST = ['artificer','barbarian','bard','cleric','druid','fighter','m
 function renderParty(){
   const grid = document.getElementById('partyGrid');
   if(!PARTY_PLAYERS.length){
-    grid.innerHTML = `<div class="empty-note">No party members. Add one, or load a day file in the Simulate tab.</div>`;
+    grid.innerHTML = `<div class="empty-note">No party members. Add one, or load a day file under Export.</div>`;
     return;
   }
   grid.innerHTML = PARTY_PLAYERS.map((p,i)=>{
@@ -1363,6 +1371,8 @@ function renderParty(){
         <div class="field"><label>Rogue tricks</label><label class="ae-check" style="margin-top:4px;" title="Advantage on attacks against creatures that haven't taken a turn yet, and +rogue level damage on a round-1 Sneak Attack"><input type="checkbox" data-ext="assassinate" data-owner="p${i}" ${(p.ext&&p.ext.assassinate)?'checked':''}> Assassinate</label><label class="ae-check" title="Bonus action: advantage on the next attack this turn if it hasn't moved"><input type="checkbox" data-ext="steadyAim" data-owner="p${i}" ${(p.ext&&p.ext.steadyAim)?'checked':''}> Steady Aim</label></div>
         <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="p${i}" type="number" step="5" min="0" placeholder="—" value="${(p.ext&&p.ext.fly!==undefined)?p.ext.fly:''}" title="Fly speed. Flyers ignore difficult ground, low cover and climbing, and can reach creatures on high ground."></div>
         <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.luck!==undefined)?p.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
+        <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.legendaryResistance!==undefined)?p.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
+        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="p${i}" type="number" step="1" min="0" placeholder="3" value="${(p.ext&&p.ext.legendaryActions!==undefined)?p.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). BattleSim uses one per round."></div>
         ${savesField('p'+i, p)}
         <div class="field"><label>Initiative</label><input data-ext="initBonus" data-owner="p${i}" type="number" placeholder="+0" value="${(p.ext&&p.ext.initBonus!==undefined)?p.ext.initBonus:''}" title="Initiative bonus, used by the War Table."></div>
         <div class="field"><label>Init. advantage</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="initAdvantage" data-owner="p${i}" ${(p.ext&&p.ext.initAdvantage)?'checked':''}> Rolls with adv.</label></div>
@@ -1523,6 +1533,8 @@ function renderMonsters(){
         <div class="field"><label>Rogue tricks</label><label class="ae-check" style="margin-top:4px;" title="Advantage on attacks against creatures that haven't taken a turn yet, and +rogue level damage on a round-1 Sneak Attack"><input type="checkbox" data-ext="assassinate" data-owner="${i}" ${(m.ext&&m.ext.assassinate)?'checked':''}> Assassinate</label><label class="ae-check" title="Bonus action: advantage on the next attack this turn if it hasn't moved"><input type="checkbox" data-ext="steadyAim" data-owner="${i}" ${(m.ext&&m.ext.steadyAim)?'checked':''}> Steady Aim</label></div>
         <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="${i}" type="number" step="5" min="0" placeholder="—" value="${(m.ext&&m.ext.fly!==undefined)?m.ext.fly:''}" title="Fly speed. Flyers ignore difficult ground, low cover and climbing, and can reach creatures on high ground."></div>
         <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.luck!==undefined)?m.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
+        <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.legendaryResistance!==undefined)?m.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
+        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="${i}" type="number" step="1" min="0" placeholder="3" value="${(m.ext&&m.ext.legendaryActions!==undefined)?m.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). BattleSim uses one per round."></div>
         ${savesField(String(i), m)}
         <div class="field"><label>Initiative</label><input data-ext="initBonus" data-owner="${i}" type="number" placeholder="+0" value="${(m.ext&&m.ext.initBonus!==undefined)?m.ext.initBonus:''}" title="Initiative bonus, used by the War Table."></div>
         <div class="field"><label>Init. advantage</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="initAdvantage" data-owner="${i}" ${(m.ext&&m.ext.initAdvantage)?'checked':''}> Rolls with adv.</label></div>
@@ -1824,11 +1836,26 @@ function describePath(day, path){
   return parts.join(' › ');
 }
 
+/* Checks a day against the BattleSim save-file format using the Forge's own validators
+   (the same rules the cards' warnings use: required fields, allowed values, number formats). */
 function checkRealSchema(day){
-  if(typeof BattleSimEngine === 'undefined') return { ok:false, errors:['Simulation engine failed to load.'] };
-  const r = BattleSimEngine.SaveFileSchema.safeParse(day);
-  if(r.success) return { ok:true, errors:[] };
-  return { ok:false, errors: r.error.issues.map(iss => `${describePath(day, iss.path)}: ${iss.message}`) };
+  const errors = [];
+  if(!day || typeof day !== 'object') return { ok:false, errors:['Not a day object.'] };
+  if(!Array.isArray(day.players)) errors.push('players: missing or not a list');
+  if(!Array.isArray(day.encounters)) errors.push('encounters: missing or not a list');
+  const checkCreature = (c, where) => {
+    if(!c || typeof c !== 'object'){ errors.push(`${where}: not a creature`); return; }
+    if(!c.id) errors.push(`${where}: missing id`);
+    if(!['custom','monster','player'].includes(c.mode)) errors.push(`${where} (${c.name || '?'}): mode must be custom, monster or player`);
+    (c.actions || []).forEach((a, i)=>{ if(!a.id) errors.push(`${where} (${c.name || '?'}) action ${i + 1}: missing id`); });
+    validateMonster(c).forEach(w=>errors.push(`${where} (${c.name || '?'}): ${w}`));
+  };
+  (day.players || []).forEach((p, i)=>checkCreature(p, `players[${i}]`));
+  (day.encounters || []).forEach((e, i)=>{
+    if(!e || !Array.isArray(e.monsters)){ errors.push(`encounters[${i}]: missing monsters list`); return; }
+    e.monsters.forEach((m, j)=>checkCreature(m, `encounters[${i}].monsters[${j}]`));
+  });
+  return { ok: !errors.length, errors };
 }
 
 function updateSchemaStatus(){
@@ -1837,10 +1864,10 @@ function updateSchemaStatus(){
   const res = checkRealSchema(buildDayObject());
   if(res.ok){
     el.className = 'status ok';
-    el.innerHTML = '✓ Passes BattleSim\'s own schema — this file will load on the site.';
+    el.innerHTML = '✓ Passes the Forge\'s BattleSim format checks — ready to load on the BattleSim site.';
   } else {
     el.className = 'status err';
-    el.innerHTML = `✕ BattleSim would reject this file (${res.errors.length} issue${res.errors.length===1?'':'s'}):<ul class="schema-errors">${res.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+    el.innerHTML = `✕ This file has ${res.errors.length} format issue${res.errors.length===1?'':'s'} BattleSim may reject:<ul class="schema-errors">${res.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
   }
 }
 
@@ -1849,8 +1876,7 @@ function updateSchemaStatus(){
 --------------------------------------------------------- */
 let currentView = 'forge';
 const PAGES = {
-  forge: { title: 'Statblock <span>Forge</span>', sub: 'Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then simulate them or play them out on the War Table.' },
-  sim:   { title: 'Statblock <span>Forge</span>', sub: 'The averages: every encounter in the day, resolved as expected values. Fast, and matches the BattleSim site.' },
+  forge: { title: 'Statblock <span>Forge</span>', sub: 'Paste a monster statblock, get back BattleSim-ready JSON. Build out full encounters, then play them out on the War Table.' },
   war:   { title: 'War <span>Table</span>', sub: 'Fights played out with real dice, real initiative and real positions. Run a fight hundreds of times for the odds, then watch any one of them unfold.' },
 };
 function showView(view, fromHash){
@@ -1858,180 +1884,16 @@ function showView(view, fromHash){
   currentView = view;
   document.querySelectorAll('.view-btn').forEach(b=>b.classList.toggle('active', b.dataset.view === view));
   document.getElementById('viewForge').style.display = view==='forge' ? '' : 'none';
-  document.getElementById('viewSim').style.display = view==='sim' ? '' : 'none';
   document.getElementById('viewWar').style.display = view==='war' ? '' : 'none';
   document.getElementById('siteTitle').innerHTML = PAGES[view].title;
   document.getElementById('siteSub').textContent = PAGES[view].sub;
   document.title = view === 'war' ? 'War Table' : 'Statblock Forge';
   document.body.classList.toggle('wide', view === 'war');
   if(!fromHash){ try{ history.replaceState(null, '', '#' + view); }catch(e){} }
-  if(view === 'sim') runSim();
   if(view === 'war' && window.WarTable) window.WarTable.show();
 }
 document.querySelectorAll('.view-btn').forEach(btn=>btn.addEventListener('click', ()=>showView(btn.dataset.view)));
 window.addEventListener('hashchange', ()=>showView(location.hash.slice(1), true));
-
-/* ---------------------------------------------------------
-   Simulation
---------------------------------------------------------- */
-const luckSlider = document.getElementById('luckSlider');
-document.getElementById('escapePolicy').addEventListener('change', ()=>{ scheduleSave(); runSim(); });
-document.getElementById('surpriseRules').addEventListener('change', ()=>{ scheduleSave(); runSim(); });
-document.getElementById('smartActions').addEventListener('change', ()=>{ scheduleSave(); runSim(); });
-luckSlider.addEventListener('input', ()=>{
-  scheduleSave();
-  document.getElementById('luckValue').textContent = Math.round(luckSlider.value*100) + '%';
-  runSim();
-});
-
-function hpColor(frac){
-  if(frac <= 0) return '#3a2a24';
-  if(frac > 0.5) return '#6b8e5a';
-  if(frac > 0.25) return '#c2993f';
-  return '#b3283a';
-}
-function fmt(n){ return (Math.round(n*10)/10).toLocaleString(); }
-
-function extTotals(state){
-  const sum = m => (m instanceof Map) ? [...m.values()].reduce((t,x)=>t+(x.p||0),0) : 0;
-  return { g: Math.min(1, sum(state?.grappledBy)), s: Math.min(1, sum(state?.swallowedBy)) };
-}
-function hpCell(hp, max, state){
-  const frac = max > 0 ? Math.max(0, hp)/max : 0;
-  const down = hp <= 0.05;
-  const {g, s} = extTotals(state);
-  const tags = [];
-  if(s >= 0.01) tags.push(`<span class="st st-sw" title="Chance this creature is currently swallowed">swallowed ${Math.round(s*100)}%</span>`);
-  if(g >= 0.01) tags.push(`<span class="st st-gr" title="Chance this creature is currently grappled">grappled ${Math.round(g*100)}%</span>`);
-  return `<td class="hp-cell"><div class="hp-bar"><div class="hp-fill" style="width:${(frac*100).toFixed(1)}%;background:${hpColor(frac)}"></div></div><div class="hp-num ${down?'down':''}">${down ? 'down' : Math.round(hp)+'/'+max}</div>${tags.join('')}</td>`;
-}
-
-function renderTeamGrid(rounds, teamKey){
-  const first = rounds[0][teamKey];
-  const head = `<tr><th></th><th>Start</th>${rounds.map((_,i)=>`<th>R${i+1}</th>`).join('')}</tr>`;
-  const rows = first.map((c, idx)=>{
-    const max = c.creature.hp;
-    const cells = [hpCell(c.initialState.currentHP, max)];
-    rounds.forEach(r=>{
-      const same = r[teamKey].find(x=>x.id===c.id) || r[teamKey][idx];
-      cells.push(hpCell(same ? same.finalState.currentHP : 0, max, same?.finalState));
-    });
-    return `<tr><td class="name">${escapeHtml(c.creature.name)}</td>${cells.join('')}</tr>`;
-  }).join('');
-  return `<div class="grid-scroll"><table class="hp-grid">${head}${rows}</table></div>`;
-}
-
-function renderRoundLog(rounds){
-  const blocks = rounds.map((r, i)=>{
-    const names = new Map();
-    [...r.team1, ...r.team2].forEach(c=>names.set(c.id, c.creature.name));
-    const lines = [];
-    const add = (c, foe)=>{
-      (c.actions||[]).forEach(a=>{
-        // the engine records each heal twice (once with targets, once without) — show it once
-        if(a.action?.type === 'heal' && !(a.targets && a.targets.size) && c.actions.some(b=>b!==a && b.action?.id===a.action?.id && b.targets && b.targets.size)) return;
-        if(a.weight !== undefined && a.weight < 0.005) return;
-        const tgt = [...(a.targets||new Map()).entries()].map(([id,n])=>`${escapeHtml(names.get(id)||'?')}${n>1?` ×${n}`:''}`).join(', ');
-        const actName = a.action?.name || a.action?.templateOptions?.templateName || 'action';
-        const share = (a.weight !== undefined && a.weight < 0.995) ? ` <span class="share" title="Share of turns / chance this happened">${Math.round(a.weight*100)}%</span>` : '';
-        const ext = (a.action?.type === 'ext' || a.action?.type === 'ext-escape') ? ' ext' : '';
-        lines.push(`<div class="log-line ${foe?'foe':''}${ext}"><b>${escapeHtml(c.creature.name)}</b> <span class="act">${escapeHtml(actName)}</span>${tgt ? ' → '+tgt : ''}${share}</div>`);
-      });
-    };
-    r.team1.forEach(c=>add(c,false));
-    r.team2.forEach(c=>add(c,true));
-    return `<div class="round-block"><h4>Round ${i+1}</h4>${lines.join('') || '<div class="log-line">No actions taken.</div>'}</div>`;
-  }).join('');
-  return `<details class="round-log"><summary>Round-by-round action log</summary>${blocks}</details>`;
-}
-
-function renderStats(res){
-  const r0 = res.rounds[0];
-  const rows = [...r0.team1.map(c=>[c,false]), ...r0.team2.map(c=>[c,true])].map(([c])=>{
-    const s = res.stats.get(c.id);
-    if(!s) return '';
-    return `<tr><td>${escapeHtml(c.creature.name)}</td><td>${fmt(s.damageDealt)}</td><td>${fmt(s.damageTaken)}</td><td>${fmt(s.healGiven)}</td><td>${fmt(s.charactersDebuffed)}</td><td>${fmt(s.timesUnconscious)}</td></tr>`;
-  }).join('');
-  return `<details class="round-log"><summary>Per-creature stats</summary><div class="grid-scroll"><table class="stats"><tr><th></th><th>Dmg dealt</th><th>Dmg taken</th><th>Healing</th><th>Debuffs applied</th><th>Times downed</th></tr>${rows}</table></div></details>`;
-}
-
-function runSim(){
-  const statusEl = document.getElementById('simStatus');
-  const summaryEl = document.getElementById('simSummary');
-  const resultsEl = document.getElementById('simResults');
-  summaryEl.innerHTML = ''; resultsEl.innerHTML = '';
-
-  const day = buildDayObject();
-  if(!day.players.length){ setStatus('simStatus', 'No party loaded.', 'err'); return; }
-
-  // Empty encounters are skipped (nothing to fight), keeping their rest flag on the next real one.
-  const kept = [];
-  let pendingRest = false;
-  day.encounters.forEach((e, i)=>{
-    if(e.shortRest) pendingRest = true;
-    if(e.monsters.length){ kept.push({ enc: {...e, ...(pendingRest?{shortRest:true}:{})}, idx: i }); pendingRest = false; }
-  });
-  if(!kept.length){ setStatus('simStatus', 'No monsters yet — forge an encounter or load a day file.', ''); return; }
-
-  const check = checkRealSchema(day);
-  if(!check.ok){
-    statusEl.className = 'status err';
-    statusEl.innerHTML = `Can't simulate — BattleSim's schema rejects this day (${check.errors.length} issue${check.errors.length===1?'':'s'}):<ul class="schema-errors">${check.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
-    return;
-  }
-
-  let results;
-  try{
-    results = BattleSimEngine.runSimulation(day.players, kept.map(k=>k.enc), parseFloat(luckSlider.value), { escapePolicy: document.getElementById('escapePolicy').value, surpriseRules: document.getElementById('surpriseRules').value, smartActions: document.getElementById('smartActions').value === 'on' });
-  }catch(err){
-    console.error(err);
-    setStatus('simStatus', 'The simulation engine hit an error: ' + escapeHtml(err.message || String(err)), 'err');
-    return;
-  }
-  setStatus('simStatus', `Simulated ${kept.length} encounter${kept.length===1?'':'s'} at ${Math.round(luckSlider.value*100)}% party luck.`, 'ok');
-
-  let wins = 0, totalRounds = 0;
-  const cards = results.map((res, i)=>{
-    const rounds = res.rounds;
-    totalRounds += rounds.length;
-    const last = rounds[rounds.length-1];
-    const partyUp = last.team1.some(c=>c.finalState.currentHP > 0.05);
-    const foesUp = last.team2.some(c=>c.finalState.currentHP > 0.05);
-    let verdict;
-    if(!foesUp && partyUp){ verdict = '<span class="verdict win">Victory</span>'; wins++; }
-    else if(!partyUp){ verdict = '<span class="verdict loss">Party wiped</span>'; }
-    else { verdict = '<span class="verdict draw">Unresolved</span>'; }
-    const enc = kept[i].enc;
-    const foeNames = [...new Set(enc.monsters.map(m=>`${m.name}${m.count>1?' ×'+m.count:''}`))].join(', ');
-    const downs = last.team1.filter(c=>c.finalState.currentHP <= 0.05).length;
-    return `<div class="enc-card">
-      <div class="enc-head">
-        <div class="enc-title">Encounter ${kept[i].idx+1} <span style="color:var(--parchment-faint);font-size:14px;font-family:'Crimson Pro',serif;">vs ${escapeHtml(foeNames)}</span></div>
-        <div>${verdict} <span class="status" style="margin-left:8px;">${rounds.length} round${rounds.length===1?'':'s'} · ${downs} PC${downs===1?'':'s'} down</span></div>
-      </div>
-      ${enc.shortRest && i>0 ? '<div class="rest-note">Party took a short rest before this fight.</div>' : ''}
-      <div class="team-label">Party</div>
-      ${renderTeamGrid(rounds, 'team1')}
-      <div class="team-label">Enemies</div>
-      ${renderTeamGrid(rounds, 'team2')}
-      ${renderRoundLog(rounds)}
-      ${renderStats(res)}
-    </div>`;
-  }).join('');
-
-  const lastEnc = results[results.length-1];
-  const finalParty = lastEnc.rounds[lastEnc.rounds.length-1].team1;
-  const hpLeft = finalParty.reduce((s,c)=>s+Math.max(0,c.finalState.currentHP),0);
-  const hpMax = finalParty.reduce((s,c)=>s+c.creature.hp,0);
-  const downAtEnd = finalParty.filter(c=>c.finalState.currentHP <= 0.05).length;
-  summaryEl.innerHTML = `<div class="day-summary">
-    <div class="stat-tile"><div class="k">Encounters won</div><div class="v">${wins}<small> / ${results.length}</small></div></div>
-    <div class="stat-tile"><div class="k">Party HP at end of day</div><div class="v">${Math.round(hpLeft)}<small> / ${hpMax} (${Math.round(hpLeft/hpMax*100)}%)</small></div></div>
-    <div class="stat-tile"><div class="k">PCs down at end</div><div class="v">${downAtEnd}<small> / ${finalParty.length}</small></div></div>
-    <div class="stat-tile"><div class="k">Total rounds</div><div class="v">${totalRounds}</div></div>
-  </div>`;
-  resultsEl.innerHTML = cards;
-}
 
 /* ---------------------------------------------------------
    Load a day file (works for both views)
@@ -2042,12 +1904,12 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
   if(!file) return;
   let day;
   try{ day = JSON.parse(await file.text()); }
-  catch(e){ setStatus('simStatus', "That file isn't valid JSON.", 'err'); return; }
+  catch(e){ setStatus('loadStatus', "That file isn't valid JSON.", 'err'); return; }
   const check = checkRealSchema(day);
   if(!check.ok){
-    const el = document.getElementById('simStatus');
+    const el = document.getElementById('loadStatus');
     el.className = 'status err';
-    el.innerHTML = `BattleSim's schema rejects "${escapeHtml(file.name)}" (${check.errors.length} issue${check.errors.length===1?'':'s'}):<ul class="schema-errors">${check.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+    el.innerHTML = `"${escapeHtml(file.name)}" doesn't look like a BattleSim day file (${check.errors.length} issue${check.errors.length===1?'':'s'}):<ul class="schema-errors">${check.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
     return;
   }
   PARTY_PLAYERS.splice(0, PARTY_PLAYERS.length, ...day.players);
@@ -2062,7 +1924,8 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
   renderPartyBar();
   renderParty();
   renderAll();
-  runSim();
+  setStatus('loadStatus', `Loaded "${escapeHtml(file.name)}": ${PARTY_PLAYERS.length} party member${PARTY_PLAYERS.length===1?'':'s'}, ${encounters.length} encounter${encounters.length===1?'':'s'}.`, 'ok');
+  if(typeof scheduleSave === 'function') scheduleSave();
 });
 
 /* ---------------------------------------------------------
@@ -2127,10 +1990,6 @@ function snapshot(){
     partyVersion: PARTY_VERSION,
     savedAt: Date.now(),
     dayName: document.getElementById('dayNameInput').value,
-    luck: parseFloat(document.getElementById('luckSlider').value),
-    escapePolicy: document.getElementById('escapePolicy').value,
-    surpriseRules: document.getElementById('surpriseRules').value,
-    smartActions: document.getElementById('smartActions').value,
     activeIdx,
     players: PARTY_PLAYERS.map(stripInternal),
     encounters: encounters.map(e=>({ ...e, monsters: e.monsters.map(stripInternal) })),
@@ -2182,13 +2041,6 @@ function applyWorkspace(ws){
   }
   activeIdx = Math.min(Math.max(0, ws.activeIdx|0), encounters.length - 1);
   if(typeof ws.dayName === 'string') document.getElementById('dayNameInput').value = ws.dayName;
-  if(typeof ws.escapePolicy === 'string') document.getElementById('escapePolicy').value = ws.escapePolicy;
-  if(typeof ws.surpriseRules === 'string') document.getElementById('surpriseRules').value = ws.surpriseRules;
-  if(ws.smartActions === 'on' || ws.smartActions === 'off') document.getElementById('smartActions').value = ws.smartActions;
-  if(typeof ws.luck === 'number'){
-    luckSlider.value = ws.luck;
-    document.getElementById('luckValue').textContent = Math.round(ws.luck*100) + '%';
-  }
   return updated;
 }
 
@@ -2198,7 +2050,6 @@ async function loadWorkspace(){
     if(raw){
       const updated = applyWorkspace(JSON.parse(raw));
       renderPartyBar(); renderParty(); renderAll();
-      if(currentView === 'sim') runSim();
       const ws = JSON.parse(raw);
       setSaveStatus(`✓ Restored work from ${new Date(ws.savedAt).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}${updated.length ? ` · updated ${updated.join(', ')} to the latest sheet build` : ''}`, 'saved');
       if(updated.length) saveNote = ` · updated ${updated.join(', ')} to the latest sheet build`;
@@ -2220,11 +2071,8 @@ document.getElementById('resetSavedBtn').addEventListener('click', async ()=>{
   encounters = [ freshEncounter() ];
   activeIdx = 0;
   document.getElementById('dayNameInput').value = DEFAULT_DAY_NAME;
-  luckSlider.value = 0.5; document.getElementById('luckValue').textContent = '50%';
-  document.getElementById('surpriseRules').value = '2024'; document.getElementById('escapePolicy').value = 'smart'; document.getElementById('smartActions').value = 'on';
   openPlayers.clear(); openActions.clear(); openJson.clear();
   renderPartyBar(); renderParty(); renderAll();
-  if(currentView === 'sim') runSim();
   setSaveStatus('Reset to defaults', '');
 });
 
