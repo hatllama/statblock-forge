@@ -350,6 +350,7 @@ function Sim(opts) {
   this.W = opts.width || 24; this.H = opts.height || 16;
   this.escapePolicy = opts.escapePolicy || 'smart';
   this.surpriseRules = opts.surpriseRules || '2024';
+  this.tpkKills = !!opts.tpkKills;     // the whole party down with foes still standing: nobody is left to save them
   this.maxRounds = opts.maxRounds || 40;
   this.setTerrain(null);
 }
@@ -2563,6 +2564,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
     this.round++;
   }
   const won = !this.foesStanding() && this.partyStanding();
+  if (this.tpkKills && !this.partyStanding() && this.foesStanding()) for (const u of this.units) if (u.team === 'party' && !u.dead) this.kill(u, null, 'the whole party is down');
   this.ev('end', won ? 'The party wins' : this.partyStanding() ? 'The fight drags on — stopped' : 'The party falls', { won });
   return { won, rounds: Math.min(this.round - 1, this.maxRounds) };
 };

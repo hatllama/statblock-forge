@@ -34,7 +34,7 @@ const S = {
   get day(){ return { name: (document.getElementById('dayNameInput') || {}).value || 'Adventuring Day', players: PARTY_PLAYERS, encounters: encounters }; },
   enc: 0,
   layouts: {},                       // encIndex -> { gapFt, positions: {key:{x,y}} }
-  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical' },
+  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false },
   mode: 'setup',
   odds: {},                          // encIndex -> summary
   replay: null,                      // { events, frames, units, idx }
@@ -43,7 +43,7 @@ const W = () => +S.settings.map.split('x')[0];
 const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
-const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI,
+const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -665,6 +665,7 @@ document.getElementById('wt-btnReset').onclick = ()=>{ const lay = layoutFor(S.e
 document.getElementById('wt-mapSize').onchange = ev=>{ S.settings.map = ev.target.value; S.layouts = {}; S.odds = {}; renderOdds(); renderSetup(); scheduleSave(); };
 document.getElementById('wt-surprise').onchange = ev=>{ S.settings.surprise = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-escape').onchange = ev=>{ S.settings.escape = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-tpk').onchange = ev=>{ S.settings.tpkKills = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-partyAI').onchange = ev=>{ S.settings.partyAI = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-runs').onchange = ev=>{ S.settings.runs = +ev.target.value; scheduleSave(); };
 function renderAll(){
@@ -673,6 +674,7 @@ function renderAll(){
   document.getElementById('wt-escape').value = S.settings.escape;
   document.getElementById('wt-runs').value = String(S.settings.runs);
   document.getElementById('wt-partyAI').value = S.settings.partyAI || 'tactical';
+  document.getElementById('wt-tpk').checked = !!S.settings.tpkKills;
   document.getElementById('wt-mapSize').value = S.settings.map;
   renderTabs();
   if(S.mode === 'setup') renderSetup();
