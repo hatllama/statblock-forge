@@ -16,3 +16,6 @@
 - Browser support: keep to syntax older Safari/iOS can run — no regex lookbehind (`(?<=` / `(?<!`), no `??=`/`||=`, no `structuredClone`.
   One unsupported regex makes the whole script fail to load.
 - Every release: bump the `?v=` on the script/style tags in `index.html` so visitors don't keep a cached old copy.
+- The Forge UI is one sidebar (`#forgeSide`) and one main panel (`#forgeDynamic`, plus the static `#panelImport` and `#panelFile`).
+  What shows is `sel` in `js/forge.js`; every editor listens on `#forgeDynamic`. Creature keys: `'p3'` = party member 3,
+  `'2'` = monster 2 of `encounters[activeIdx]`. The War Table calls `renderParty`/`renderMonsters`/`renderPartyBar`; keep those names.

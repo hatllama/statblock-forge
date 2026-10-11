@@ -459,6 +459,14 @@ function describeAction(a){
   } else if(a.type === 'debuff'){
     bits.push(`DC ${a.saveDC} ${a.ext && a.ext.saveAbility ? a.ext.saveAbility.toUpperCase() + ' ' : ''}save → ${describeBuff(a.buff)}`);
   }
+  bits.push(...extBits(a));
+  bits.push(freqLabel(a.freq));
+  if(a.condition && a.condition !== 'default') bits.push(`when: ${a.condition}`);
+  return bits.join(' · ');
+}
+/* the War Table mechanics on an action, in a few words each */
+function extBits(a){
+  const bits = [];
   const ex = a.ext || {};
   if(ex.grapple) bits.push(`grapples (escape DC ${ex.grapple.escapeDC ?? '?'})`);
   if(ex.swallow) bits.push(`swallows ≤${ex.swallow.maxSize || 'Medium'}${ex.swallow.digest ? `, ${ex.swallow.digest}/turn inside` : ''}${ex.swallow.regurgitate?.threshold ? `, regurgitates on ${ex.swallow.regurgitate.threshold}+ (DC ${ex.swallow.regurgitate.dc ?? '?'})` : ''}`);
@@ -473,7 +481,7 @@ function describeAction(a){
   if(ex.onHit && ex.onHit.push) bits.push(`pushes ${ex.onHit.push} ft`);
   if(ex.legendaryCost > 1) bits.push(`costs ${ex.legendaryCost} legendary actions`);
   if(ex.selfOnly) bits.push('self only');
-  if(ex.stepAway) bits.push(`steps ${ex.stepAway} ft away`);
+  if(ex.stepAway) bits.push(`steps ${ex.stepAway} ft away when a foe ends its turn next to it`);
   if(ex.loseAction) bits.push('costs its action');
   if(ex.damageType) bits.push(ex.damageType);
   if(ex.saveOnDamage) bits.push('save again when hurt');
@@ -494,9 +502,7 @@ function describeAction(a){
   if(ex.wtOnly) bits.push('War Table only');
   if(ex.wtSkip) bits.push('export only');
   if(typeof ex.range === 'number') bits.push(ex.range <= 5 ? 'melee' : `${ex.range} ft`);
-  bits.push(freqLabel(a.freq));
-  if(a.condition && a.condition !== 'default') bits.push(`when: ${a.condition}`);
-  return bits.join(' · ');
+  return bits;
 }
 function spellIssues(a){
   if(a.type === 'template') return [];
@@ -776,8 +782,8 @@ function actionEditor(mi, m){
     const label = s === 'template' ? 'Templates' : (SLOT_LABEL[s] || `Slot ${s}`);
     let hint = '';
     if(sb) hint = s === 4 ? 'Cast in response, when it matters' : 'Chosen each turn by what the situation needs';
-    else if(typeof s === 'number' && s < 0) hint = 'Triggers automatically';
-    else if(list.length > 1) hint = 'Checked top to bottom: the first usable one whose condition is met fires';
+    else if(typeof s === 'number' && s < 0) hint = 'Triggers by itself';
+    else if(list.length > 1) hint = 'Tried top to bottom: the first it can use, whose "use when" fits, is taken';
     groups.push(`<div class="ae-slot"><div class="ae-slot-head">${escapeHtml(label)}<span>${hint}</span></div>
       ${list.map((a,i)=>actionRow(mi, a, i, list.length)).join('')}</div>`);
   });
@@ -892,7 +898,6 @@ function spellbookPanel(key, c){
   const comp = compileSpellbook(c).filter(a=>a.ext && a.ext.fromSpellbook);
   const total = slots.reduce((t,n)=>t+n, 0);
   return `<div class="sb-box">
-    <div class="team-label" style="margin-top:0;">Spellcasting</div>
     <div class="sb-slots">${slots.map((n,i)=>`<label>L${i+1}<input type="number" min="0" max="9" data-sb-slot="${i}" data-owner="${key}" value="${n || ''}" placeholder="0"></label>`).join('')}</div>
     <div class="ae-grid" style="margin-top:6px;">
       <div class="ae-f"><label>Slots come back on</label><select data-sb-reset data-owner="${key}"><option value="lr" ${sb.slotReset !== 'sr' ? 'selected' : ''}>Long rest</option><option value="sr" ${sb.slotReset === 'sr' ? 'selected' : ''}>Short rest (Pact Magic)</option></select></div>
@@ -904,7 +909,7 @@ function spellbookPanel(key, c){
     <div class="row-btns"><button class="mini-btn danger" data-sb-off="${key}">Remove spellcasting</button></div>
   </div>`;
 }
-['monsterGrid','partyGrid'].forEach(gridId=>{
+['forgeDynamic'].forEach(gridId=>{
   const grid = document.getElementById(gridId);
   grid.addEventListener('click', ev=>{
     const on = ev.target.closest('[data-sb-on]'), off = ev.target.closest('[data-sb-off]');
@@ -1007,8 +1012,8 @@ function creatureByKey(key){
   return key[0] === 'p' ? PARTY_PLAYERS[parseInt(key.slice(1),10)] : encounters[activeIdx].monsters[parseInt(key,10)];
 }
 function rerenderFor(key){
-  if(String(key)[0] === 'p'){ renderParty(); renderPartyBar(); }
-  else renderMonsters();
+  if(String(key)[0] === 'p') renderPartyBar();
+  renderForge();
   refreshPreview();
 }
 function findAction(mi, aid){
@@ -1203,7 +1208,7 @@ function tipsHtml(c, key){
   if(!tips.length || key === undefined) return '';
   return `<div class="tips"><div class="tips-title">✦ ${tips.length} tactics tip${tips.length===1?'':'s'}${tips.length>1?` <button class="mini-btn" data-tipall="${key}">Apply all</button>`:''}</div><ul>${tips.map(t=>`<li>${escapeHtml(t.text)} <button class="mini-btn" data-tipfix="${key}" data-aid="${escapeAttr(t.aid)}" data-to="${escapeAttr(t.to)}">Apply</button></li>`).join('')}</ul></div>`;
 }
-['monsterGrid','partyGrid'].forEach(gridId=>{
+['forgeDynamic'].forEach(gridId=>{
   document.getElementById(gridId).addEventListener('click', ev=>{
     const clr = ev.target.closest('[data-clear-notes]');
     if(clr){ ev.stopPropagation(); const c = creatureByKey(clr.dataset.clearNotes); if(c){ delete c._notes; rerenderFor(clr.dataset.clearNotes); if(typeof scheduleSave === 'function') scheduleSave(); } return; }
@@ -1239,7 +1244,7 @@ function savesField(key, c){
   const sv = (c.ext && c.ext.saves) || {};
   return `<div class="field saves6-field"><label>Saving throws <span class="help" style="text-transform:none;letter-spacing:0;">blank = uses the average save bonus</span></label><div class="saves6">${SAVE_ABS.map(([k,l])=>`<label>${l}<input type="number" data-save="${k}" data-owner="${key}" value="${typeof sv[k] === 'number' ? sv[k] : ''}" placeholder="${c.saveBonus ?? 0}"></label>`).join('')}</div></div>`;
 }
-['monsterGrid','partyGrid'].forEach(gridId=>{
+['forgeDynamic'].forEach(gridId=>{
   document.getElementById(gridId).addEventListener('input', ev=>{
     const el = ev.target; if(el.dataset.save === undefined) return;
     const c = creatureByKey(el.dataset.owner); if(!c) return;
@@ -1252,7 +1257,7 @@ function savesField(key, c){
     if(sv && SAVE_ABS.every(([k])=>typeof sv[k] === 'number')){
       c.saveBonus = Math.round(SAVE_ABS.reduce((t,[k])=>t + sv[k], 0) / 6 * 100) / 100;
       const key = String(el.dataset.owner);
-      const box = key[0] === 'p' ? document.querySelector(`#partyGrid input[data-pf="saveBonus"][data-pi="${key.slice(1)}"]`) : document.querySelector(`#monsterGrid input[data-f="saveBonus"][data-i="${key}"]`);
+      const box = document.querySelector(`#forgeDynamic input[data-cf="saveBonus"][data-owner="${key}"]`);
       if(box) box.value = c.saveBonus;
     }
     c._warnings = validateMonster(c);
@@ -1266,7 +1271,7 @@ function setCreatureExt(c, key, val){
   if(val === undefined || val === '' || val === false) delete c.ext[key]; else c.ext[key] = val;
   if(!Object.keys(c.ext).length) delete c.ext;
 }
-['monsterGrid','partyGrid'].forEach(gridId=>{
+['forgeDynamic'].forEach(gridId=>{
   const grid = document.getElementById(gridId);
   const onExt = el=>{
     const c = creatureByKey(el.dataset.owner); if(!c) return;
@@ -1300,7 +1305,7 @@ function setCreatureExt(c, key, val){
   grid.addEventListener('input', ev=>{ if(ev.target.dataset.ext && ev.target.tagName==='INPUT' && ev.target.type!=='checkbox') onExt(ev.target); });
   grid.addEventListener('change', ev=>{ if(ev.target.dataset.ext && (ev.target.tagName==='SELECT' || ev.target.type==='checkbox')) onExt(ev.target); });
 });
-['monsterGrid','partyGrid'].forEach(function wireEditor(gridId){
+['forgeDynamic'].forEach(function wireEditor(gridId){
   const grid = document.getElementById(gridId);
   grid.addEventListener('click', handleEditorClick);
   grid.addEventListener('input', ev=>{
@@ -1330,316 +1335,642 @@ function uid(){
   });
 }
 
-/* ---------------------------------------------------------
-   Render: party bar
---------------------------------------------------------- */
+/* =========================================================
+   THE WORKSHOP — a sidebar (party, encounters, library, import, file) and one main panel.
+   The main panel shows whatever is selected: a creature's sheet, an encounter, the library,
+   the statblock importer or save & load.
+   Creature keys stay as before: 'p3' = party member 3, '2' = monster 2 of encounters[activeIdx].
+   ========================================================= */
+let sel = { kind: 'enc', e: 0 };
+const statView = new Set();          // creature ids shown as a read-only statblock
+const CLASS_LIST = ['artificer','barbarian','bard','cleric','druid','fighter','monk','paladin','ranger','rogue','sorcerer','warlock','wizard'];
+const SIZES = ['Tiny','Small','Medium','Large','Huge','Gargantuan'];
+const encName = (e, i) => (e && e.name && String(e.name).trim()) || `Encounter ${i + 1}`;
+const keyOfSel = () => sel.kind === 'pc' ? 'p' + sel.i : sel.kind === 'mon' ? String(sel.i) : null;
+
+function select(next){
+  sel = next;
+  if(sel.kind === 'mon' || sel.kind === 'enc' || sel.kind === 'import') activeIdx = Math.max(0, Math.min(encounters.length - 1, sel.e | 0));
+  renderForge();
+  // bring the panel into view: above it after scrolling down, or below the stacked sidebar on a phone
+  const main = document.querySelector('.forge-main');
+  const stacked = window.matchMedia && window.matchMedia('(max-width:860px)').matches;
+  if(main && (main.getBoundingClientRect().top < 0 || (stacked && currentView === 'forge'))) main.scrollIntoView({ block: 'start', behavior: stacked ? 'smooth' : 'auto' });
+  scheduleSave();
+}
+/* keep the selection pointing at something that exists */
+function fixSel(){
+  if(sel.kind === 'pc' && !PARTY_PLAYERS[sel.i]) sel = PARTY_PLAYERS.length ? { kind: 'pc', i: PARTY_PLAYERS.length - 1 } : { kind: 'enc', e: 0 };
+  if((sel.kind === 'enc' || sel.kind === 'mon' || sel.kind === 'import') && !encounters[sel.e]) sel = { kind: 'enc', e: Math.max(0, encounters.length - 1) };
+  if(sel.kind === 'mon' && !encounters[sel.e].monsters[sel.i]) sel = { kind: 'enc', e: sel.e };
+  if(sel.kind === 'mon' || sel.kind === 'enc' || sel.kind === 'import') activeIdx = sel.e;
+}
+
+/* ---------------- sidebar ---------------- */
+function crText(c){ return c.cr !== undefined && c.cr !== '' && c.cr !== '—' ? 'CR ' + c.cr : ''; }
+function renderSide(){
+  const side = document.getElementById('forgeSide'); if(!side) return;
+  const on = (k, extra) => sel.kind === k && (!extra || extra());
+  const dot = c => (c._warnings && c._warnings.length) ? '<span class="ae-dot" title="Has possible issues"></span>' : '';
+  const libN = libraryItems().length;
+  let h = `<div class="side-tools">
+      <button class="side-tool ${on('import')?'on':''}" data-go="import" title="Paste a statblock">＋ Statblock</button>
+      <button class="side-tool ${on('library')?'on':''}" data-go="library" title="Saved creatures">Library${libN ? ` <b>${libN}</b>` : ''}</button>
+      <button class="side-tool ${on('file')?'on':''}" data-go="file" title="Download, load, day name">Save &amp; load</button>
+    </div>`;
+  h += `<div class="side-group"><div class="side-h"><span>Party</span><button class="side-plus" data-add-pc title="Add a party member">＋</button></div>`;
+  h += PARTY_PLAYERS.map((p, i)=>`<button class="side-row ${on('pc', ()=>sel.i===i)?'on':''}" data-sel-pc="${i}">
+      <span class="sr-name">${escapeHtml(p.name || 'Unnamed')}${dot(p)}</span>
+      <span class="sr-meta">${escapeHtml(p.class ? `${p.class.type} ${p.class.level}` : '')} · AC ${p.AC} · ${p.hp} HP</span></button>`).join('') || '<div class="side-empty">No party members yet.</div>';
+  h += `</div>`;
+  encounters.forEach((e, ei)=>{
+    const od = oddsFor(ei), fresh = od && od.sig === oddsSig(ei);
+    const badge = fresh && od.E ? `<span class="odds-badge ${od.E.winRate < .7 ? 'bad' : od.E.winRate < .95 ? 'mid' : 'good'}" title="Party wins ${Math.round(od.E.winRate*100)}% (quick odds)">${Math.round(od.E.winRate*100)}%</span>` : '';
+    h += `<div class="side-group"><button class="side-h enc ${on('enc', ()=>sel.e===ei)?'on':''}" data-sel-enc="${ei}"><span>${escapeHtml(encName(e, ei))}</span>${badge}</button>`;
+    h += e.monsters.map((m, mi)=>`<button class="side-row sub ${on('mon', ()=>sel.e===ei && sel.i===mi)?'on':''}" data-sel-mon="${ei}:${mi}">
+        <span class="sr-name">${(m.count||1) > 1 ? `<i>${m.count}×</i> ` : ''}${escapeHtml(m.name || 'Unnamed')}${dot(m)}</span>
+        <span class="sr-meta">${escapeHtml([crText(m), 'AC ' + m.AC, m.hp + ' HP'].filter(Boolean).join(' · '))}</span></button>`).join('');
+    h += `<button class="side-add" data-import-to="${ei}">＋ add creatures</button></div>`;
+  });
+  h += `<button class="side-new" data-new-enc>＋ New encounter</button>`;
+  side.innerHTML = h;
+}
+document.getElementById('forgeSide').addEventListener('click', ev=>{
+  const b = ev.target.closest('button'); if(!b) return;
+  if(b.dataset.go) return select({ kind: b.dataset.go, e: activeIdx });
+  if(b.dataset.selPc !== undefined) return select({ kind: 'pc', i: +b.dataset.selPc });
+  if(b.dataset.selEnc !== undefined) return select({ kind: 'enc', e: +b.dataset.selEnc });
+  if(b.dataset.selMon){ const [e, i] = b.dataset.selMon.split(':').map(Number); return select({ kind: 'mon', e, i }); }
+  if(b.dataset.importTo !== undefined) return select({ kind: 'import', e: +b.dataset.importTo });
+  if(b.dataset.addPc !== undefined){
+    const p = { id: uid(), mode:'custom', class:{ type:'fighter', level:4, options:{} }, name:'New Adventurer', count:1, hp:30, AC:15, saveBonus:2,
+      actions:[ { ...newAction('atk'), name:'Weapon Attack', dpr:'1d8 + 3', toHit:5, target:'enemy with least HP', ext: { range: 5 } } ] };
+    PARTY_PLAYERS.push(p); renderPartyBar(); refreshPreview();
+    return select({ kind: 'pc', i: PARTY_PLAYERS.length - 1 });
+  }
+  if(b.dataset.newEnc !== undefined){ encounters.push(freshEncounter()); refreshPreview(); return select({ kind: 'enc', e: encounters.length - 1 }); }
+});
+
+/* ---------------- the main panel ---------------- */
+function renderMain(){
+  const dyn = document.getElementById('forgeDynamic');
+  document.getElementById('panelImport').style.display = sel.kind === 'import' ? '' : 'none';
+  document.getElementById('panelFile').style.display = sel.kind === 'file' ? '' : 'none';
+  if(sel.kind === 'import'){ dyn.innerHTML = ''; fillImportTargets(); return; }
+  if(sel.kind === 'file'){ dyn.innerHTML = ''; return; }
+  if(sel.kind === 'library'){ dyn.innerHTML = libraryHtml(); return; }
+  if(sel.kind === 'enc'){ dyn.innerHTML = encounterHtml(sel.e); return; }
+  const key = keyOfSel(), c = key !== null ? creatureByKey(key) : null;
+  if(!c){ sel = { kind: 'enc', e: activeIdx }; dyn.innerHTML = encounterHtml(activeIdx); return; }
+  c._warnings = validateMonster(c);
+  dyn.innerHTML = statView.has(c.id) ? statblockPage(key, c) : sheetHtml(key, c);
+}
+function renderForge(){ fixSel(); renderSide(); renderMain(); }
+/* the names the rest of the site (and the War Table's stats panel) calls */
+function renderParty(){ renderForge(); }
+function renderMonsters(){ renderForge(); }
+function renderAll(){ renderForge(); refreshPreview(); }
+
+/* ---------------- party bar (above the War Table) ---------------- */
 function renderPartyBar(){
   const bar = document.getElementById('partyBar');
   bar.innerHTML = PARTY_PLAYERS.map((p,i) =>
-    `<div class="chip chip-link" data-chip="${i}" title="Edit ${escapeAttr(p.name)}"><b>${escapeHtml(p.name)}</b> · AC ${p.AC} · ${p.hp} HP · ${escapeHtml(p.class?.type || '')} ${p.class?.level ?? ''}</div>`
+    `<div class="chip chip-link" data-chip="${i}" title="Edit ${escapeAttr(p.name)} in the Forge"><b>${escapeHtml(p.name)}</b> · AC ${p.AC} · ${p.hp} HP · ${escapeHtml(p.class?.type || '')} ${p.class?.level ?? ''}</div>`
   ).join('');
 }
 document.getElementById('partyBar').addEventListener('click', ev=>{
-  const chip = ev.target.closest('[data-chip]');
-  if(!chip) return;
-  const p = PARTY_PLAYERS[parseInt(chip.dataset.chip,10)];
-  if(!p) return;
-  if(currentView !== 'forge') document.querySelector('.view-btn[data-view=forge]').click();
-  openPlayers.add(p.id);
-  renderParty();
-  document.getElementById('pcard-'+p.id)?.scrollIntoView({behavior:'smooth', block:'start'});
+  const chip = ev.target.closest('[data-chip]'); if(!chip) return;
+  if(currentView !== 'forge') showView('forge');
+  select({ kind: 'pc', i: +chip.dataset.chip });
 });
 
-/* ---------------------------------------------------------
-   Party editor
---------------------------------------------------------- */
-const openPlayers = new Set();
-const CLASS_LIST = ['artificer','barbarian','bard','cleric','druid','fighter','monk','paladin','ranger','rogue','sorcerer','warlock','wizard'];
+/* ---------------- a creature's sheet ---------------- */
+const num = v => (v === undefined || v === null) ? '' : v;
+function xv(c, k){ return c.ext && c.ext[k] !== undefined ? c.ext[k] : undefined; }
+function cfInput(key, f, label, val, attrs, tip){
+  return `<label class="sf"><span>${label}</span><input data-cf="${f}" data-owner="${key}" value="${escapeAttr(String(num(val)))}" ${attrs || ''} ${tip ? `title="${escapeAttr(tip)}"` : ''}></label>`;
+}
+function exInput(key, k, label, val, attrs, tip){
+  return `<label class="sf"><span>${label}</span><input data-ext="${k}" data-owner="${key}" value="${escapeAttr(String(num(val)))}" ${attrs || ''} ${tip ? `title="${escapeAttr(tip)}"` : ''}></label>`;
+}
+function exCheck(key, k, label, checked, tip){
+  return `<label class="sc" ${tip ? `title="${escapeAttr(tip)}"` : ''}><input type="checkbox" data-ext="${k}" data-owner="${key}" ${checked ? 'checked' : ''}> ${label}</label>`;
+}
+function listVal(c, k){ return ((c.ext && c.ext[k]) || []).join(', '); }
+function bonusDisengageOn(c){
+  return (c.ext && c.ext.bonusDisengage === true) || (!(c.ext && c.ext.bonusDisengage === false) && (c.actions||[]).some(a=>a.actionSlot===1&&/cunning action|nimble escape|disengage/i.test(a.name||'')));
+}
+function sheetHtml(key, c){
+  const pc = key[0] === 'p';
+  const sv = (c.ext && c.ext.saves) || {};
+  const ai = (c.ext && c.ext.ai) || 'auto';
+  const sizeSel = `<select data-ext="size" data-owner="${key}" aria-label="Size">${SIZES.map(z=>`<option ${((c.ext&&c.ext.size)||'Medium')===z?'selected':''}>${z}</option>`).join('')}</select>`;
+  const ident = pc
+    ? `${sizeSel}<select data-cf="class.type" data-owner="${key}" aria-label="Class">${CLASS_LIST.map(x=>`<option ${c.class?.type===x?'selected':''}>${x}</option>`).join('')}</select>
+       <label class="inl">level <input data-cf="class.level" data-owner="${key}" type="number" min="1" max="20" value="${c.class?.level ?? 1}"></label>`
+    : `${sizeSel}<input class="inl-type" data-cf="type" data-owner="${key}" value="${escapeAttr(c.type || '')}" placeholder="type" aria-label="Creature type">
+       <label class="inl">CR <input data-cf="cr" data-owner="${key}" value="${escapeAttr(c.cr || '')}" style="width:52px"></label>
+       <label class="inl">× <input data-cf="count" data-owner="${key}" type="number" min="1" value="${c.count ?? 1}" style="width:52px" title="How many of this creature"></label>`;
+  return `<article class="sheet" data-key="${key}">
+    <div class="sheet-top">
+      <div class="sheet-id">
+        <input class="sheet-name" data-cf="name" data-owner="${key}" value="${escapeAttr(c.name || '')}" aria-label="Name" placeholder="Name">
+        <div class="sheet-sub">${ident}</div>
+      </div>
+      <div class="sheet-tools">
+        <div class="seg"><button class="on">Edit</button><button data-statview="${key}">Statblock</button></div>
+        ${pc ? '' : `<button class="mini-btn" data-lib-save="${key}" title="Keep a copy in the library to reuse in other encounters">Save to library</button>`}
+        <button class="mini-btn" data-dup="${key}" title="Duplicate">Duplicate</button>
+        <button class="mini-btn danger" data-del="${key}">${pc ? 'Remove' : 'Delete'}</button>
+      </div>
+    </div>
+    <div id="warn-${key}">${warningsHtml(c, key)}</div>
 
-function renderParty(){
-  const grid = document.getElementById('partyGrid');
-  if(!PARTY_PLAYERS.length){
-    grid.innerHTML = `<div class="empty-note">No party members. Add one, or load a day file under Export.</div>`;
-    return;
-  }
-  grid.innerHTML = PARTY_PLAYERS.map((p,i)=>{
-    const key = 'p'+i;
-    p._warnings = validateMonster(p);
-    const open = openPlayers.has(p.id);
-    const cls = p.class ? `${p.class.type} ${p.class.level}` : 'no class';
-    return `<div class="scroll" id="pcard-${p.id}">
-      <div class="scroll-head pc-head" data-ptoggle="${p.id}">
-        <div>
-          <div class="m-name">${escapeHtml(p.name || 'Unnamed')}${p._warnings.length?'<span class="ae-dot" title="Has issues"></span>':''}</div>
-          <div class="m-type">${escapeHtml(cls)} · ${p.hp} HP · AC ${p.AC} · ${(p.actions||[]).length} action${(p.actions||[]).length===1?'':'s'}${p.count>1?` · ×${p.count}`:''}</div>
-        </div>
-        <div class="pc-chev">${open?'▾':'▸'}</div>
+    <section class="sh">
+      <h3>Toughness</h3>
+      <div class="sh-grid">
+        ${cfInput(key, 'AC', 'Armor class', c.AC, 'type="number"')}
+        ${cfInput(key, 'hp', 'Hit points', c.hp, 'type="number"')}
+        ${exInput(key, 'initBonus', 'Initiative', xv(c,'initBonus'), 'type="number" placeholder="+0"')}
+        ${exInput(key, 'legendaryResistance', 'Legendary resistance', xv(c,'legendaryResistance'), 'type="number" min="0" placeholder="—"', 'Uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes.')}
+        ${exInput(key, 'luck', 'Luck points', xv(c,'luck'), 'type="number" min="0" placeholder="—"', 'Lucky feat: points per long rest. Spent to reroll a hit against it or a failed save that matters.')}
       </div>
-      ${open ? `
-      <div class="m-fields">
-        <div class="field"><label>Name</label><input data-pf="name" data-pi="${i}" value="${escapeAttr(p.name||'')}"></div>
-        <div class="field"><label>Class</label><select data-pf="class.type" data-pi="${i}">${CLASS_LIST.map(c=>`<option ${p.class?.type===c?'selected':''}>${c}</option>`).join('')}</select></div>
-        <div class="field"><label>Level</label><input data-pf="class.level" data-pi="${i}" type="number" min="1" max="20" value="${p.class?.level ?? 1}"></div>
-        <div class="field"><label>Count</label><input data-pf="count" data-pi="${i}" type="number" min="1" value="${p.count ?? 1}"></div>
-        <div class="field"><label>HP</label><input data-pf="hp" data-pi="${i}" type="number" value="${p.hp ?? 0}"></div>
-        <div class="field"><label>AC</label><input data-pf="AC" data-pi="${i}" type="number" value="${p.AC ?? 0}"></div>
-        <div class="field"><label>Save Bonus</label><input data-pf="saveBonus" data-pi="${i}" type="number" step="0.01" value="${p.saveBonus ?? 0}" title="Average of all six saves"></div>
-        <div class="field"><label>Size</label><select data-ext="size" data-owner="p${i}">${['Tiny','Small','Medium','Large','Huge','Gargantuan'].map(z=>`<option ${((p.ext&&p.ext.size)||'Medium')===z?'selected':''}>${z}</option>`).join('')}</select></div>
-        <div class="field"><label>Escape bonus</label><input data-ext="escapeBonus" data-owner="p${i}" type="number" placeholder="= save bonus" value="${(p.ext&&p.ext.escapeBonus!==undefined)?p.ext.escapeBonus:''}" title="Athletics/Acrobatics bonus used to break grapples (and to climb, if Athletics is blank). Blank = save bonus."></div>
-        <div class="field"><label>Senses</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="blindsight" data-owner="p${i}" ${(p.ext&&p.ext.blindsight)?'checked':''}> Blindsight</label></div>
-        <div class="field"><label>Feats</label><label class="ae-check" style="margin-top:4px;" title="Advantage rolls three d20s instead of two (raises hit and crit chance). Only for Dex/Int/Wis/Cha attackers."><input type="checkbox" data-ext="elvenAccuracy" data-owner="p${i}" ${(p.ext&&p.ext.elvenAccuracy)?'checked':''}> Elven Accuracy</label></div>
-        <div class="field"><label>Speed (ft)</label><input data-ext="speed" data-owner="p${i}" type="number" step="5" min="0" placeholder="30" value="${(p.ext&&p.ext.speed!==undefined)?p.ext.speed:''}" title="Used by the War Table. Blank = 30 ft."></div>
-        <div class="field"><label>Sneak Attack</label><input data-ext="sneakDice" data-owner="p${i}" placeholder="e.g. 2d6" value="${(p.ext&&p.ext.sneakAttack&&p.ext.sneakAttack.dice)||''}" title="Once per turn, on a hit with a Sneak-Attack-able weapon, with advantage or an ally next to the target. War Table."></div>
-        <div class="field"><label>Rogue tricks</label><label class="ae-check" style="margin-top:4px;" title="Advantage on attacks against creatures that haven't taken a turn yet, and +rogue level damage on a round-1 Sneak Attack"><input type="checkbox" data-ext="assassinate" data-owner="p${i}" ${(p.ext&&p.ext.assassinate)?'checked':''}> Assassinate</label><label class="ae-check" title="Bonus action: advantage on the next attack this turn if it hasn't moved"><input type="checkbox" data-ext="steadyAim" data-owner="p${i}" ${(p.ext&&p.ext.steadyAim)?'checked':''}> Steady Aim</label></div>
-        <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="p${i}" type="number" step="5" min="0" placeholder="—" value="${(p.ext&&p.ext.fly!==undefined)?p.ext.fly:''}" title="Fly speed. On the War Table flyers ignore difficult ground, low walls and ledges (no climbing, no Athletics checks), see and shoot over raised ground and crates, and get no cover from crates either. Walls still block them. They fly at a height: up out of melee reach to shoot or cast, down level with a target to fight. Knocked prone, grappled, restrained or out cold, they fall (1d6 per 10 ft) unless they can hover."></div>
-        <div class="field"><label>Hover</label><label class="ae-check" style="margin-top:4px;" title="Fly (hover): stays in the air when knocked prone, grappled or slowed to 0, and only falls if knocked out (War Table)"><input type="checkbox" data-ext="hover" data-owner="p${i}" ${(p.ext&&p.ext.hover)?'checked':''}> Can hover</label></div>
-        <div class="field"><label>Climb (ft)</label><input data-ext="climb" data-owner="p${i}" type="number" step="5" min="0" placeholder="—" value="${(p.ext&&p.ext.climb!==undefined)?p.ext.climb:''}" title="Climb speed. Scales ledges of 10 ft or more with no Athletics check and no extra movement (War Table)."></div>
-        <div class="field"><label>Athletics</label><input data-ext="athletics" data-owner="p${i}" type="number" placeholder="= escape bonus" value="${(p.ext&&p.ext.athletics!==undefined)?p.ext.athletics:''}" title="Athletics bonus for climbing ledges of 10 ft or more on the War Table. Blank = the escape bonus."></div>
-        <div class="field"><label>Resistances</label><input data-ext="resist" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.resist)||[]).join(', '))}" title="Damage types it takes half from, comma-separated: fire, cold, nonmagical slashing (War Table)"></div>
-        <div class="field"><label>Immunities</label><input data-ext="immune" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.immune)||[]).join(', '))}" title="Damage types it takes nothing from: poison, fire (War Table)"></div>
-        <div class="field"><label>Vulnerabilities</label><input data-ext="vulnerable" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.vulnerable)||[]).join(', '))}" title="Damage types it takes double from (War Table)"></div>
-        <div class="field"><label>Condition immunities</label><input data-ext="condImmune" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.condImmune)||[]).join(', '))}" title="Conditions it can&#39;t be given: Frightened, Poisoned, Restrained (War Table)"></div>
-        <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.luck!==undefined)?p.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
-        <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.legendaryResistance!==undefined)?p.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
-        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="p${i}" type="number" step="1" min="0" placeholder="3" value="${(p.ext&&p.ext.legendaryActions!==undefined)?p.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). The export counts one per round."></div>
-        ${savesField('p'+i, p)}
-        <div class="field"><label>Initiative</label><input data-ext="initBonus" data-owner="p${i}" type="number" placeholder="+0" value="${(p.ext&&p.ext.initBonus!==undefined)?p.ext.initBonus:''}" title="Initiative bonus, used by the War Table."></div>
-        <div class="field"><label>Init. advantage</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="initAdvantage" data-owner="p${i}" ${(p.ext&&p.ext.initAdvantage)?'checked':''}> Rolls with adv.</label></div>
-        <div class="field"><label>Mobility</label><label class="ae-check" style="margin-top:4px;" title="Can Disengage as a bonus action (Cunning Action, Nimble Escape…). Detected automatically from a bonus action with one of those names."><input type="checkbox" data-ext="bonusDisengage" data-owner="p${i}" ${((p.ext&&p.ext.bonusDisengage===true) || (!(p.ext&&p.ext.bonusDisengage===false) && (p.actions||[]).some(a=>a.actionSlot===1&&/cunning action|nimble escape|disengage/i.test(a.name||''))))?'checked':''}> Bonus Disengage</label></div>
-        <div class="field"><label>War Table AI</label><select data-ext="ai" data-owner="p${i}" title="How it fights on the War Table">${[['auto','Auto (party setting)'],['regular','Regular'],['tactical','Tactical'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${(((p.ext&&p.ext.ai)||'auto')===v)?'selected':''}>${l}</option>`).join('')}</select></div>
+      <div class="sh-checks">${exCheck(key, 'initAdvantage', 'Initiative with advantage', !!xv(c,'initAdvantage'))}</div>
+    </section>
+
+    <section class="sh">
+      <h3>Saving throws <small>blank = the average save</small></h3>
+      <div class="saves6">${SAVE_ABS.map(([k,l])=>`<label>${l}<input type="number" data-save="${k}" data-owner="${key}" value="${typeof sv[k] === 'number' ? sv[k] : ''}" placeholder="${c.saveBonus ?? 0}"></label>`).join('')}</div>
+    </section>
+
+    <section class="sh">
+      <h3>Movement</h3>
+      <div class="sh-grid">
+        ${exInput(key, 'speed', 'Walk (ft)', xv(c,'speed'), 'type="number" step="5" min="0" placeholder="30"')}
+        ${exInput(key, 'fly', 'Fly (ft)', xv(c,'fly'), 'type="number" step="5" min="0" placeholder="—"', 'Flyers ignore difficult ground and ledges, rise out of melee reach to shoot or cast and drop level with a target to fight. Knocked prone, grappled, restrained or out cold, they fall (1d6 per 10 ft) unless they can hover.')}
+        ${exInput(key, 'climb', 'Climb (ft)', xv(c,'climb'), 'type="number" step="5" min="0" placeholder="—"', 'Scales ledges of 10 ft or more with no Athletics check and no extra movement.')}
+        ${exInput(key, 'athletics', 'Athletics', xv(c,'athletics'), 'type="number" placeholder="= escape"', 'For climbing ledges of 10 ft or more without a climb speed. Blank = the escape bonus.')}
+        ${exInput(key, 'escapeBonus', 'Escape grapples', xv(c,'escapeBonus'), 'type="number" placeholder="= save"', 'Athletics or Acrobatics, whichever is better. Blank = the average save.')}
       </div>
-      <div class="team-label" style="margin-top:4px;">Actions</div>
-      ${actionEditor(key, p)}
-      ${spellbookPanel(key, p)}
-      <div class="actions-toggle" data-json-toggle="1" data-mi="${key}" style="margin-top:10px;">${openJson.has(p.id)?'▾':'▸'} Advanced: edit raw JSON</div>
-      ${openJson.has(p.id) ? `<div class="actions-json">
-        <textarea data-pactions="${i}">${escapeHtml(JSON.stringify(p.actions||[], null, 2))}</textarea>
-        <div class="row-btns"><button class="mini-btn" data-papply="${i}">Apply Edits</button></div>
-      </div>` : ''}
-      <div id="warn-${key}">${warningsHtml(p, key)}</div>
-      <div class="row-btns">
-        <button class="mini-btn" data-pdup="${i}">Duplicate</button>
-        <button class="mini-btn danger" data-premove="${i}">Remove</button>
-      </div>` : ''}
-    </div>`;
-  }).join('');
+      <div class="sh-checks">
+        ${exCheck(key, 'hover', 'Can hover', !!xv(c,'hover'), 'Stays in the air when knocked prone, grappled or slowed to 0; only falls if knocked out.')}
+        <label class="sc" title="Disengage as a bonus action (Cunning Action, Nimble Escape). Detected from a bonus action with one of those names."><input type="checkbox" data-ext="bonusDisengage" data-owner="${key}" ${bonusDisengageOn(c)?'checked':''}> Disengage as a bonus action</label>
+      </div>
+    </section>
+
+    <section class="sh">
+      <h3>Damage &amp; conditions</h3>
+      <div class="sh-grid wide2">
+        ${exInput(key, 'resist', 'Resistances', listVal(c,'resist'), 'placeholder="fire, nonmagical slashing…"', 'Takes half damage of these types.')}
+        ${exInput(key, 'immune', 'Immunities', listVal(c,'immune'), 'placeholder="poison…"', 'Takes no damage of these types.')}
+        ${exInput(key, 'vulnerable', 'Vulnerabilities', listVal(c,'vulnerable'), 'placeholder="—"', 'Takes double damage of these types.')}
+        ${exInput(key, 'condImmune', 'Condition immunities', listVal(c,'condImmune'), 'placeholder="Frightened, Poisoned…"', 'Conditions it can\'t be given.')}
+      </div>
+    </section>
+
+    <section class="sh">
+      <h3>Traits &amp; tactics</h3>
+      <div class="sh-checks">
+        ${exCheck(key, 'blindsight', 'Blindsight', !!xv(c,'blindsight'), 'Sees hidden and invisible creatures within 30 ft.')}
+        ${exCheck(key, 'packTactics', 'Pack Tactics', !!xv(c,'packTactics'), 'Advantage on attacks against a creature that has one of its allies (not incapacitated) within 5 ft.')}
+        ${exCheck(key, 'elvenAccuracy', 'Elven Accuracy', !!xv(c,'elvenAccuracy'), 'Advantage rolls three d20s instead of two.')}
+        ${exCheck(key, 'assassinate', 'Assassinate', !!xv(c,'assassinate'), 'Advantage against creatures that haven\'t acted yet, and +rogue level damage on a round-1 Sneak Attack.')}
+        ${exCheck(key, 'steadyAim', 'Steady Aim', !!xv(c,'steadyAim'), 'Bonus action: advantage on the next attack this turn if it hasn\'t moved.')}
+      </div>
+      <div class="sh-grid">
+        ${exInput(key, 'sneakDice', 'Sneak Attack', xv(c,'sneakAttack') && c.ext.sneakAttack.dice, 'placeholder="e.g. 2d6"', 'Once per turn, on a hit with a finesse or ranged weapon, with advantage or an ally next to the target.')}
+        ${exInput(key, 'legendaryActions', 'Legendary actions / round', xv(c,'legendaryActions'), 'type="number" min="0" placeholder="3"', 'Only matters if it has legendary actions.')}
+        <label class="sf"><span>Fights like</span><select data-ext="ai" data-owner="${key}">${[['auto', pc ? 'Party setting' : 'Auto (by type)'],['tactical','Tactical'],['regular','Regular'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${ai===v?'selected':''}>${l}</option>`).join('')}</select></label>
+      </div>
+    </section>
+
+    <section class="sh">
+      <h3>Actions</h3>
+      ${actionEditor(key, c)}
+    </section>
+
+    <section class="sh">
+      <h3>Spellcasting</h3>
+      ${spellbookPanel(key, c)}
+    </section>
+
+    <details class="sh sh-export" ${openJson.has(c.id) ? 'open' : ''} data-export-details="${c.id}">
+      <summary>Export details <small>the classic day-file fields, kept in step automatically</small></summary>
+      <div class="sh-grid">
+        ${cfInput(key, 'saveBonus', 'Average save', c.saveBonus, 'type="number" step="0.01"', 'The day file has a single save bonus. It follows the six saves above whenever all six are filled in.')}
+        ${pc ? '' : cfInput(key, 'src', 'Source', c.src || '', '', 'Where it comes from (optional)')}
+      </div>
+      <div class="help" style="margin:8px 0 4px;">Actions as stored (edit with care):</div>
+      <div class="actions-json"><textarea data-json-actions="${key}" spellcheck="false">${escapeHtml(JSON.stringify(c.actions||[], null, 2))}</textarea>
+      <div class="row-btns"><button class="mini-btn" data-json-apply="${key}">Apply</button></div></div>
+    </details>
+  </article>`;
 }
 
-(function wireParty(){
-  const grid = document.getElementById('partyGrid');
-  const onField = el=>{
-    const i = parseInt(el.dataset.pi,10), f = el.dataset.pf, p = PARTY_PLAYERS[i];
-    if(!p) return;
-    if(f === 'class.type'){ p.class = p.class || { level:1, options:{} }; p.class.type = el.value; p.class.options = p.class.options || {}; }
-    else if(f === 'class.level'){ p.class = p.class || { type:'fighter', options:{} }; p.class.level = Math.max(1, parseInt(el.value,10) || 1); }
-    else if(['count','hp','AC','saveBonus'].includes(f)) p[f] = el.value === '' ? 0 : parseFloat(el.value);
-    else p[f] = el.value;
-    p._warnings = validateMonster(p);
-    const w = document.getElementById('warn-p'+i); if(w) w.innerHTML = warningsHtml(p, 'p'+i);
-    renderPartyBar();
-    refreshPreview();
+/* ---------------- read-only statblock ---------------- */
+const ABIL_NAME = { str:'Str', dex:'Dex', con:'Con', int:'Int', wis:'Wis', cha:'Cha' };
+const sgn = n => (n >= 0 ? '+' : '') + n;
+function dmgWords(a){ const t = a.ext && a.ext.damageType; return t ? ' ' + String(t).replace(/\//g, ' or ').replace(/\s*\+\s*/g, ' and ') : ''; }
+function statblockLine(a){
+  const ex = a.ext || {};
+  const range = typeof ex.range === 'number' ? ex.range : null;
+  let s = '';
+  if(a.type === 'template') return `Built-in: ${a.templateOptions?.templateName || '?'}.`;
+  if(a.type === 'atk' && !a.useSaves){
+    const melee = range === null || range <= 10;
+    s = `${melee ? 'Melee' : 'Ranged'} attack: ${sgn(Number(a.toHit) || 0)} to hit, ${melee ? 'reach ' + (range || 5) : 'range ' + range} ft.${a.targets > 1 ? ` ${a.targets} attacks.` : ''} Hit: ${ex.wtDpr || a.dpr}${dmgWords(a)} damage${a.targets > 1 ? ' each' : ''}.`;
+    if(a.riderEffect) s += ` ${a.riderEffect.dc < 99 ? `DC ${a.riderEffect.dc} save or ` : ''}${describeBuff(a.riderEffect.buff)}.`;
+  } else if(a.type === 'atk'){
+    const ar = ex.area;
+    s = `${ar ? `${ar.size}-ft ${ar.shape === 'sphere' ? 'radius' : ar.shape}${ar.shape === 'emanation' ? ' around it' : ''}${range && ar.shape === 'sphere' ? ` within ${range} ft` : ''}` : (range ? `One creature within ${range} ft` : 'Target')}: DC ${a.toHit} ${(ex.saveAbility || 'save').toUpperCase()} save, ${ex.dot ? ex.dot.dice + ' each turn' : a.dpr}${dmgWords(a)} damage on a failure${a.halfOnSave ? ', half on a success' : ''}.`;
+    if(a.riderEffect) s += ` Failure also: ${describeBuff(a.riderEffect.buff)}.`;
+  } else if(a.type === 'debuff'){
+    const ar = ex.area;
+    s = `${ar ? `${ar.size}-ft ${ar.shape === 'sphere' ? 'radius' : ar.shape}` : (a.targets > 1 ? `Up to ${a.targets} creatures` : 'One creature')}${range ? ` within ${range} ft` : ''}: ${a.saveDC < 99 ? `DC ${a.saveDC} ${(ex.saveAbility || '').toUpperCase()} save or ` : ''}${describeBuff(a.buff)}.`;
+  } else if(a.type === 'buff'){
+    const d = describeBuff(a.buff);
+    s = /^no effect/.test(d) ? '' : `${a.target === 'self' ? 'Itself' : a.target}: ${d}.`;
+  } else if(a.type === 'heal'){
+    s = `${a.target === 'self' ? 'Itself' : (a.targets > 1 ? `Up to ${a.targets} allies` : 'An ally')}${range ? ` within ${range} ft` : ''}: regains ${a.amount}${a.tempHP ? ' temporary' : ''} HP.`;
+  }
+  const extra = extBits(a).filter(b=>!/^(melee|\d+ ft)$/.test(b) && b !== (ex.damageType || '') && b !== 'War Table only' && b !== 'export only');
+  if(extra.length) s += (s ? ' ' : '') + extra.map(b=>b.charAt(0).toUpperCase() + b.slice(1)).join('. ') + '.';
+  return s;
+}
+function freqTag(a){
+  const f = a.freq;
+  if(!f || f === 'at will') return '';
+  if(f === '1/fight' || f === '1/day') return ` (${f === '1/day' ? '1/Day' : '1/Fight'})`;
+  if(f.reset === 'recharge') return f.cooldownRounds >= 6 ? ' (Recharge 6)' : f.cooldownRounds >= 3 ? ' (Recharge 5–6)' : ' (Recharge 4–6)';
+  if(f.reset === 'sr' || f.reset === 'lr') return ` (${f.uses}/${f.reset === 'sr' ? 'Short' : 'Long'} Rest)`;
+  return '';
+}
+function statblockHtml(c, pc){
+  const ex = c.ext || {};
+  const sv = ex.saves || {};
+  const speed = [`${ex.speed ?? 30} ft.`].concat(ex.fly ? [`fly ${ex.fly} ft.${ex.hover ? ' (hover)' : ''}`] : [], ex.climb ? [`climb ${ex.climb} ft.`] : []).join(', ');
+  const line = (k, v) => v ? `<div class="sb-line"><b>${k}</b> ${v}</div>` : '';
+  const acts = (c.actions || []).filter(a=>!(a.ext && a.ext.fromSpellbook));
+  const group = (title, slots, intro) => {
+    const list = acts.filter(a=>slots.includes(a.actionSlot));
+    if(!list.length) return '';
+    return `<h4>${title}</h4>${intro ? `<p class="sb-intro">${intro}</p>` : ''}${list.map(a=>`<p><b><i>${escapeHtml(a.name || 'Unnamed')}${escapeHtml(freqTag(a))}.</i></b> ${escapeHtml(statblockLine(a))}</p>`).join('')}`;
   };
-  grid.addEventListener('input', ev=>{ if(ev.target.dataset.pf && ev.target.tagName === 'INPUT') onField(ev.target); });
-  grid.addEventListener('change', ev=>{ if(ev.target.dataset.pf && ev.target.tagName === 'SELECT'){ onField(ev.target); renderParty(); } });
-  grid.addEventListener('click', ev=>{
-    const t = ev.target;
-    const tog = t.closest('[data-ptoggle]');
-    if(tog){ const id = tog.dataset.ptoggle; openPlayers.has(id) ? openPlayers.delete(id) : openPlayers.add(id); renderParty(); return; }
-    if(t.dataset.premove !== undefined){
-      const i = parseInt(t.dataset.premove,10);
-      if(!confirm(`Remove ${PARTY_PLAYERS[i].name} from the party?`)) return;
-      PARTY_PLAYERS.splice(i,1); renderParty(); renderPartyBar(); refreshPreview(); return;
-    }
-    if(t.dataset.pdup !== undefined){
-      const i = parseInt(t.dataset.pdup,10);
-      const c = JSON.parse(JSON.stringify(stripInternal(PARTY_PLAYERS[i])));
-      c.id = uid(); c.name += ' (copy)'; (c.actions||[]).forEach(a=>a.id = uid());
-      PARTY_PLAYERS.splice(i+1, 0, c); openPlayers.add(c.id);
-      renderParty(); renderPartyBar(); refreshPreview(); return;
-    }
-    if(t.dataset.papply !== undefined){
-      const i = parseInt(t.dataset.papply,10);
-      const ta = grid.querySelector(`textarea[data-pactions="${i}"]`);
-      try{
-        const parsed = JSON.parse(ta.value);
-        parsed.forEach(a=>{ if(!a.id) a.id = uid(); });
-        PARTY_PLAYERS[i].actions = parsed;
-        renderParty(); renderPartyBar(); refreshPreview();
-      }catch(e){ alert('That actions JSON is invalid — fix the syntax and try again.'); }
-    }
-  });
-  document.getElementById('addPlayerBtn').addEventListener('click', ()=>{
-    const p = { id: uid(), mode:'custom', class:{ type:'fighter', level:4, options:{} }, name:'New Adventurer', count:1, hp:30, AC:15, saveBonus:2,
-      actions:[ { ...newAction('atk'), name:'Weapon Attack', dpr:'1d8 + 3', toHit:5, target:'enemy with least HP' } ] };
-    PARTY_PLAYERS.push(p); openPlayers.add(p.id);
-    renderParty(); renderPartyBar(); refreshPreview();
-    document.getElementById('pcard-'+p.id)?.scrollIntoView({behavior:'smooth', block:'start'});
-  });
-})();
-
-/* ---------------------------------------------------------
-   Render: tabs + options
---------------------------------------------------------- */
-function renderTabs(){
-  const tabs = document.getElementById('tabs');
-  tabs.innerHTML = encounters.map((e,i) =>
-    `<div class="tab ${i===activeIdx?'active':''}" data-i="${i}">
-       Encounter ${i+1}
-       ${encounters.length>1 ? `<span class="rm" data-rm="${i}">✕</span>` : ''}
-     </div>`
-  ).join('') + `<div class="tab-add" id="addEncounter">+ New Encounter</div>`;
-
-  tabs.querySelectorAll('.tab').forEach(el=>{
-    el.addEventListener('click', (ev)=>{
-      if(ev.target.dataset.rm !== undefined && ev.target.classList.contains('rm')) return;
-      activeIdx = parseInt(el.dataset.i);
-      renderAll();
-    });
-  });
-  tabs.querySelectorAll('.rm').forEach(el=>{
-    el.addEventListener('click', (ev)=>{
-      ev.stopPropagation();
-      const idx = parseInt(el.dataset.rm);
-      encounters.splice(idx,1);
-      if(activeIdx >= encounters.length) activeIdx = encounters.length-1;
-      renderAll();
-    });
-  });
-  document.getElementById('addEncounter').addEventListener('click', ()=>{
-    encounters.push(freshEncounter());
-    activeIdx = encounters.length-1;
-    renderAll();
-  });
-
-  const opts = document.getElementById('encounterOpts');
-  const enc = encounters[activeIdx];
-  opts.innerHTML = `
-    <label><input type="checkbox" id="optPS" ${enc.playersSurprised?'checked':''}> Players surprised</label>
-    <label><input type="checkbox" id="optMS" ${enc.monstersSurprised?'checked':''}> Monsters surprised</label>
-    <label><input type="checkbox" id="optSR" ${enc.shortRest?'checked':''}> Short rest before this encounter</label>
-  `;
-  document.getElementById('optPS').addEventListener('change', e=>{ enc.playersSurprised = e.target.checked; refreshPreview(); });
-  document.getElementById('optMS').addEventListener('change', e=>{ enc.monstersSurprised = e.target.checked; refreshPreview(); });
-  document.getElementById('optSR').addEventListener('change', e=>{ enc.shortRest = e.target.checked; refreshPreview(); });
+  const traits = [];
+  if(ex.legendaryResistance) traits.push(['Legendary Resistance (' + ex.legendaryResistance + '/Day)', 'If it fails a saving throw, it can choose to succeed instead.']);
+  if(ex.packTactics) traits.push(['Pack Tactics', 'Advantage on an attack roll against a creature if at least one of its allies is within 5 ft of it and isn\'t incapacitated.']);
+  if(ex.sneakAttack && ex.sneakAttack.dice) traits.push(['Sneak Attack (1/Turn)', `Extra ${ex.sneakAttack.dice} damage on a hit with advantage, or with an ally next to the target.`]);
+  if(ex.elvenAccuracy) traits.push(['Elven Accuracy', 'Rolls three d20s when it has advantage.']);
+  if(ex.assassinate) traits.push(['Assassinate', 'Advantage against creatures that haven\'t taken a turn yet.']);
+  if(ex.luck) traits.push(['Lucky (' + ex.luck + '/Day)', 'Rerolls a hit against it or a failed save that matters.']);
+  if(bonusDisengageOn(c)) traits.push(['Nimble', 'Can Disengage as a bonus action.']);
+  acts.filter(a=>a.actionSlot === 5 || a.actionSlot === 6).forEach(a=>traits.push([a.name + freqTag(a), statblockLine(a)]));
+  const sb = ex.spellbook;
+  let spells = '';
+  if(sb && (sb.spells || []).length){
+    const byL = {};
+    sb.spells.forEach(sp=>{ const L = parseInt(sp.level, 10) || 0; (byL[L] = byL[L] || []).push(sp.name || sp.templateOptions?.templateName || '?'); });
+    const slots = (sb.slots || []).map((n, i)=>n ? `${['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'][i]} ${n}` : '').filter(Boolean).join(', ');
+    spells = `<p><b><i>Spellcasting.</i></b> Slots${sb.slotReset === 'sr' ? ' (back on a short rest)' : ''}: ${escapeHtml(slots || 'none')}.</p>` +
+      Object.keys(byL).sort((a,b)=>a-b).map(L=>`<p class="sb-spells">${+L ? ['1st','2nd','3rd','4th','5th','6th','7th','8th','9th'][L-1] + ' level' : 'Cantrips'}: <i>${escapeHtml(byL[L].join(', ').toLowerCase())}</i></p>`).join('');
+  }
+  const kind = pc ? `${ex.size || 'Medium'} ${c.class ? c.class.type + ' ' + c.class.level : 'adventurer'}` : `${ex.size || 'Medium'} ${c.type || 'creature'}`;
+  const legN = ex.legendaryActions ?? 3;
+  return `<div class="statblock">
+    <h2>${escapeHtml(c.name || 'Unnamed')}${!pc && (c.count||1) > 1 ? ` <small>×${c.count}</small>` : ''}</h2>
+    <div class="sb-kind">${escapeHtml(kind)}</div>
+    <hr>
+    ${line('Armor Class', escapeHtml(String(c.AC)))}
+    ${line('Hit Points', escapeHtml(String(c.hp)))}
+    ${line('Speed', escapeHtml(speed))}
+    ${line('Initiative', ex.initBonus !== undefined ? escapeHtml(sgn(ex.initBonus) + (ex.initAdvantage ? ' (advantage)' : '')) : '')}
+    <hr>
+    <div class="sb-saves">${SAVE_ABS.map(([k])=>`<div><b>${ABIL_NAME[k]}</b><span>${typeof sv[k] === 'number' ? sgn(sv[k]) : sgn(Math.round(c.saveBonus || 0))}</span></div>`).join('')}</div>
+    <div class="sb-saves-note">saving throws</div>
+    <hr>
+    ${line('Damage Resistances', escapeHtml((ex.resist || []).join(', ')))}
+    ${line('Damage Immunities', escapeHtml((ex.immune || []).join(', ')))}
+    ${line('Damage Vulnerabilities', escapeHtml((ex.vulnerable || []).join(', ')))}
+    ${line('Condition Immunities', escapeHtml((ex.condImmune || []).join(', ')))}
+    ${line('Senses', ex.blindsight ? 'blindsight 30 ft.' : '')}
+    ${!pc && c.cr ? line('Challenge', escapeHtml(String(c.cr))) : ''}
+    ${traits.length || spells ? '<hr>' : ''}
+    ${traits.map(([n, t])=>`<p><b><i>${escapeHtml(n)}.</i></b> ${escapeHtml(t)}</p>`).join('')}
+    ${spells}
+    ${group('Actions', [0])}
+    ${group('Bonus Actions', [1])}
+    ${group('Reactions', [4])}
+    ${group('Legendary Actions', [2], `It can take ${legN} legendary action${legN === 1 ? '' : 's'}, one at a time at the end of another creature's turn.`)}
+    ${group('Lair Actions', [3], 'On initiative count 20, it takes one lair action.')}
+    ${group('Before the Fight', [-3])}
+    ${group('When Reduced to 0 HP', [-1])}
+    ${group('When It Drops a Foe', [-2])}
+  </div>`;
+}
+function statblockPage(key, c){
+  return `<article class="sheet" data-key="${key}">
+    <div class="sheet-top">
+      <div class="sheet-id"><div class="sheet-title">${escapeHtml(c.name || 'Unnamed')}</div></div>
+      <div class="sheet-tools">
+        <div class="seg"><button data-editview="${key}">Edit</button><button class="on">Statblock</button></div>
+        <button class="mini-btn" data-print>Print</button>
+        ${key[0] === 'p' ? '' : `<button class="mini-btn" data-lib-save="${key}">Save to library</button>`}
+      </div>
+    </div>
+    ${statblockHtml(c, key[0] === 'p')}
+  </article>`;
 }
 
-/* ---------------------------------------------------------
-   Render: monster cards
---------------------------------------------------------- */
-function renderMonsters(){
-  const grid = document.getElementById('monsterGrid');
-  const enc = encounters[activeIdx];
-  if(enc.monsters.length === 0){
-    grid.innerHTML = `<div class="empty-note">No monsters in this encounter yet. Paste a statblock below to forge one.</div>`;
+/* ---------------- an encounter ---------------- */
+function encounterHtml(ei){
+  const e = encounters[ei]; if(!e) return '';
+  const od = oddsFor(ei), sig = oddsSig(ei), fresh = od && od.sig === sig;
+  const E = od && od.E;
+  const pct = x => Math.round(x * 100) + '%';
+  const oddsBody = !e.monsters.length ? `<div class="empty-note" style="padding:6px 0;">Add creatures to see the odds.</div>`
+    : oddsRunning === ei ? `<div class="odds-run"><span class="spinner"></span>Fighting… <span id="oddsProg">0</span> / ${QUICK_N}</div>`
+    : E ? `<div class="tiles">
+        <div class="tile ${E.winRate < .9 ? 'warn' : ''}"><div class="k">Party wins</div><div class="v">${pct(E.winRate)}</div></div>
+        <div class="tile ${E.anyDeath > .05 ? 'warn' : ''}"><div class="k">A PC dies</div><div class="v">${pct(E.anyDeath)}</div></div>
+        <div class="tile"><div class="k">Someone goes down</div><div class="v">${pct(E.anyDown)}</div></div>
+        <div class="tile"><div class="k">Typical length</div><div class="v">${E.roundsMedian}<small> rds</small></div></div>
+        <div class="tile"><div class="k">Party HP left</div><div class="v">${pct(E.hpMedian)}</div></div>
+      </div>
+      <div class="odds-note">${fresh ? '' : '<b>Out of date:</b> the party or this encounter changed since. '}${od.n} fights against a fresh, fully rested party, on this encounter's War Table map and settings.</div>`
+    : `<div class="odds-note">Runs this fight ${QUICK_N} times on the War Table against a fresh party. Takes a few seconds.</div>`;
+  return `<article class="sheet enc-page">
+    <div class="sheet-top">
+      <div class="sheet-id">
+        <input class="sheet-name" data-enc-name="${ei}" value="${escapeAttr(e.name || '')}" placeholder="${escapeAttr('Encounter ' + (ei + 1))}" aria-label="Encounter name">
+        <div class="sheet-sub enc-opts">
+          <label class="sc"><input type="checkbox" data-enc-opt="playersSurprised" data-e="${ei}" ${e.playersSurprised?'checked':''}> Party surprised</label>
+          <label class="sc"><input type="checkbox" data-enc-opt="monstersSurprised" data-e="${ei}" ${e.monstersSurprised?'checked':''}> Monsters surprised</label>
+          <label class="sc"><input type="checkbox" data-enc-opt="shortRest" data-e="${ei}" ${e.shortRest?'checked':''}> Short rest before it</label>
+        </div>
+      </div>
+      <div class="sheet-tools">
+        <button class="mini-btn" data-enc-move="-1" data-e="${ei}" ${ei === 0 ? 'disabled' : ''} title="Earlier in the day">↑</button>
+        <button class="mini-btn" data-enc-move="1" data-e="${ei}" ${ei === encounters.length - 1 ? 'disabled' : ''} title="Later in the day">↓</button>
+        <button class="mini-btn" data-enc-dup="${ei}">Duplicate</button>
+        <button class="mini-btn danger" data-enc-del="${ei}">Delete</button>
+      </div>
+    </div>
+
+    <section class="sh odds-card">
+      <h3>Quick odds <span class="sh-actions">${e.monsters.length ? `<button class="mini-btn" data-odds="${ei}" ${oddsRunning !== null ? 'disabled' : ''}>${E ? 'Run again' : `Run ${QUICK_N} fights`}</button><button class="mini-btn" data-to-war="${ei}">Open on the War Table →</button>` : ''}</span></h3>
+      ${oddsBody}
+    </section>
+
+    <section class="sh">
+      <h3>Creatures</h3>
+      ${e.monsters.length ? `<div class="crit-list">${e.monsters.map((m, mi)=>`
+        <div class="crit">
+          <button class="crit-main" data-sel-mon="${ei}:${mi}">
+            <span class="sr-name">${escapeHtml(m.name || 'Unnamed')}${m._warnings && m._warnings.length ? '<span class="ae-dot"></span>' : ''}</span>
+            <span class="sr-meta">${escapeHtml([((m.ext && m.ext.size) || 'Medium') + ' ' + (m.type || ''), crText(m), 'AC ' + m.AC, m.hp + ' HP', (m.actions || []).length + ' actions'].filter(Boolean).join(' · '))}</span>
+          </button>
+          <div class="crit-count" title="How many">
+            <button data-count="${ei}:${mi}:-1" aria-label="One fewer">−</button><span>${m.count || 1}</span><button data-count="${ei}:${mi}:1" aria-label="One more">+</button>
+          </div>
+          <button class="mini-btn danger" data-crit-del="${ei}:${mi}" title="Remove from the encounter">✕</button>
+        </div>`).join('')}</div>` : `<div class="empty-note">No creatures yet.</div>`}
+      <div class="ae-add">
+        <button class="mini-btn" data-import-to="${ei}">＋ Paste a statblock</button>
+        <button class="mini-btn" data-go-lib="${ei}">＋ From the library</button>
+        <button class="mini-btn" data-blank="${ei}">＋ Blank creature</button>
+      </div>
+    </section>
+  </article>`;
+}
+
+/* ---------------- quick odds ---------------- */
+const QUICK_N = 60;
+let oddsRunning = null;
+const oddsStore = new Map();          // encounter object -> { sig, E, n }
+function oddsFor(ei){ return encounters[ei] ? oddsStore.get(encounters[ei]) : null; }
+function warOpts(ei){
+  try{ if(window.WarTable && WarTable.simOpts) return WarTable.simOpts(ei); }catch(e){}
+  return {};
+}
+function oddsSig(ei){
+  const e = encounters[ei]; if(!e) return '';
+  return JSON.stringify([PARTY_PLAYERS.map(exportCreature), e.monsters.map(exportCreature), !!e.playersSurprised, !!e.monstersSurprised, warOpts(ei)]);
+}
+async function runQuickOdds(ei){
+  const e = encounters[ei];
+  if(oddsRunning !== null || !e || !e.monsters.length) return;
+  oddsRunning = ei; renderForge();
+  const day = { name: 'quick', players: PARTY_PLAYERS.map(exportCreatureForSim), encounters: encounters.map((x, i)=>i === ei ? { monsters: x.monsters.map(exportCreatureForSim), playersSurprised: !!x.playersSurprised, monstersSurprised: !!x.monstersSurprised } : { monsters: [] }) };
+  const opts = Object.assign({}, warOpts(ei), { only: ei });
+  const runs = [], base = (Date.now() & 0xffffff) + 1, sig = oddsSig(ei);
+  try{
+    for(let i = 0; i < QUICK_N; i += 6){
+      for(let j = i; j < Math.min(QUICK_N, i + 6); j++){ const seed = (base + j * 7919) >>> 0; runs.push({ seed, res: TacEngine.runDay(day, Object.assign({}, opts, { seed })) }); }
+      const p = document.getElementById('oddsProg'); if(p) p.textContent = Math.min(QUICK_N, i + 6);
+      await new Promise(r=>setTimeout(r, 0));
+    }
+    const sum = TacEngine.summarize(day, runs, opts);
+    const E = sum.encounters.find(x=>x.index === ei);
+    oddsStore.set(e, { sig, E, n: QUICK_N });
+  }catch(err){
+    console.error(err);
+    oddsStore.set(e, { sig, E: null, n: 0 });
+    setStatus('parseStatus', 'Quick odds failed: ' + escapeHtml(err.message || String(err)), 'err');
+  }
+  oddsRunning = null;
+  renderForge();
+}
+/* the War Table reads the creatures as they are (spell list and all), not the compiled export */
+function exportCreatureForSim(m){ return JSON.parse(JSON.stringify(stripInternal(m))); }
+
+/* ---------------- the library ---------------- */
+const LIB_KEY = 'forge-library-v1';
+let libCache = null, libQuery = '';
+function libraryItems(){
+  if(libCache) return libCache;
+  try{ libCache = JSON.parse(localStorage.getItem(LIB_KEY) || '[]'); }catch(e){ libCache = []; }
+  if(!Array.isArray(libCache)) libCache = [];
+  return libCache;
+}
+function librarySave(list){
+  libCache = list;
+  try{ localStorage.setItem(LIB_KEY, JSON.stringify(list)); return true; }catch(e){ return false; }
+}
+function addToLibrary(c){
+  const list = libraryItems().slice();
+  const copy = JSON.parse(JSON.stringify(stripInternal(c)));
+  copy.count = 1;
+  const i = list.findIndex(x=>x.libId && x.libId === c.libId);
+  copy.libId = c.libId || uid(); c.libId = copy.libId;
+  copy.savedAt = Date.now();
+  if(i >= 0) list[i] = copy; else list.unshift(copy);
+  return librarySave(list) ? (i >= 0 ? 'updated' : 'added') : 'failed';
+}
+function cloneCreature(src){
+  const c = JSON.parse(JSON.stringify(stripInternal(src)));
+  c.id = uid(); delete c.savedAt;
+  (c.actions || []).forEach(a=>{ a.id = uid(); });
+  if(c.ext && c.ext.spellbook) (c.ext.spellbook.spells || []).forEach(sp=>{ sp.id = uid(); });
+  c._warnings = validateMonster(c);
+  return c;
+}
+function libraryHtml(){
+  const q = libQuery.trim().toLowerCase();
+  const all = libraryItems();
+  const list = all.filter(c=>!q || [c.name, c.type, c.cr].join(' ').toLowerCase().includes(q));
+  const encOpts = encounters.map((e, i)=>`<option value="${i}" ${i === activeIdx ? 'selected' : ''}>${escapeHtml(encName(e, i))}</option>`).join('');
+  return `<article class="sheet lib-page">
+    <div class="sheet-top">
+      <div class="sheet-id"><div class="sheet-title">Library</div><div class="sheet-sub">Creatures you've saved, ready to drop into any encounter. Kept in this browser.</div></div>
+      <div class="sheet-tools"><label class="inl">Add to <select id="libTarget">${encOpts}</select></label></div>
+    </div>
+    <input class="lib-search" id="libSearch" placeholder="Search by name, type or CR…" value="${escapeAttr(libQuery)}">
+    ${!all.length ? `<div class="empty-note">Nothing saved yet. Open a creature and press <b>Save to library</b>.</div>`
+      : !list.length ? `<div class="empty-note">No match.</div>`
+      : `<div class="crit-list">${list.map(c=>`<div class="crit">
+          <div class="crit-main static"><span class="sr-name">${escapeHtml(c.name || 'Unnamed')}</span>
+            <span class="sr-meta">${escapeHtml([((c.ext && c.ext.size) || 'Medium') + ' ' + (c.type || ''), crText(c), 'AC ' + c.AC, c.hp + ' HP', (c.actions || []).length + ' actions'].filter(Boolean).join(' · '))}</span></div>
+          <button class="mini-btn" data-lib-add="${escapeAttr(c.libId)}">＋ Add</button>
+          <button class="mini-btn danger" data-lib-del="${escapeAttr(c.libId)}" title="Remove from the library">✕</button>
+        </div>`).join('')}</div>`}
+  </article>`;
+}
+
+/* ---------------- statblock import target ---------------- */
+function fillImportTargets(){
+  const s = document.getElementById('importTarget'); if(!s) return;
+  s.innerHTML = encounters.map((e, i)=>`<option value="${i}" ${i === activeIdx ? 'selected' : ''}>${escapeHtml(encName(e, i))}</option>`).join('') + `<option value="new">A new encounter</option>`;
+}
+
+/* ---------------- events in the main panel ---------------- */
+const dyn = document.getElementById('forgeDynamic');
+dyn.addEventListener('click', ev=>{
+  const b = ev.target.closest('button,[data-print]'); if(!b) return;
+  const d = b.dataset;
+  if(d.statview){ const c = creatureByKey(d.statview); if(c){ statView.add(c.id); renderMain(); } return; }
+  if(d.editview){ const c = creatureByKey(d.editview); if(c){ statView.delete(c.id); renderMain(); } return; }
+  if(d.print !== undefined){ window.print(); return; }
+  if(d.libSave){
+    const c = creatureByKey(d.libSave); if(!c) return;
+    const r = addToLibrary(c);
+    b.textContent = r === 'failed' ? 'Couldn\'t save' : r === 'updated' ? '✓ Updated' : '✓ Saved';
+    setTimeout(()=>{ renderSide(); }, 0); scheduleSave(); return;
+  }
+  if(d.dup){
+    const key = d.dup, c = creatureByKey(key); if(!c) return;
+    const copy = cloneCreature(c); copy.name = (c.name || 'Creature') + ' (copy)'; delete copy.libId;
+    if(key[0] === 'p'){ PARTY_PLAYERS.splice(+key.slice(1) + 1, 0, copy); renderPartyBar(); refreshPreview(); return select({ kind: 'pc', i: +key.slice(1) + 1 }); }
+    encounters[activeIdx].monsters.splice(+key + 1, 0, copy); refreshPreview();
+    return select({ kind: 'mon', e: activeIdx, i: +key + 1 });
+  }
+  if(d.del){
+    const key = d.del, c = creatureByKey(key); if(!c) return;
+    if(!confirm(`${key[0] === 'p' ? 'Remove' : 'Delete'} ${c.name || 'this creature'}?`)) return;
+    if(key[0] === 'p'){ PARTY_PLAYERS.splice(+key.slice(1), 1); renderPartyBar(); refreshPreview(); return select({ kind: 'pc', i: Math.max(0, +key.slice(1) - 1) }); }
+    encounters[activeIdx].monsters.splice(+key, 1); refreshPreview();
+    return select({ kind: 'enc', e: activeIdx });
+  }
+  if(d.jsonApply){
+    const key = d.jsonApply, c = creatureByKey(key);
+    const ta = dyn.querySelector(`textarea[data-json-actions="${key}"]`);
+    try{ const parsed = JSON.parse(ta.value); if(!Array.isArray(parsed)) throw new Error('not a list'); parsed.forEach(a=>{ if(!a.id) a.id = uid(); }); c.actions = parsed; c._warnings = validateMonster(c); refreshPreview(); renderForge(); }
+    catch(e){ alert('That actions JSON is invalid — fix it and try again.'); }
     return;
   }
-  grid.innerHTML = enc.monsters.map((m,i)=>{
-    const crLabel = (m.cr ?? '?').toString();
-    return `
-    <div class="scroll" data-i="${i}">
-      <div class="scroll-head">
-        <div>
-          <div class="m-name">${escapeHtml(m.name || 'Unnamed')}</div>
-          <div class="m-type">${escapeHtml(m.type||'')} · CR ${escapeHtml(crLabel)}</div>
-        </div>
-        <div class="seal">${escapeHtml(crLabel)}</div>
-      </div>
-      <div class="m-fields">
-        <div class="field"><label>Name</label><input data-f="name" data-i="${i}" value="${escapeAttr(m.name||'')}"></div>
-        <div class="field"><label>Count</label><input data-f="count" data-i="${i}" type="number" min="1" value="${m.count ?? 1}"></div>
-        <div class="field"><label>HP</label><input data-f="hp" data-i="${i}" type="number" value="${m.hp ?? 0}"></div>
-        <div class="field"><label>AC</label><input data-f="AC" data-i="${i}" type="number" value="${m.AC ?? 0}"></div>
-        <div class="field"><label>Save Bonus</label><input data-f="saveBonus" data-i="${i}" type="number" value="${m.saveBonus ?? 0}"></div>
-        <div class="field"><label>CR</label><input data-f="cr" data-i="${i}" value="${escapeAttr(m.cr||'')}"></div>
-        <div class="field"><label>Type</label><input data-f="type" data-i="${i}" value="${escapeAttr(m.type||'')}"></div>
-        <div class="field"><label>Source</label><input data-f="src" data-i="${i}" value="${escapeAttr(m.src||'')}"></div>
-        <div class="field"><label>Size</label><select data-ext="size" data-owner="${i}">${['Tiny','Small','Medium','Large','Huge','Gargantuan'].map(z=>`<option ${((m.ext&&m.ext.size)||'Medium')===z?'selected':''}>${z}</option>`).join('')}</select></div>
-        <div class="field"><label>Escape bonus</label><input data-ext="escapeBonus" data-owner="${i}" type="number" placeholder="= save bonus" value="${(m.ext&&m.ext.escapeBonus!==undefined)?m.ext.escapeBonus:''}" title="Athletics/Acrobatics bonus used to break grapples (and to climb, if Athletics is blank). Blank = save bonus."></div>
-        <div class="field"><label>Senses</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="blindsight" data-owner="${i}" ${(m.ext&&m.ext.blindsight)?'checked':''}> Blindsight</label></div>
-        <div class="field"><label>Feats</label><label class="ae-check" style="margin-top:4px;" title="Advantage rolls three d20s instead of two (raises hit and crit chance). Only for Dex/Int/Wis/Cha attackers."><input type="checkbox" data-ext="elvenAccuracy" data-owner="${i}" ${(m.ext&&m.ext.elvenAccuracy)?'checked':''}> Elven Accuracy</label></div>
-        <div class="field"><label>Speed (ft)</label><input data-ext="speed" data-owner="${i}" type="number" step="5" min="0" placeholder="30" value="${(m.ext&&m.ext.speed!==undefined)?m.ext.speed:''}" title="Used by the War Table. Blank = 30 ft."></div>
-        <div class="field"><label>Sneak Attack</label><input data-ext="sneakDice" data-owner="${i}" placeholder="e.g. 2d6" value="${(m.ext&&m.ext.sneakAttack&&m.ext.sneakAttack.dice)||''}" title="Once per turn, on a hit with a Sneak-Attack-able weapon, with advantage or an ally next to the target. War Table."></div>
-        <div class="field"><label>Rogue tricks</label><label class="ae-check" style="margin-top:4px;" title="Advantage on attacks against creatures that haven't taken a turn yet, and +rogue level damage on a round-1 Sneak Attack"><input type="checkbox" data-ext="assassinate" data-owner="${i}" ${(m.ext&&m.ext.assassinate)?'checked':''}> Assassinate</label><label class="ae-check" title="Bonus action: advantage on the next attack this turn if it hasn't moved"><input type="checkbox" data-ext="steadyAim" data-owner="${i}" ${(m.ext&&m.ext.steadyAim)?'checked':''}> Steady Aim</label></div>
-        <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="${i}" type="number" step="5" min="0" placeholder="—" value="${(m.ext&&m.ext.fly!==undefined)?m.ext.fly:''}" title="Fly speed. On the War Table flyers ignore difficult ground, low walls and ledges (no climbing, no Athletics checks), see and shoot over raised ground and crates, and get no cover from crates either. Walls still block them. They fly at a height: up out of melee reach to shoot or cast, down level with a target to fight. Knocked prone, grappled, restrained or out cold, they fall (1d6 per 10 ft) unless they can hover."></div>
-        <div class="field"><label>Hover</label><label class="ae-check" style="margin-top:4px;" title="Fly (hover): stays in the air when knocked prone, grappled or slowed to 0, and only falls if knocked out (War Table)"><input type="checkbox" data-ext="hover" data-owner="${i}" ${(m.ext&&m.ext.hover)?'checked':''}> Can hover</label></div>
-        <div class="field"><label>Climb (ft)</label><input data-ext="climb" data-owner="${i}" type="number" step="5" min="0" placeholder="—" value="${(m.ext&&m.ext.climb!==undefined)?m.ext.climb:''}" title="Climb speed. Scales ledges of 10 ft or more with no Athletics check and no extra movement (War Table)."></div>
-        <div class="field"><label>Athletics</label><input data-ext="athletics" data-owner="${i}" type="number" placeholder="= escape bonus" value="${(m.ext&&m.ext.athletics!==undefined)?m.ext.athletics:''}" title="Athletics bonus for climbing ledges of 10 ft or more on the War Table. Blank = the escape bonus."></div>
-        <div class="field"><label>Resistances</label><input data-ext="resist" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.resist)||[]).join(', '))}" title="Damage types it takes half from, comma-separated: fire, cold, nonmagical slashing (War Table)"></div>
-        <div class="field"><label>Immunities</label><input data-ext="immune" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.immune)||[]).join(', '))}" title="Damage types it takes nothing from: poison, fire (War Table)"></div>
-        <div class="field"><label>Vulnerabilities</label><input data-ext="vulnerable" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.vulnerable)||[]).join(', '))}" title="Damage types it takes double from (War Table)"></div>
-        <div class="field"><label>Condition immunities</label><input data-ext="condImmune" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.condImmune)||[]).join(', '))}" title="Conditions it can&#39;t be given: Frightened, Poisoned, Restrained (War Table)"></div>
-        <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.luck!==undefined)?m.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
-        <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.legendaryResistance!==undefined)?m.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
-        <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="${i}" type="number" step="1" min="0" placeholder="3" value="${(m.ext&&m.ext.legendaryActions!==undefined)?m.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). The export counts one per round."></div>
-        ${savesField(String(i), m)}
-        <div class="field"><label>Initiative</label><input data-ext="initBonus" data-owner="${i}" type="number" placeholder="+0" value="${(m.ext&&m.ext.initBonus!==undefined)?m.ext.initBonus:''}" title="Initiative bonus, used by the War Table."></div>
-        <div class="field"><label>Init. advantage</label><label class="ae-check" style="margin-top:4px;"><input type="checkbox" data-ext="initAdvantage" data-owner="${i}" ${(m.ext&&m.ext.initAdvantage)?'checked':''}> Rolls with adv.</label></div>
-        <div class="field"><label>Pack Tactics</label><label class="ae-check" style="margin-top:4px;" title="War Table: advantage on attacks against a creature that has one of its allies (not incapacitated) within 5 ft"><input type="checkbox" data-ext="packTactics" data-owner="${i}" ${(m.ext&&m.ext.packTactics)?'checked':''}> Adv. with an ally close</label></div>
-        <div class="field"><label>Mobility</label><label class="ae-check" style="margin-top:4px;" title="Can Disengage as a bonus action (Cunning Action, Nimble Escape…). Detected automatically from a bonus action with one of those names."><input type="checkbox" data-ext="bonusDisengage" data-owner="${i}" ${((m.ext&&m.ext.bonusDisengage===true) || (!(m.ext&&m.ext.bonusDisengage===false) && (m.actions||[]).some(a=>a.actionSlot===1&&/cunning action|nimble escape|disengage/i.test(a.name||''))))?'checked':''}> Bonus Disengage</label></div>
-        <div class="field"><label>War Table AI</label><select data-ext="ai" data-owner="${i}" title="How it fights on the War Table">${[['auto','Auto (by type)'],['regular','Regular'],['tactical','Tactical'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${(((m.ext&&m.ext.ai)||'auto')===v)?'selected':''}>${l}</option>`).join('')}</select></div>
-      </div>
-      <div class="team-label" style="margin-top:4px;">Actions</div>
-      ${actionEditor(i, m)}
-      ${spellbookPanel(String(i), m)}
-      <div class="actions-toggle" data-json-toggle="1" data-mi="${i}" style="margin-top:10px;">${openJson.has(m.id)?'▾':'▸'} Advanced: edit raw JSON</div>
-      ${openJson.has(m.id) ? `<div class="actions-json">
-        <textarea data-actions="${i}">${escapeHtml(JSON.stringify(m.actions||[], null, 2))}</textarea>
-        <div class="row-btns"><button class="mini-btn" data-apply="${i}">Apply Edits</button></div>
-      </div>` : ''}
-      <div id="warn-${i}">${warningsHtml(m, i)}</div>
-      <div class="row-btns">
-        <button class="mini-btn" data-revalidate="${i}">Re-check Schema</button>
-        <button class="mini-btn danger" data-remove="${i}">Remove Monster</button>
-      </div>
-    </div>`;
-  }).join('');
+  if(d.selMon){ const [e, i] = d.selMon.split(':').map(Number); return select({ kind: 'mon', e, i }); }
+  if(d.importTo !== undefined) return select({ kind: 'import', e: +d.importTo });
+  if(d.goLib !== undefined){ activeIdx = +d.goLib; return select({ kind: 'library' }); }
+  if(d.blank !== undefined){
+    const ei = +d.blank;
+    const m = { id: uid(), mode: 'custom', name: 'New creature', type: 'humanoid', cr: '1', count: 1, hp: 20, AC: 13, saveBonus: 1,
+      actions: [ { ...newAction('atk'), name: 'Strike', dpr: '1d8 + 2', toHit: 4, ext: { range: 5 } } ] };
+    m._warnings = validateMonster(m);
+    encounters[ei].monsters.push(m); refreshPreview();
+    return select({ kind: 'mon', e: ei, i: encounters[ei].monsters.length - 1 });
+  }
+  if(d.count){
+    const [e, i, dlt] = d.count.split(':').map(Number), m = encounters[e].monsters[i];
+    m.count = Math.max(1, (m.count || 1) + dlt); refreshPreview(); renderForge(); return;
+  }
+  if(d.critDel){
+    const [e, i] = d.critDel.split(':').map(Number), m = encounters[e].monsters[i];
+    if(!confirm(`Remove ${m.name || 'this creature'} from the encounter?`)) return;
+    encounters[e].monsters.splice(i, 1); refreshPreview(); renderForge(); return;
+  }
+  if(d.odds !== undefined){ runQuickOdds(+d.odds); return; }
+  if(d.toWar !== undefined){ showView('war'); try{ if(window.WarTable && WarTable.openEncounter) WarTable.openEncounter(+d.toWar); }catch(e){} return; }
+  if(d.encMove){
+    const ei = +d.e, j = ei + (+d.encMove);
+    if(j < 0 || j >= encounters.length) return;
+    [encounters[ei], encounters[j]] = [encounters[j], encounters[ei]];
+    refreshPreview(); return select({ kind: 'enc', e: j });
+  }
+  if(d.encDup !== undefined){
+    const src = encounters[+d.encDup];
+    const copy = { monsters: src.monsters.map(cloneCreature), playersSurprised: !!src.playersSurprised, monstersSurprised: !!src.monstersSurprised, shortRest: !!src.shortRest };
+    if(src.name) copy.name = src.name + ' (copy)';
+    encounters.splice(+d.encDup + 1, 0, copy); refreshPreview();
+    return select({ kind: 'enc', e: +d.encDup + 1 });
+  }
+  if(d.encDel !== undefined){
+    const ei = +d.encDel;
+    if(encounters[ei].monsters.length && !confirm(`Delete ${encName(encounters[ei], ei)} and its ${encounters[ei].monsters.length} creature${encounters[ei].monsters.length === 1 ? '' : 's'}?`)) return;
+    encounters.splice(ei, 1);
+    if(!encounters.length) encounters.push(freshEncounter());
+    refreshPreview(); return select({ kind: 'enc', e: Math.max(0, ei - 1) });
+  }
+  if(d.libAdd){
+    const src = libraryItems().find(x=>x.libId === d.libAdd); if(!src) return;
+    const t = document.getElementById('libTarget'), ei = t ? +t.value : activeIdx;
+    const c = cloneCreature(src); c.libId = src.libId; c.count = 1;
+    encounters[ei].monsters.push(c); refreshPreview();
+    return select({ kind: 'mon', e: ei, i: encounters[ei].monsters.length - 1 });
+  }
+  if(d.libDel){
+    const src = libraryItems().find(x=>x.libId === d.libDel); if(!src) return;
+    if(!confirm(`Remove ${src.name || 'this creature'} from the library? Creatures already in encounters stay.`)) return;
+    librarySave(libraryItems().filter(x=>x.libId !== d.libDel)); renderForge(); return;
+  }
+});
+dyn.addEventListener('input', ev=>{
+  const el = ev.target;
+  if(el.id === 'libSearch'){
+    libQuery = el.value;
+    const pos = el.selectionStart; renderMain();
+    const s = document.getElementById('libSearch'); if(s){ s.focus(); try{ s.setSelectionRange(pos, pos); }catch(e){} }
+    return;
+  }
+  if(el.dataset.encName !== undefined){
+    const e = encounters[+el.dataset.encName]; if(!e) return;
+    const v = el.value.trim(); if(v) e.name = el.value; else delete e.name;
+    renderSide(); refreshPreview(); return;
+  }
+  if(el.dataset.cf !== undefined && el.tagName === 'INPUT') onCoreField(el);
+});
+dyn.addEventListener('change', ev=>{
+  const el = ev.target;
+  if(el.dataset.encOpt){ const e = encounters[+el.dataset.e]; e[el.dataset.encOpt] = el.checked; refreshPreview(); renderSide(); return; }
+  if(el.dataset.cf !== undefined && el.tagName === 'SELECT'){ onCoreField(el); renderForge(); }
+});
+dyn.addEventListener('toggle', ev=>{
+  const d = ev.target; if(!d.dataset || d.dataset.exportDetails === undefined) return;
+  if(d.open) openJson.add(d.dataset.exportDetails); else openJson.delete(d.dataset.exportDetails);
+}, true);
 
-  grid.querySelectorAll('input[data-f]').forEach(inp=>{
-    inp.addEventListener('input', ()=>{
-      const i = parseInt(inp.dataset.i), f = inp.dataset.f;
-      const m = enc.monsters[i];
-      if(['count','hp','AC','saveBonus'].includes(f)){
-        m[f] = inp.value === '' ? 0 : parseFloat(inp.value);
-      } else {
-        m[f] = inp.value;
-      }
-      m._warnings = validateMonster(m);
-      refreshPreview();
-    });
-  });
-  grid.querySelectorAll('[data-apply]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const i = parseInt(btn.dataset.apply);
-      const ta = grid.querySelector(`textarea[data-actions="${i}"]`);
-      try{
-        const parsed = JSON.parse(ta.value);
-        parsed.forEach(a=>{ if(!a.id) a.id = uid(); });
-        enc.monsters[i].actions = parsed;
-        enc.monsters[i]._warnings = validateMonster(enc.monsters[i]);
-        const wc = enc.monsters[i]._warnings.length;
-        setStatus('parseStatus', wc ? `Actions updated for ${enc.monsters[i].name} — ${wc} issue${wc===1?'':'s'} flagged.` : `Actions updated for ${enc.monsters[i].name}. No schema issues found.`, wc ? 'err' : 'ok');
-        renderMonsters();
-        refreshPreview();
-      }catch(err){
-        setStatus('parseStatus', 'That actions JSON is invalid — fix the syntax and try again.', 'err');
-      }
-    });
-  });
-  grid.querySelectorAll('[data-revalidate]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const i = parseInt(btn.dataset.revalidate);
-      enc.monsters[i]._warnings = validateMonster(enc.monsters[i]);
-      renderMonsters();
-    });
-  });
-  grid.querySelectorAll('[data-remove]').forEach(btn=>{
-    btn.addEventListener('click', ()=>{
-      const i = parseInt(btn.dataset.remove);
-      enc.monsters.splice(i,1);
-      renderMonsters();
-      refreshPreview();
-    });
-  });
+/* name, HP, AC, count, CR, type, source, class, level, average save */
+function onCoreField(el){
+  const key = el.dataset.owner, c = creatureByKey(key); if(!c) return;
+  const f = el.dataset.cf;
+  if(f === 'class.type'){ c.class = c.class || { level: 1, options: {} }; c.class.type = el.value; c.class.options = c.class.options || {}; }
+  else if(f === 'class.level'){ c.class = c.class || { type: 'fighter', options: {} }; c.class.level = Math.max(1, Math.min(20, parseInt(el.value, 10) || 1)); }
+  else if(f === 'count'){ c.count = Math.max(1, parseInt(el.value, 10) || 1); }
+  else if(['hp','AC','saveBonus'].includes(f)) c[f] = el.value === '' ? 0 : parseFloat(el.value);
+  else c[f] = el.value;
+  c._warnings = validateMonster(c);
+  const w = document.getElementById('warn-' + key); if(w) w.innerHTML = warningsHtml(c, key);
+  if(key[0] === 'p') renderPartyBar();
+  renderSide();
+  refreshPreview();
 }
 
 /* ---------------------------------------------------------
@@ -1753,18 +2084,30 @@ document.getElementById('parseBtn').addEventListener('click', async ()=>{
     failed.forEach(f=>console.error(f.err));
   }
   finishParsed(monsters);
-  if(monsters.length) encounters[activeIdx].monsters.push(...monsters);
+  const tgtSel = document.getElementById('importTarget');
+  let tgt = tgtSel && tgtSel.value !== '' ? tgtSel.value : String(activeIdx);
+  if(monsters.length && tgt === 'new'){ encounters.push(freshEncounter()); tgt = String(encounters.length - 1); }
+  const ti = Math.max(0, Math.min(encounters.length - 1, parseInt(tgt, 10) || 0));
+  const firstNew = encounters[ti].monsters.length;
+  if(monsters.length){ encounters[ti].monsters.push(...monsters); activeIdx = ti; }
   // keep only what failed in the box, so it can be retried
   input.value = useClaude ? failed.map(f=>f.b).join('\n\n---\n\n') : (monsters.length ? '' : input.value);
 
   const totalWarnings = monsters.reduce((sum,m)=>sum+m._warnings.length,0);
   const totalNotes = monsters.reduce((sum,m)=>sum+((m._notes||[]).length),0);
   const parts = [];
-  if(monsters.length) parts.push(`Added ${monsters.length} creature${monsters.length===1?'':'s'}: ${monsters.map(m=>escapeHtml(m.name || '?')).join(', ')}.` + (totalWarnings ? ` ${totalWarnings} possible schema issue${totalWarnings===1?'':'s'} flagged.` : '') + (totalNotes ? ` Check the parser notes on the card${monsters.length===1?'':'s'}.` : ''));
+  if(monsters.length) parts.push(`Added ${monsters.length} creature${monsters.length===1?'':'s'} to ${escapeHtml(encName(encounters[ti], ti))}: ${monsters.map(m=>escapeHtml(m.name || '?')).join(', ')}.` + (totalWarnings ? ` ${totalWarnings} possible issue${totalWarnings===1?'':'s'} flagged.` : '') + (totalNotes ? ` Check the parser notes${monsters.length===1?'':' on each'}.` : ''));
   if(failed.length) parts.push(`${failed.length} statblock${failed.length===1?'':'s'} couldn't be converted: ${escapeHtml(failed[0].err.message || String(failed[0].err))}`);
   if(!monsters.length && !failed.length) parts.push("Couldn't find a statblock in that text.");
   setStatus('parseStatus', parts.join(' '), failed.length || totalWarnings || !monsters.length ? 'err' : 'ok');
-  if(monsters.length){ renderMonsters(); refreshPreview(); }
+  if(monsters.length){
+    refreshPreview();
+    // open the first new creature; the status line stays visible on its sheet
+    select({ kind: 'mon', e: ti, i: firstNew });
+    const st = document.getElementById('parseStatus');
+    const note = document.createElement('div'); note.className = 'forged-note ' + st.className; note.innerHTML = st.innerHTML;
+    const sheet = document.querySelector('#forgeDynamic .sheet'); if(sheet) sheet.insertBefore(note, sheet.children[1] || null);
+  }
   btn.disabled = false;
 });
 
@@ -1788,6 +2131,7 @@ function buildDayObject(){
     name: document.getElementById('dayNameInput').value || 'Adventuring Day',
     players: PARTY_PLAYERS.map(exportCreature),
     encounters: encounters.map(e=>({
+      ...(e.name ? { name: e.name } : {}),
       monsters: e.monsters.map(exportCreature),
       playersSurprised: !!e.playersSurprised,
       monstersSurprised: !!e.monstersSurprised,
@@ -1846,14 +2190,6 @@ function escapeHtml(str){
 }
 function escapeAttr(str){ return escapeHtml(str); }
 
-/* ---------------------------------------------------------
-   Init
---------------------------------------------------------- */
-function renderAll(){
-  renderTabs();
-  renderMonsters();
-  refreshPreview();
-}
 
 /* ---------------------------------------------------------
    Real schema check — the Forge's own save-format validators
@@ -1913,7 +2249,7 @@ function updateSchemaStatus(){
 --------------------------------------------------------- */
 let currentView = 'forge';
 const PAGES = {
-  forge: { title: 'Statblock <span>Forge</span>', sub: 'Paste a monster statblock, get back simulator-ready JSON. Build out full encounters, then play them out on the War Table.' },
+  forge: { title: 'Statblock <span>Forge</span>', sub: 'Paste a statblock and the Forge reads it into a creature the War Table can fight with. Build the party and the day\'s encounters here, then play them out.' },
   war:   { title: 'War <span>Table</span>', sub: 'Fights played out with real dice, real initiative and real positions. Run a fight hundreds of times for the odds, then watch any one of them unfold.' },
 };
 function showView(view, fromHash){
@@ -1925,12 +2261,16 @@ function showView(view, fromHash){
   document.getElementById('siteTitle').innerHTML = PAGES[view].title;
   document.getElementById('siteSub').textContent = PAGES[view].sub;
   document.title = view === 'war' ? 'War Table' : 'Statblock Forge';
-  document.body.classList.toggle('wide', view === 'war');
+  document.body.classList.add('wide');
+  document.body.classList.toggle('view-forge', view === 'forge');
+  document.body.classList.toggle('view-war', view === 'war');
   if(!fromHash){ try{ history.replaceState(null, '', '#' + view); }catch(e){} }
   if(view === 'war' && window.WarTable) window.WarTable.show();
 }
 document.querySelectorAll('.view-btn').forEach(btn=>btn.addEventListener('click', ()=>showView(btn.dataset.view)));
 window.addEventListener('hashchange', ()=>showView(location.hash.slice(1), true));
+// the starting view (after every script has loaded, so the War Table can draw itself)
+window.addEventListener('DOMContentLoaded', ()=>showView(location.hash.slice(1) || 'forge', true));
 
 /* ---------------------------------------------------------
    Load a day file (works for both views)
@@ -1951,15 +2291,15 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
   }
   PARTY_PLAYERS.splice(0, PARTY_PLAYERS.length, ...day.players);
   encounters = day.encounters.length ? day.encounters.map(e=>({
+    ...(e.name ? { name: String(e.name) } : {}),
     monsters: e.monsters.map(m=>{ const c = JSON.parse(JSON.stringify(m)); c._warnings = validateMonster(c); return c; }),
     playersSurprised: !!e.playersSurprised,
     monstersSurprised: !!e.monstersSurprised,
     shortRest: !!e.shortRest,
   })) : [ freshEncounter() ];
-  activeIdx = 0;
+  activeIdx = 0; sel = { kind: 'file' };
   if(day.name) document.getElementById('dayNameInput').value = day.name;
   renderPartyBar();
-  renderParty();
   renderAll();
   setStatus('loadStatus', `Loaded "${escapeHtml(file.name)}": ${PARTY_PLAYERS.length} party member${PARTY_PLAYERS.length===1?'':'s'}, ${encounters.length} encounter${encounters.length===1?'':'s'}.`, 'ok');
   if(typeof scheduleSave === 'function') scheduleSave();
@@ -2028,6 +2368,7 @@ function snapshot(){
     savedAt: Date.now(),
     dayName: document.getElementById('dayNameInput').value,
     activeIdx,
+    sel,
     players: PARTY_PLAYERS.map(stripInternal),
     encounters: encounters.map(e=>({ ...e, monsters: e.monsters.map(stripInternal) })),
   });
@@ -2070,6 +2411,7 @@ function applyWorkspace(ws){
   }
   if(Array.isArray(ws.encounters) && ws.encounters.length){
     encounters = ws.encounters.map(e=>({
+      ...(e.name ? { name: String(e.name) } : {}),
       monsters: (e.monsters||[]).map(m=>{ m._warnings = validateMonster(m); return m; }),
       playersSurprised: !!e.playersSurprised,
       monstersSurprised: !!e.monstersSurprised,
@@ -2077,6 +2419,7 @@ function applyWorkspace(ws){
     }));
   }
   activeIdx = Math.min(Math.max(0, ws.activeIdx|0), encounters.length - 1);
+  if(ws.sel && typeof ws.sel === 'object' && typeof ws.sel.kind === 'string') sel = ws.sel; else sel = { kind: 'enc', e: activeIdx };
   if(typeof ws.dayName === 'string') document.getElementById('dayNameInput').value = ws.dayName;
   return updated;
 }
@@ -2086,7 +2429,7 @@ async function loadWorkspace(){
     const raw = await store.get();
     if(raw){
       const updated = applyWorkspace(JSON.parse(raw));
-      renderPartyBar(); renderParty(); renderAll();
+      renderPartyBar(); renderAll();
       const ws = JSON.parse(raw);
       setSaveStatus(`✓ Restored work from ${new Date(ws.savedAt).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}${updated.length ? ` · updated ${updated.join(', ')} to the latest sheet build` : ''}`, 'saved');
       if(updated.length) saveNote = ` · updated ${updated.join(', ')} to the latest sheet build`;
@@ -2106,14 +2449,13 @@ document.getElementById('resetSavedBtn').addEventListener('click', async ()=>{
   await store.del();
   PARTY_PLAYERS.splice(0, PARTY_PLAYERS.length, ...JSON.parse(JSON.stringify(DEFAULT_PARTY)));
   encounters = [ freshEncounter() ];
-  activeIdx = 0;
+  activeIdx = 0; sel = { kind: 'enc', e: 0 };
   document.getElementById('dayNameInput').value = DEFAULT_DAY_NAME;
-  openPlayers.clear(); openActions.clear(); openJson.clear();
-  renderPartyBar(); renderParty(); renderAll();
+  openActions.clear(); openJson.clear(); statView.clear();
+  renderPartyBar(); renderAll();
   setSaveStatus('Reset to defaults', '');
 });
 
 renderPartyBar();
-renderParty();
 renderAll();
 loadWorkspace();

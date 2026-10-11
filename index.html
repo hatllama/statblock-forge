@@ -6,7 +6,7 @@
 <title>Statblock Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20261011c">
+<link rel="stylesheet" href="css/styles.css?v=20261011e">
 
 </head>
 <body>
@@ -15,7 +15,7 @@
   <header>
     <div class="eyebrow" id="siteEyebrow">D&amp;D encounter workshop</div>
     <h1 id="siteTitle">Statblock <span>Forge</span></h1>
-    <p class="subhead" id="siteSub">Paste a monster statblock, get back simulator-ready JSON. Build out full encounters, then play them out on the War Table or export a day as JSON.</p>
+    <p class="subhead" id="siteSub">Paste a statblock and the Forge reads it into a creature the War Table can fight with. Build the party and the day's encounters here, then play them out.</p>
     <div class="divider"></div>
   </header>
 
@@ -116,72 +116,64 @@
   </div>
 
   <div id="viewForge">
-  <section>
-    <div class="section-title">Party</div>
-    <div class="monster-grid" id="partyGrid"></div>
-    <div class="ae-add"><button class="mini-btn" id="addPlayerBtn">+ Add party member</button></div>
-  </section>
+  <div class="forge-shell">
+    <aside class="forge-side" id="forgeSide" aria-label="Party and encounters"></aside>
+    <main class="forge-main">
+      <div id="forgeDynamic"></div>
 
-  <section>
-    <div class="section-title">Encounters</div>
-    <div class="tabs" id="tabs"></div>
-    <div class="encounter-opts" id="encounterOpts"></div>
-    <div class="monster-grid" id="monsterGrid"></div>
-  </section>
-
-  <section>
-    <div class="section-title">Add a Monster</div>
-    <div class="parse-box">
-      <textarea id="statblockInput" placeholder="Paste one or more statblocks here (from the Monster Manual, D&amp;D Beyond, a homebrew doc, whatever you've got). Separate multiple statblocks with a blank line or a line of dashes ---."></textarea>
-      <div class="hint">Reads 2014 and 2024 statblocks, D&amp;D Beyond and 5etools copy-pastes, and Homebrewery/GM Binder markdown, right here in your browser. HP, AC, saves, attacks, multiattacks, breath weapons and other save effects, recharge and limited uses, legendary actions, resistances, regeneration and spellcasting all come across. Anything it had to guess or leave out is listed as a parser note on the card. Review it before exporting: it's a strong first draft, not gospel.</div>
-      <div class="parse-row">
-        <span class="status" id="parseStatus"></span>
-        <button class="primary-btn" id="parseBtn">Forge Statblock</button>
-      </div>
-      <details class="api-settings" id="apiSettings">
-        <summary>Convert with Claude instead (optional)</summary>
-        <label class="api-use"><input type="checkbox" id="useClaudeInput"> Use Claude for the next conversions. Slower and costs a few cents per statblock, but it reads unusual homebrew wording better.</label>
-        <div class="api-grid">
-          <label>Anthropic API key<input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
-          <label>Model<input id="apiModelInput" type="text" spellcheck="false" placeholder="claude-sonnet-5-5"></label>
+      <div class="fpanel" id="panelImport" style="display:none;">
+        <div class="fp-head"><h2>Forge a statblock</h2><p>Paste one or more statblocks: Monster Manual, D&amp;D Beyond, 5etools, Homebrewery or GM Binder markdown, a homebrew doc. Separate several with a blank line or a line of dashes (---).</p></div>
+        <div class="parse-box">
+          <textarea id="statblockInput" placeholder="Paste a statblock here…"></textarea>
+          <div class="parse-row">
+            <label class="import-target">Add to <select id="importTarget"></select></label>
+            <span class="status" id="parseStatus"></span>
+            <button class="primary-btn" id="parseBtn">Forge Statblock</button>
+          </div>
+          <div class="hint">Read right here in your browser. HP, AC, saves, speeds, attacks, multiattacks, breath weapons and other save effects, damage types, recharge and limited uses, reactions, legendary and lair actions, resistances, regeneration and spellcasting all come across. Anything it had to guess or leave out is listed as a parser note on the creature. Review it before relying on it: it's a strong first draft, not gospel.</div>
+          <details class="api-settings" id="apiSettings">
+            <summary>Convert with Claude instead (optional)</summary>
+            <label class="api-use"><input type="checkbox" id="useClaudeInput"> Use Claude for the next conversions. Slower and costs a few cents per statblock, but it reads unusual homebrew wording better.</label>
+            <div class="api-grid">
+              <label>Anthropic API key<input id="apiKeyInput" type="password" autocomplete="off" spellcheck="false" placeholder="sk-ant-…"></label>
+              <label>Model<input id="apiModelInput" type="text" spellcheck="false" placeholder="claude-sonnet-5-5"></label>
+            </div>
+            <div class="hint">Only needed if you tick the box above. Get a key from console.anthropic.com. It's stored only in this browser and sent only to api.anthropic.com.</div>
+          </details>
         </div>
-        <div class="hint">Only needed if you tick the box above. Get a key from console.anthropic.com. It's stored only in this browser and sent only to api.anthropic.com. Each statblock costs a few cents.</div>
-      </details>
-    </div>
-  </section>
+      </div>
 
-  <section>
-    <div class="section-title">Export Adventuring Day</div>
-    <div class="export-shell">
-      <div class="dayname">
-        <label>Day Name</label>
-        <input id="dayNameInput" type="text" value="Level 4 Party Full">
+      <div class="fpanel" id="panelFile" style="display:none;">
+        <div class="fp-head"><h2>Save &amp; load</h2><p>Everything autosaves in this browser. Download the day as a JSON file now and then as a portable backup, or to move it to another device.</p></div>
+        <div class="export-shell">
+          <div class="dayname">
+            <label for="dayNameInput">Day name</label>
+            <input id="dayNameInput" type="text" value="Level 4 Party Full">
+          </div>
+          <div class="export-actions">
+            <button class="ghost-btn" id="downloadBtn">Download JSON</button>
+            <button class="ghost-btn" id="copyBtn">Copy to clipboard</button>
+            <label class="ghost-btn file-btn">Load a day file<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
+          </div>
+          <div class="status" id="loadStatus" style="margin-bottom:10px;"></div>
+          <div class="status" id="schemaStatus" style="margin-bottom:10px;"></div>
+          <div class="preview-toggle" id="previewToggle">▸ show JSON preview</div>
+          <pre id="jsonPreview" style="display:none;"></pre>
+          <div class="hint" style="margin-top:14px;">Loading a file replaces the party and encounters. The file keeps the classic day format, so older exports still load.</div>
+        </div>
       </div>
-      <div class="export-actions">
-        <button class="ghost-btn" id="downloadBtn">Download JSON</button>
-        <button class="ghost-btn" id="copyBtn">Copy to Clipboard</button>
-      </div>
-      <div class="status" id="schemaStatus" style="margin-bottom:10px;"></div>
-      <div class="export-actions">
-        <label class="ghost-btn file-btn">Load Day JSON<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
-        <span class="hint">Loads a Forge day save file, replacing the party and encounters.</span>
-      </div>
-      <div class="status" id="loadStatus" style="margin-bottom:10px;"></div>
-      <div class="preview-toggle" id="previewToggle">▸ show JSON preview</div>
-      <pre id="jsonPreview" style="display:none;"></pre>
-    </div>
-  </section>
+    </main>
+  </div>
   </div>
 
-  <footer>Work autosaves; export a JSON now and then as a portable backup.<br>
-  Statblock reader and War Table engine: original, written for this site.</footer>
+  <footer>Statblock reader and War Table engine: original, written for this site.</footer>
 </div>
 
-<script src="data/party.js?v=20261011c"></script>
-<script src="js/spell-data.js?v=20261011c"></script>
-<script src="js/statblock-parser.js?v=20261011c"></script>
-<script src="js/forge.js?v=20261011c"></script>
-<script src="js/engine/tactical-engine.js?v=20261011c"></script>
-<script src="js/war-table.js?v=20261011c"></script>
+<script src="data/party.js?v=20261011e"></script>
+<script src="js/spell-data.js?v=20261011e"></script>
+<script src="js/statblock-parser.js?v=20261011e"></script>
+<script src="js/forge.js?v=20261011e"></script>
+<script src="js/engine/tactical-engine.js?v=20261011e"></script>
+<script src="js/war-table.js?v=20261011e"></script>
 </body>
 </html>

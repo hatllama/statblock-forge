@@ -2,7 +2,7 @@
 
 A D&D 5e encounter-prep workshop that runs entirely in the browser. It has two views:
 
-- **Forge** turns monster statblocks and character sheets into simulator-ready JSON. Pasted statblocks are read by a built-in parser with no AI and no network: 2014 and 2024 layouts, D&D Beyond and 5etools copy-pastes, and Homebrewery markdown. Claude can optionally be used instead with your own API key. It has a visual editor, spellbooks with slots, six saving throws, terrain-aware ranges, and an autosave.
+- **Forge** is the workshop where the party and the day's encounters are built. A sidebar lists the party and each encounter; the main panel shows the selected creature as an editable sheet (or a printable statblock), an encounter page with quick odds, a library of saved creatures, the statblock importer, or save & load. Pasted statblocks are read by a built-in parser with no AI and no network: 2014 and 2024 layouts, D&D Beyond and 5etools copy-pastes, and Homebrewery markdown. Claude can optionally be used instead with your own API key. Everything autosaves; days can be downloaded and loaded as JSON.
 - **War Table** is an original tactical engine. It plays every fight out with real dice on a grid that has walls, high ground, difficult terrain, cover and fog. Party and monsters use a tactical AI, and you can run the odds over hundreds of fights or replay any single one turn by turn.
 
 There's no build step and there are no dependencies. Open `index.html` directly or serve the folder.
@@ -31,7 +31,7 @@ css/styles.css                 all styling
 data/party.js                  the built-in party (PARTY_PLAYERS) + nothing else
 js/spell-data.js               combat spells the parser knows (damage, saves, areas, conditions)
 js/statblock-parser.js         statblock text → Forge creatures, no AI (exposes StatblockParser)
-js/forge.js                    Forge view: parsing, editor, validation, export, autosave, migrations
+js/forge.js                    Forge view: workshop UI (sidebar, sheet, statblock, encounter page, quick odds, library), editor, validation, export, autosave, migrations
 js/engine/tactical-engine.js   War Table engine (pure JS, no DOM) — exposes TacEngine
 js/war-table.js                War Table UI: board, terrain painting, odds, replay
 tests/run.js                   engine and parser checks (wall/LoS violations, dead or hidden-in-plain-sight actors, odds sanity)
@@ -49,7 +49,8 @@ party data → spell data → statblock parser → forge → tactical engine →
 |---|---|
 | How pasted statblocks are read | `js/statblock-parser.js` (header, sections, attacks, save effects, multiattack, traits, spellcasting) and `js/spell-data.js` for spells. Add a sample to `tests/statblocks/` and run `npm test` |
 | The built-in party | `data/party.js`. Bump `PARTY_VERSION` and add the ids to `PARTY_UPDATES` in `js/forge.js` so saved workspaces pick up the change |
-| Editor fields for actions and creatures | `js/forge.js`, around `actionEditor`, `mechanicsPanel` (War Table fields) and `handleFieldChange` |
+| The Forge layout and pages | `js/forge.js`: `renderSide` (sidebar), `sheetHtml` (creature sheet), `statblockHtml` (read-only statblock), `encounterHtml` + `runQuickOdds`, `libraryHtml`. The selection lives in `sel` |
+| Editor fields for actions and creatures | `js/forge.js`, around `actionEditor`, `mechanicsPanel` (War Table fields) and `handleFieldChange`; creature fields in `sheetHtml`, `onCoreField` and the `data-ext` handler |
 | Validation and export | `js/forge.js`, around `validateMonster`, `checkRealSchema`, `exportCreature`, `compileSpellbook` |
 | How War Table creatures choose what to do | `js/engine/tactical-engine.js`, especially `tacticalTurnInner` (where to stand), `optionValue` / `rankSpells` (which spell), `targetValue` (who to hit) |
 | Rules: attacks, saves, damage, conditions | `js/engine/tactical-engine.js`: `attackRoll`, `saveRoll`, `damage`, `addBuff` |

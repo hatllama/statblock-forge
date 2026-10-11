@@ -54,7 +54,7 @@ function renderTabs(){
   if(!list.some(x=>x.i === S.enc) && list.length) S.enc = list[0].i;
   el.innerHTML = list.map((x,k)=>{
     const names = [...new Set(x.e.monsters.map(m=>`${m.name}${(m.count||1)>1?' ×'+m.count:''}`))].join(', ');
-    return `<button class="tab ${x.i===S.enc?'active':''}" data-enc="${x.i}">Encounter ${k+1}<small>${esc(names)}</small></button>`;
+    return `<button class="tab ${x.i===S.enc?'active':''}" data-enc="${x.i}">${esc((x.e.name && String(x.e.name).trim()) || 'Encounter ' + (x.i+1))}<small>${esc(names)}</small></button>`;
   }).join('') || '<div class="empty">No monsters yet. Forge an encounter on the Forge page, or load a day file there, and it will appear here.</div>';
   el.querySelectorAll('[data-enc]').forEach(b=>b.onclick = ()=>{ stopPlay(); S.enc = +b.dataset.enc; S.replay = null; setMode('setup'); renderAll(); scheduleSave(); });
 }
@@ -711,7 +711,14 @@ function show(){
   ready = true;
   setMode('setup');
 })();
-window.WarTable = { show };
+/* for the Forge: the settings and map one encounter is fought on (quick odds), and jumping straight to it */
+function simOptsFor(i){
+  const o = simOpts();
+  o.layouts = S.layouts[i] ? { [i]: S.layouts[i] } : {};
+  return o;
+}
+function openEncounter(i){ stopPlay(); S.enc = i; S.replay = null; setMode('setup'); renderAll(); scheduleSave(); }
+window.WarTable = { show, simOpts: simOptsFor, openEncounter };
 
 })();
 
