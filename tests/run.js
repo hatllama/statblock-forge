@@ -111,6 +111,32 @@ section('Area templates');
   check(bad === 0, `inArea agrees with areaCells (${bad} mismatches)`);
 }
 
+section('Terrain: fog, cover and climbing');
+{
+  const sim = new Tac.Sim({ width: 12, height: 6 });
+  const cells = {}; cells['5,1'] = { h: 1 }; cells['5,4'] = { h: 3 };
+  sim.setTerrain({ cells });
+  sim.T.fog = new Uint8Array(72); for (let x = 3; x <= 7; x++) for (let y = 0; y < 6; y++) sim.T.fog[x + y * 12] = 1;
+  check(!sim.los(1, 2, 9, 2) && sim.los(1, 2, 9, 2, true), 'fog blocks sight but not an area spreading through it');
+  sim.T.fog = null;
+  check(sim.coverBetween(1, 1, 9, 1) === 2, 'a 5-ft rise between two creatures on the ground gives half cover');
+  check(sim.coverBetween(1, 2, 9, 2) === 0, 'no cover with nothing in between');
+  check(!sim.los(1, 4, 9, 4), 'a 15-ft block hides what is behind it');
+  sim.setTerrain({ cells: { '4,1': { h: 2 }, '6,1': { h: 2 } } });
+  sim.T.h[5 + 1 * 12] = 2;   // a 10-ft high plateau at x=4..6 on row 1
+  check(sim.coverBetween(5, 1, 9, 2) === 0, 'shooting down from high ground: no cover from its own ledge');
+  const mk = (ex) => ({ uid: 'u', team: 'party', x: 2, y: 1, fly: 0, climb: ex.climb || 0, athletics: ex.ath || 0, onBoard: true });
+  const roomy = { cells: {} }; for (let y = 0; y < 6; y++) roomy.cells['6,' + y] = { h: 2 };
+  sim.units = []; sim.setTerrain(roomy);
+  sim.climbDC = 10;
+  const rmA = sim.reachMapRaw(mk({ ath: 3 }), 30), rmC = sim.reachMapRaw(mk({ climb: 30 }), 30), rmW = sim.reachMapRaw(mk({ ath: -5 }), 30);
+  check(rmA.dist[6 + 1 * 12] === 3 + 1 + 2, `climbing a 10-ft ledge costs 10 ft extra (${rmA.dist[6 + 12]} squares)`);
+  check(rmC.dist[6 + 1 * 12] === 4, 'a climb speed scales it at no extra cost');
+  check(rmW.dist[6 + 1 * 12] < 0, 'a creature that would likely fail the Athletics check doesn\'t try');
+  sim.climbDC = 99;
+  check(sim.reachMapRaw(mk({ ath: 20 }), 30).dist[6 + 12] < 0 && sim.reachMapRaw(mk({ climb: 20 }), 30).dist[6 + 12] === 4, '"only with a climb speed" setting');
+}
+
 section('Statblock parser (no AI)');
 {
   const dir = path.join(__dirname, 'statblocks');
@@ -144,6 +170,11 @@ section('Statblock parser (no AI)');
   expect(os && os.name === 'Osric Aldermarch' && os.ext.legendaryResistance === 3 && os.ext.legendaryActions === 3, 'Osric: name, legendary resistance and actions');
   expect(act('osric-homebrew.txt', /Bought Off/).type === 'debuff' && act('osric-homebrew.txt', /Bought Off/).ext.selfOnly, 'Osric: Bought Off reaction');
   expect(act('osric-homebrew.txt', /Gilded Weight/).ext.legendaryCost === 2 && act('osric-homebrew.txt', /Gilded Weight/).ext.onHit.noReactions, 'Osric: Gilded Weight');
+  const dv = parsed['dorian-homebrew.txt'];
+  expect(act('dorian-homebrew.txt', /2 Blowpipe/) && act('dorian-homebrew.txt', /2 Molten Gather/).ext.onHit.slow === 10, 'Dorian: "any combination" multiattack gives a melee and a ranged routine, with the slow');
+  expect(act('dorian-homebrew.txt', /Grasping Want/).targets === 2 && act('dorian-homebrew.txt', /Grasping Want/).ext.loseAction && act('dorian-homebrew.txt', /Grasping Want/).ext.pairWithin === 5, 'Dorian: Grasping Want costs two creatures their action');
+  expect(act('dorian-homebrew.txt', /Molten Screen/).buff.ac === 2 && act('dorian-homebrew.txt', /Careful Distance/).ext.stepAway === 10, 'Dorian: Molten Screen (+2 AC) and Careful Distance (step 10 ft) reactions');
+  expect(!dv._notes.some(n => /left out|nothing the simulator/.test(n)), 'Dorian: nothing left out');
   expect(parsed['wolf-2014.txt'].ext.packTactics && !act('wolf-2014.txt', /Pack Tactics/), 'wolf Pack Tactics is a trait, not an action');
   expect(os.actions.filter(a => a.actionSlot === 3).length === 3 && act('osric-homebrew.txt', /Ruinous/).ext.zone.difficult, 'Osric: lair actions and difficult terrain');
   // every parsed creature can fight in both simulators

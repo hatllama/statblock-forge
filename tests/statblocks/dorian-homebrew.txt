@@ -1,0 +1,52 @@
+DORIAN VECK
+Medium humanoid (human), any alignment
+
+Armor Class 16 (glassmaker's leathers)
+Hit Points 71 (11d8 + 22)
+Speed 30 ft.
+
+STR 12 (+1)  DEX 18 (+4)  CON 14 (+2)  INT 14 (+2)  WIS 12 (+1)  CHA 12 (+1)
+
+Skills Perception +4, Sleight of Hand +7
+Tool Proficiencies glassblower's tools
+Senses passive Perception 14
+Languages Common
+Challenge 5 (1,800 XP)    Proficiency Bonus +3
+
+Borrowed Greed. Dorian's power is a fragment of Osric's loan. He
+understands what it does, if not how to master it, and he uses it
+carefully.
+
+ACTIONS
+Multiattack. Dorian makes two attacks, using Blowpipe or Molten Gather
+in any combination.
+
+Blowpipe. Melee Weapon Attack: +7 to hit, reach 5 ft., one target.
+Hit: 13 (2d8 + 4) fire damage. His iron blowpipe comes straight from
+the furnace, glowing at the end.
+
+Molten Gather. Ranged Weapon Attack: +7 to hit, range 20/40 ft., one
+target. Hit: 13 (2d8 + 4) fire damage, and the target's speed is
+reduced by 10 feet until the end of its next turn as the glass hardens
+on it.
+
+Furnace Flare (Recharge 5-6). Dorian swings his blowpipe and throws out
+a spray of molten glass in a 15-foot cone. Each creature in the cone
+must make a DC 13 Dexterity saving throw, taking 21 (6d6) fire damage on
+a failed save, or half as much on a successful one.
+
+BONUS ACTIONS
+Grasping Want (1/Day). Dorian turns two creatures he can see within 30
+feet of him, and within reach of each other, against each other's
+belongings. Each must succeed on a DC 13 Charisma saving throw or use
+its action on its next turn trying to take an object the other is
+holding or wearing.
+
+REACTIONS
+Careful Distance. When a creature ends its turn within 5 feet of Dorian,
+he moves up to 10 feet away from it without provoking opportunity
+attacks.
+
+Molten Screen. When Dorian is hit by an attack, he throws up a pane of
+hot glass and adds 2 to his AC against that attack, possibly causing it
+to miss.

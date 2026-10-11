@@ -34,7 +34,7 @@ const S = {
   get day(){ return { name: (document.getElementById('dayNameInput') || {}).value || 'Adventuring Day', players: PARTY_PLAYERS, encounters: encounters }; },
   enc: 0,
   layouts: {},                       // encIndex -> { gapFt, positions: {key:{x,y}} }
-  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false },
+  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false, climbDC: 10 },
   mode: 'setup',
   odds: {},                          // encIndex -> summary
   replay: null,                      // { events, frames, units, idx }
@@ -43,7 +43,7 @@ const W = () => +S.settings.map.split('x')[0];
 const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
-const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills,
+const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -243,7 +243,7 @@ document.getElementById('wt-tools').addEventListener('click', ev=>{
   svg.classList.toggle('painting', tool !== 'move');
   document.getElementById('wt-modeLabel').textContent = tool === 'move' ? 'Setup · drag tokens to set starting positions' : `Setup · painting: ${b.textContent.replace(/^\S+\s/, '').toLowerCase()}`;
   document.getElementById('wt-toolHelp').textContent = tool === 'move' ? 'Drag tokens to place them. Pick a terrain tool to paint the map.' :
-    tool === 'up' || tool === 'down' ? 'Each click or stroke changes the height by 5 ft. Climbing costs extra movement; reach and sight follow the height.' :
+    tool === 'up' || tool === 'down' ? 'Each click or stroke changes the height by 5 ft. Going up costs 5 ft of movement per 5 ft of height. A 5-ft rise gives half cover to whoever is behind it; a ledge of 10 ft or more needs a climb speed or an Athletics check (up or down). Reach and sight follow the height.' :
     tool === 'erase' ? 'Drag across squares to clear them.' : 'Click or drag across squares to paint.';
 });
 document.getElementById('wt-btnClearTerrain').onclick = ()=>{
@@ -665,6 +665,7 @@ document.getElementById('wt-btnReset').onclick = ()=>{ const lay = layoutFor(S.e
 document.getElementById('wt-mapSize').onchange = ev=>{ S.settings.map = ev.target.value; S.layouts = {}; S.odds = {}; renderOdds(); renderSetup(); scheduleSave(); };
 document.getElementById('wt-surprise').onchange = ev=>{ S.settings.surprise = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-escape').onchange = ev=>{ S.settings.escape = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-climb').onchange = ev=>{ S.settings.climbDC = +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-tpk').onchange = ev=>{ S.settings.tpkKills = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-partyAI').onchange = ev=>{ S.settings.partyAI = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-runs').onchange = ev=>{ S.settings.runs = +ev.target.value; scheduleSave(); };
@@ -675,6 +676,7 @@ function renderAll(){
   document.getElementById('wt-runs').value = String(S.settings.runs);
   document.getElementById('wt-partyAI').value = S.settings.partyAI || 'tactical';
   document.getElementById('wt-tpk').checked = !!S.settings.tpkKills;
+  document.getElementById('wt-climb').value = String(S.settings.climbDC === undefined ? 10 : S.settings.climbDC);
   document.getElementById('wt-mapSize').value = S.settings.map;
   renderTabs();
   if(S.mode === 'setup') renderSetup();

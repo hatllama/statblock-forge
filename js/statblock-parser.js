@@ -106,6 +106,7 @@ function parseHeader(lines, flat, notes) {
     h.ext.speed = walk ? +walk[1] : Math.max(30, other.burrow || 0, other.swim || 0);
     if (!walk && (other.burrow || other.swim)) h.ext.speed = Math.max(other.burrow || 0, other.swim || 0);
     if (other.fly) h.ext.fly = other.fly;
+    if (other.climb) h.ext.climb = other.climb;
   }
   const im = flat.match(/\bInitiative\b\s*:?\s*([+-]\d+)/i);
 
@@ -153,6 +154,10 @@ function parseHeader(lines, flat, notes) {
   if (/\bblindsight\b/i.test(flat)) h.ext.blindsight = true;
   const stealth = flat.match(/\bStealth\s*([+-]\d+)/i);
   h.stealth = stealth ? +stealth[1] : mod('dex');
+  // Athletics climbs ledges on the War Table; the better of Athletics / Acrobatics breaks grapples
+  const ath = flat.match(/\bAthletics\s*([+-]\d+)/i), acro = flat.match(/\bAcrobatics\s*([+-]\d+)/i);
+  h.ext.athletics = ath ? +ath[1] : mod('str');
+  h.ext.escapeBonus = Math.max(h.ext.athletics, acro ? +acro[1] : mod('dex'));
 
   // how it fights
   const int = have ? scores.int : 10;
@@ -285,7 +290,7 @@ function areaTargets(a) {
 function conditionIn(txt) {
   if (/disadvantage on attack rolls|make the attack with disadvantage|makes? (?:the|its|that) attack (?:roll )?with disadvantage|attack rolls? (?:\w+ ){0,3}(?:has|have|are made with) disadvantage/i.test(txt)) return 'Attacks with Disadvantage';
   if (/(?:attack rolls )?against (?:it|them|the target) (?:have|has|are made with) advantage/i.test(txt)) return 'Is attacked with Advantage';
-  if (/\bcompelled\b|\bmust (?:use its (?:action|turn)|spend its action)/i.test(txt)) return 'Incapacitated';
+  if (/\bcompelled\b|\b(?:must|or) (?:use its (?:action|turn)|spend its action)/i.test(txt)) return 'Incapacitated';
   for (const [w, c] of CONDITION_WORDS) if (new RegExp('\\b(?:be|is|become|becomes|are|has the|have the|knocked)\\s+(?:\\w+\\s+){0,2}' + w, 'i').test(txt) || new RegExp('\\b' + w + '\\b condition', 'i').test(txt)) return c;
   return null;
 }
@@ -359,6 +364,12 @@ function readAttack(entry, nm, notes) {
     if (sv && sv.ab) a.ext.riderSave = sv.ab;
   }
   if (/\bsaving throw\b/i.test(hitText) && !sv) notes.push(`${nm.name}: has a save on hit whose DC wasn't readable.`);
+  // "the target's speed is reduced by 10 feet" / "can't take reactions" on a hit (War Table only)
+  const mvh = !sv ? movementEffect(hitText) : null;
+  if (mvh) {
+    a.ext.onHit = Object.assign({}, a.ext.onHit, mvh.onHit || {}, mvh.speedBonus ? { slow: -mvh.speedBonus } : {});
+    notes.push(`${nm.name}: ${mvh.speedBonus ? (mvh.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mvh.speedBonus && mvh.onHit ? ' and ' : ''}${mvh.onHit ? 'blocks its reactions' : ''} on a hit — War Table only.`);
+  }
   return a;
 }
 
@@ -375,6 +386,8 @@ function readSaveEffect(entry, nm, notes, h) {
   const upTo = t.match(/(?:up to|choose up to)\s*(\w+)\s*(?:creatures|targets)/i);
   if (upTo && !isNaN(num(upTo[1]))) targets = num(upTo[1]);
   if (/each creature of [^.]{0,30}choice/i.test(t) && !area) targets = 4;
+  const nCreat = !area && !upTo && t.match(/\b(two|three|four|five|six)\s+(?:other\s+)?creatures\b/i);
+  if (nCreat) targets = num(nCreat[1]);
   const a = { name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: Math.max(1, targets), target: 'enemy with most HP', ext: { range: area && (['cone', 'line', 'emanation'].includes(area.shape) || (area.shape === 'cube' && !/can see|a point|centered|centred|within \d+/i.test(t))) ? area.size : (area ? (rangeOf(t).ranged || 120) : (rg.ranged || rg.melee || 60)), saveAbility: sv.ab } };
   if (area) a.ext.area = { shape: area.shape, size: area.size };
   if (/difficult terrain/i.test(t) && area) a.ext.zone = { difficult: true };
@@ -388,6 +401,9 @@ function readSaveEffect(entry, nm, notes, h) {
   } else if (cond) {
     Object.assign(a, { type: 'debuff', saveDC: sv.dc, buff: { duration: durationIn(t, cond), condition: cond } });
     if (mv) Object.assign(a.ext, mv);
+    // "… or use its action on its next turn …": on the War Table it only loses its action (it can still move and react)
+    if (cond === 'Incapacitated' && /\b(?:must|or) (?:use|spend) its action/i.test(t) && !/incapacitated/i.test(t)) a.ext.loseAction = true;
+    if (/within (?:reach|5 (?:feet|ft)) of each other/i.test(t)) a.ext.pairWithin = 5;
     a._avg = 4 * targets;
   } else if (mv) {
     // only movement / reactions: modelled on the War Table, with no other effect to export
@@ -592,6 +608,13 @@ function readMultiattack(entry, attacks, notes, others) {
       const n = num(m[1]), a = find(m[2]);
       if (a && n > 0) combo.push({ a, n });
     }
+    // "makes two attacks, using Blowpipe or Molten Gather in any combination": each named option, n times (the best is picked below)
+    const usingM = !combo.length && total && rt.match(/\busing\s+(?:its\s+)?(.+?)(?:\s+in any (?:combination|order)|\.|$)/i);
+    let choice = false;
+    if (usingM) {
+      const picks = usingM[1].split(/,|\bor\b|\band\b/).map(x => find(x.replace(/^\s*(?:its|a|an|the)\s+/i, '').trim())).filter((a, i, arr) => a && arr.indexOf(a) === i);
+      if (picks.length) { picks.forEach(a => combo.push({ a, n: num(total[1]) })); choice = picks.length > 1; }
+    }
     if (!combo.length && total) {
       // "makes two melee attacks" / "makes two attacks" with nothing named: its best melee weapon
       const n = num(total[1]);
@@ -600,16 +623,20 @@ function readMultiattack(entry, attacks, notes, others) {
       if (pick && n > 0) combo.push({ a: pick, n });
     }
     // "using Mace or Radiant Flame in any combination": the best of those, n times
-    if (combo.length > 1 && /any combination|in any order/i.test(rt)) {
+    if (combo.length > 1 && (choice || /any combination|in any order/i.test(rt))) {
       const n = num(total ? total[1] : combo.length) || combo.length;
       const best = combo.slice().sort((p, q) => q.a._avg - p.a._avg)[0];
-      return [{ a: best.a, n }];
+      const out = [{ a: best.a, n }];
+      // the others as War Table alternatives: n ranged shots when the best is melee, and so on
+      out.others = combo.filter(c => c.a !== best.a && (c.a._melee !== best.a._melee || c.a.ext.onHit)).map(c => { const r = [{ a: c.a, n }]; r.ranged = !c.a._melee; return r; });
+      return out;
     }
     return combo;
   };
   const main = parseRoutine(routines[0]);
   const alts = routines.slice(1).map(rt => { const c = parseRoutine(rt); c.ranged = /ranged|throw|shoot|range/i.test(rt) && !/melee/i.test(rt); return c; }).filter(c => c.length);
   main.ranged = /ranged attacks?/i.test(routines[0]) && !/melee/i.test(routines[0]);
+  if (main.others) alts.push(...main.others);
   const pre = [];
   for (const o of others) if (new RegExp('\\buses?\\s+(?:its\\s+)?' + o.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(t)) pre.push(o);
   if (!main.length) { notes.push('Multiattack: couldn\'t tell which attacks it makes; kept the individual attacks instead.'); return null; }
@@ -631,6 +658,7 @@ function comboAction(name, combo) {
   const lead = combo.slice().sort((p, q) => q.n - p.n)[0].a;
   if (lead.riderEffect) a.riderEffect = JSON.parse(JSON.stringify(lead.riderEffect));
   if (lead.ext.riderSave) a.ext.riderSave = lead.ext.riderSave;
+  if (lead.ext.onHit) a.ext.onHit = JSON.parse(JSON.stringify(lead.ext.onHit));
   const g = combo.find(c => c.a.ext.grapple);
   if (g) a.ext.grapple = Object.assign({}, g.a.ext.grapple);
   a._avg = combo.reduce((s, c) => s + c.n * c.a._avg, 0);
@@ -703,14 +731,21 @@ function parseOne(block) {
         continue;
       }
       if (/nimble escape|cunning action/i.test(low) || (/\bHide action\b/i.test(e.text) && sec === 'bonus actions')) { h.ext.bonusDisengage = true; parsedBySection[sec].push(hideAction(h, 'Hide (' + nm.name + ')')); continue; }
-      if (sec === 'reactions' && /attack roll against (?:it|him|her|them)|is targeted by an attack|would hit (?:it|him|her)/i.test(e.text) && /disadvantage/i.test(e.text) && !/to its AC/i.test(e.text)) {
+      if (sec === 'reactions' && /attack roll against (?:it|him|her|them)|is targeted by an attack|would hit (?:it|him|her)/i.test(e.text) && /disadvantage/i.test(e.text) && !/to (?:its|his|her|their) AC/i.test(e.text)) {
         const sv = saveInfo(e.text);
         parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'debuff', saveDC: sv ? sv.dc : 99, target: 'enemy with highest DPR', buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: rangeOf(e.text, 60).ranged || 60, ...(sv ? { saveAbility: sv.ab } : {}), ...(/against (?:it|him|her|them)self|against (?:it|him|her)\b/i.test(e.text) && !/ally|another creature/i.test(e.text) ? { selfOnly: true } : {}) } });
         continue;
       }
-      if (sec === 'reactions' && /(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to its AC/i.test(e.text)) {
-        const ac = +e.text.match(/(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to its AC/i)[1];
+      if (sec === 'reactions' && /(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to (?:its|his|her|their) AC/i.test(e.text)) {
+        const ac = +e.text.match(/(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to (?:its|his|her|their) AC/i)[1];
         parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', ac }, ext: { range: 0 } });
+        continue;
+      }
+      // "When a creature ends its turn within 5 feet of it, it moves up to 10 feet away … without provoking"
+      const stepM = sec === 'reactions' && /ends its turn within \d+\s*(?:feet|ft)/i.test(e.text) && /without provoking/i.test(e.text) && e.text.match(/moves? up to (\d+)\s*(?:feet|ft)/i);
+      if (stepM) {
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: { range: 0, stepAway: +stepM[1], wtOnly: true } });
+        notes.push(`${nm.name}: steps ${stepM[1]} ft away when a creature ends its turn next to it — War Table only; the exported day has no movement.`);
         continue;
       }
       // legendary options that just reuse another attack: "The dragon makes a tail attack."

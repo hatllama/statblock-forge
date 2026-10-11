@@ -6,7 +6,7 @@
 <title>Statblock Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20261010g">
+<link rel="stylesheet" href="css/styles.css?v=20261010i">
 
 </head>
 <body>
@@ -46,7 +46,7 @@
         <span class="round-badge" id="wt-roundBadge"></span>
       </div>
       <svg id="wt-board" viewBox="0 0 864 576" role="img" aria-label="Battle map"></svg>
-      <div class="terrain-legend" id="wt-terrainLegend" style="display:none;"><span><i style="background:#4b4036;border:1px solid #6d5d4c"></i>wall</span><span><i style="background:repeating-linear-gradient(45deg,rgba(150,170,110,.55) 0 2px,transparent 2px 5px)"></i>difficult</span><span><i style="background:#8a7558"></i>low cover (+2 AC)</span><span><i style="background:rgba(214,178,98,.35)"></i>raised ground (ft)</span><span><i style="background:rgba(60,90,130,.45)"></i>lowered ground</span></div>
+      <div class="terrain-legend" id="wt-terrainLegend" style="display:none;"><span><i style="background:#4b4036;border:1px solid #6d5d4c"></i>wall</span><span><i style="background:repeating-linear-gradient(45deg,rgba(150,170,110,.55) 0 2px,transparent 2px 5px)"></i>difficult</span><span><i style="background:#8a7558"></i>low cover (+2 AC)</span><span><i style="background:rgba(214,178,98,.35)"></i>raised ground (5 ft: half cover · 10 ft+: climb)</span><span><i style="background:rgba(60,90,130,.45)"></i>lowered ground</span></div>
       <div class="aoe-legend"><span><i style="background:rgba(224,80,60,.45)"></i>damage area</span><span><i style="background:rgba(155,107,214,.5)"></i>condition area</span><span><i class="dash"></i>aura</span></div>
       <div class="now" id="wt-nowLine"></div>
       <div class="controls" id="wt-playControls" style="display:none;">
@@ -71,7 +71,7 @@
             <button data-tool="wall" title="Blocks movement, sight, spells and auras">▇ Wall</button>
             <button data-tool="difficult" title="Costs double movement">≋ Difficult</button>
             <button data-tool="cover" title="Low wall or rubble: difficult to cross, +2 AC against ranged attacks across it">▭ Low cover</button>
-            <button data-tool="up" title="Raise the ground 5 ft per stroke">▲ Raise</button>
+            <button data-tool="up" title="Raise the ground 5 ft per stroke. 5 ft: half cover behind it. 10 ft or more: a climb">▲ Raise</button>
             <button data-tool="down" title="Lower the ground 5 ft per stroke">▼ Lower</button>
             <button data-tool="erase" title="Back to flat open ground">⌫ Erase</button>
           </div>
@@ -82,6 +82,7 @@
           <select id="wt-mapSize" class="mini-btn" style="padding:5px;" aria-label="Map size"><option value="20x14">Map 20×14</option><option value="24x16" selected>Map 24×16</option><option value="30x20">Map 30×20</option></select></div>
         <div class="opt"><label for="wt-surprise">Surprise rules</label><select id="wt-surprise"><option value="2024">2024 — surprised roll initiative with disadvantage</option><option value="2014">2014 — surprised lose round 1</option></select></div>
         <div class="opt"><label for="wt-escape">When grappled</label><select id="wt-escape"><option value="smart">Escape if the grappler can swallow</option><option value="always">Always try to escape</option><option value="never">Never escape</option></select></div>
+        <div class="opt"><label for="wt-climb">Climbing 10-ft+ ledges</label><select id="wt-climb"><option value="10">Athletics DC 10 (handholds)</option><option value="15">Athletics DC 15 (sheer)</option><option value="20">Athletics DC 20 (slick)</option><option value="99">Only with a climb speed</option></select></div>
         <div class="opt"><label for="wt-partyAI">Party plays</label><select id="wt-partyAI"><option value="tactical">Tactical: focus fire, finish foes, protect the healers</option><option value="regular">Regular: follow each action's targeting</option></select></div>
         <div class="opt"><label for="wt-tpk">Whole party down</label><label class="ae-check" style="font-family:inherit;font-size:13px;letter-spacing:0;text-transform:none;color:var(--parchment);cursor:pointer;" title="When every party member is at 0 HP and foes are still up, the downed characters die instead of being left dying, and it counts toward the odds of a PC dying."><input type="checkbox" id="wt-tpk"> They all die (no one left to save them)</label></div>
         <div class="opt"><label for="wt-runs">Fights to simulate</label><select id="wt-runs"><option>100</option><option>250</option><option selected>500</option><option>1000</option></select></div>
@@ -176,11 +177,11 @@
   Statblock reader and War Table engine: original, written for this site.</footer>
 </div>
 
-<script src="data/party.js?v=20261010g"></script>
-<script src="js/spell-data.js?v=20261010g"></script>
-<script src="js/statblock-parser.js?v=20261010g"></script>
-<script src="js/forge.js?v=20261010g"></script>
-<script src="js/engine/tactical-engine.js?v=20261010g"></script>
-<script src="js/war-table.js?v=20261010g"></script>
+<script src="data/party.js?v=20261010i"></script>
+<script src="js/spell-data.js?v=20261010i"></script>
+<script src="js/statblock-parser.js?v=20261010i"></script>
+<script src="js/forge.js?v=20261010i"></script>
+<script src="js/engine/tactical-engine.js?v=20261010i"></script>
+<script src="js/war-table.js?v=20261010i"></script>
 </body>
 </html>
