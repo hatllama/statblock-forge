@@ -475,6 +475,10 @@ function describeAction(a){
   if(ex.selfOnly) bits.push('self only');
   if(ex.stepAway) bits.push(`steps ${ex.stepAway} ft away`);
   if(ex.loseAction) bits.push('costs its action');
+  if(ex.damageType) bits.push(ex.damageType);
+  if(ex.saveOnDamage) bits.push('save again when hurt');
+  if(ex.minCatch) bits.push(`needs ${ex.minCatch}+ enemies`);
+  if(ex.wtWhen === 'losing') bits.push('when losing');
   if(a.type === 'debuff' && ex.speedBonus < 0) bits.push(ex.speedBonus <= -60 ? 'stops movement' : `speed ${ex.speedBonus} ft`);
   if(a.type === 'debuff' && ex.onHit && ex.onHit.noReactions) bits.push('no reactions');
   if(ex.onHit && ex.onHit.drain) bits.push('drains');
@@ -654,6 +658,8 @@ function mechanicsPanel(mi, a){
     ${fCheck('Leaps to another target within 30 ft on doubles (Chromatic Orb)', mi, a.id, '__x:leap', !!ex.leap)}`;
   }
   if(a.type === 'atk'){
+    html += `<div class="ae-grid">${fInput('Damage type', mi, a.id, 'ext.damageType', 'optstr', ex.damageType, 'fire · "slashing + fire" for both · "acid/cold/fire" when the attacker picks (Chromatic Orb). Resistances and immunities use it (War Table).')}
+      ${fCheck('Magical (beats resistance to nonmagical weapons)', mi, a.id, '__x:magical', !!ex.magical || !!a.level)}</div>`;
     html += `<div class="ae-grid">${fInput('Damage if the target is hurt', mi, a.id, 'ext.dprIfHurt', 'optdice', ex.dprIfHurt, 'Toll the Dead: 1d12 against a creature below max HP')}
       ${fInput('Pushes the target (ft)', mi, a.id, 'ext.onHit.push', 'optnum', oh.push, a.useSaves ? 'On a failed save (Thunderwave 10, Telekinetic Shove 5). War Table: stops at walls and creatures; off a ledge it falls.' : 'On a hit (Shove, Tavern Brawler, Push mastery)')}</div>
     ${fCheck('Heals the attacker for the damage dealt (Vampiric Bite, drain)', mi, a.id, '__x:onHit.drain', !!oh.drain)}`;
@@ -702,7 +708,10 @@ function mechanicsPanel(mi, a){
   if(a.type === 'debuff') html += `<div class="ae-grid">${fInput('Target speed change (ft)', mi, a.id, 'ext.speedBonus', 'optnum', ex.speedBonus, 'e.g. -15 for halved speed, -60 to stop movement (War Table)')}</div>
     ${fCheck('Target can\'t take reactions while affected', mi, a.id, '__x:onHit.noReactions', !!(ex.onHit && ex.onHit.noReactions))}
     ${fCheck('Only costs the target its action (it can still move and react), instead of the full condition', mi, a.id, '__x:loseAction', !!ex.loseAction)}
+    ${fSelect('Target repeats the save when it takes damage', mi, a.id, '__saveOnDamage', 'str', [['','No'],['true','Yes'],['adv','Yes, with advantage (Hideous Laughter)']], ex.saveOnDamage === true ? 'true' : (ex.saveOnDamage || ''))}
     <div class="ae-grid">${fInput('Extra targets must be within (ft) of the first', mi, a.id, 'ext.pairWithin', 'optnum', ex.pairWithin, 'Grasping Want: 5 (two creatures within reach of each other)')}</div>`;
+  if((a.type === 'atk' || a.type === 'debuff') && (ex.area || (a.targets || 1) > 1)) html += `<div class="ae-grid">${fInput('Only worth it on at least (enemies)', mi, a.id, 'ext.minCatch', 'optnum', ex.minCatch, 'Entangle 3: a tool for a crowd of weaker foes, not an opener (War Table)')}</div>`;
+  html += fCheck('Only when the fight is going badly for its side (Fog Cloud: a way out, not an opener)', mi, a.id, '__x:wtWhenLosing', ex.wtWhen === 'losing');
   html += fCheck('War Table only (left out of the export)', mi, a.id, '__x:wtOnly', !!ex.wtOnly);
   html += fCheck('Export only (the War Table simulates this natively, e.g. an Assassinate stand-in)', mi, a.id, '__x:wtSkip', !!ex.wtSkip);
   html += `<div class="ae-grid">${fInput('Range / reach (ft)', mi, a.id, 'ext.range', 'optnum', ex.range, 'For the War Table. Blank = guessed from the name')}
@@ -1038,7 +1047,11 @@ function handleFieldChange(el){
   } else if(k.startsWith('__x:')){
     const path = k.slice(4);
     a.ext = a.ext || {};
-    setPath(a.ext, path, el.checked ? (path === 'leap' ? { range: 30 } : true) : undefined);
+    if(path === 'wtWhenLosing') setPath(a.ext, 'wtWhen', el.checked ? 'losing' : undefined);
+    else setPath(a.ext, path, el.checked ? (path === 'leap' ? { range: 30 } : true) : undefined);
+  } else if(k === '__saveOnDamage'){
+    a.ext = a.ext || {};
+    if(el.value === 'adv') a.ext.saveOnDamage = 'adv'; else if(el.value === 'true') a.ext.saveOnDamage = true; else delete a.ext.saveOnDamage;
   } else if(k === '__saveAb' || k === '__riderSave'){
     const f = k === '__saveAb' ? 'saveAbility' : 'riderSave';
     a.ext = a.ext || {};
@@ -1275,6 +1288,10 @@ function setCreatureExt(c, key, val){
       else setCreatureExt(c, 'sneakAttack', Object.assign({}, (c.ext && c.ext.sneakAttack) || {}, { dice: t }, c.ext && c.ext.assassinate ? { assassinate: (c.class && c.class.level) || 0 } : {}));
     }
     else if(k === 'escapeBonus' || k === 'athletics' || k === 'speed' || k === 'initBonus' || k === 'fly' || k === 'climb' || k === 'luck' || k === 'legendaryResistance' || k === 'legendaryActions') setCreatureExt(c, k, el.value.trim() === '' || ((k === 'fly' || k === 'climb' || k === 'luck' || k === 'legendaryResistance') && !(parseFloat(el.value) > 0)) ? undefined : parseFloat(el.value));
+    else if(k === 'resist' || k === 'immune' || k === 'vulnerable' || k === 'condImmune'){
+      const list = el.value.split(/[,;]/).map(x=>x.trim()).filter(Boolean).map(x=> k === 'condImmune' ? x.charAt(0).toUpperCase() + x.slice(1).toLowerCase() : x.toLowerCase());
+      setCreatureExt(c, k, list.length ? list : undefined);
+    }
     else if(k === 'ai') setCreatureExt(c, k, el.value === 'auto' ? undefined : el.value);
     else setCreatureExt(c, k, el.value === 'Medium' ? undefined : el.value);   // Medium is the default
     c._warnings = validateMonster(c);
@@ -1377,6 +1394,10 @@ function renderParty(){
         <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="p${i}" type="number" step="5" min="0" placeholder="—" value="${(p.ext&&p.ext.fly!==undefined)?p.ext.fly:''}" title="Fly speed. Flyers ignore difficult ground, low cover and climbing, and can reach creatures on high ground."></div>
         <div class="field"><label>Climb (ft)</label><input data-ext="climb" data-owner="p${i}" type="number" step="5" min="0" placeholder="—" value="${(p.ext&&p.ext.climb!==undefined)?p.ext.climb:''}" title="Climb speed. Scales ledges of 10 ft or more with no Athletics check and no extra movement (War Table)."></div>
         <div class="field"><label>Athletics</label><input data-ext="athletics" data-owner="p${i}" type="number" placeholder="= escape bonus" value="${(p.ext&&p.ext.athletics!==undefined)?p.ext.athletics:''}" title="Athletics bonus for climbing ledges of 10 ft or more on the War Table. Blank = the escape bonus."></div>
+        <div class="field"><label>Resistances</label><input data-ext="resist" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.resist)||[]).join(', '))}" title="Damage types it takes half from, comma-separated: fire, cold, nonmagical slashing (War Table)"></div>
+        <div class="field"><label>Immunities</label><input data-ext="immune" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.immune)||[]).join(', '))}" title="Damage types it takes nothing from: poison, fire (War Table)"></div>
+        <div class="field"><label>Vulnerabilities</label><input data-ext="vulnerable" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.vulnerable)||[]).join(', '))}" title="Damage types it takes double from (War Table)"></div>
+        <div class="field"><label>Condition immunities</label><input data-ext="condImmune" data-owner="p${i}" type="text" placeholder="—" value="${escapeHtml(((p.ext&&p.ext.condImmune)||[]).join(', '))}" title="Conditions it can&#39;t be given: Frightened, Poisoned, Restrained (War Table)"></div>
         <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.luck!==undefined)?p.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
         <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="p${i}" type="number" step="1" min="0" placeholder="—" value="${(p.ext&&p.ext.legendaryResistance!==undefined)?p.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
         <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="p${i}" type="number" step="1" min="0" placeholder="3" value="${(p.ext&&p.ext.legendaryActions!==undefined)?p.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). The export counts one per round."></div>
@@ -1541,6 +1562,10 @@ function renderMonsters(){
         <div class="field"><label>Fly (ft)</label><input data-ext="fly" data-owner="${i}" type="number" step="5" min="0" placeholder="—" value="${(m.ext&&m.ext.fly!==undefined)?m.ext.fly:''}" title="Fly speed. Flyers ignore difficult ground, low cover and climbing, and can reach creatures on high ground."></div>
         <div class="field"><label>Climb (ft)</label><input data-ext="climb" data-owner="${i}" type="number" step="5" min="0" placeholder="—" value="${(m.ext&&m.ext.climb!==undefined)?m.ext.climb:''}" title="Climb speed. Scales ledges of 10 ft or more with no Athletics check and no extra movement (War Table)."></div>
         <div class="field"><label>Athletics</label><input data-ext="athletics" data-owner="${i}" type="number" placeholder="= escape bonus" value="${(m.ext&&m.ext.athletics!==undefined)?m.ext.athletics:''}" title="Athletics bonus for climbing ledges of 10 ft or more on the War Table. Blank = the escape bonus."></div>
+        <div class="field"><label>Resistances</label><input data-ext="resist" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.resist)||[]).join(', '))}" title="Damage types it takes half from, comma-separated: fire, cold, nonmagical slashing (War Table)"></div>
+        <div class="field"><label>Immunities</label><input data-ext="immune" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.immune)||[]).join(', '))}" title="Damage types it takes nothing from: poison, fire (War Table)"></div>
+        <div class="field"><label>Vulnerabilities</label><input data-ext="vulnerable" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.vulnerable)||[]).join(', '))}" title="Damage types it takes double from (War Table)"></div>
+        <div class="field"><label>Condition immunities</label><input data-ext="condImmune" data-owner="${i}" type="text" placeholder="—" value="${escapeHtml(((m.ext&&m.ext.condImmune)||[]).join(', '))}" title="Conditions it can&#39;t be given: Frightened, Poisoned, Restrained (War Table)"></div>
         <div class="field"><label>Luck points</label><input data-ext="luck" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.luck!==undefined)?m.ext.luck:''}" title="Lucky feat: points per long rest. The War Table spends them to reroll a hit against it or a failed save that matters."></div>
         <div class="field"><label>Legendary resist.</label><input data-ext="legendaryResistance" data-owner="${i}" type="number" step="1" min="0" placeholder="—" value="${(m.ext&&m.ext.legendaryResistance!==undefined)?m.ext.legendaryResistance:''}" title="Legendary Resistance uses per day. The War Table spends them to turn failed saves that matter (disabling conditions, big damage) into successes."></div>
         <div class="field"><label>Legendary actions</label><input data-ext="legendaryActions" data-owner="${i}" type="number" step="1" min="0" placeholder="3" value="${(m.ext&&m.ext.legendaryActions!==undefined)?m.ext.legendaryActions:''}" title="Legendary actions per round on the War Table (spent after other creatures\' turns). The export counts one per round."></div>
@@ -1950,7 +1975,7 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
 const SAVE_KEY = 'forge-workspace-v1';
 // Bump PARTY_VERSION when a built-in party member is rebuilt; list which player ids changed in that version.
 // Saved workspaces from older versions get exactly those players swapped in, nothing else touched.
-const PARTY_VERSION = 8;
+const PARTY_VERSION = 9;
 // v5: real saving throws for Eldar and Tacitus (from their sheets) and the save each of Eldar's spells calls for; only fills what's missing
 const PARTY_FN_UPDATES = { 5: p => {
   const fresh = DEFAULT_PARTY.find(x=>x.id === p.id); if(!fresh || !fresh.ext) return false;
@@ -1960,7 +1985,7 @@ const PARTY_FN_UPDATES = { 5: p => {
   if(fs && ps) (ps.spells || []).forEach(sp=>{ const f = fs.spells.find(x=>x.id === sp.id); if(f && f.ext && f.ext.saveAbility && !(sp.ext && sp.ext.saveAbility)){ sp.ext = Object.assign({}, sp.ext || {}, { saveAbility: f.ext.saveAbility }); changed = true; } });
   return changed;
 } };
-const PARTY_UPDATES = { 2: ['427e06c2-caa6-474a-9b95-c4aa5c49301f'], 4: ['427e06c2-caa6-474a-9b95-c4aa5c49301f'], 6: ['427e06c2-caa6-474a-9b95-c4aa5c49301f', 'f4d574da-e9e2-48be-9857-8cefd726544a'], 7: ['269adf29-1d78-49ba-be98-1e71db9f5504', '0c42f4e7-3115-43c2-88bf-8c83c199fa07'], 8: ['269adf29-1d78-49ba-be98-1e71db9f5504', '0c42f4e7-3115-43c2-88bf-8c83c199fa07', '7157d787-a405-41be-afb8-88bde61ef76f'] };   // v8: Niko rebuilt from his sheet; Juniper and Faithwalker get pushes, zones, teleports   // v7: Juniper (D&D Beyond) and Faithwalker (Notion sheet)   // v6: Eldar and Tacitus rebuilt from their sheets   // v4: Eldar gets a spell list + slots   // v2: Eldar rebuilt from his character sheet
+const PARTY_UPDATES = { 9: ['0c42f4e7-3115-43c2-88bf-8c83c199fa07', '7ba165da-a21c-4d81-9553-c8acf97f9294', 'f4d574da-e9e2-48be-9857-8cefd726544a', '7157d787-a405-41be-afb8-88bde61ef76f', '269adf29-1d78-49ba-be98-1e71db9f5504', '427e06c2-caa6-474a-9b95-c4aa5c49301f'], 2: ['427e06c2-caa6-474a-9b95-c4aa5c49301f'], 4: ['427e06c2-caa6-474a-9b95-c4aa5c49301f'], 6: ['427e06c2-caa6-474a-9b95-c4aa5c49301f', 'f4d574da-e9e2-48be-9857-8cefd726544a'], 7: ['269adf29-1d78-49ba-be98-1e71db9f5504', '0c42f4e7-3115-43c2-88bf-8c83c199fa07'], 8: ['269adf29-1d78-49ba-be98-1e71db9f5504', '0c42f4e7-3115-43c2-88bf-8c83c199fa07', '7157d787-a405-41be-afb8-88bde61ef76f'] };   // v9: damage types on every attack; Entangle needs a crowd, Fog Cloud is for getting out, Hideous Laughter breaks on damage   // v8: Niko rebuilt from his sheet; Juniper and Faithwalker get pushes, zones, teleports   // v7: Juniper (D&D Beyond) and Faithwalker (Notion sheet)   // v6: Eldar and Tacitus rebuilt from their sheets   // v4: Eldar gets a spell list + slots   // v2: Eldar rebuilt from his character sheet
 // v3: initiative from the character sheets; only filled in where the saved creature has none
 const PARTY_EXT_UPDATES = { 3: { '427e06c2-caa6-474a-9b95-c4aa5c49301f': { initBonus: 3 }, 'f4d574da-e9e2-48be-9857-8cefd726544a': { initBonus: 6, initAdvantage: true } } };
 const DEFAULT_PARTY = JSON.parse(JSON.stringify(PARTY_PLAYERS));

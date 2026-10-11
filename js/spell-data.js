@@ -13,6 +13,7 @@
      bonus  cast as a bonus action · react: cast as a reaction
      tmp    heal is temporary hit points · types: only works on these creature types
      e      extra ext fields (War Table)
+     dt     damage type (set from the DT table at the bottom)
    Spells not listed here (utility, movement, summons) are skipped with a note.
    ===================================================================== */
 (function (root) {
@@ -51,7 +52,7 @@ const S = {
   'cure wounds':      { L: 1, k: 'heal', d: '2d8', mod: true, r: 5, u: '2d8' },
   'dissonant whispers': { L: 1, k: 'save', d: '3d6', sv: 'wis', h: true, r: 60, u: '1d6' },
   'divine favor':     { L: 1, k: 'buff', bonus: true, c: true, tg: 'self', b: { duration: 'entire encounter', damage: '1d4' } },
-  'entangle':         { L: 1, k: 'debuff', sv: 'str', c: true, a: ['sphere', 10], r: 90, t: 3, b: { duration: 'repeat the save each round', condition: 'Restrained' }, e: { zone: { difficult: true } } },
+  'entangle':         { L: 1, k: 'debuff', sv: 'str', c: true, a: ['sphere', 10], r: 90, t: 3, b: { duration: 'repeat the save each round', condition: 'Restrained' }, e: { zone: { difficult: true }, minCatch: 3 } },
   'faerie fire':      { L: 1, k: 'debuff', sv: 'dex', c: true, a: ['cube', 20], r: 60, t: 3, b: { duration: 'entire encounter', condition: 'Is attacked with Advantage' } },
   'false life':       { L: 1, k: 'heal', d: '2d4 + 4', tmp: true, tg: 'self', u: '5' },
   'guiding bolt':     { L: 1, k: 'atk', d: '4d6', r: 120, u: '1d6', rider: { duration: 'until next attack taken', condition: 'Is attacked with Advantage' } },
@@ -65,8 +66,9 @@ const S = {
   'ray of sickness':  { L: 1, k: 'atk', d: '2d8', r: 60, u: '1d8', rider: { duration: '1 round', condition: 'Poisoned' } },
   'shield':           { L: 1, k: 'shield', react: true },
   'shield of faith':  { L: 1, k: 'buff', bonus: true, c: true, tg: 'ally', r: 60, b: { duration: 'entire encounter', ac: 2 } },
-  "tasha's hideous laughter": { L: 1, k: 'debuff', sv: 'wis', c: true, r: 30, t: 1, ut: 1, b: { duration: 'repeat the save each round', condition: 'Incapacitated' } },
-  'hideous laughter': { L: 1, k: 'debuff', sv: 'wis', c: true, r: 30, t: 1, ut: 1, b: { duration: 'repeat the save each round', condition: 'Incapacitated' } },
+  "tasha's hideous laughter": { L: 1, k: 'debuff', sv: 'wis', c: true, r: 30, t: 1, ut: 1, b: { duration: 'repeat the save each round', condition: 'Incapacitated' }, e: { saveOnDamage: 'adv' } },
+  'hideous laughter': { L: 1, k: 'debuff', sv: 'wis', c: true, r: 30, t: 1, ut: 1, b: { duration: 'repeat the save each round', condition: 'Incapacitated' }, e: { saveOnDamage: 'adv' } },
+  'fog cloud':        { L: 1, k: 'debuff', c: true, a: ['sphere', 20], r: 120, t: 4, b: { duration: 'entire encounter', condition: 'Attacks with Disadvantage' }, e: { zone: { fog: true }, wtOnly: true, wtWhen: 'losing' } },
   'thunderwave':      { L: 1, k: 'save', d: '2d8', sv: 'con', h: true, a: ['cube', 15], r: 15, t: 2, u: '1d8', e: { onHit: { push: 10 } } },
   'witch bolt':       { L: 1, k: 'atk', d: '2d12', c: true, r: 60, u: '1d12', e: { wtDpr: '2d12', onHit: { dot: { dice: '1d12', upcast: '1d12' } } } },
   // ---- 2nd level ----
@@ -140,5 +142,8 @@ const S = {
   'meteor swarm':     { L: 9, k: 'save', d: '40d6', sv: 'dex', h: true, a: ['sphere', 40], r: 1000, t: 4 },
   'psychic scream':   { L: 9, k: 'save', d: '14d6', sv: 'int', h: true, r: 90, t: 4, rider: { duration: 'repeat the save each round', condition: 'Stunned' } },
 };
+// damage type of each damage spell: 'a/b/c' = the caster picks one; 'a + b' = half each
+const DT = { "acid splash": "acid", "chill touch": "necrotic", "eldritch blast": "force", "fire bolt": "fire", "frostbite": "cold", "infestation": "poison", "mind sliver": "psychic", "poison spray": "poison", "primal savagery": "piercing", "produce flame": "fire", "ray of frost": "cold", "sacred flame": "radiant", "shocking grasp": "lightning", "sorcerous burst": "acid/cold/fire/lightning/poison/psychic/thunder", "starry wisp": "radiant", "sword burst": "force", "thorn whip": "piercing", "toll the dead": "necrotic", "vicious mockery": "psychic", "word of radiance": "radiant", "arms of hadar": "necrotic", "burning hands": "fire", "chromatic orb": "acid/cold/fire/lightning/poison/thunder", "dissonant whispers": "psychic", "guiding bolt": "radiant", "hellish rebuke": "fire", "ice knife": "cold", "inflict wounds": "necrotic", "magic missile": "force", "ray of sickness": "poison", "thunderwave": "thunder", "witch bolt": "lightning", "aganazzar's scorcher": "fire", "flaming sphere": "fire", "melf's acid arrow": "acid", "acid arrow": "acid", "moonbeam": "radiant", "phantasmal force": "psychic", "scorching ray": "fire", "shatter": "thunder", "call lightning": "lightning", "erupting earth": "bludgeoning", "fireball": "fire", "lightning bolt": "lightning", "spirit guardians": "radiant", "vampiric touch": "necrotic", "blight": "necrotic", "evard's black tentacles": "bludgeoning", "black tentacles": "bludgeoning", "ice storm": "bludgeoning + cold", "phantasmal killer": "psychic", "wall of fire": "fire", "cloudkill": "poison", "cone of cold": "cold", "destructive wave": "thunder + radiant", "flame strike": "fire + radiant", "insect plague": "piercing", "synaptic static": "psychic", "steel wind strike": "force", "chain lightning": "lightning", "circle of death": "necrotic", "disintegrate": "force", "harm": "necrotic", "sunbeam": "radiant", "delayed blast fireball": "fire", "finger of death": "necrotic", "fire storm": "fire", "prismatic spray": "fire/acid/lightning/poison/cold", "incendiary cloud": "fire", "sunburst": "radiant", "meteor swarm": "fire + bludgeoning", "psychic scream": "psychic", "armor of agathys": "cold", "hex": "necrotic" };
+for (const k in DT) if (S[k]) S[k].dt = DT[k];
 root.SpellData = S;
 })(typeof window !== 'undefined' ? window : globalThis);

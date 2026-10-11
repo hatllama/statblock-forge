@@ -137,6 +137,25 @@ section('Terrain: fog, cover and climbing');
   check(sim.reachMapRaw(mk({ ath: 20 }), 30).dist[6 + 12] < 0 && sim.reachMapRaw(mk({ climb: 20 }), 30).dist[6 + 12] === 4, '"only with a climb speed" setting');
 }
 
+section('Damage types and control spells');
+{
+  const mods = { dmgMods: { resist: ['fire', 'nonmagical slashing'], immune: ['poison'], vulnerable: ['radiant'] } };
+  const A = (type, spell, mix) => ({ _spell: spell ? { level: 1 } : null, ext: { damageType: type, damageMix: mix } });
+  check(Tac.damageMultFor(A('fire'), mods) === 0.5 && Tac.damageMultFor(A('poison'), mods) === 0 && Tac.damageMultFor(A('radiant'), mods) === 2, 'resistance halves, immunity stops, vulnerability doubles');
+  check(Tac.damageMultFor(A('slashing'), mods) === 0.5 && Tac.damageMultFor(A('slashing', true), mods) === 1, 'resistance to nonmagical slashing doesn\'t cover a spell');
+  check(Tac.damageMultFor(A('fire/radiant/poison'), mods) === 2, 'a chosen-type attack picks the best type');
+  check(Math.abs(Tac.damageMultFor(A('slashing + fire', false, [['slashing', 10], ['fire', 10]]), mods) - 0.5) < 1e-9 && Math.abs(Tac.damageMultFor(A('cold + poison', false, [['cold', 3], ['poison', 1]]), mods) - 0.75) < 1e-9, 'mixed damage counts each part by its share');
+  const day = fixture('bandit-day.json');
+  let ent = 0, fights = 0, hurtOut = 0, fog = 0;
+  for (let i = 0; i < 12; i++) for (const r of Tac.runDay(JSON.parse(JSON.stringify(day)), { seed: 500 + i, record: true })) {
+    fights++;
+    for (const e of r.events) { if (e.kind === 'aoe' && /Entangle/.test(e.text)) ent++; if (/hurt out of/.test(e.text)) hurtOut++; if (e.kind === 'zone' && /Fog/.test(e.text)) fog++; }
+  }
+  check(ent / fights < 0.4, `Entangle is saved for crowds (${ent} casts in ${fights} fights)`);
+  check(fog === 0, `Fog Cloud isn't an opener when the party is winning (${fog} casts)`);
+  check(hurtOut > 0, `Hideous Laughter breaks when the target is hurt (${hurtOut} times)`);
+}
+
 section('Statblock parser (no AI)');
 {
   const dir = path.join(__dirname, 'statblocks');
@@ -175,6 +194,9 @@ section('Statblock parser (no AI)');
   expect(act('dorian-homebrew.txt', /Grasping Want/).targets === 2 && act('dorian-homebrew.txt', /Grasping Want/).ext.loseAction && act('dorian-homebrew.txt', /Grasping Want/).ext.pairWithin === 5, 'Dorian: Grasping Want costs two creatures their action');
   expect(act('dorian-homebrew.txt', /Molten Screen/).buff.ac === 2 && act('dorian-homebrew.txt', /Careful Distance/).ext.stepAway === 10, 'Dorian: Molten Screen (+2 AC) and Careful Distance (step 10 ft) reactions');
   expect(!dv._notes.some(n => /left out|nothing the simulator/.test(n)), 'Dorian: nothing left out');
+  const hb = parsed['homebrewery-md.txt'], rd = parsed['adult-red-dragon-2014.txt'];
+  expect(hb.ext.resist.includes('necrotic') && hb.ext.resist.includes('nonmagical slashing') && hb.ext.immune.includes('poison') && hb.ext.condImmune.includes('Poisoned'), 'resistances, immunities and condition immunities are read as lists');
+  expect(rd.ext.immune.includes('fire') && act('adult-red-dragon-2014.txt', /Fire Breath/).ext.damageType === 'fire' && /piercing \+ fire \+ slashing/.test(act('adult-red-dragon-2014.txt', /Multiattack/).ext.damageType), 'damage types on attacks, breath weapons and mixed multiattacks');
   expect(parsed['wolf-2014.txt'].ext.packTactics && !act('wolf-2014.txt', /Pack Tactics/), 'wolf Pack Tactics is a trait, not an action');
   expect(os.actions.filter(a => a.actionSlot === 3).length === 3 && act('osric-homebrew.txt', /Ruinous/).ext.zone.difficult, 'Osric: lair actions and difficult terrain');
   // every parsed creature can fight in both simulators

@@ -221,6 +221,49 @@ function inArea(spec, ox, oy, tx, ty, x, y) {
   return Math.abs(i - j) <= Math.floor(w * 0.7072 + 0.01) && (w > 1 || Math.min(i, j) >= 1);
 }
 
+/* ---------------- damage types ---------------- */
+const DAMAGE_TYPES = ['acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder'];
+const listOf = v => (Array.isArray(v) ? v : typeof v === 'string' ? v.split(/[,;]/) : []).map(x => String(x).trim().toLowerCase()).filter(Boolean);
+function dmgModsOf(ex) {
+  const m = { resist: listOf(ex.resist), immune: listOf(ex.immune), vulnerable: listOf(ex.vulnerable) };
+  return m.resist.length || m.immune.length || m.vulnerable.length ? m : null;
+}
+/* how much of a hit of this type gets through: 0 immune, 0.5 resistant, 2 vulnerable (resist + vulnerable = 1).
+   "nonmagical slashing" only counts against nonmagical attacks (spells and ext.magical are magical). */
+function typeMult(mods, type, magical) {
+  if (!mods || !type) return 1;
+  const has = (list) => list.includes(type) || (!magical && list.includes('nonmagical ' + type));
+  if (has(mods.immune)) return 0;
+  let m = 1;
+  if (has(mods.resist)) m *= 0.5;
+  if (has(mods.vulnerable)) m *= 2;
+  return m;
+}
+/* the multiplier for an action's damage against a target: "a / b" = the attacker's best choice, "a + b" = the
+   parts by share (ext.damageMix gives the shares; even split otherwise) */
+function damageMultFor(a, t, typeOverride) {
+  const mods = t && t.dmgMods;
+  const type = typeOverride || (a && a.ext && a.ext.damageType);
+  if (!mods || !type) return 1;
+  const magical = !!(a && (a._spell || (a.ext && a.ext.magical)));
+  const s = String(type).toLowerCase();
+  if (s.indexOf('/') >= 0) return Math.max(...s.split('/').map(x => typeMult(mods, x.trim(), magical)));
+  if (s.indexOf('+') >= 0) {
+    const parts = s.split('+').map(x => x.trim());
+    const mix = a && a.ext && Array.isArray(a.ext.damageMix) && !typeOverride ? a.ext.damageMix : parts.map(p => [p, 1]);
+    const tot = mix.reduce((q, p) => q + (+p[1] || 0), 0) || 1;
+    return mix.reduce((q, p) => q + (+p[1] || 0) / tot * typeMult(mods, String(p[0]).toLowerCase(), magical), 0);
+  }
+  return typeMult(mods, s, magical);
+}
+/* the type a "a / b / c" attacker picks against this target (for the log) */
+function bestTypeFor(a, t) {
+  const s = String((a && a.ext && a.ext.damageType) || '').toLowerCase();
+  if (s.indexOf('/') < 0 || !t || !t.dmgMods) return null;
+  const magical = !!(a._spell || (a.ext && a.ext.magical));
+  return s.split('/').map(x => x.trim()).sort((p, q) => typeMult(t.dmgMods, q, magical) - typeMult(t.dmgMods, p, magical))[0];
+}
+
 /* ---------------- unit construction ---------------- */
 function avgPerTurn(actions) {
   const a = actions.find(x => x && x.type === 'atk' && x.actionSlot === 0);
@@ -284,7 +327,9 @@ function makeUnit(tpl, team, idx, count, isPC) {
     baseAC: tpl.AC, saveBonus: tpl.saveBonus || 0,
     saves: ex.saves && typeof ex.saves === 'object' ? ex.saves : null,     // { str, dex, con, int, wis, cha }
     fly: typeof ex.fly === 'number' && ex.fly > 0 ? ex.fly : 0,
-    climb: typeof ex.climb === 'number' && ex.climb > 0 ? ex.climb : 0,     // climb speed: scales ledges with no check and no extra cost
+    climb: typeof ex.climb === 'number' && ex.climb > 0 ? ex.climb : 0,
+    dmgMods: dmgModsOf(ex),                                                 // { resist, immune, vulnerable } by damage type, or null
+    condImmune: Array.isArray(ex.condImmune) ? ex.condImmune.map(c => String(c).toLowerCase()) : [],     // climb speed: scales ledges with no check and no extra cost
     sneak: ex.sneakAttack && ex.sneakAttack.dice ? ex.sneakAttack : null,   // { dice: '2d6', assassinate: 4 }
     assassinate: !!ex.assassinate,                                          // advantage vs anyone who hasn't acted yet, round 1
     luckMax: typeof ex.luck === 'number' ? ex.luck : 0,
@@ -637,6 +682,10 @@ Sim.prototype.multBuff = function (u, field) {
 };
 Sim.prototype.ac = function (u) { return u.baseAC + this.sumBuff(u, 'ac', false); };
 Sim.prototype.addBuff = function (holder, src, action, data, extra) {
+  if (data && data.condition && holder !== src && holder.condImmune && holder.condImmune.indexOf(String(data.condition).toLowerCase()) >= 0) {
+    if (this.record) this.ev('effect', `${holder.name} is immune to being ${String(data.condition).toLowerCase()}`, { uid: holder.uid });
+    return { id: action.id, name: action.name, data: {}, immune: true };
+  }
   holder.buffs = holder.buffs.filter(b => !(b.id === action.id && b.src === src.uid));
   const b = { id: action.id, name: action.name || 'effect', src: src.uid, data: Object.assign({}, data), expiry: data.duration };
   const ax = action.ext || {};
@@ -647,7 +696,11 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   if (typeof ax.grantFly === 'number' && holder === src) { holder.fly = Math.max(holder.fly || 0, ax.grantFly); holder.speed = Math.max(holder.speed, ax.grantFly); }
   if (typeof ax.mirror === 'number') { b.mirror = ax.mirror; delete b.data.damageTakenMultiplier; }
   // "…or use its action on its next turn…": the export calls it Incapacitated; here it only costs that action
-  if (ax.loseAction && holder !== src) { delete b.data.condition; b.loseAction = true; }   // real duplicates here, an average in the export
+  if (ax.loseAction && holder !== src) { delete b.data.condition; b.loseAction = true; }
+  if (ax.saveOnDamage && holder !== src) b.saveOnDamage = ax.saveOnDamage;
+  if (ax.damageType) { b.dtype = ax.damageType; b.dmagic = !!(action._spell || ax.magical); }
+  // the export's averaged resistance gives way to the real damage types when the creature lists them
+  if (ax.avgResist && holder.dmgMods && typeof b.data.damageTakenMultiplier === 'number') b.data.damageTakenMultiplier = Math.round(b.data.damageTakenMultiplier / ax.avgResist * 100) / 100;   // real duplicates here, an average in the export
   if (extra) Object.assign(b, extra);
   // Hiding (self-applied Invisible) lasts until the creature attacks or its next turn ends (2024 Hide)
   if (holder === src && data.condition === 'Invisible' && data.duration === '1 round') { b.expiry = 'hide'; b.madeOnTurn = holder.turnNo || 0; }
@@ -703,6 +756,17 @@ Sim.prototype.stillRunning = function (u, a) {
   if (d !== 'entire encounter' && d !== 'repeat the save each round') return false;
   return this.units.some(o => o.onBoard && this.alive(o) && o.buffs.some(b => b.id === a.id && b.src === u.uid));
 };
+/* is u's side in trouble? someone down, or clearly behind on hit points */
+Sim.prototype.losing = function (u) {
+  const frac = team => {
+    let hp = 0, max = 0;
+    for (const o of this.units) if (o.team === team && (o.onBoard || o.isPC) && !(o.dead && !o.isPC)) { hp += Math.max(0, o.dead ? 0 : o.hp); max += o.maxHp; }
+    return max ? hp / max : 1;
+  };
+  const mine = frac(u.team), theirs = frac(u.team === 'party' ? 'foes' : 'party');
+  if (this.alliesOf(u).some(o => o.dead || (o.hp <= 0 && o.isPC))) return true;
+  return mine < 0.4 || mine < theirs - 0.2;
+};
 Sim.prototype.condOk = function (u, a) {
   if (this.stillRunning(u, a)) return false;
   const allies = this.alliesOf(u).filter(x => x !== u);
@@ -711,6 +775,7 @@ Sim.prototype.condOk = function (u, a) {
   if (ex.onlyIfEnemiesSurprised && !(this.round === 1 && this.surprised[u.team === 'party' ? 'foes' : 'party'])) return false;
   if (ex.requiresBuff && !u.buffs.some(b => b.id === ex.requiresBuff)) return false;     // e.g. Wrath of the Sea strikes need the spray up
   if (ex.grantsBuff && u.buffs.some(b => b.id === ex.grantsBuff.id)) return false;        // …and it isn't manifested twice
+  if (ex.wtWhen === 'losing' && !this.losing(u)) return false;                             // Fog Cloud & co.: a way out, not an opener
   switch (a.condition) {
     case 'ally at 0 HP': return allies.some(x => !x.dead && x.hp <= 0);
     case 'ally under half HP': return allies.some(x => !x.dead && x.hp < x.maxHp / 2);
@@ -854,7 +919,7 @@ Sim.prototype.expected = function (u, a, t) {
   const saveP = dc => Math.min(1, Math.max(0, (21 + this.saveBonusFor(t, sab) - dc) / 20));
   if (a.type === 'atk') {
     const sneakAvg = u.sneak && a.ext && a.ext.sneak && u.saSeq !== this.turnSeq ? avgDice(u.sneak.dice) * (this.featureAdv(u, t) || this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && this.dist(o, t) <= 5) ? 0.95 : 0.35) : 0;
-    const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier'));
+    const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * damageMultFor(a, t));
     if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
     return dmg * this.hitChance(u, t, a) * (a.targets || 1);
   }
@@ -899,6 +964,8 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
     val += (1 - t.hp / t.maxHp) * 4;
     const allyOn = this.alliesOf(u).filter(o => o !== u && this.alive(o) && o.onBoard && this.dist(o, t) <= 5).length;
     val += allyOn * 1.5;   // focus fire
+    // don't wake up a creature our side has laughing (Hideous Laughter breaks on a save each time it's hurt), unless it'll drop
+    if (a.type === 'atk' && exp < t.hp && t.buffs.some(b => b.saveOnDamage && this.byId[b.src] && this.byId[b.src].team === u.team)) { val *= 0.25; why = why || 'leave it laughing'; }
     // protect our casters: whoever is in their face is worth more
     const menacing = this.alliesOf(u).filter(o => o !== u && this.alive(o) && o.onBoard && this.dist(o, t) <= 5 && !this.hasMelee(o)).length;
     if (menacing && this.hasMelee(u)) { val += 4 * menacing; why = why || 'guard'; }
@@ -1219,6 +1286,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
             if (!ac) continue;
             if (pl.sphere) { ac.cellSet = new Set(ac.cells.map(c => c[0] + ',' + c[1])); ac.others = ac.friends.filter(f => f !== u); pl.acCache.set(t.uid, ac); }
           }
+          if (pl.act.ext && pl.act.ext.minCatch && 1 + ac.extra.length < pl.act.ext.minCatch) continue;   // Entangle & co.: only worth it on a crowd
           friends = pl.sphere ? (ac.cellSet.has(x + ',' + y) ? ac.others.concat([u]) : ac.others) : ac.friends;
           const b = pl.base.get(t.uid);
           v = b.val; why = b.why;
@@ -1604,7 +1672,7 @@ Sim.prototype.moveAlong = function (u, path) {
         // climbing down and slipping: it falls the rest of the way
         u.x = step.x; u.y = step.y; this.boardChanged();
         this.ev('move', `${u.name} slips climbing down`, { uid: u.uid, path: [{ x: step.x, y: step.y }], from: Object.assign({}, from) });
-        const d = this.damage(u, u, Math.floor(rollDice(Math.floor(-rise / 2) + 'd6', this.R, false)), {});
+        const d = this.damage(u, u, Math.floor(rollDice(Math.floor(-rise / 2) + 'd6', this.R, false)), { type: 'bludgeoning' });
         u.dmgDealt -= d;   // it hurt itself; don't count it as damage dealt
         this.addBuff(u, u, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
         this.ev('effect', `${u.name} falls ${-rise * 5} ft (Athletics ${tot} vs DC ${dc}; ${d} damage) and lands prone`, { uid: u.uid, dmg: d });
@@ -1641,13 +1709,13 @@ Sim.prototype.saveBonusFor = function (t, ab) {
   if (ab === 'strdex') return Math.max(typeof sv.str === 'number' ? sv.str : t.saveBonus, typeof sv.dex === 'number' ? sv.dex : t.saveBonus);
   return typeof sv[ab] === 'number' ? sv[ab] : t.saveBonus;
 };
-Sim.prototype.saveRoll = function (t, dc, src, ab) {
+Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   if (dc >= 99) return { success: false, roll: 1, total: -99 };
   const c = this.conds(t);
   const physical = ab === 'str' || ab === 'dex' || ab === 'strdex';
   // paralysed, stunned, unconscious or petrified creatures automatically fail Strength and Dexterity saves
   if (physical && ['Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].some(x => c.has(x))) return { success: false, roll: 0, total: 0, autoFail: true };
-  const adv = c.has('Saves with Advantage');
+  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv);
   const dis = c.has('Save with Disadvantage') || c.has('Attacks and saves with Disadvantage') || ((ab === 'dex') && c.has('Restrained'));
   let r = this.d20(adv, dis, false);
   let total = r + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true);
@@ -1760,7 +1828,13 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
 Sim.prototype.damage = function (src, tgt, raw, info) {
   info = info || {};
   if (tgt.dead) return 0;
-  let dmg = Math.max(0, raw * this.multBuff(tgt, 'damageTakenMultiplier') - this.sumBuff(tgt, 'damageReduction', false));
+  // damage type against resistances, immunities and vulnerabilities
+  const tm = info.a || info.type ? damageMultFor(info.a, tgt, info.type) : 1;
+  if (tm !== 1 && raw > 0) {
+    info.typeNote = tm === 0 ? 'immune' : tm < 1 ? 'resisted' : tm > 1 ? 'vulnerable' : '';
+    if (tm === 0 && this.record) this.ev('effect', `${tgt.name} is immune to ${info.type || (info.a && (bestTypeFor(info.a, tgt) || info.a.ext.damageType))} damage`, { uid: tgt.uid });
+  }
+  let dmg = Math.max(0, raw * tm * this.multBuff(tgt, 'damageTakenMultiplier') - this.sumBuff(tgt, 'damageReduction', false));
   dmg = Math.floor(dmg);
   if (dmg <= 0) return 0;
   // a defensive reaction on the target that reduces damage (e.g. "until next attack taken" resistance)
@@ -1806,6 +1880,12 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
     const dc = Math.max(10, Math.floor(dmg / 2));
     const roll = this.R.d(20) + (tgt.conSave || 0) + tgt.buffs.reduce((t, b) => t + (b.concBonus || 0), 0);
     if (roll < dc) this.endConcentration(tgt, `Con save ${roll} vs DC ${dc}`);
+  }
+  // "…each time it takes damage, it repeats the save" (Hideous Laughter: with advantage)
+  if (tgt.hp > 0 && !tgt.dead && dmg > 0) for (const b of tgt.buffs.slice()) {
+    if (!b.saveOnDamage || typeof b.dc !== 'number' || b.dc >= 99 || tgt.buffs.indexOf(b) < 0) continue;
+    const s = this.saveRoll(tgt, b.dc, this.byId[b.src] || null, b.saveAbility, { adv: b.saveOnDamage === 'adv' });
+    if (s.success) { tgt.buffs = tgt.buffs.filter(x => x !== b); this.ev('save', `${tgt.name} is hurt out of ${b.name} (${s.total} vs DC ${b.dc}${b.saveOnDamage === 'adv' ? ', advantage' : ''})`, { uid: tgt.uid }); }
   }
   return dmg;
 };
@@ -1938,7 +2018,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
           this.addBuff(t, u, a, { duration: 'entire encounter' }, { dot: dice });
         }
       }
-      const dealt = dmg > 0 ? this.damage(u, t, dmg, { attack: !opt.aura }) : 0;
+      const dealt = dmg > 0 ? this.damage(u, t, dmg, { attack: !opt.aura, a }) : 0;
       this.ev('save', `${u.name} → ${t.name}: ${a.name}, DC ${avgDice(a.toHit)}${a.ext && a.ext.saveAbility && a.ext.saveAbility !== 'strdex' ? ' ' + a.ext.saveAbility.toUpperCase() : ''} save ${s.autoFail ? 'auto-fail' : s.total >= 0 ? s.total : 'auto-fail'} — ${s.success ? 'saved' : 'failed'}${dealt ? `, ${dealt} damage` : ''}`,
         { uid: u.uid, target: t.uid, hit: !s.success, dmg: dealt, ranged: this.dist(u, t) > 5 });
       this.hoist(at);
@@ -1996,7 +2076,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       if (u.sneak.assassinate && this.round === 1) raw += u.sneak.assassinate;     // Assassinate: Surprising Strikes
     }
     raw *= this.multBuff(u, 'damageMultiplier');
-    dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, crit: r.crit });
+    dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, crit: r.crit, a });
   }
   const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : r.fa === 'pack' ? ', Pack Tactics' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '');
   this.ev('attack', `${u.name} → ${t.name}: ${a.name}${tag}, ${r.total} vs AC ${r.ac} — ${r.crit && r.hit ? 'CRIT' : r.hit ? 'hit' : r.mirror ? 'image' : 'miss'}${r.hit ? `, ${dealt} damage` : ''}`,
@@ -2004,7 +2084,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
   this.hoist(at);
   if (agathys && !u.dead) {
     const at2 = this.mark();
-    const d = this.damage(t, u, agathys.retaliate, {});
+    const d = this.damage(t, u, agathys.retaliate, { type: 'cold' });
     this.ev('attack', `${t.name}'s ${agathys.name} bites back at ${u.name}, ${d} damage`, { uid: t.uid, target: u.uid, hit: true, dmg: d });
     this.hoist(at2);
   }
@@ -2031,7 +2111,7 @@ Sim.prototype.onHitEffects = function (u, t, a, dealt) {
     const o = this.enemiesOf(u).find(e => e !== t && e.onBoard && this.alive(e) && this.dist(e, t) <= (oh.splash.range || 5));
     if (o) {
       const at = this.mark();
-      const d = this.damage(u, o, Math.max(0, Math.floor(rollDice(oh.splash.dmg, this.R, false))), {});
+      const d = this.damage(u, o, Math.max(0, Math.floor(rollDice(oh.splash.dmg, this.R, false))), { a, type: oh.splash.type || undefined });
       this.ev('attack', `${a.name} leaps to ${o.name}, ${d} damage`, { uid: u.uid, target: o.uid, hit: true, dmg: d, ranged: true });
       this.hoist(at);
     }
@@ -2058,7 +2138,7 @@ Sim.prototype.push = function (src, t, ft) {
   }
   const drop = this.T.anyH && !t.fly ? this.hAt(from.x, from.y) - this.hAt(t.x, t.y) : 0;
   if (drop >= 2) {
-    const d = this.damage(src, t, Math.floor(rollDice(Math.floor(drop / 2) + 'd6', this.R, false)), {});
+    const d = this.damage(src, t, Math.floor(rollDice(Math.floor(drop / 2) + 'd6', this.R, false)), { type: 'bludgeoning' });
     this.addBuff(t, t, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
     this.ev('effect', `${t.name} falls ${drop * 5} ft (${d} damage) and lands prone`, { uid: t.uid, dmg: d });
   }
@@ -2249,6 +2329,7 @@ Sim.prototype.choose = function (u, slot, budget) {
     const a = list[k];
     const p = this.plan(u, a, budget);
     if (!p) continue;
+    if (a.ext && a.ext.minCatch && p.targets.filter(t => t.team !== u.team).length < a.ext.minCatch) continue;
     if (u.ai === 'tactical' && (a.type === 'atk' || a.type === 'debuff')) {
       const k2 = freqKind(a.freq), limited = k2 !== 'at will' && k2 !== 'recharge';
       const rest = list.slice(k + 1).filter(b => b.type === 'atk' && freqKind(b.freq) === 'at will');
@@ -2297,7 +2378,7 @@ Sim.prototype.turn = function (u) {
   // ongoing damage (Tasha's Caustic Brew, burning…) at the start of the creature's turn
   for (const b of u.buffs.slice()) if (b.dot && !u.dead) {
     const src = this.byId[b.src] || u, at = this.mark();
-    const d = this.damage(src, u, Math.max(0, Math.floor(rollDice(b.dot, this.R, false))), {});
+    const d = this.damage(src, u, Math.max(0, Math.floor(rollDice(b.dot, this.R, false))), { a: b.dtype ? { _spell: b.dmagic, ext: { damageType: b.dtype } } : null });
     this.ev('digest', `${u.name} takes ${d} damage from ${b.name}`, { uid: u.uid, target: u.uid, dmg: d });
     this.hoist(at);
   }
@@ -2316,7 +2397,7 @@ Sim.prototype.turn = function (u) {
     if (!v || v.dead) continue;
     if (v.swallowInfo && v.swallowInfo.digest) {
       const at = this.mark();
-      const d = this.damage(u, v, Math.max(0, Math.floor(rollDice(v.swallowInfo.digest, this.R, false))), {});
+      const d = this.damage(u, v, Math.max(0, Math.floor(rollDice(v.swallowInfo.digest, this.R, false))), { type: 'acid' });
       this.ev('digest', `${u.name} digests ${v.name}: ${d} damage`, { uid: u.uid, target: v.uid, dmg: d });
       this.hoist(at);
     }
@@ -2884,5 +2965,5 @@ function previewPlacement(day, encIndex, layout, opts) {
   return sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, x: u.x, y: u.y, maxHp: u.maxHp, size: u.size, auras: aurasOf(u), areas: areasOf(u) }));
 }
 
-root.TacEngine = { Sim, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

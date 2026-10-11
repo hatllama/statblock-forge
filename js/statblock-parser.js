@@ -168,7 +168,25 @@ function parseHeader(lines, flat, notes) {
   const res = line(/\bDamage Resistances\b\s*:?\s*([^\n]*)/i) || line(/(?:^|\n)\s*Resistances\b\s*:?\s*([^\n]*)/i);
   let imm = line(/\bDamage Immunities\b\s*:?\s*([^\n]*)/i) || line(/(?:^|\n)\s*Immunities\b\s*:?\s*([^\n;]*)/i);
   const vul = line(/\bDamage Vulnerabilities\b\s*:?\s*([^\n]*)/i) || line(/(?:^|\n)\s*Vulnerabilities\b\s*:?\s*([^\n]*)/i);
+  const condLine = line(/\bCondition Immunities\b\s*:?\s*([^\n]*)/i);
+  const condWords = (condLine + ' ' + imm).match(/\b(blinded|charmed|deafened|exhaustion|frightened|grappled|incapacitated|paralyzed|petrified|poisoned|prone|restrained|stunned|unconscious)\b/g) || [];
   imm = imm.replace(/\b(blinded|charmed|deafened|exhaustion|frightened|grappled|incapacitated|paralyzed|petrified|poisoned|prone|restrained|stunned|unconscious)\b/g, '');
+  // the War Table uses the real types; the export keeps one averaged multiplier (below)
+  const typesIn = txt => {
+    const out = [];
+    for (const seg of txt.split(/;/)) {
+      const nonmag = /nonmagical|non-magical|that aren't|aren't silvered|not made with/.test(seg);
+      for (const w of seg.match(/\b(acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder)\b/g) || []) {
+        const v = nonmag && /bludgeoning|piercing|slashing/.test(w) ? 'nonmagical ' + w : w;
+        if (!out.includes(v)) out.push(v);
+      }
+    }
+    return out;
+  };
+  if (typesIn(res).length) h.ext.resist = typesIn(res);
+  if (typesIn(imm).length) h.ext.immune = typesIn(imm);
+  if (typesIn(vul).length) h.ext.vulnerable = typesIn(vul);
+  if (condWords.length) h.ext.condImmune = condWords.map(cap).filter((c, i, arr) => arr.indexOf(c) === i);
   h.damageMult = damageMultiplier(res, imm, vul);
   h.resText = [res && 'resists ' + res, imm.replace(/[;,\s]+$/, '').trim() && 'immune to ' + imm.replace(/[;,\s]+$/, '').trim(), vul && 'vulnerable to ' + vul].filter(Boolean).join('; ');
   return h;
@@ -250,6 +268,17 @@ function damageParts(txt) {
   }
   if (!parts.length) { const f = txt.match(/(?:Hit:|take|takes|taking)\s*(\d+)\s+([a-z]+)\s+damage/i); if (f) parts.push({ avg: +f[1], dice: f[1], type: f[2].toLowerCase() }); }
   return parts;
+}
+/* the damage type of an action from its damage parts: "fire", or "slashing + fire" with each part's share */
+const DAMAGE_TYPES = ['acid', 'bludgeoning', 'cold', 'fire', 'force', 'lightning', 'necrotic', 'piercing', 'poison', 'psychic', 'radiant', 'slashing', 'thunder'];
+function setDamageType(a, parts) {
+  const typed = parts.filter(p => DAMAGE_TYPES.includes(p.type));
+  if (!typed.length) return;
+  const by = {};
+  typed.forEach(p => { by[p.type] = (by[p.type] || 0) + p.avg; });
+  const names = Object.keys(by);
+  a.ext.damageType = names.join(' + ');
+  if (names.length > 1) a.ext.damageMix = names.map(n => [n, by[n]]);
 }
 function saveInfo(txt) {
   let m = txt.match(/DC\s*(\d+)\s*(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s*saving throw/i);
@@ -340,6 +369,7 @@ function readAttack(entry, nm, notes) {
   a._melee = kind !== 'ranged';
   a._ranged = kind !== 'melee' ? (rg.ranged || 20) : 0;
   a._avg = parts.reduce((s, p) => s + p.avg, 0) || avgDice(dpr);
+  setDamageType(a, parts);
 
   // grapples (2014 "the target is grappled (escape DC 13)", 2024 "has the Grappled condition (escape DC 13)")
   const gm = hitText.match(/grappled[^(]*\(\s*escape DC\s*(\d+)\s*\)|Grappled condition\s*\(\s*escape DC\s*(\d+)/i);
@@ -394,6 +424,7 @@ function readSaveEffect(entry, nm, notes, h) {
   const mv = movementEffect(t);
   if (parts.length) {
     Object.assign(a, { type: 'atk', dpr: cleanDice(parts.map(p => p.dice).join(' + ')), toHit: sv.dc, useSaves: true });
+    setDamageType(a, parts);
     if (mv) { if (mv.onHit) a.ext.onHit = Object.assign({}, a.ext.onHit, mv.onHit); if (mv.speedBonus) a.ext.onHit = Object.assign({}, a.ext.onHit, { slow: -mv.speedBonus }); }
     if (/half as much|Success\s*:\s*Half damage|half damage on a success/i.test(t)) a.halfOnSave = true;
     if (cond) a.riderEffect = { dc: 99, buff: { duration: durationIn(t, cond), condition: cond } };
@@ -403,6 +434,9 @@ function readSaveEffect(entry, nm, notes, h) {
     if (mv) Object.assign(a.ext, mv);
     // "… or use its action on its next turn …": on the War Table it only loses its action (it can still move and react)
     if (cond === 'Incapacitated' && /\b(?:must|or) (?:use|spend) its action/i.test(t) && !/incapacitated/i.test(t)) a.ext.loseAction = true;
+    // "…and each time it takes damage, it repeats the saving throw (with advantage)"
+    const sod = t.match(/(?:each time|whenever|every time)[^.]*?takes damage[^.]*?(?:saving throw|save)[^.]*\.?/i);
+    if (sod) a.ext.saveOnDamage = /advantage/i.test(sod[0]) ? 'adv' : true;
     if (/within (?:reach|5 (?:feet|ft)) of each other/i.test(t)) a.ext.pairWithin = 5;
     a._avg = 4 * targets;
   } else if (mv) {
@@ -499,10 +533,11 @@ function spellAction(n, sp, ctx, extra) {
   } else if (sp.k === 'buff') {
     Object.assign(a, { type: 'buff', target: sp.tg === 'self' ? 'self' : 'ally with the highest DPR', buff: Object.assign({}, sp.b) });
   } else if (sp.k === 'debuff') {
-    Object.assign(a, { type: 'debuff', saveDC: ctx.dc, target: 'enemy with highest DPR', buff: Object.assign({}, sp.b) });
-    a.ext.saveAbility = sp.sv;
+    Object.assign(a, { type: 'debuff', saveDC: sp.sv ? ctx.dc : 99, target: 'enemy with highest DPR', buff: Object.assign({}, sp.b) });
+    if (sp.sv) a.ext.saveAbility = sp.sv;
   }
   if (sp.rider) a.riderEffect = { dc: 99, buff: Object.assign({}, sp.rider) };
+  if (sp.dt && a.type === 'atk') a.ext.damageType = sp.dt;
   if (a.type === 'atk') a._avg = avgDice(a.dpr) * (a.targets || 1) * (a.useSaves ? (a.halfOnSave ? 0.75 : 0.55) : 0.65);
   if (sp.a) a.ext.area = { shape: sp.a[0], size: sp.a[1] };
   if (sp.selective && a.ext.area) a.ext.area.selective = true;
@@ -659,6 +694,16 @@ function comboAction(name, combo) {
   if (lead.riderEffect) a.riderEffect = JSON.parse(JSON.stringify(lead.riderEffect));
   if (lead.ext.riderSave) a.ext.riderSave = lead.ext.riderSave;
   if (lead.ext.onHit) a.ext.onHit = JSON.parse(JSON.stringify(lead.ext.onHit));
+  const types = combo.map(c => c.a.ext.damageType).filter(Boolean);
+  if (types.length && types.every(t => t === types[0])) { a.ext.damageType = types[0]; if (lead.ext.damageMix) a.ext.damageMix = JSON.parse(JSON.stringify(lead.ext.damageMix)); }
+  else if (types.length) {
+    const mix = {};
+    combo.forEach(c => {
+      if (c.a.ext.damageMix) c.a.ext.damageMix.forEach(([t, w]) => { mix[t] = (mix[t] || 0) + c.n * w; });
+      else if (c.a.ext.damageType) mix[c.a.ext.damageType] = (mix[c.a.ext.damageType] || 0) + c.n * (c.a._avg || 1);
+    });
+    a.ext.damageType = Object.keys(mix).join(' + '); a.ext.damageMix = Object.entries(mix).map(([t, w]) => [t, round1(w)]);
+  }
   const g = combo.find(c => c.a.ext.grapple);
   if (g) a.ext.grapple = Object.assign({}, g.a.ext.grapple);
   a._avg = combo.reduce((s, c) => s + c.n * c.a._avg, 0);
@@ -805,13 +850,14 @@ function parseOne(block) {
   });
 
   if (h.damageMult !== 1) {
-    all.push({ name: h.damageMult < 1 ? 'Damage resistances' : 'Damage vulnerabilities', actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', damageTakenMultiplier: h.damageMult }, ext: { range: 0 } });
-    notes.push(`Damage taken ×${h.damageMult} (${h.resText}) — the simulators don't track damage types, so it's averaged over a typical party.`);
+    all.push({ name: h.damageMult < 1 ? 'Damage resistances' : 'Damage vulnerabilities', actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', damageTakenMultiplier: h.damageMult }, ext: { range: 0, avgResist: h.damageMult } });
+    notes.push(`${h.resText.charAt(0).toUpperCase() + h.resText.slice(1)}: the War Table checks each hit's damage type; the export averages it to damage taken ×${h.damageMult}.`);
   }
   // passive self-buffs (Magic Resistance, resistances…) merge into one, so they all fit the two passive slots
   const passBuffs = all.filter(a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.duration === 'entire encounter' && !(a.ext && a.ext.wtSkip));
   if (passBuffs.length > 1) {
     const merged = { name: passBuffs.map(a => a.name).join(' + '), actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter' }, ext: { range: 0 } };
+    passBuffs.forEach(a => { if (a.ext && a.ext.avgResist) merged.ext.avgResist = round1((merged.ext.avgResist || 1) * a.ext.avgResist); });
     for (const a of passBuffs) for (const [k, v] of Object.entries(a.buff)) {
       if (k === 'duration') continue;
       if (k === 'damageTakenMultiplier' || k === 'damageMultiplier') merged.buff[k] = round1((merged.buff[k] || 1) * v);

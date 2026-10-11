@@ -54,7 +54,8 @@
        "ext": {
         "range": 60,
         "saveAbility": "wis",
-        "dprIfHurt": "1d12"
+        "dprIfHurt": "1d12",
+        "damageType": "necrotic"
        }
       },
       {
@@ -71,7 +72,8 @@
         "range": 60,
         "onHit": {
          "slow": 10
-        }
+        },
+        "damageType": "cold"
        }
       },
       {
@@ -85,7 +87,8 @@
        "toHit": 5,
        "target": "enemy with least HP",
        "ext": {
-        "range": 30
+        "range": 30,
+        "damageType": "piercing"
        }
       },
       {
@@ -135,7 +138,8 @@
         }
        },
        "ext": {
-        "range": 120
+        "range": 120,
+        "damageType": "radiant"
        }
       },
       {
@@ -160,7 +164,8 @@
         "saveAbility": "con",
         "onHit": {
          "push": 10
-        }
+        },
+        "damageType": "thunder"
        }
       },
       {
@@ -186,7 +191,8 @@
         "saveAbility": "str",
         "zone": {
          "difficult": true
-        }
+        },
+        "minCatch": 3
        }
       },
       {
@@ -208,7 +214,8 @@
          "shape": "sphere",
          "size": 10
         },
-        "saveAbility": "con"
+        "saveAbility": "con",
+        "damageType": "thunder"
        }
       },
       {
@@ -261,7 +268,8 @@
         "zone": {
          "fog": true
         },
-        "wtOnly": true
+        "wtOnly": true,
+        "wtWhen": "losing"
        }
       }
      ]
@@ -293,7 +301,8 @@
       },
       "onHit": {
        "push": 15
-      }
+      },
+      "damageType": "cold"
      }
     },
     {
@@ -314,7 +323,8 @@
       "requiresBuff": "fw-wots-aura",
       "onHit": {
        "push": 15
-      }
+      },
+      "damageType": "cold"
      }
     },
     {
@@ -380,7 +390,10 @@
      "type": "atk",
      "dpr": "1d6 +4",
      "toHit": "6",
-     "target": "enemy with highest DPR"
+     "target": "enemy with highest DPR",
+     "ext": {
+      "damageType": "bludgeoning"
+     }
     },
     {
      "id": "f68c16b7-eb31-45f8-a23f-3d50ec12a943",
@@ -392,7 +405,10 @@
      "type": "atk",
      "dpr": "1d6 + 4",
      "toHit": "6",
-     "target": "enemy with highest DPR"
+     "target": "enemy with highest DPR",
+     "ext": {
+      "damageType": "bludgeoning"
+     }
     }
    ]
   },
@@ -466,7 +482,8 @@
       "sneak": true,
       "onHit": {
        "vex": true
-      }
+      },
+      "damageType": "piercing"
      }
     },
     {
@@ -484,7 +501,8 @@
       "range": 80,
       "wtDpr": "1d6 + 4",
       "sneak": true,
-      "wtOnly": true
+      "wtOnly": true,
+      "damageType": "piercing"
      }
     },
     {
@@ -561,7 +579,8 @@
        "toHit": 6,
        "target": "enemy with least HP",
        "ext": {
-        "range": 120
+        "range": 120,
+        "damageType": "force"
        }
       },
       {
@@ -577,7 +596,8 @@
        "target": "enemy with least HP",
        "ext": {
         "range": 60,
-        "saveAbility": "dex"
+        "saveAbility": "dex",
+        "damageType": "radiant"
        }
       },
       {
@@ -616,7 +636,8 @@
         }
        },
        "ext": {
-        "range": 120
+        "range": 120,
+        "damageType": "radiant"
        }
       },
       {
@@ -648,7 +669,8 @@
        "target": "enemy with least HP",
        "ext": {
         "range": 60,
-        "saveAbility": "dex"
+        "saveAbility": "dex",
+        "damageType": "fire"
        }
       },
       {
@@ -732,7 +754,8 @@
        "target": "enemy with highest DPR",
        "ext": {
         "range": 120,
-        "saveAbility": "wis"
+        "saveAbility": "wis",
+        "damageType": "psychic"
        }
       },
       {
@@ -891,7 +914,8 @@
      "toHit": 4,
      "target": "enemy with least HP",
      "ext": {
-      "range": 5
+      "range": 5,
+      "damageType": "piercing"
      }
     }
    ]
@@ -951,7 +975,8 @@
        "toHit": 5,
        "target": "enemy with least HP",
        "ext": {
-        "range": 120
+        "range": 120,
+        "damageType": "force"
        }
       },
       {
@@ -965,7 +990,8 @@
        "toHit": 5,
        "target": "enemy with least HP",
        "ext": {
-        "range": 120
+        "range": 120,
+        "damageType": "acid/cold/fire/lightning/poison/psychic/thunder"
        }
       },
       {
@@ -988,7 +1014,8 @@
        },
        "ext": {
         "range": 60,
-        "saveAbility": "int"
+        "saveAbility": "int",
+        "damageType": "psychic"
        }
       },
       {
@@ -1023,7 +1050,8 @@
        "target": "enemy with highest DPR",
        "ext": {
         "range": 60,
-        "saveAbility": "wis"
+        "saveAbility": "wis",
+        "damageType": "psychic"
        }
       },
       {
@@ -1048,7 +1076,8 @@
         "saveAbility": "str",
         "onHit": {
          "noReactions": true
-        }
+        },
+        "damageType": "necrotic"
        }
       },
       {
@@ -1071,7 +1100,8 @@
           "dice": "1d12",
           "upcast": "1d12"
          }
-        }
+        },
+        "damageType": "lightning"
        }
       },
       {
@@ -1091,7 +1121,8 @@
        },
        "ext": {
         "range": 30,
-        "saveAbility": "wis"
+        "saveAbility": "wis",
+        "saveOnDamage": "adv"
        }
       },
       {
@@ -1132,7 +1163,8 @@
         "wtDpr": "2d8",
         "dot": {
          "dice": "2d8"
-        }
+        },
+        "damageType": "psychic"
        }
       }
      ]
@@ -1168,7 +1200,8 @@
       "wtOnly": true,
       "onHit": {
        "push": 5
-      }
+      },
+      "damageType": "force"
      }
     },
     {
@@ -1190,7 +1223,8 @@
       "onHit": {
        "drain": true,
        "push": 5
-      }
+      },
+      "damageType": "piercing"
      }
     }
    ]
@@ -1257,9 +1291,11 @@
         "onHit": {
          "splash": {
           "dmg": "4",
-          "range": 5
+          "range": 5,
+          "type": "fire"
          }
-        }
+        },
+        "damageType": "piercing"
        }
       },
       {
@@ -1276,7 +1312,8 @@
         "range": 60,
         "onHit": {
          "slow": 10
-        }
+        },
+        "damageType": "cold"
        }
       },
       {
@@ -1293,7 +1330,8 @@
         "range": 5,
         "onHit": {
          "noReactions": true
-        }
+        },
+        "damageType": "lightning"
        }
       },
       {
@@ -1312,7 +1350,8 @@
         "wtDpr": "3d8",
         "leap": {
          "range": 30
-        }
+        },
+        "damageType": "acid/cold/fire/lightning/poison/thunder"
        }
       },
       {
@@ -1334,7 +1373,8 @@
          "shape": "cone",
          "size": 15
         },
-        "saveAbility": "dex"
+        "saveAbility": "dex",
+        "damageType": "fire"
        }
       },
       {
@@ -1360,7 +1400,8 @@
         "dot": {
          "dice": "2d4",
          "upcast": "2d4"
-        }
+        },
+        "damageType": "acid"
        }
       },
       {
@@ -1445,7 +1486,8 @@
      "toHit": 6,
      "target": "enemy with least HP",
      "ext": {
-      "range": 5
+      "range": 5,
+      "damageType": "piercing"
      }
     },
     {
