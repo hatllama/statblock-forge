@@ -137,6 +137,47 @@ section('Terrain: fog, cover and climbing');
   check(sim.reachMapRaw(mk({ ath: 20 }), 30).dist[6 + 12] < 0 && sim.reachMapRaw(mk({ climb: 20 }), 30).dist[6 + 12] === 4, '"only with a climb speed" setting');
 }
 
+section('Flying');
+{
+  const sim = new Tac.Sim({ width: 12, height: 6 });
+  const cells = { '5,1': { h: 1 }, '5,3': { h: 2 } };
+  for (let y = 0; y < 6; y++) cells['8,' + y] = { t: 'difficult' };
+  sim.setTerrain({ cells });
+  const unit = (uid, x, y, fly) => ({ uid, team: uid === 'a' ? 'party' : 'foes', x, y, fly: fly || 0, climb: 0, athletics: 0, onBoard: true, hp: 10, maxHp: 10, buffs: [], dead: false });
+  const walker = unit('a', 1, 3), bird = unit('b', 9, 3, 30), goblin = unit('b', 9, 3);
+  bird.alt = 3;   // 15 ft up
+  sim.units = [walker, goblin]; sim.boardChanged();
+  check(!sim.canSee(1, 3, goblin), 'a 10-ft ledge hides a creature on the ground');
+  sim.units = [walker, bird]; sim.boardChanged();
+  check(sim.canSee(1, 3, bird), 'a flyer is up in the air: the ledge doesn\'t hide it');
+  const crateFoe = unit('b', 9, 1), crateBird = unit('b', 9, 1, 30); crateBird.alt = 3;
+  sim.units = [walker, crateFoe]; sim.boardChanged();
+  check(sim.coverAC(unit('a', 1, 1), crateFoe) === 2, 'a crate covers a creature on the ground');
+  sim.units = [walker, crateBird]; sim.boardChanged();
+  check(sim.coverAC(unit('a', 1, 1), crateBird) === 0, 'a crate doesn\'t cover a flyer');
+  const rmW = sim.reachMapRaw(unit('a', 6, 0), 30), rmF = sim.reachMapRaw(unit('a', 6, 0, 30), 30);
+  check(rmW.dist[10] === 5 && rmF.dist[10] === 4, `flyers ignore difficult ground (${rmW.dist[10]} vs ${rmF.dist[10]} squares)`);
+  const rmL = sim.reachMapRaw(unit('a', 4, 3, 30), 30);
+  check(rmL.dist[5 + 3 * 12] === 1, 'flyers go over ledges with no climb');
+  crateBird.buffs = [{ id: 'p', data: { condition: 'Prone' } }]; sim._flyMapVer = -1;
+  check(!sim.airborne(crateBird), 'a prone flyer can\'t stay up');
+  // altitude: distance is 3D, reach and falls follow it
+  const sim2 = new Tac.Sim({ width: 10, height: 6, seed: 3 });
+  sim2.setTerrain(null);
+  const mk = (uid, team, x, y, fly) => ({ uid, name: uid, team, x, y, fly: fly || 0, climb: 0, hover: false, alt: 0, speed: 30, onBoard: true, hp: 30, maxHp: 30, buffs: [], actions: [], dead: false, reaction: true, inside: [], uses: new Map(), dmgDealt: 0, dmgTaken: 0, isPC: false, _mr: 5 });
+  const orc = mk('orc', 'foes', 4, 2), harpy = mk('harpy', 'party', 5, 2, 40);
+  sim2.units = [orc, harpy]; sim2.byId = { orc, harpy }; sim2.boardChanged();
+  check(sim2.dist(orc, harpy) === 5, 'side by side on the ground: 5 ft');
+  harpy.alt = 3; sim2.boardChanged();
+  check(sim2.dist(orc, harpy) === 15 && sim2.adjacentEnemies(harpy, 5, 2).length === 0, 'a flyer 15 ft up is out of a sword\'s reach (3D distance)');
+  check(sim2.adjacentEnemies(harpy, 5, 2, 0).length === 1, '…and back in reach if it drops down');
+  sim2.addBuff(harpy, orc, { id: 'trip', name: 'Trip' }, { duration: '1 round', condition: 'Prone' });
+  check(harpy.alt === 0 && harpy.hp < 30, `knocked prone in the air, it falls (${30 - harpy.hp} damage)`);
+  const owl = mk('owl', 'party', 6, 2, 40); owl.hover = true; owl.alt = 4; sim2.units.push(owl); sim2.byId.owl = owl;
+  sim2.addBuff(owl, orc, { id: 'trip', name: 'Trip' }, { duration: '1 round', condition: 'Prone' });
+  check(owl.alt === 4 && owl.hp === 30, 'a hovering flyer stays up when knocked prone');
+}
+
 section('Damage types and control spells');
 {
   const mods = { dmgMods: { resist: ['fire', 'nonmagical slashing'], immune: ['poison'], vulnerable: ['radiant'] } };

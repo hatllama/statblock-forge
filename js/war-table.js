@@ -100,6 +100,8 @@ function buildBoard(units){
     const body = el('circle', { r, fill, stroke: '#0d0b09', 'stroke-width': 1.5 }, t);
     const txt = el('text', { class: 'ini', 'text-anchor': 'middle', dy: '3.5', fill: ink }, t); txt.textContent = initials(u.name);
     const badge = el('text', { class: 'ini', 'text-anchor': 'middle', y: -r-7, fill: '#d98a5f', 'font-size': 11 }, t);
+    const shadow = el('ellipse', { cx: 0, cy: r+4, rx: r*.8, ry: 3.5, fill: 'rgba(0,0,0,.45)', style: 'display:none' }, t);
+    const altTxt = el('text', { class: 'ini', 'text-anchor': 'middle', y: r+15, fill: '#9cc3e6', 'font-size': 10 }, t);
     const title = el('title', {}, t); title.textContent = u.name;
     const circ = 2 * Math.PI * (r+2.5);
     // passive auras: a dashed square (5e grid distances) that follows the creature
@@ -109,7 +111,7 @@ function buildBoard(units){
       const tt = el('title', {}, rect); tt.textContent = `${u.name}: ${a.name} (${a.r} ft aura)`;
       return { rect, n };
     });
-    tokenEls[u.uid] = { g: t, ring, body, txt, badge, title, r, circ, unit: u, fill, auras };
+    tokenEls[u.uid] = { g: t, ring, body, txt, badge, title, r, circ, unit: u, fill, auras, altTxt, shadow };
     ring.setAttribute('stroke-dasharray', `${circ} ${circ}`);
   }
 }
@@ -164,7 +166,10 @@ function paintToken(uid, st, maxHp, name){
   t.body.setAttribute('fill', st.down || st.dead ? '#4a423a' : t.fill);
   t.txt.textContent = st.dead ? '✕' : st.down ? (st.stable ? '✚' : `${st.ds}/${st.df}`) : initials(name);
   t.txt.setAttribute('fill', st.down || st.dead ? '#e9dfc4' : (t.unit.team === 'party' ? '#20180c' : '#f2e6c9'));
+  // flying height: a shadow under the token and the height in feet
+  if(t.altTxt){ t.altTxt.textContent = st.alt && !st.dead ? `↑${st.alt} ft` : ''; t.shadow.style.display = st.alt && !st.dead ? '' : 'none'; }
   const flags = [];
+  if(st.alt && !st.dead) flags.push(`flying ${st.alt} ft up`);
   if(st.conds && st.conds.length) flags.push(...st.conds);
   t.title.textContent = `${name} — ${Math.max(0,Math.round(st.hp))}/${maxHp} HP${st.temp?` (+${st.temp} temp)`:''}${st.down?(st.stable?' · stable':` · death saves ${st.ds}✓ ${st.df}✗`):''}${st.dead?' · dead':''}${flags.length?' · '+flags.join(', '):''}`;
 }
@@ -243,7 +248,7 @@ document.getElementById('wt-tools').addEventListener('click', ev=>{
   svg.classList.toggle('painting', tool !== 'move');
   document.getElementById('wt-modeLabel').textContent = tool === 'move' ? 'Setup · drag tokens to set starting positions' : `Setup · painting: ${b.textContent.replace(/^\S+\s/, '').toLowerCase()}`;
   document.getElementById('wt-toolHelp').textContent = tool === 'move' ? 'Drag tokens to place them. Pick a terrain tool to paint the map.' :
-    tool === 'up' || tool === 'down' ? 'Each click or stroke changes the height by 5 ft. Going up costs 5 ft of movement per 5 ft of height. A 5-ft rise gives half cover to whoever is behind it; a ledge of 10 ft or more needs a climb speed or an Athletics check (up or down). Reach and sight follow the height.' :
+    tool === 'up' || tool === 'down' ? 'Each click or stroke changes the height by 5 ft. Going up costs 5 ft of movement per 5 ft of height. A 5-ft rise gives half cover to whoever is behind it; a ledge of 10 ft or more needs a climb speed or an Athletics check (up or down). Reach and sight follow the height. Flyers skip all of this: no climbing, no difficult ground, and they see over raised ground.' :
     tool === 'erase' ? 'Drag across squares to clear them.' : 'Click or drag across squares to paint.';
 });
 document.getElementById('wt-btnClearTerrain').onclick = ()=>{

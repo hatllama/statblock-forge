@@ -106,6 +106,7 @@ function parseHeader(lines, flat, notes) {
     h.ext.speed = walk ? +walk[1] : Math.max(30, other.burrow || 0, other.swim || 0);
     if (!walk && (other.burrow || other.swim)) h.ext.speed = Math.max(other.burrow || 0, other.swim || 0);
     if (other.fly) h.ext.fly = other.fly;
+    if (other.fly && /\(\s*hover\s*\)|\bhover\b/i.test(sp)) h.ext.hover = true;
     if (other.climb) h.ext.climb = other.climb;
   }
   const im = flat.match(/\bInitiative\b\s*:?\s*([+-]\d+)/i);

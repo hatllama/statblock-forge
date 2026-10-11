@@ -328,6 +328,8 @@ function makeUnit(tpl, team, idx, count, isPC) {
     saves: ex.saves && typeof ex.saves === 'object' ? ex.saves : null,     // { str, dex, con, int, wis, cha }
     fly: typeof ex.fly === 'number' && ex.fly > 0 ? ex.fly : 0,
     climb: typeof ex.climb === 'number' && ex.climb > 0 ? ex.climb : 0,
+    hover: !!ex.hover,                                                     // can stay up when knocked prone or stopped
+    alt: 0,                                                                 // height above the ground under it, in 5-ft steps (flyers only)
     dmgMods: dmgModsOf(ex),                                                 // { resist, immune, vulnerable } by damage type, or null
     condImmune: Array.isArray(ex.condImmune) ? ex.condImmune.map(c => String(c).toLowerCase()) : [],     // climb speed: scales ledges with no check and no extra cost
     sneak: ex.sneakAttack && ex.sneakAttack.dice ? ex.sneakAttack : null,   // { dice: '2d6', assassinate: 4 }
@@ -391,6 +393,7 @@ function resetFightState(u) {
   u.concentrating = null; u.slotTurn = -1; u.reserveSlot = false;
   u.tookTurn = false; u.vex = null; u.saSeq = -1; u.movedThisTurn = false;
   if (u.baseFly !== undefined) u.fly = u.baseFly;
+  u.alt = 0;
 }
 
 /* ---------------- the encounter simulator ---------------- */
@@ -436,10 +439,43 @@ Sim.prototype.speedOf = function (u) {
 };
 Sim.prototype.hAt = function (x, y) { return this.T.anyH ? this.T.h[x + y * this.W] : 0; };
 Sim.prototype.isWall = function (x, y) { return this.T.any && this.T.wall[x + y * this.W] === 1; };
+/* who is up in the air right now: a fly speed, conscious, and not knocked prone, grappled or restrained */
+const FLY_LIFT = 3;    // how high a flyer planning to shoot expects to be (15 ft)
+const MAX_ALT = 12;    // 60 ft
+/* able to stay in the air: a fly speed, conscious, free to move, and not knocked prone */
+Sim.prototype.airborne = function (u) {
+  return !!(u && u.fly && u.onBoard && !u.dead && u.hp > 0 && !u.grappledBy && this.speedOf(u) > 0 &&
+    !this.has(u, ['Prone', 'Restrained', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified', 'Incapacitated']));
+};
+Sim.prototype.flyMap = function () {
+  if (this._flyMapVer === this.posVer && this._flyMap && this._flyMap.length === this.W * this.H) return this._flyMap;
+  const m = new Uint8Array(this.W * this.H);
+  for (const u of this.units || []) if (u.alt > 0 && u.onBoard && !u.dead) m[u.x + u.y * this.W] = Math.max(m[u.x + u.y * this.W], u.alt);
+  this._flyMap = m; this._flyMapVer = this.posVer;
+  return m;
+};
+/* a creature in the air that can't stay up falls: 1d6 per 10 ft, lands prone (hovering creatures stay up
+   unless they're knocked out) */
+Sim.prototype.fallCheck = function (u) {
+  if (!u || !(u.alt > 0) || this._falling === u) return;
+  const conscious = !u.dead && u.hp > 0 && !this.has(u, ['Unconscious', 'Paralyzed', 'Stunned', 'Petrified']);
+  if (u.dead) { u.alt = 0; this.boardChanged(); return; }
+  if (this.airborne(u) || (u.hover && conscious && u.fly)) return;
+  const h = u.alt;
+  this._falling = u;
+  try {
+    u.alt = 0; this.boardChanged();
+    const dice = Math.floor(h / 2);
+    let d = 0;
+    if (dice > 0) { d = this.damage(u, u, Math.floor(rollDice(dice + 'd6', this.R, false)), { type: 'bludgeoning' }); u.dmgDealt -= d; }
+    if (!u.dead && !this.has(u, ['Prone'])) this.addBuff(u, u, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
+    this.ev('effect', `${u.name} falls ${h * 5} ft${d ? ` (${d} damage)` : ''}${u.dead ? '' : ' and lands prone'}`, { uid: u.uid, dmg: d });
+  } finally { this._falling = null; }
+};
 /* can something at (x0,y0) see / reach a straight line to (x1,y1)?
    solid = only what physically stops things (walls, higher ground): an area of effect spreads through fog
    and past creatures, it just can't go through a wall or over a cliff. */
-Sim.prototype.los = function (x0, y0, x1, y1, solid) {
+Sim.prototype.los = function (x0, y0, x1, y1, solid, air0, air1) {
   const T = this.T;
   if (!T.any) return true;
   const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0));
@@ -447,11 +483,19 @@ Sim.prototype.los = function (x0, y0, x1, y1, solid) {
   const W = this.W;
   const fog = solid ? null : T.fog;
   if (fog && n > 1 && (fog[x0 + y0 * W] || fog[x1 + y1 * W])) return false;   // heavily obscured: nobody sees in or out
-  const key = (x0 + y0 * W) * 4096 + (x1 + y1 * W), cache = solid ? T.solC : T.losC;
+  // a flying creature is up in the air (FLY_LIFT above the ground under it), so ledges and crates don't hide it
+  // or hide things from it; walls still do. Only matters on maps with height.
+  let l0 = 0, l1 = 0;
+  if (T.anyH) {
+    const fa = this.flyMap();
+    l0 = Math.min(15, Math.max(0, (air0 !== undefined ? +air0 : fa[x0 + y0 * W]) || 0));
+    l1 = Math.min(15, Math.max(0, (air1 !== undefined ? +air1 : fa[x1 + y1 * W]) || 0));
+  }
+  const key = ((x0 + y0 * W) * 4096 + (x1 + y1 * W)) * 256 + l0 * 16 + l1, cache = solid ? T.solC : T.losC;
   const hit = cache.get(key);
   if (hit !== undefined) return hit;
   let ok = true;
-  const h0 = T.h[x0 + y0 * W] + 1, h1 = T.h[x1 + y1 * W] + 1;    // eye level: a creature stands 5 ft tall
+  const h0 = T.h[x0 + y0 * W] + 1 + l0, h1 = T.h[x1 + y1 * W] + 1 + l1;    // eye level: a creature stands 5 ft tall
   const steps = n * 4;
   for (let i = 1; i < steps && ok; i++) {
     const f = i / steps;
@@ -469,16 +513,18 @@ Sim.prototype.los = function (x0, y0, x1, y1, solid) {
    line is total cover instead (los). Shooting down from above clears it. */
 Sim.prototype.coverAC = function (a, t) {
   if (!this.T.any || this.dist(a, t) <= 5) return 0;
-  return this.coverBetween(a.x, a.y, t.x, t.y);
+  return this.coverBetween(a.x, a.y, t.x, t.y, a.alt || 0, t.alt || 0);
 };
-Sim.prototype.coverBetween = function (x0, y0, x1, y1) {
+Sim.prototype.coverBetween = function (x0, y0, x1, y1, air0, air1) {
   const T = this.T;
   if (!T.any) return 0;
-  const W = this.W, key = (x0 + y0 * W) * 4096 + (x1 + y1 * W);
+  const a0 = Math.min(15, +air0 || 0), a1 = Math.min(15, +air1 || 0);
+  const W = this.W, key = ((x0 + y0 * W) * 4096 + (x1 + y1 * W)) * 256 + a0 * 16 + a1;
   let v = T.covC.get(key);
   if (v !== undefined) return v;
   v = 0;
-  const g0 = T.h[x0 + y0 * W], g1 = T.h[x1 + y1 * W];
+  // the line runs between the two creatures' feet, so from up in the air a crate rarely gets in the way
+  const g0 = T.h[x0 + y0 * W] + a0, g1 = T.h[x1 + y1 * W] + a1;
   const n = Math.max(Math.abs(x1 - x0), Math.abs(y1 - y0)), steps = n * 4;
   for (let i = 1; i < steps; i++) {
     const f = i / steps;
@@ -490,7 +536,11 @@ Sim.prototype.coverBetween = function (x0, y0, x1, y1) {
   T.covC.set(key, v);
   return v;
 };
-Sim.prototype.canSee = function (x, y, t) { return this.los(x, y, t.x, t.y); };
+Sim.prototype.canSee = function (x, y, t) {
+  // a flyer planning its turn can go up to look over things
+  if (this._flyer) return this.los(x, y, t.x, t.y, false, this._flyer.alt || 0, t.alt || 0) || this.los(x, y, t.x, t.y, false, Math.max(FLY_LIFT, this._flyer.alt || 0), t.alt || 0);
+  return this.los(x, y, t.x, t.y, false, 0, t.alt || 0);
+};
 /* Hiding (2024): only out of every enemy's line of sight (walls, high ground, heavy obscurement).
    Blindsight within 30 ft still finds you. */
 const isHideAction = a => !!(a && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Invisible' && a.buff.duration === '1 round');
@@ -550,7 +600,8 @@ Sim.prototype.unitState = function (u) {
            conds: Array.from(this.conds(u)).sort(), stable: u.stable, ds: u.deathS, df: u.deathF,
            grappledBy: u.grappledBy, swallowedBy: u.swallowedBy,
            slots: u.slots ? u.slots.map((n, i) => n + '/' + u.slotsMax[i]).slice(0, u.slotsMax.reduce((m, n, i) => n ? i + 1 : m, 0)).join(' ') : undefined,
-           conc: u.concentrating ? ((u.actions.find(a => a.id === u.concentrating) || {}).name || 'a spell') : undefined };
+           conc: u.concentrating ? ((u.actions.find(a => a.id === u.concentrating) || {}).name || 'a spell') : undefined,
+           alt: u.fly || u.alt ? (u.alt || 0) * 5 : undefined };
 };
 Sim.prototype.diffState = function () {
   const out = {};
@@ -584,6 +635,23 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
     const st = ++this._stamp, mark = this._mark, W = this.W;
     for (const c of cells) mark[c[0] + c[1] * W] = st;
     isIn = o => mark[o.x + o.y * W] === st;
+  }
+  // height: a burst is set off at its target's height and reaches as far up and down as out; cones and lines
+  // tilt from the creature towards their target and are as thick as they are wide there
+  if (this.T.anyH || this.units.some(o => o.alt > 0)) {
+    const n = Math.max(1, Math.round(spec.size / 5));
+    const zO = (this.T.anyH ? this.T.h[ox + oy * this.W] : 0) + (caster && caster.x === ox && caster.y === oy ? (caster.alt || 0) : (caster && this._flyer === caster ? (caster.alt || 0) : 0));
+    let vert;
+    if (fromPoint || spec.shape === 'emanation' || spec.shape === 'cube') {
+      const zC = fromPoint ? this.zOf(t) : zO;
+      vert = o => Math.abs(this.zOf(o) - zC) <= n;
+    } else {
+      const dT = Math.max(1, Math.abs(t.x - ox), Math.abs(t.y - oy)), slope = (this.zOf(t) - zO) / dT;
+      const tol = spec.shape === 'cone' ? (d => Math.floor(d / 2) + 0.5) : (() => 0.5 + (Math.max(1, Math.round((spec.width || 5) / 5)) - 1) / 2);
+      vert = o => { const d = Math.max(Math.abs(o.x - ox), Math.abs(o.y - oy)); return Math.abs(this.zOf(o) - (zO + slope * d)) <= tol(d); };
+    }
+    const flat = isIn;
+    isIn = o => flat(o) && vert(o);
   }
   if (!isIn(t)) return null;
   let extra = pool.filter(o => o !== t && o.onBoard && isIn(o));
@@ -650,13 +718,20 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
   return best.cells ? best : (this.areaAt(a, spec, t, ox, oy, best.ax, best.ay, pool, caster) || best);
 };
 /* height counts toward distance, unless one side flies (it simply rises or dips to meet the other) */
+/* height: the ground under a creature plus how high it's flying, in 5-ft steps. Distances are 3D (5e grid:
+   the bigger of across and up). */
+Sim.prototype.zOf = function (u) { return (this.T.anyH ? this.T.h[u.x + u.y * this.W] : 0) + (u.alt || 0); };
 Sim.prototype.dist = function (a, b) {
   const d = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
-  return (this.T.anyH && !a.fly && !b.fly ? Math.max(d, Math.abs(this.T.h[a.x + a.y * this.W] - this.T.h[b.x + b.y * this.W])) : d) * 5;
+  return Math.max(d, Math.abs(this.zOf(a) - this.zOf(b))) * 5;
 };
+/* distance from a square to b, for whoever is planning a move there: a flyer planning its own turn can rise or
+   drop to b's height (but not below the ground); anyone else stands on the ground */
 Sim.prototype.distXY = function (x, y, b) {
   const d = Math.max(Math.abs(x - b.x), Math.abs(y - b.y));
-  return (this.T.anyH && !b.fly && !this._flyer ? Math.max(d, Math.abs(this.T.h[x + y * this.W] - this.T.h[b.x + b.y * this.W])) : d) * 5;
+  const g = this.T.anyH ? this.T.h[x + y * this.W] : 0, zb = this.zOf(b);
+  const dz = this._flyer ? Math.max(0, g - zb) : Math.abs(zb - g);
+  return Math.max(d, dz) * 5;
 };
 
 /* ----- buffs & conditions ----- */
@@ -705,9 +780,11 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   // Hiding (self-applied Invisible) lasts until the creature attacks or its next turn ends (2024 Hide)
   if (holder === src && data.condition === 'Invisible' && data.duration === '1 round') { b.expiry = 'hide'; b.madeOnTurn = holder.turnNo || 0; }
   holder.buffs.push(b);
+  if (holder.fly) this._flyMapVer = -1;   // knocked out of the air, or given wings
+  if (holder.alt > 0) this.fallCheck(holder);
   return b;
 };
-Sim.prototype.dropBuffs = function (u, pred) { u.buffs = u.buffs.filter(b => !pred(b)); };
+Sim.prototype.dropBuffs = function (u, pred) { u.buffs = u.buffs.filter(b => !pred(b)); if (u.fly) this._flyMapVer = -1; };
 
 /* ----- uses ----- */
 Sim.prototype.slotFor = function (u, level) {
@@ -898,8 +975,10 @@ Sim.prototype.meleeReach = function (u) {
   u._mr = r;
   return r;
 };
-Sim.prototype.adjacentEnemies = function (u, x, y) {
-  return this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && this.distXY(x, y, e) <= this.meleeReach(e) && this.los(e.x, e.y, x, y));   // a reach weapon can't strike round a wall corner
+Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
+  const zm = (this.T.anyH ? this.T.h[x + y * this.W] : 0) + (alt !== undefined ? alt : (u.alt || 0));
+  return this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 &&
+    Math.max(Math.abs(x - e.x), Math.abs(y - e.y), Math.abs(this.zOf(e) - zm)) * 5 <= this.meleeReach(e) && this.los(e.x, e.y, x, y));   // a reach weapon can't strike round a wall corner
 };
 
 /* ----- expected outcomes, used by the tactical AI ----- */
@@ -1194,7 +1273,7 @@ Sim.prototype.dashWorthIt = function (u, need, speed) {
   return speed > 0 && need > speed * 2;
 };
 Sim.prototype.tacticalTurn = function (u, speed) {
-  const prevF = this._flyer; this._flyer = u.fly ? u : null;
+  const prevF = this._flyer; this._flyer = u.fly && this.airborne(u) ? u : null;
   try { return this.tacticalTurnInner(u, speed); } finally { this._flyer = prevF; }
 };
 Sim.prototype.tacticalTurnInner = function (u, speed) {
@@ -1500,7 +1579,7 @@ Sim.prototype.mayHitDowned = function (u, t) {
 /* Find where to stand and whom to hit for an action, according to the creature's AI.
    Returns {dest:{x,y}, path, targets[], why} or null */
 Sim.prototype.plan = function (u, a, budget) {
-  const prevF = this._flyer; this._flyer = u.fly ? u : null;
+  const prevF = this._flyer; this._flyer = u.fly && this.current === u && this.airborne(u) ? u : null;   // off its turn it can't change height
   try { return this.planInner(u, a, budget); } finally { this._flyer = prevF; }
 };
 Sim.prototype.planInner = function (u, a, budget) {
@@ -1722,7 +1801,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   // half cover helps Dexterity saves against something coming from elsewhere (the area's point, or the caster)
   if (ab === 'dex' && src && src !== t && this.T.any && !this._ignoreCover) {
     const from = this._coverFrom || src;
-    if (Math.max(Math.abs(from.x - t.x), Math.abs(from.y - t.y)) > 1) total += this.coverBetween(from.x, from.y, t.x, t.y);
+    if (Math.max(Math.abs(from.x - t.x), Math.abs(from.y - t.y)) > 1) total += this.coverBetween(from.x, from.y, t.x, t.y, from.uid ? (from.alt || 0) : (from.alt || 0), t.alt || 0);
   }
   if (total < dc && t.luckMax && (t.uses.get('__luck') || 0) > 0 && (this._saveStakes || 0) >= 1) {
     t.uses.set('__luck', t.uses.get('__luck') - 1);
@@ -1885,7 +1964,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   if (tgt.hp > 0 && !tgt.dead && dmg > 0) for (const b of tgt.buffs.slice()) {
     if (!b.saveOnDamage || typeof b.dc !== 'number' || b.dc >= 99 || tgt.buffs.indexOf(b) < 0) continue;
     const s = this.saveRoll(tgt, b.dc, this.byId[b.src] || null, b.saveAbility, { adv: b.saveOnDamage === 'adv' });
-    if (s.success) { tgt.buffs = tgt.buffs.filter(x => x !== b); this.ev('save', `${tgt.name} is hurt out of ${b.name} (${s.total} vs DC ${b.dc}${b.saveOnDamage === 'adv' ? ', advantage' : ''})`, { uid: tgt.uid }); }
+    if (s.success) { tgt.buffs = tgt.buffs.filter(x => x !== b); this._flyMapVer = -1; this.ev('save', `${tgt.name} is hurt out of ${b.name} (${s.total} vs DC ${b.dc}${b.saveOnDamage === 'adv' ? ', advantage' : ''})`, { uid: tgt.uid }); }
   }
   return dmg;
 };
@@ -1910,6 +1989,7 @@ Sim.prototype.endConcentration = function (u, why) {
   }
   u.concentrating = null;
   let any = false;
+  this._flyMapVer = -1;
   for (const o of this.units) { const n = o.buffs.length; o.buffs = o.buffs.filter(b => !(b.src === u.uid && b.id === id)); if (o.buffs.length !== n) any = true; }
   const sp = u.actions.find(a => a.id === id);
   if (any && why && !/^casts /.test(why)) this.ev('effect', `${u.name} loses concentration on ${sp ? sp.name : 'a spell'}${why ? ' (' + why + ')' : ''}`, { uid: u.uid });
@@ -1922,9 +2002,11 @@ Sim.prototype.downPC = function (u) {
   this.dropBuffs(u, b => b.data.duration !== 'entire encounter');
   this.releaseGrappleOf(u);
   this.ev('down', `${u.name} drops to 0 HP and falls unconscious`, { uid: u.uid });
+  if (u.alt > 0) this.fallCheck(u);
 };
 Sim.prototype.kill = function (u, src, why) {
   this.boardChanged();
+  u.alt = 0;
   this.endConcentration(u, 'slain');
   u.hp = 0; u.dead = true;
   this.releaseGrappleOf(u);
@@ -2184,6 +2266,7 @@ Sim.prototype.afterHitExt = function (u, t, a, hit) {
       t.grappledBy = u.uid;
       t.grappleInfo = { escapeDC: ex.grapple.escapeDC || 10, restrains: ex.grapple.restrains !== false, name: a.name };
       this.ev('effect', `${t.name} is grappled by ${u.name}${t.grappleInfo.restrains ? ' and restrained' : ''}`, { uid: t.uid });
+      if (t.alt > 0 && !(u.alt > 0)) this.fallCheck(t);
     }
   }
   if (ex.swallow && t.grappledBy === u.uid) {
@@ -2374,6 +2457,9 @@ Sim.prototype.turn = function (u) {
   // start of turn
   u.turnNo = (u.turnNo || 0) + 1;
   this.turnSeq = (this.turnSeq || 0) + 1;
+  this._flyMapVer = -1;   // effects run out at turn boundaries
+  u._settled = false;
+  if (u.alt > 0) this.fallCheck(u);
   u.tookTurn = true; u.movedThisTurn = false; u._steps = 0;
   // ongoing damage (Tasha's Caustic Brew, burning…) at the start of the creature's turn
   for (const b of u.buffs.slice()) if (b.dot && !u.dead) {
@@ -2580,6 +2666,12 @@ Sim.prototype.turn = function (u) {
     // re-plan from where it ended up: it may have been stopped, or the target may have dropped
     let a = choice.a, p = this.usable(u, a) && this.condOk(u, a) ? this.plan(u, a, 0) : null;
     if (!p) { const c2 = this.choose(u, 0, 0); if (c2) { a = c2.a; p = c2.p; } }
+    if (p && p.targets.length && u.fly) {
+      this.settleAltitude(u, a, p);
+      // couldn't get level with it this turn: a melee swing can't reach
+      const t0 = p.targets[0];
+      if (t0 && t0 !== u && a.type === 'atk' && !a.useSaves && this.dist(u, t0) > Math.max(5, a._range || 5)) { this.ev('skip', `${u.name} can't reach ${t0.name} from ${(u.alt || 0) * 5} ft up`, { uid: u.uid }); p = null; }
+    }
     if (p && p.targets.length) {
       this.spend(u, a); this.doAction(u, a, p, { finishDowned: !!(p.targets[0] && p.targets[0].hp <= 0) });
       if ((a.type === 'atk' || a.type === 'debuff') && p.targets[0] && p.targets[0] !== u) u.focus = p.targets[0].uid;
@@ -2593,6 +2685,8 @@ Sim.prototype.turn = function (u) {
     const p = this.plan(u, bonus.a, 0);
     if (p) { this.spend(u, bonus.a); this.doAction(u, bonus.a, p); }
   }
+  // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
+  if (u.fly && !u._settled && !u.dead && u.hp > 0) this.settleAltitude(u, null, null);
   this.endTurn(u);
 };
 Sim.prototype.approach = function (u, budget) {
@@ -2634,7 +2728,7 @@ Sim.prototype.endTurn = function (u) {
   for (const b of u.buffs.slice()) {
     if (b.expiry === 'repeat the save each round' && typeof b.dc === 'number' && b.dc < 99) {
       const s = this.saveRoll(u, b.dc, null, b.saveAbility);
-      if (s.success) { u.buffs = u.buffs.filter(x => x !== b); this.ev('save', `${u.name} shakes off ${b.name}`, { uid: u.uid }); }
+      if (s.success) { u.buffs = u.buffs.filter(x => x !== b); this._flyMapVer = -1; this.ev('save', `${u.name} shakes off ${b.name}`, { uid: u.uid }); }
     }
   }
   this.dropBuffs(u, b => b.expiry === 'hide' && (u.turnNo || 0) > b.madeOnTurn);
@@ -2688,6 +2782,52 @@ Sim.prototype.stepAwayFrom = function (u) {
     w.disengaged = keep.dis; w.movedThisTurn = keep.moved; w._steps = keep.steps;
     if (u.dead) return;
   }
+};
+
+/* ----- flying height ----- */
+/* Where a flyer wants to be this turn: level with its target to fight in melee, or (shooting, casting, or with
+   nothing to do) just out of reach of the melee foes around it. Going up or down costs movement, and rising out
+   of someone's reach provokes an opportunity attack like any other move. */
+Sim.prototype.settleAltitude = function (u, a, p) {
+  if (!u.fly || !this.airborne(u) || u._settled) return;
+  const g = this.T.anyH ? this.T.h[u.x + u.y * this.W] : 0;
+  const t = p && p.targets && p.targets[0];
+  const melee = a && t && t !== u && (a.type === 'atk' || a.type === 'debuff' || a.type === 'heal') && Math.max(5, a._range || 5) <= 10 && !(a.useSaves && (a.ext && a.ext.area));
+  let want;
+  if (melee) want = this.zOf(t) - g;
+  else {
+    // out of reach of nearby foes that fight on the ground (or can't follow as high)
+    const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && Math.max(Math.abs(e.x - u.x), Math.abs(e.y - u.y)) <= 8);
+    want = foes.length ? Math.max(...foes.map(e => this.zOf(e) + Math.round(this.meleeReach(e) / 5) + 1)) - g : (u.alt || 0);
+    // …but the shot or spell still has to reach and see its target
+    if (a && t && t !== u) {
+      const R = Math.max(1, Math.round(Math.max(5, a._range || 5) / 5));
+      want = Math.min(want, this.zOf(t) - g + R);
+      while (want > 0 && !this.los(u.x, u.y, t.x, t.y, false, want, t.alt || 0)) want--;
+    }
+  }
+  want = Math.max(0, Math.min(MAX_ALT, Math.round(want)));
+  const cur = u.alt || 0;
+  if (want === cur) { u._settled = true; return; }
+  const left = Math.floor(this.speedOf(u) / 5) - (u._steps || 0);
+  if (left <= 0) return;
+  const to = cur + Math.max(-left, Math.min(left, want - cur));
+  // opportunity attacks from foes it rises (or drops) out of reach of
+  if (!u.disengaged) {
+    const before = new Set(this.adjacentEnemies(u, u.x, u.y, cur)), after = new Set(this.adjacentEnemies(u, u.x, u.y, to));
+    for (const e of before) {
+      if (after.has(e) || !e.reaction || this.incap(e)) continue;
+      const atk = e.actions.find(x => x.type === 'atk' && !x.useSaves && x.actionSlot === 0 && x._range <= 10 && !(x.ext && x.ext.swallow));
+      if (!atk) continue;
+      e.reaction = false;
+      this.ev('oa', `${e.name} takes an opportunity attack at ${u.name}`, { uid: e.uid, target: u.uid });
+      this.attackOnce(e, atk, u, { oa: true });
+      if (u.dead || u.hp <= 0 || !this.airborne(u)) return;
+    }
+  }
+  u.alt = to; u._steps = (u._steps || 0) + Math.abs(to - cur); u._settled = true;
+  this.boardChanged();
+  this.ev('effect', to === 0 ? `${u.name} lands` : `${u.name} ${to > cur ? 'flies up' : 'drops'} to ${to * 5} ft`, { uid: u.uid });
 };
 
 /* ----- legendary & lair ----- */
