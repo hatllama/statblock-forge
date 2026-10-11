@@ -1,0 +1,1536 @@
+{
+ "updated": 1791749401562,
+ "name": "Zaki's party (level 4)",
+ "players": [
+  {
+   "id": "0c42f4e7-3115-43c2-88bf-8c83c199fa07",
+   "mode": "custom",
+   "class": {
+    "type": "druid",
+    "level": 4,
+    "options": {}
+   },
+   "name": "Faithwalker",
+   "count": 1,
+   "hp": 35,
+   "AC": 14,
+   "saveBonus": 1.67,
+   "ext": {
+    "speed": 35,
+    "initBonus": 1,
+    "saves": {
+     "str": -1,
+     "dex": 1,
+     "con": 3,
+     "int": 2,
+     "wis": 5,
+     "cha": 0
+    },
+    "spellbook": {
+     "slots": [
+      3,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "slotReset": "lr",
+     "spells": [
+      {
+       "id": "fw-ttd",
+       "name": "Toll the Dead",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8 + 1",
+       "toHit": 13,
+       "useSaves": true,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 60,
+        "saveAbility": "wis",
+        "dprIfHurt": "1d12",
+        "damageType": "necrotic"
+       }
+      },
+      {
+       "id": "fw-rof",
+       "name": "Ray of Frost",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8",
+       "toHit": 5,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 60,
+        "onHit": {
+         "slow": 10
+        },
+        "damageType": "cold"
+       }
+      },
+      {
+       "id": "fw-tw",
+       "name": "Thorn Whip",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d6",
+       "toHit": 5,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 30,
+        "damageType": "piercing"
+       }
+      },
+      {
+       "id": "fw-cw",
+       "name": "Cure Wounds",
+       "level": 1,
+       "upcast": "2d8",
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "heal",
+       "amount": "2d8 + 3",
+       "target": "ally with the least HP",
+       "ext": {
+        "range": 5
+       }
+      },
+      {
+       "id": "fw-hw",
+       "name": "Healing Word",
+       "level": 1,
+       "upcast": "2d4",
+       "actionSlot": 1,
+       "targets": 1,
+       "type": "heal",
+       "amount": "2d4 + 3",
+       "target": "ally with the least HP",
+       "ext": {
+        "range": 60
+       }
+      },
+      {
+       "id": "fw-gb",
+       "name": "Guiding Bolt",
+       "level": 1,
+       "upcast": "1d6",
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "4d6",
+       "toHit": 5,
+       "target": "enemy with highest DPR",
+       "riderEffect": {
+        "dc": 99,
+        "buff": {
+         "duration": "until next attack taken",
+         "condition": "Is attacked with Advantage"
+        }
+       },
+       "ext": {
+        "range": 120,
+        "damageType": "radiant"
+       }
+      },
+      {
+       "id": "fw-tw2",
+       "name": "Thunderwave",
+       "level": 1,
+       "upcast": "1d8",
+       "actionSlot": 0,
+       "targets": 2,
+       "type": "atk",
+       "dpr": "2d8",
+       "toHit": 13,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 15,
+        "area": {
+         "shape": "cube",
+         "size": 15
+        },
+        "saveAbility": "con",
+        "onHit": {
+         "push": 10
+        },
+        "damageType": "thunder"
+       }
+      },
+      {
+       "id": "fw-ent",
+       "name": "Entangle",
+       "level": 1,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 3,
+       "type": "debuff",
+       "saveDC": 13,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "repeat the save each round",
+        "condition": "Restrained"
+       },
+       "ext": {
+        "range": 90,
+        "area": {
+         "shape": "sphere",
+         "size": 10
+        },
+        "saveAbility": "str",
+        "zone": {
+         "difficult": true
+        },
+        "minCatch": 3
+       }
+      },
+      {
+       "id": "fw-shatter",
+       "name": "Shatter",
+       "level": 2,
+       "upcast": "1d8",
+       "actionSlot": 0,
+       "targets": 3,
+       "type": "atk",
+       "dpr": "3d8",
+       "toHit": 13,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with most HP",
+       "ext": {
+        "range": 60,
+        "area": {
+         "shape": "sphere",
+         "size": 10
+        },
+        "saveAbility": "con",
+        "damageType": "thunder"
+       }
+      },
+      {
+       "id": "fw-enlarge",
+       "name": "Enlarge/Reduce (Enlarge an ally)",
+       "level": 2,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "buff",
+       "target": "ally with the highest DPR",
+       "buff": {
+        "duration": "entire encounter",
+        "damage": "1d4"
+       },
+       "ext": {
+        "range": 30
+       }
+      },
+      {
+       "id": "fw-shield",
+       "name": "Shield",
+       "level": 1,
+       "actionSlot": 4,
+       "type": "template",
+       "templateOptions": {
+        "templateName": "Shield"
+       }
+      },
+      {
+       "id": "fw-fog",
+       "name": "Fog Cloud",
+       "level": 1,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 4,
+       "type": "debuff",
+       "saveDC": 99,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "entire encounter",
+        "condition": "Attacks with Disadvantage"
+       },
+       "ext": {
+        "range": 120,
+        "area": {
+         "shape": "sphere",
+         "size": 20
+        },
+        "zone": {
+         "fog": true
+        },
+        "wtOnly": true,
+        "wtWhen": "losing"
+       }
+      }
+     ]
+    },
+    "multiclass": "Druid 3 / Cleric 1"
+   },
+   "actions": [
+    {
+     "id": "fw-wots",
+     "name": "Wrath of the Sea (manifest)",
+     "actionSlot": 1,
+     "freq": {
+      "reset": "sr",
+      "uses": 2
+     },
+     "condition": "not used yet",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "3d6",
+     "toHit": 13,
+     "useSaves": true,
+     "target": "enemy with highest DPR",
+     "ext": {
+      "range": 5,
+      "saveAbility": "con",
+      "grantsBuff": {
+       "id": "fw-wots-aura",
+       "name": "Wrath of the Sea"
+      },
+      "onHit": {
+       "push": 15
+      },
+      "damageType": "cold"
+     }
+    },
+    {
+     "id": "fw-wots2",
+     "name": "Wrath of the Sea (strike)",
+     "actionSlot": 1,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "3d6",
+     "toHit": 13,
+     "useSaves": true,
+     "target": "enemy with highest DPR",
+     "ext": {
+      "range": 5,
+      "saveAbility": "con",
+      "requiresBuff": "fw-wots-aura",
+      "onHit": {
+       "push": 15
+      },
+      "damageType": "cold"
+     }
+    },
+    {
+     "id": "fw-shield-mi",
+     "name": "Shield (Magic Initiate, free)",
+     "actionSlot": 4,
+     "freq": "1/day",
+     "condition": "default",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round",
+      "ac": 5
+     }
+    },
+    {
+     "id": "fw-jaunt",
+     "name": "Cloud's Jaunt",
+     "actionSlot": 1,
+     "freq": {
+      "reset": "lr",
+      "uses": 2
+     },
+     "condition": "default",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round"
+     },
+     "ext": {
+      "teleport": 30,
+      "wtOnly": true
+     }
+    }
+   ]
+  },
+  {
+   "id": "7ba165da-a21c-4d81-9553-c8acf97f9294",
+   "mode": "custom",
+   "class": {
+    "type": "monk",
+    "level": 3,
+    "options": {}
+   },
+   "name": "Kraax",
+   "count": 1,
+   "hp": 31,
+   "AC": 16,
+   "saveBonus": 2,
+   "actions": [
+    {
+     "id": "1533f004-4e73-424c-8306-408abb72894e",
+     "name": "Flurry of Blows",
+     "actionSlot": 1,
+     "freq": {
+      "reset": "sr",
+      "uses": 4
+     },
+     "condition": "default",
+     "targets": 2,
+     "type": "atk",
+     "dpr": "1d6 +4",
+     "toHit": "6",
+     "target": "enemy with highest DPR",
+     "ext": {
+      "damageType": "bludgeoning"
+     }
+    },
+    {
+     "id": "f68c16b7-eb31-45f8-a23f-3d50ec12a943",
+     "name": "Punch",
+     "actionSlot": 0,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "1d6 + 4",
+     "toHit": "6",
+     "target": "enemy with highest DPR",
+     "ext": {
+      "damageType": "bludgeoning"
+     }
+    }
+   ]
+  },
+  {
+   "id": "f4d574da-e9e2-48be-9857-8cefd726544a",
+   "mode": "custom",
+   "class": {
+    "type": "rogue",
+    "level": 4,
+    "options": {}
+   },
+   "name": "Tacitus Sicarius",
+   "count": 1,
+   "hp": 31,
+   "AC": 15,
+   "saveBonus": 1.83,
+   "ext": {
+    "speed": 35,
+    "initBonus": 6,
+    "initAdvantage": true,
+    "elvenAccuracy": true,
+    "escapeBonus": 6,
+    "saves": {
+     "str": -1,
+     "dex": 6,
+     "con": 2,
+     "int": 2,
+     "wis": 1,
+     "cha": 1
+    },
+    "sneakAttack": {
+     "dice": "2d6",
+     "assassinate": 4
+    },
+    "assassinate": true,
+    "steadyAim": true
+   },
+   "actions": [
+    {
+     "id": "ts-assassinate",
+     "name": "Assassinate (round 1)",
+     "actionSlot": -3,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round",
+      "condition": "Attacks with Advantage",
+      "damage": 4
+     },
+     "ext": {
+      "wtSkip": true
+     }
+    },
+    {
+     "id": "ts-rapier",
+     "name": "Rapier",
+     "actionSlot": 0,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "1d8 + 4 + 2d6",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "wtDpr": "1d8 + 4",
+      "sneak": true,
+      "onHit": {
+       "vex": true
+      },
+      "damageType": "piercing"
+     }
+    },
+    {
+     "id": "ts-shortbow",
+     "name": "Shortbow",
+     "actionSlot": 0,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "1d6 + 4 + 2d6",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 80,
+      "wtDpr": "1d6 + 4",
+      "sneak": true,
+      "wtOnly": true,
+      "damageType": "piercing"
+     }
+    },
+    {
+     "id": "ts-hide",
+     "name": "Cunning Action: Hide",
+     "actionSlot": 1,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round",
+      "condition": "Invisible"
+     },
+     "ext": {
+      "successChance": 0.7
+     }
+    }
+   ]
+  },
+  {
+   "id": "7157d787-a405-41be-afb8-88bde61ef76f",
+   "mode": "custom",
+   "class": {
+    "type": "warlock",
+    "level": 4,
+    "options": {}
+   },
+   "name": "Niko Aris",
+   "count": 1,
+   "hp": 31,
+   "AC": 13,
+   "saveBonus": 2,
+   "ext": {
+    "speed": 30,
+    "initBonus": 2,
+    "luck": 2,
+    "saves": {
+     "str": -1,
+     "dex": 2,
+     "con": 2,
+     "int": 0,
+     "wis": 3,
+     "cha": 6
+    },
+    "spellbook": {
+     "slots": [
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "slotReset": "sr",
+     "recovery": {
+      "levels": 2,
+      "maxSlot": 5,
+      "anyBreak": true
+     },
+     "spells": [
+      {
+       "id": "nk-eb",
+       "name": "Eldritch Blast",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d10 + 4",
+       "toHit": 6,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 120,
+        "damageType": "force"
+       }
+      },
+      {
+       "id": "nk-sf",
+       "name": "Sacred Flame",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8",
+       "toHit": 14,
+       "useSaves": true,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 60,
+        "saveAbility": "dex",
+        "damageType": "radiant"
+       }
+      },
+      {
+       "id": "nk-hex",
+       "name": "Hex",
+       "level": 1,
+       "concentration": true,
+       "actionSlot": 1,
+       "targets": 1,
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "entire encounter",
+        "damage": "1d6"
+       },
+       "ext": {
+        "range": 0
+       }
+      },
+      {
+       "id": "nk-gb",
+       "name": "Guiding Bolt",
+       "level": 1,
+       "upcast": "1d6",
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "4d6",
+       "toHit": 6,
+       "target": "enemy with highest DPR",
+       "riderEffect": {
+        "dc": 99,
+        "buff": {
+         "duration": "until next attack taken",
+         "condition": "Is attacked with Advantage"
+        }
+       },
+       "ext": {
+        "range": 120,
+        "damageType": "radiant"
+       }
+      },
+      {
+       "id": "nk-cw",
+       "name": "Cure Wounds",
+       "level": 1,
+       "upcast": "2d8",
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "heal",
+       "amount": "2d8 + 4",
+       "target": "ally with the least HP",
+       "ext": {
+        "range": 5
+       }
+      },
+      {
+       "id": "nk-hr",
+       "name": "Hellish Rebuke",
+       "level": 1,
+       "upcast": "1d10",
+       "actionSlot": 4,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "2d10",
+       "toHit": 14,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 60,
+        "saveAbility": "dex",
+        "damageType": "fire"
+       }
+      },
+      {
+       "id": "nk-aoa",
+       "name": "Armor of Agathys",
+       "level": 1,
+       "upcast": "5",
+       "actionSlot": 1,
+       "targets": 1,
+       "type": "heal",
+       "tempHP": true,
+       "amount": "5",
+       "target": "self",
+       "ext": {
+        "range": 0,
+        "retaliate": {
+         "dmg": 5,
+         "perLevel": true
+        }
+       }
+      },
+      {
+       "id": "nk-aid",
+       "name": "Aid",
+       "level": 2,
+       "upcast": "5",
+       "actionSlot": 0,
+       "targets": 3,
+       "type": "heal",
+       "amount": "5",
+       "target": "ally with the least HP",
+       "ext": {
+        "range": 30,
+        "aid": true
+       }
+      },
+      {
+       "id": "nk-sug",
+       "name": "Suggestion",
+       "level": 2,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "debuff",
+       "saveDC": 14,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "entire encounter",
+        "condition": "Incapacitated"
+       },
+       "ext": {
+        "range": 30,
+        "saveAbility": "wis",
+        "endsOnDamage": true,
+        "targetTypes": [
+         "humanoid",
+         "fiend",
+         "celestial",
+         "fey",
+         "giant",
+         "dragon",
+         "undead",
+         "elemental",
+         "aberration"
+        ]
+       }
+      },
+      {
+       "id": "nk-mspike",
+       "name": "Mind Spike",
+       "level": 2,
+       "upcast": "1d8",
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "3d8",
+       "toHit": 14,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with highest DPR",
+       "ext": {
+        "range": 120,
+        "saveAbility": "wis",
+        "damageType": "psychic"
+       }
+      },
+      {
+       "id": "nk-misty",
+       "name": "Misty Step",
+       "level": 2,
+       "actionSlot": 1,
+       "targets": 1,
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "1 round"
+       },
+       "ext": {
+        "teleport": 30,
+        "wtOnly": true
+       }
+      },
+      {
+       "id": "nk-barbs",
+       "name": "Silvery Barbs",
+       "level": 1,
+       "actionSlot": 4,
+       "targets": 1,
+       "type": "debuff",
+       "target": "enemy with highest DPR",
+       "saveDC": 99,
+       "buff": {
+        "duration": "until next attack made",
+        "condition": "Attacks with Disadvantage"
+       },
+       "ext": {
+        "range": 60
+       }
+      }
+     ]
+    }
+   },
+   "actions": [
+    {
+     "id": "nk-hlight",
+     "name": "Healing Light",
+     "actionSlot": 1,
+     "freq": {
+      "reset": "lr",
+      "uses": 2
+     },
+     "condition": "ally under half HP",
+     "targets": 1,
+     "type": "heal",
+     "amount": "2d6 + 1",
+     "target": "ally with the least HP",
+     "ext": {
+      "range": 60,
+      "pool": {
+       "dice": 5,
+       "die": 6,
+       "maxPer": 4
+      }
+     }
+    },
+    {
+     "id": "nk-hhands",
+     "name": "Healing Hands",
+     "actionSlot": 0,
+     "freq": "1/day",
+     "condition": "ally under half HP",
+     "targets": 1,
+     "type": "heal",
+     "amount": "2d4",
+     "target": "ally with the least HP",
+     "ext": {
+      "range": 5
+     }
+    },
+    {
+     "id": "nk-wings",
+     "name": "Celestial Revelation (Heavenly Wings)",
+     "actionSlot": 1,
+     "freq": "1/day",
+     "condition": "not used yet",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "entire encounter",
+      "damage": "2"
+     },
+     "ext": {
+      "grantFly": 30,
+      "endsOnIncap": true
+     }
+    },
+    {
+     "id": "nk-clothes",
+     "name": "Fancy Clothes",
+     "actionSlot": 1,
+     "freq": "1/day",
+     "condition": "has no THP",
+     "targets": 1,
+     "type": "heal",
+     "tempHP": true,
+     "amount": "10",
+     "target": "self",
+     "ext": {
+      "range": 0,
+      "tempBuff": {
+       "ac": 2
+      }
+     }
+    },
+    {
+     "id": "nk-misty-ft",
+     "name": "Misty Step (Fey Touched, free)",
+     "actionSlot": 1,
+     "freq": "1/day",
+     "condition": "default",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round"
+     },
+     "ext": {
+      "teleport": 30,
+      "wtOnly": true
+     }
+    },
+    {
+     "id": "nk-barbs-ft",
+     "name": "Silvery Barbs (Fey Touched, free)",
+     "actionSlot": 4,
+     "freq": "1/day",
+     "condition": "default",
+     "targets": 1,
+     "type": "debuff",
+     "target": "enemy with highest DPR",
+     "saveDC": 99,
+     "buff": {
+      "duration": "until next attack made",
+      "condition": "Attacks with Disadvantage"
+     },
+     "ext": {
+      "range": 60
+     }
+    },
+    {
+     "id": "nk-dagger",
+     "name": "Dagger",
+     "actionSlot": 0,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "1d4 + 2",
+     "toHit": 4,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing"
+     }
+    }
+   ]
+  },
+  {
+   "id": "269adf29-1d78-49ba-be98-1e71db9f5504",
+   "mode": "custom",
+   "class": {
+    "type": "warlock",
+    "level": 4,
+    "options": {}
+   },
+   "name": "Juniper Watson",
+   "count": 1,
+   "hp": 24,
+   "AC": 11,
+   "saveBonus": 1.83,
+   "ext": {
+    "speed": 35,
+    "initBonus": 1,
+    "bonusDisengage": true,
+    "saves": {
+     "str": -1,
+     "dex": 1,
+     "con": 1,
+     "int": 1,
+     "wis": 4,
+     "cha": 5
+    },
+    "spellbook": {
+     "slots": [
+      0,
+      2,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "slotReset": "sr",
+     "recovery": {
+      "levels": 2,
+      "maxSlot": 5,
+      "anyBreak": true
+     },
+     "spells": [
+      {
+       "id": "jw-eb",
+       "name": "Eldritch Blast",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d10 + 3",
+       "toHit": 5,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 120,
+        "damageType": "force"
+       }
+      },
+      {
+       "id": "jw-sb",
+       "name": "Sorcerous Burst",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8 + 0.6",
+       "toHit": 5,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 120,
+        "damageType": "acid/cold/fire/lightning/poison/psychic/thunder"
+       }
+      },
+      {
+       "id": "jw-ms",
+       "name": "Mind Sliver",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d6",
+       "toHit": 13,
+       "useSaves": true,
+       "target": "enemy with highest DPR",
+       "riderEffect": {
+        "dc": 99,
+        "buff": {
+         "duration": "1 round",
+         "save": "-1d4"
+        }
+       },
+       "ext": {
+        "range": 60,
+        "saveAbility": "int",
+        "damageType": "psychic"
+       }
+      },
+      {
+       "id": "jw-hex",
+       "name": "Hex",
+       "level": 1,
+       "concentration": true,
+       "actionSlot": 1,
+       "targets": 1,
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "entire encounter",
+        "damage": "1d6"
+       },
+       "ext": {
+        "range": 0
+       }
+      },
+      {
+       "id": "jw-dw",
+       "name": "Dissonant Whispers",
+       "level": 1,
+       "upcast": "1d6",
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "3d6",
+       "toHit": 13,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with highest DPR",
+       "ext": {
+        "range": 60,
+        "saveAbility": "wis",
+        "damageType": "psychic"
+       }
+      },
+      {
+       "id": "jw-aoh",
+       "name": "Arms of Hadar",
+       "level": 1,
+       "upcast": "1d6",
+       "actionSlot": 0,
+       "targets": 3,
+       "type": "atk",
+       "dpr": "2d6",
+       "toHit": 13,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 10,
+        "area": {
+         "shape": "emanation",
+         "size": 10
+        },
+        "saveAbility": "str",
+        "onHit": {
+         "noReactions": true
+        },
+        "damageType": "necrotic"
+       }
+      },
+      {
+       "id": "jw-wb",
+       "name": "Witch Bolt",
+       "level": 1,
+       "upcast": "1d12",
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d12 + 6.5",
+       "toHit": 5,
+       "target": "enemy with most HP",
+       "ext": {
+        "range": 60,
+        "wtDpr": "1d12",
+        "onHit": {
+         "dot": {
+          "dice": "1d12",
+          "upcast": "1d12"
+         }
+        },
+        "damageType": "lightning"
+       }
+      },
+      {
+       "id": "jw-thl",
+       "name": "Tasha's Hideous Laughter",
+       "level": 1,
+       "upcastTargets": 1,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "debuff",
+       "saveDC": 13,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "repeat the save each round",
+        "condition": "Incapacitated"
+       },
+       "ext": {
+        "range": 30,
+        "saveAbility": "wis",
+        "saveOnDamage": "adv"
+       }
+      },
+      {
+       "id": "jw-roe",
+       "name": "Ray of Enfeeblement",
+       "level": 2,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "debuff",
+       "saveDC": 13,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "repeat the save each round",
+        "condition": "Attacks with Disadvantage",
+        "damage": "-1d8"
+       },
+       "ext": {
+        "range": 60,
+        "saveAbility": "con"
+       }
+      },
+      {
+       "id": "jw-pf",
+       "name": "Phantasmal Force",
+       "level": 2,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "4d8",
+       "toHit": 13,
+       "useSaves": true,
+       "target": "enemy with highest DPR",
+       "ext": {
+        "range": 60,
+        "saveAbility": "int",
+        "wtDpr": "2d8",
+        "dot": {
+         "dice": "2d8"
+        },
+        "damageType": "psychic"
+       }
+      }
+     ]
+    }
+   },
+   "actions": [
+    {
+     "id": "jw-potion",
+     "name": "Potion of Healing (Decanting)",
+     "actionSlot": 1,
+     "freq": "1/day",
+     "condition": "is under half HP",
+     "targets": 1,
+     "type": "heal",
+     "amount": "2d4 + 2",
+     "target": "self"
+    },
+    {
+     "id": "jw-tkshove",
+     "name": "Telekinetic Shove",
+     "actionSlot": 1,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "0",
+     "toHit": 13,
+     "useSaves": true,
+     "target": "enemy with highest DPR",
+     "ext": {
+      "range": 30,
+      "saveAbility": "str",
+      "wtOnly": true,
+      "onHit": {
+       "push": 5
+      },
+      "damageType": "force"
+     }
+    },
+    {
+     "id": "jw-bite",
+     "name": "Vampiric Bite",
+     "actionSlot": 0,
+     "freq": {
+      "reset": "lr",
+      "uses": 2
+     },
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "1d4 + 1",
+     "toHit": 1,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "onHit": {
+       "drain": true,
+       "push": 5
+      },
+      "damageType": "piercing"
+     }
+    }
+   ]
+  },
+  {
+   "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f",
+   "mode": "custom",
+   "class": {
+    "type": "wizard",
+    "level": 4,
+    "options": {}
+   },
+   "name": "Eldar Yollavien",
+   "count": 1,
+   "hp": 25,
+   "AC": 16,
+   "saveBonus": 1.83,
+   "ext": {
+    "speed": 30,
+    "initBonus": 3,
+    "escapeBonus": 7,
+    "saves": {
+     "str": -1,
+     "dex": 3,
+     "con": 3,
+     "int": 6,
+     "wis": 1,
+     "cha": -1
+    },
+    "spellbook": {
+     "slots": [
+      4,
+      3,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0,
+      0
+     ],
+     "slotReset": "lr",
+     "recovery": {
+      "levels": 2,
+      "maxSlot": 5,
+      "restores": [
+       "ey-bladesong"
+      ]
+     },
+     "spells": [
+      {
+       "id": "ey-sp-gfb",
+       "name": "Green-Flame Blade",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8 + 4 + 2",
+       "toHit": 6,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 5,
+        "wtDpr": "1d8 + 4",
+        "onHit": {
+         "splash": {
+          "dmg": "4",
+          "range": 5,
+          "type": "fire"
+         }
+        },
+        "damageType": "piercing"
+       }
+      },
+      {
+       "id": "ey-sp-rof",
+       "name": "Ray of Frost",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8",
+       "toHit": 6,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 60,
+        "onHit": {
+         "slow": 10
+        },
+        "damageType": "cold"
+       }
+      },
+      {
+       "id": "ey-sp-sg",
+       "name": "Shocking Grasp",
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8",
+       "toHit": 6,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 5,
+        "onHit": {
+         "noReactions": true
+        },
+        "damageType": "lightning"
+       }
+      },
+      {
+       "id": "ey-sp-orb",
+       "name": "Chromatic Orb",
+       "level": 1,
+       "upcast": "1d8",
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "3d8 + 2.8",
+       "toHit": 6,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 90,
+        "wtDpr": "3d8",
+        "leap": {
+         "range": 30
+        },
+        "damageType": "acid/cold/fire/lightning/poison/thunder"
+       }
+      },
+      {
+       "id": "ey-sp-bh",
+       "name": "Burning Hands",
+       "level": 1,
+       "upcast": "1d6",
+       "actionSlot": 0,
+       "targets": 2,
+       "type": "atk",
+       "dpr": "3d6",
+       "toHit": 14,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 15,
+        "area": {
+         "shape": "cone",
+         "size": 15
+        },
+        "saveAbility": "dex",
+        "damageType": "fire"
+       }
+      },
+      {
+       "id": "ey-sp-tcb",
+       "name": "Tasha's Caustic Brew",
+       "level": 1,
+       "upcast": "4d4",
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 2,
+       "type": "atk",
+       "dpr": "4d4",
+       "toHit": 14,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "ext": {
+        "range": 30,
+        "area": {
+         "shape": "line",
+         "size": 30
+        },
+        "saveAbility": "dex",
+        "dot": {
+         "dice": "2d4",
+         "upcast": "2d4"
+        },
+        "damageType": "acid"
+       }
+      },
+      {
+       "id": "ey-sp-hold",
+       "name": "Hold Person",
+       "level": 2,
+       "upcastTargets": 1,
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "debuff",
+       "saveDC": 14,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "repeat the save each round",
+        "condition": "Paralyzed"
+       },
+       "ext": {
+        "range": 60,
+        "targetTypes": [
+         "humanoid"
+        ],
+        "saveAbility": "wis"
+       }
+      },
+      {
+       "id": "ey-sp-mirror",
+       "name": "Mirror Image",
+       "level": 2,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "entire encounter",
+        "damageTakenMultiplier": 0.29
+       },
+       "ext": {
+        "mirror": 3
+       }
+      },
+      {
+       "id": "ey-sp-shield",
+       "name": "Shield",
+       "level": 1,
+       "actionSlot": 4,
+       "type": "template",
+       "templateOptions": {
+        "templateName": "Shield"
+       }
+      },
+      {
+       "id": "ey-sp-barbs",
+       "name": "Silvery Barbs",
+       "level": 1,
+       "actionSlot": 4,
+       "targets": 1,
+       "type": "debuff",
+       "target": "enemy with highest DPR",
+       "saveDC": 99,
+       "buff": {
+        "duration": "until next attack made",
+        "condition": "Attacks with Disadvantage"
+       },
+       "ext": {
+        "range": 60
+       }
+      }
+     ]
+    }
+   },
+   "actions": [
+    {
+     "id": "ey-rapier",
+     "name": "Rapier (Bladework)",
+     "actionSlot": 0,
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "type": "atk",
+     "dpr": "1d8 + 4",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing"
+     }
+    },
+    {
+     "id": "ey-bladesong",
+     "name": "Bladesong",
+     "actionSlot": 1,
+     "freq": {
+      "reset": "lr",
+      "uses": 4
+     },
+     "condition": "not used yet",
+     "targets": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "entire encounter",
+      "ac": 4
+     },
+     "ext": {
+      "speedBonus": 10,
+      "concBonus": 4,
+      "endsOnIncap": true
+     }
+    },
+    {
+     "id": "ey-potion",
+     "name": "Potion of Healing",
+     "actionSlot": 1,
+     "freq": "1/day",
+     "condition": "is under half HP",
+     "targets": 1,
+     "type": "heal",
+     "amount": "2d4 + 2",
+     "target": "self"
+    }
+   ]
+  }
+ ],
+ "encounters": [
+  {
+   "monsters": [],
+   "playersSurprised": false,
+   "monstersSurprised": false
+  }
+ ]
+}

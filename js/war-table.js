@@ -34,7 +34,7 @@ const S = {
   get day(){ return { name: (document.getElementById('dayNameInput') || {}).value || 'Adventuring Day', players: PARTY_PLAYERS, encounters: encounters }; },
   enc: 0,
   layouts: {},                       // encIndex -> { gapFt, positions: {key:{x,y}} }
-  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false, climbDC: 10 },
+  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false, climbDC: 10, knowParty: 'open', knowFoes: 'open', morale: 'off' },
   mode: 'setup',
   odds: {},                          // encIndex -> summary
   replay: null,                      // { events, frames, units, idx }
@@ -43,7 +43,8 @@ const W = () => +S.settings.map.split('x')[0];
 const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
-const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
+const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills,
+  know: { party: S.settings.knowParty || 'open', foes: S.settings.knowFoes || 'open' }, morale: S.settings.morale || 'off', climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -174,6 +175,73 @@ function paintToken(uid, st, maxHp, name){
   t.title.textContent = `${name} — ${Math.max(0,Math.round(st.hp))}/${maxHp} HP${st.temp?` (+${st.temp} temp)`:''}${st.down?(st.stable?' · stable':` · death saves ${st.ds}✓ ${st.df}✗`):''}${st.dead?' · dead':''}${flags.length?' · '+flags.join(', '):''}`;
 }
 
+/* ---------------- token inspector: click a token to see what it has ---------------- */
+let inspectUid = null;
+function inspect(uid){ inspectUid = inspectUid === uid ? null : uid; renderInspect(); }
+const signed = n => (n >= 0 ? '+' : '') + n;
+function renderInspect(){
+  const box = document.getElementById('wt-inspect'); if(!box) return;
+  for(const k in tokenEls) tokenEls[k].g.classList.toggle('picked', k === inspectUid);
+  let u = null, st = null;
+  if(inspectUid && S.mode === 'replay' && S.replay){ u = S.replay.units[inspectUid]; st = S.replay.frames[S.replay.idx][inspectUid]; }
+  else if(inspectUid && S.mode === 'setup'){ u = preview.find(p=>p.uid === inspectUid); st = u && u.state; }
+  if(!u || !st){ inspectUid = null; box.hidden = true; box.innerHTML = ''; return; }
+  const sh = u.sheet || {};
+  const hp = Math.max(0, Math.round(st.hp)), frac = Math.max(0, Math.min(1, st.hp / u.maxHp));
+  const col = frac > .5 ? '#7aa267' : frac > .25 ? '#c2993f' : '#d24a4a';
+  const sub = [u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
+  // height: the ground it stands on plus how high it flies
+  const ground = st.ground || 0, alt = st.alt || 0;
+  const height = alt ? `flying ${alt} ft up${ground ? ` (${ground + alt} ft above the floor)` : ''}` : ground > 0 ? `on ${ground} ft high ground` : ground < 0 ? `in a ${-ground} ft dip` : 'ground level';
+  const acNow = st.ac !== undefined ? st.ac : sh.ac;
+  const stats = [
+    `<span><b>HP</b>${hp}/${u.maxHp}${st.temp ? ` +${st.temp} temp` : ''}</span>`,
+    `<span><b>AC</b>${acNow}${sh.ac !== undefined && acNow !== sh.ac ? ` (base ${sh.ac})` : ''}</span>`,
+    `<span><b>Height</b>${height}</span>`,
+    `<span><b>Speed</b>${sh.speed || 30} ft${sh.fly ? ` · fly ${sh.fly}` : ''}${sh.climb ? ` · climb ${sh.climb}` : ''}</span>`,
+  ];
+  const chips = [];
+  if(st.fled) chips.push(`<span class="chip">${st.fled === 'surrendered' ? 'surrendered' : 'fled the fight'}</span>`);
+  else if(st.dead) chips.push('<span class="chip bad">dead</span>');
+  else if(st.down) chips.push(`<span class="chip bad">${st.stable ? 'down, stable' : `down · death saves ${st.ds}✓ ${st.df}✗`}</span>`);
+  else if(st.hp < u.maxHp / 2) chips.push('<span class="chip bad">bloodied</span>');
+  if(!st.onBoard && !st.dead) chips.push(`<span class="chip bad">${st.swallowedBy ? 'swallowed' : 'off the field'}</span>`);
+  if(st.grappledBy) chips.push(`<span class="chip bad">grappled${S.replay && S.replay.units[st.grappledBy] ? ' by ' + esc(S.replay.units[st.grappledBy].name) : ''}</span>`);
+  (st.conds || []).forEach(c=>chips.push(`<span class="chip ${/Advantage/.test(c) && !/is attacked/i.test(c) ? 'good' : 'bad'}">${esc(c)}</span>`));
+  if(st.conc) chips.push(`<span class="chip cool">◈ concentrating: ${esc(st.conc)}</span>`);
+  if(st.react === false) chips.push('<span class="chip">reaction used</span>');
+  const effects = (st.buffs || []).map(b=>`<span class="ief">• <span style="color:var(--parchment)">${esc(b[0])}</span>${b[1] ? ` — ${esc(b[1])}` : ''} <i>(${esc(b[2])}${b[3] ? ', from ' + esc(b[3]) : ''})</i></span>`).join('');
+  const res = [];
+  if(st.slots) res.push(`<span class="chip cool">slots ${esc(st.slots)}</span>`);
+  else if(sh.slots && S.mode === 'setup') res.push(`<span class="chip cool">slots ${esc(sh.slots)}</span>`);
+  if(st.leg) res.push(`<span class="chip">legendary actions ${esc(st.leg)}</span>`);
+  if(st.legRes) res.push(`<span class="chip">legendary resistance ${esc(st.legRes)}</span>`);
+  if(st.luck) res.push(`<span class="chip">luck ${esc(st.luck)}</span>`);
+  (st.uses || []).forEach(x=>res.push(`<span class="chip">${esc(x)}</span>`));
+  const def = [];
+  const m = sh.mods;
+  if(m && m.immune && m.immune.length) def.push('immune: ' + m.immune.join(', '));
+  if(m && m.resist && m.resist.length) def.push('resists: ' + m.resist.join(', '));
+  if(m && m.vulnerable && m.vulnerable.length) def.push('vulnerable: ' + m.vulnerable.join(', '));
+  if(sh.condImmune) def.push("can't be " + sh.condImmune.join(', '));
+  const saves = sh.saves ? ['str','dex','con','int','wis','cha'].map(k=>`${k.toUpperCase()} ${signed(+sh.saves[k] || 0)}`).join(' · ') : (sh.saveBonus !== undefined ? `all ${signed(Math.round(sh.saveBonus))}` : '');
+  box.className = 'inspect ' + u.team;
+  box.innerHTML = `<div class="ih"><span class="in">${esc(u.name)}</span><span class="isub">${esc(sub)}</span><button class="mini-btn ix" data-close-inspect title="Close">✕</button></div>
+    <div class="istats">${stats.join('')}</div>
+    <div class="ihp"><div style="width:${frac*100}%;background:${col}"></div></div>
+    <div class="irow"><b>Status</b>${chips.length ? chips.join('') : '<span class="chip good">fine</span>'}</div>
+    ${effects ? `<div class="irow"><b>Effects</b>${effects}</div>` : ''}
+    ${res.length ? `<div class="irow"><b>Resources</b>${res.join('')}</div>` : ''}
+    ${def.length ? `<div class="irow"><b>Defences</b>${esc(def.join(' · '))}</div>` : ''}
+    ${saves ? `<div class="irow"><b>Saves</b><span class="mono">${esc(saves)}</span></div>` : ''}`;
+  box.hidden = false;
+}
+document.getElementById('wt-inspect').addEventListener('click', ev=>{ if(ev.target.closest('[data-close-inspect]')){ inspectUid = null; renderInspect(); } });
+svg.addEventListener('click', ev=>{
+  if(S.mode !== 'replay') return;
+  const g = ev.target.closest('.tok'); if(g) inspect(g.dataset.uid);
+});
+
 /* ---------------- setup mode ---------------- */
 let preview = [];
 /* ---------------- terrain ---------------- */
@@ -268,6 +336,7 @@ function renderSetup(){
   const enc = S.day.encounters[S.enc] || {};
   document.getElementById('wt-nowLine').innerHTML = enc.playersSurprised ? '<span class="k">Ambush</span>The party is surprised in this encounter.' : enc.monstersSurprised ? '<span class="k">Ambush</span>The monsters are surprised in this encounter.' : '';
   document.getElementById('wt-roundBadge').textContent = '';
+  renderInspect();
 }
 // dragging
 let drag = null;
@@ -281,7 +350,7 @@ svg.addEventListener('pointerdown', ev=>{
   }
   const g = ev.target.closest('.tok'); if(!g) return;
   const u = preview.find(p=>p.uid === g.dataset.uid); if(!u) return;
-  drag = { u, g }; g.classList.add('dragging'); svg.setPointerCapture(ev.pointerId);
+  drag = { u, g, x0: u.x, y0: u.y }; g.classList.add('dragging'); svg.setPointerCapture(ev.pointerId);
 });
 svg.addEventListener('pointermove', ev=>{
   if(painting){ const c = cellAt(ev); if(!painting.done.has(c.x + ',' + c.y)){ paintCell(c.x, c.y); drawTerrain(layoutFor(S.enc).terrain); } return; }
@@ -294,6 +363,8 @@ svg.addEventListener('pointerup', ev=>{
   if(!drag) return;
   const p = svgPoint(ev);
   const x = Math.max(0, Math.min(W()-1, Math.floor(p.x / CELL))), y = Math.max(0, Math.min(H()-1, Math.floor(p.y / CELL)));
+  // a click without moving it: show what it is instead
+  if(x === drag.x0 && y === drag.y0){ const uid = drag.u.uid; drag.g.classList.remove('dragging'); drag = null; placeToken(uid, x, y); inspect(uid); return; }
   const other = preview.find(o=>o !== drag.u && o.x === x && o.y === y);
   const lay = layoutFor(S.enc);
   if(other){ lay.positions[other.key] = { x: drag.u.x, y: drag.u.y }; }
@@ -480,6 +551,7 @@ function showFrame(idx){
   document.getElementById('wt-nowLine').innerHTML = `<span class="k">${e.kind}</span>${esc(e.text)}`;
   document.getElementById('wt-scrub').value = idx;
   renderInit(f, actor);
+  if(inspectUid) renderInspect();
   const logEl = document.getElementById('wt-log');
   logEl.querySelectorAll('.l').forEach(l=>{ const i = +l.dataset.i; l.classList.toggle('cur', i === idx); l.classList.toggle('future', i > idx); });
   const curL = logEl.querySelector(`.l[data-i="${idx}"]`);
@@ -673,6 +745,10 @@ document.getElementById('wt-escape').onchange = ev=>{ S.settings.escape = ev.tar
 document.getElementById('wt-climb').onchange = ev=>{ S.settings.climbDC = +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-tpk').onchange = ev=>{ S.settings.tpkKills = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-partyAI').onchange = ev=>{ S.settings.partyAI = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-morale').onchange = ev=>{ S.settings.morale = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
+const knowNote = ()=>{ document.getElementById('wt-learnWarn').style.display = (S.settings.knowParty === 'learn' || S.settings.knowFoes === 'learn') ? '' : 'none'; };
+document.getElementById('wt-knowParty').onchange = ev=>{ S.settings.knowParty = ev.target.value; knowNote(); S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-knowFoes').onchange = ev=>{ S.settings.knowFoes = ev.target.value; knowNote(); S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-runs').onchange = ev=>{ S.settings.runs = +ev.target.value; scheduleSave(); };
 function renderAll(){
   document.getElementById('wt-dayName').innerHTML = `${esc(S.day.name || 'Adventuring day')}<small>${(S.day.players||[]).length} party · ${realEncounters().length} encounter${realEncounters().length===1?'':'s'}</small>`;
@@ -680,6 +756,10 @@ function renderAll(){
   document.getElementById('wt-escape').value = S.settings.escape;
   document.getElementById('wt-runs').value = String(S.settings.runs);
   document.getElementById('wt-partyAI').value = S.settings.partyAI || 'tactical';
+  document.getElementById('wt-morale').value = S.settings.morale || 'off';
+  document.getElementById('wt-knowParty').value = S.settings.knowParty || 'open';
+  document.getElementById('wt-knowFoes').value = S.settings.knowFoes || 'open';
+  knowNote();
   document.getElementById('wt-tpk').checked = !!S.settings.tpkKills;
   document.getElementById('wt-climb').value = String(S.settings.climbDC === undefined ? 10 : S.settings.climbDC);
   document.getElementById('wt-mapSize').value = S.settings.map;

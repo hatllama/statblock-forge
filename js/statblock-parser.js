@@ -931,5 +931,5 @@ function parse(text) {
   return { monsters, skipped };
 }
 
-root.StatblockParser = { parse, splitBlocks, _internals: { avgDice, cleanDice, damageMultiplier, areaInfo, saveInfo } };
+root.StatblockParser = { parse, splitBlocks, _internals: { avgDice, cleanDice, damageMultiplier, areaInfo, saveInfo, spellAction } };
 })(typeof window !== 'undefined' ? window : globalThis);

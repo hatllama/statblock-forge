@@ -254,5 +254,67 @@ section('Statblock parser (no AI)');
   console.log(`  ${Object.keys(parsed).length} statblocks parsed`);
 }
 
+// the level-5 class roster: every build fights, uses what makes it that class, and the class rules hold
+{
+  section('Level-5 class roster');
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.PP = PARTY_PLAYERS;', ctx);
+  const CB = ctx.CB;
+  check(CB.length === 13 && ctx.PP.length === 6 && new Set(ctx.PP.map(p => p.name)).size === 6, 'thirteen class builds and a six-class default party');
+  const fx = fixture('bandit-day.json');
+  const seen = {}; let err = 0;
+  for (const group of [CB.slice(0, 7), CB.slice(7)]) for (let i = 0; i < 12; i++) {
+    let res;
+    try { res = Tac.runDay({ players: JSON.parse(JSON.stringify(group)), encounters: JSON.parse(JSON.stringify(fx.encounters)) }, { seed: 300 + i * 13, partyAI: 'tactical', record: true }); } catch (e) { err++; console.log('  ', e.message); continue; }
+    for (const r of res) for (const e of r.events) {
+      const t = e.text || '';
+      if (/Luminous Arrow/.test(t)) seen.arrow = 1;
+      if (/Force Ballista/.test(t)) seen.ballista = 1;
+      if (/Rage/.test(t)) seen.rage = 1;
+      if (/^Fighter →.*\b19 vs AC.*CRIT|^Fighter →.*CRIT/.test(t)) seen.fcrit = (seen.fcrit || 0) + 1;
+    }
+  }
+  check(err === 0, `${err} roster fights threw`);
+  check(seen.arrow && seen.ballista && seen.rage, 'Starry Form, Eldritch Cannon and Rage all get used');
+  // Rage halves slashing; a Champion crits on a 19
+  const barb = { buffs: [{ id: 'r', resist: ['slashing'] }], dmgMods: null };
+  check(Tac.damageMultFor({ ext: { damageType: 'slashing' } }, barb) === 0.5 && Tac.damageMultFor({ ext: { damageType: 'fire' } }, barb) === 1, 'a raging barbarian resists slashing, not fire');
+  check(CB.find(c => c.name === 'Fighter').ext.critRange === 19, 'the Champion crits on 19–20');
+}
+
+// what each side knows: black box and learning play without breaking rules, learning narrows in on the truth,
+// and morale lets monsters leave the fight
+{
+  section('AI knowledge modes and morale');
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.PP = PARTY_PLAYERS;', ctx);
+  const hard = fixture('hard-day.json');
+  let err = 0, acOk = 0, acN = 0, hpOk = 0, hpN = 0, fled = 0, actAfterFlee = 0;
+  for (const mode of ['blind', 'learn']) for (let i = 0; i < 6; i++) {
+    let res, sim;
+    const day = { players: JSON.parse(JSON.stringify(ctx.PP)), encounters: JSON.parse(JSON.stringify(hard.encounters)) };
+    try { res = Tac.runDay(day, { seed: 500 + i * 31, know: { party: mode, foes: mode }, morale: 'on', record: true, _keep: true }); } catch (e) { err++; console.log('  ', mode, e.stack.split('\n').slice(0, 3).join(' ')); continue; }
+    for (const r of res) {
+      const gone = new Set();
+      for (const e of r.events) {
+        if (e.kind === 'flee') { fled++; gone.add(e.uid); }
+        else if (e.uid && gone.has(e.uid) && ['attack', 'save', 'aoe', 'move', 'heal'].includes(e.kind)) actAfterFlee++;
+      }
+    }
+    if (mode === 'learn' && res._sim) {
+      const S = res._sim;
+      for (const [tplId, k] of S.mem.party) {
+        const m = hard.encounters.flatMap(e => e.monsters).find(x => x.id === tplId); if (!m) continue;
+        if (k.acLo > -Infinity || k.acHi < Infinity) { acN++; if (k.acLo <= m.AC && m.AC <= k.acHi) acOk++; }
+        if (k.hpHi < Infinity) { hpN++; if (k.hpLo <= m.hp && m.hp <= k.hpHi) hpOk++; }
+      }
+    }
+  }
+  check(err === 0, `${err} black-box / learning days threw`);
+  check(acN > 0 && acOk === acN, `learned AC ranges hold the real AC (${acOk}/${acN})`);
+  check(hpN > 0 && hpOk === hpN, `learned hit point ranges hold the real hit points (${hpOk}/${hpN})`);
+  check(fled > 0 && actAfterFlee === 0, `with morale on, monsters flee (${fled}) and don't act after leaving`);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

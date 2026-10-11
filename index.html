@@ -6,7 +6,7 @@
 <title>Statblock Forge</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=Cinzel:wght@500;600;700&family=Crimson+Pro:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="css/styles.css?v=20261011e">
+<link rel="stylesheet" href="css/styles.css?v=20261011f">
 
 </head>
 <body>
@@ -46,6 +46,7 @@
         <span class="round-badge" id="wt-roundBadge"></span>
       </div>
       <svg id="wt-board" viewBox="0 0 864 576" role="img" aria-label="Battle map"></svg>
+      <div class="inspect" id="wt-inspect" hidden></div>
       <div class="terrain-legend" id="wt-terrainLegend" style="display:none;"><span><i style="background:#4b4036;border:1px solid #6d5d4c"></i>wall</span><span><i style="background:repeating-linear-gradient(45deg,rgba(150,170,110,.55) 0 2px,transparent 2px 5px)"></i>difficult</span><span><i style="background:#8a7558"></i>low cover (+2 AC)</span><span><i style="background:rgba(214,178,98,.35)"></i>raised ground (5 ft: half cover · 10 ft+: climb)</span><span><i style="background:rgba(60,90,130,.45)"></i>lowered ground</span></div>
       <div class="aoe-legend"><span><i style="background:rgba(224,80,60,.45)"></i>damage area</span><span><i style="background:rgba(155,107,214,.5)"></i>condition area</span><span><i class="dash"></i>aura</span></div>
       <div class="now" id="wt-nowLine"></div>
@@ -84,6 +85,11 @@
         <div class="opt"><label for="wt-escape">When grappled</label><select id="wt-escape"><option value="smart">Escape if the grappler can swallow</option><option value="always">Always try to escape</option><option value="never">Never escape</option></select></div>
         <div class="opt"><label for="wt-climb">Climbing 10-ft+ ledges</label><select id="wt-climb"><option value="10">Athletics DC 10 (handholds)</option><option value="15">Athletics DC 15 (sheer)</option><option value="20">Athletics DC 20 (slick)</option><option value="99">Only with a climb speed</option></select></div>
         <div class="opt"><label for="wt-partyAI">Party plays</label><select id="wt-partyAI"><option value="tactical">Tactical: focus fire, finish foes, protect the healers</option><option value="regular">Regular: follow each action's targeting</option></select></div>
+        <div class="opt"><label for="wt-knowParty">What the party knows</label><select id="wt-knowParty"><option value="open">Open info: knows every number</option><option value="blind">Black box: only what's seen at the table</option><option value="learn">Learning: works things out as it goes</option></select></div>
+        <div class="opt"><label for="wt-knowFoes">What the monsters know</label><select id="wt-knowFoes"><option value="open">Open info: knows every number</option><option value="blind">Black box: only what's seen at the table</option><option value="learn">Learning: works things out as it goes</option></select>
+          <p class="help" id="wt-knowHelp" style="font-size:12.5px;">Applies to creatures on the tactical AI. Black box guesses hit points, AC and saves from size, doesn't know resistances or how many fights are left. Learning starts the same, then narrows AC from hits and misses, saves from what's made and failed, hit points from what bloodies and drops a creature, notes resistances, healers and area attacks, and remembers each kind of creature for the rest of the day.</p>
+          <p class="help warn-note" id="wt-learnWarn" style="display:none;font-size:12.5px;">Learning keeps notes on every roll, so running the odds takes a little longer.</p></div>
+        <div class="opt"><label for="wt-morale">Monster morale</label><select id="wt-morale"><option value="off">Fight to the death</option><option value="on">May flee or surrender when it goes badly</option></select></div>
         <div class="opt"><label for="wt-tpk">Whole party down</label><label class="ae-check" style="font-family:inherit;font-size:13px;letter-spacing:0;text-transform:none;color:var(--parchment);cursor:pointer;" title="When every party member is at 0 HP and foes are still up, the downed characters die instead of being left dying, and it counts toward the odds of a PC dying."><input type="checkbox" id="wt-tpk"> They all die (no one left to save them)</label></div>
         <div class="opt"><label for="wt-runs">Fights to simulate</label><select id="wt-runs"><option>100</option><option>250</option><option selected>500</option><option>1000</option></select></div>
         <div class="row"><button class="primary-btn" id="wt-btnRun">Run the odds</button><button class="ghost-btn" id="wt-btnOne">Play one fight</button></div>
@@ -154,12 +160,14 @@
             <button class="ghost-btn" id="downloadBtn">Download JSON</button>
             <button class="ghost-btn" id="copyBtn">Copy to clipboard</button>
             <label class="ghost-btn file-btn">Load a day file<input type="file" id="loadDayInput" accept=".json,.txt,application/json"></label>
+            <label class="ghost-btn file-btn" title="Takes only the party from a day file and keeps your encounters">Load just the party<input type="file" id="loadPartyInput" accept=".json,.txt,application/json"></label>
+            <button class="ghost-btn" id="downloadPartyBtn" title="Download only the party, to load into another day later">Download just the party</button>
           </div>
           <div class="status" id="loadStatus" style="margin-bottom:10px;"></div>
           <div class="status" id="schemaStatus" style="margin-bottom:10px;"></div>
           <div class="preview-toggle" id="previewToggle">▸ show JSON preview</div>
           <pre id="jsonPreview" style="display:none;"></pre>
-          <div class="hint" style="margin-top:14px;">Loading a file replaces the party and encounters. The file keeps the classic day format, so older exports still load.</div>
+          <div class="hint" style="margin-top:14px;">Loading a day file replaces the party and encounters; "Load just the party" swaps in a saved party and keeps your encounters. The file keeps the classic day format, so older exports still load.</div>
         </div>
       </div>
     </main>
@@ -169,11 +177,11 @@
   <footer>Statblock reader and War Table engine: original, written for this site.</footer>
 </div>
 
-<script src="data/party.js?v=20261011e"></script>
-<script src="js/spell-data.js?v=20261011e"></script>
-<script src="js/statblock-parser.js?v=20261011e"></script>
-<script src="js/forge.js?v=20261011e"></script>
-<script src="js/engine/tactical-engine.js?v=20261011e"></script>
-<script src="js/war-table.js?v=20261011e"></script>
+<script src="data/party.js?v=20261011f"></script>
+<script src="js/spell-data.js?v=20261011f"></script>
+<script src="js/statblock-parser.js?v=20261011f"></script>
+<script src="js/forge.js?v=20261011f"></script>
+<script src="js/engine/tactical-engine.js?v=20261011f"></script>
+<script src="js/war-table.js?v=20261011f"></script>
 </body>
 </html>

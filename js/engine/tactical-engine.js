@@ -166,15 +166,33 @@ function areaCells(spec, ox, oy, tx, ty, W, H) {
     for (let y = y0; y < y0 + n; y++) for (let x = x0; x < x0 + n; x++) add(x, y);
     return out;
   }
-  // cones and lines: one of the 8 grid directions (see inArea)
-  for (let y = oy - n; y <= oy + n; y++) for (let x = ox - n; x <= ox + n; x++) if (inArea(spec, ox, oy, tx, ty, x, y)) add(x, y);
+  // cones and lines: one of the 8 grid directions (the same squares inArea accepts, walked out directly)
+  const sd = dir8(tx - ox, ty - oy), sx = sd[0], sy = sd[1];
+  const w = Math.max(1, Math.round((spec.width || 5) / 5));
+  if (!sx || !sy) {
+    for (let along = 1; along <= n; along++) {
+      const lo = spec.shape === 'cone' ? -Math.floor(along / 2) : -Math.floor((w - 1) / 2), hi = spec.shape === 'cone' ? Math.floor(along / 2) : Math.ceil((w - 1) / 2);
+      for (let side = lo; side <= hi; side++) add(sx ? ox + along * sx : ox + side, sx ? oy + side : oy + along * sy);
+    }
+    return out;
+  }
+  const lim = Math.round(1.75 * n), band = Math.floor(w * 0.7072 + 0.01);
+  for (let j = 0; j <= n; j++) for (let i = 0; i <= n; i++) {
+    const d = Math.max(i, j);
+    if (d < 1) continue;
+    const ok = spec.shape === 'cone' ? Math.min(i, j) >= Math.ceil(d / 2) && i + j <= lim : Math.abs(i - j) <= band && (w > 1 || Math.min(i, j) >= 1);
+    if (ok) add(ox + i * sx, oy + j * sy);
+  }
   return out;
 }
 /* the grid direction (8 ways) nearest to the aim, as a step [sx, sy] */
+const TAN225 = Math.SQRT2 - 1;          // tan 22.5°: the edge between a straight and a diagonal direction
 function dir8(vx, vy) {
   if (!vx && !vy) return [1, 0];
-  const k = Math.round(Math.atan2(vy, vx) / (Math.PI / 4));
-  return [Math.round(Math.cos(k * Math.PI / 4)), Math.round(Math.sin(k * Math.PI / 4))];
+  const ax = Math.abs(vx), ay = Math.abs(vy);
+  if (ay <= ax * TAN225) return [Math.sign(vx), 0];
+  if (ax <= ay * TAN225) return [0, Math.sign(vy)];
+  return [Math.sign(vx), Math.sign(vy)];
 }
 
 /* whether square (x,y) is inside the area — the same templates as areaCells, for one square */
@@ -241,8 +259,17 @@ function typeMult(mods, type, magical) {
 }
 /* the multiplier for an action's damage against a target: "a / b" = the attacker's best choice, "a + b" = the
    parts by share (ext.damageMix gives the shares; even split otherwise) */
+/* the target's damage mods with any buff resistances (Rage…) folded in */
+function modsOf(t) {
+  if (!t) return null;
+  const extra = t.buffs && t.buffs.filter(b => b.resist && b.resist.length);
+  if (!extra || !extra.length) return t.dmgMods;
+  const m = t.dmgMods ? { resist: t.dmgMods.resist.slice(), immune: t.dmgMods.immune, vulnerable: t.dmgMods.vulnerable } : { resist: [], immune: [], vulnerable: [] };
+  extra.forEach(b => b.resist.forEach(x => { if (m.resist.indexOf(x) < 0) m.resist.push(x); }));
+  return m;
+}
 function damageMultFor(a, t, typeOverride) {
-  const mods = t && t.dmgMods;
+  const mods = modsOf(t);
   const type = typeOverride || (a && a.ext && a.ext.damageType);
   if (!mods || !type) return 1;
   const magical = !!(a && (a._spell || (a.ext && a.ext.magical)));
@@ -330,6 +357,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     climb: typeof ex.climb === 'number' && ex.climb > 0 ? ex.climb : 0,
     hover: !!ex.hover,                                                     // can stay up when knocked prone or stopped
     alt: 0,                                                                 // height above the ground under it, in 5-ft steps (flyers only)
+    critOn: typeof ex.critRange === 'number' && ex.critRange >= 15 && ex.critRange < 20 ? ex.critRange : 20,   // Champion: weapon crits on 19–20
     dmgMods: dmgModsOf(ex),                                                 // { resist, immune, vulnerable } by damage type, or null
     condImmune: Array.isArray(ex.condImmune) ? ex.condImmune.map(c => String(c).toLowerCase()) : [],     // climb speed: scales ledges with no check and no extra cost
     sneak: ex.sneakAttack && ex.sneakAttack.dice ? ex.sneakAttack : null,   // { dice: '2d6', assassinate: 4 }
@@ -346,6 +374,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     escapeBonus: (ex.escapeBonus !== undefined && ex.escapeBonus !== '') ? Number(ex.escapeBonus) : (tpl.saveBonus || 0),
     athletics: typeof ex.athletics === 'number' ? ex.athletics : ((ex.escapeBonus !== undefined && ex.escapeBonus !== '') ? Number(ex.escapeBonus) : (ex.saves && typeof ex.saves.str === 'number' ? ex.saves.str : (tpl.saveBonus || 0))),
     legendaryMax: typeof ex.legendaryActions === 'number' ? ex.legendaryActions : 3,
+    hasLegendary: actions.some(a => a.actionSlot === 2),
     aiSet: AI_TYPES.includes(ex.ai) ? ex.ai : null,
     ai: AI_TYPES.includes(ex.ai) ? ex.ai : autoAI(tpl),
     dpr: avgPerTurn(actions),
@@ -389,6 +418,8 @@ function resetFightState(u) {
   u.everDowned = false; u.downs = 0;
   u.focus = null; u.lastAttacker = null; u.lastIntent = ''; u.notedPacing = false;
   u.dmgDealt = 0; u.dmgTaken = 0; u.healed = 0;
+  u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
+  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false;
   u.onBoard = true;
   u.concentrating = null; u.slotTurn = -1; u.reserveSlot = false;
   u.tookTurn = false; u.vex = null; u.saSeq = -1; u.movedThisTurn = false;
@@ -407,6 +438,10 @@ function Sim(opts) {
   this.climbDC = typeof opts.climbDC === 'number' ? opts.climbDC : 10;    // Athletics DC to scale a ledge 10 ft or higher (99: climb speed only)
   this.tpkKills = !!opts.tpkKills;     // the whole party down with foes still standing: nobody is left to save them
   this.maxRounds = opts.maxRounds || 40;
+  this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
+  const kn = opts.know || {};
+  this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
+  this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
   this.setTerrain(null);
 }
 
@@ -601,7 +636,51 @@ Sim.prototype.unitState = function (u) {
            grappledBy: u.grappledBy, swallowedBy: u.swallowedBy,
            slots: u.slots ? u.slots.map((n, i) => n + '/' + u.slotsMax[i]).slice(0, u.slotsMax.reduce((m, n, i) => n ? i + 1 : m, 0)).join(' ') : undefined,
            conc: u.concentrating ? ((u.actions.find(a => a.id === u.concentrating) || {}).name || 'a spell') : undefined,
-           alt: u.fly || u.alt ? (u.alt || 0) * 5 : undefined };
+           alt: u.fly || u.alt ? (u.alt || 0) * 5 : undefined,
+           // for the token inspector: what's on it, what it has left
+           ac: this.ac(u), ground: this.T.anyH ? this.T.h[u.x + u.y * this.W] * 5 : 0,
+           buffs: u.buffs.length ? u.buffs.map(b => this.buffInfo(u, b)) : undefined,
+           uses: this.usesInfo(u),
+           react: u.reaction ? undefined : false,
+           leg: u.hasLegendary ? u.legendaryLeft + '/' + u.legendaryMax : undefined,
+           legRes: u.legResMax ? u.uses.get('__legres') + '/' + u.legResMax : undefined,
+           luck: u.luckMax ? u.uses.get('__luck') + '/' + u.luckMax : undefined,
+           fled: u.fled || undefined };
+};
+/* one line per effect on a creature: [name, what it does, how long, who put it there] */
+const EXPIRY_TEXT = { 'entire encounter': 'the whole fight', '1 round': 'until its maker\'s next turn', 'until next attack made': 'until its next attack', 'until next attack taken': 'until it is next attacked',
+  'repeat the save each round': 'save each turn to end', hide: 'until it attacks or moves into view' };
+Sim.prototype.buffInfo = function (u, b) {
+  const d = b.data || {}, bits = [];
+  const sign = v => (typeof v === 'number' && v >= 0 ? '+' : (typeof v === 'string' && !/^[-+]/.test(v) ? '+' : '')) + v;
+  if (d.condition && b.expiry !== 'hide') bits.push(d.condition);
+  if (d.ac) bits.push(sign(d.ac) + ' AC');
+  if (d.toHit) bits.push(sign(d.toHit) + ' to hit');
+  if (d.save) bits.push(sign(d.save) + ' to saves');
+  if (d.damage) bits.push(sign(d.damage) + ' damage');
+  if (d.damageReduction) bits.push('−' + d.damageReduction + ' damage taken');
+  if (typeof d.damageMultiplier === 'number' && d.damageMultiplier !== 1) bits.push('×' + d.damageMultiplier + ' damage');
+  if (typeof d.damageTakenMultiplier === 'number' && d.damageTakenMultiplier !== 1) bits.push('×' + d.damageTakenMultiplier + ' damage taken');
+  if (b.resist) bits.push('resists ' + b.resist.join(', '));
+  if (b.speedBonus) bits.push(sign(b.speedBonus) + ' ft speed');
+  if (b.mirror) bits.push(b.mirror + ' images');
+  if (b.loseAction) bits.push('loses its action');
+  if (b.expiry === 'hide') bits.push('hidden');
+  const src = b.src && b.src !== u.uid ? (this.units.find(o => o.uid === b.src) || {}).name : '';
+  return [b.name, bits.join(', '), EXPIRY_TEXT[b.expiry] || b.expiry || '', src || ''];
+};
+/* limited uses left: "Rage 2/3", recharges, once-a-fight features */
+Sim.prototype.usesInfo = function (u) {
+  const out = [];
+  for (const a of u.actions) {
+    if (a._spell) continue;
+    const k = freqKind(a.freq);
+    if (a.ext && a.ext.pool) out.push(`${a.name} ${u.uses.get(a.id)}/${a.ext.pool.dice || 1}`);
+    else if (k === 'sr' || k === 'lr' || k === '1/day') out.push(`${a.name} ${u.uses.get(a.id) || 0}/${k === '1/day' ? 1 : (a.freq.uses || 1)}${k === 'sr' ? ' (short rest)' : ''}`);
+    else if (k === '1/fight') out.push(`${a.name} ${u.fightUses.get(a.id) ? 'used' : 'ready'}`);
+    else if (k === 'recharge') out.push(`${a.name} ${u.recharge.get(a.id) === false ? 'recharging' : 'ready'}`);
+  }
+  return out.length ? out : undefined;
 };
 Sim.prototype.diffState = function () {
   const out = {};
@@ -617,6 +696,25 @@ Sim.prototype.alive = function (u) { return !u.dead && u.hp > 0; };
 Sim.prototype.living = function (u) { return !u.dead; };
 Sim.prototype.enemiesOf = function (u) { return this.units.filter(x => x.team !== u.team); };
 Sim.prototype.alliesOf = function (u) { return this.units.filter(x => x.team === u.team); };
+/* the squares an area covers on this map (walls stop it: a sphere or a set-down cube spreads from its point,
+   everything else from the creature). Walls don't move, so each template is worked out once per map. */
+Sim.prototype.cellsFor = function (spec, ox, oy, ax, ay, cx, cy) {
+  const fromPoint = spec.shape === 'sphere' || (spec.shape === 'cube' && spec.placed);
+  let key;
+  if (fromPoint) key = spec.shape + spec.size + 'p' + ax + ',' + ay;
+  else if (spec.shape === 'emanation') key = 'e' + spec.size + ',' + ox + ',' + oy;
+  else if (spec.shape === 'cube') key = 'c' + spec.size + ',' + ox + ',' + oy + ',' + ax + ',' + ay;
+  else { const d = dir8(ax - ox, ay - oy); key = spec.shape + spec.size + 'w' + (spec.width || 5) + ',' + ox + ',' + oy + ',' + d[0] + ',' + d[1]; }
+  const C = this.T.cellC || (this.T.cellC = new Map());
+  let cells = C.get(key);
+  if (!cells) {
+    cells = areaCells(spec, ox, oy, ax, ay, this.W, this.H);
+    if (this.T.any) cells = cells.filter(([x, y]) => !this.T.wall[x + y * this.W] && this.los(cx, cy, x, y, true));
+    if (C.size > 40000) C.clear();
+    C.set(key, cells);
+  }
+  return cells;
+};
 /* who an area aimed at t from (ox,oy) would catch, besides t; spec/cells are returned for drawing */
 Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast) {
   // fast: only work out who is caught (no list of squares) — used while searching for the best aim
@@ -627,9 +725,7 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
     const W = this.W, inb = (x, y) => x >= 0 && y >= 0 && x < W && y < this.H;
     isIn = o => inb(o.x, o.y) && inArea(spec, ox, oy, ax, ay, o.x, o.y) && (!this.T.any || (!this.T.wall[o.x + o.y * W] && this.los(cx, cy, o.x, o.y, true)));
   } else {
-    cells = areaCells(spec, ox, oy, ax, ay, this.W, this.H);
-    // walls stop an area; a sphere or a set-down cube spreads from its point, everything else from the creature
-    if (this.T.any) cells = cells.filter(([x, y]) => !this.T.wall[x + y * this.W] && this.los(cx, cy, x, y, true));
+    cells = this.cellsFor(spec, ox, oy, ax, ay, cx, cy);
     const N = this.W * this.H;
     if (!this._mark || this._mark.length !== N) { this._mark = new Int32Array(N); this._stamp = 0; }
     const st = ++this._stamp, mark = this._mark, W = this.W;
@@ -666,9 +762,23 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
 /* Cones and lines: try each of the 8 grid directions that reaches t and keep the one that catches the most
    enemies and the fewest allies (ties go to the direction closest to t's bearing). If none reaches t from
    here, a caster gets null (it should line up from another square). */
+/* how good an aim is: for a tactical caster, the damage (or effect) it lands on enemies minus what it costs our
+   own side (a downed ally takes a failed death save); otherwise simply more enemies, fewer allies */
+Sim.prototype.aimScore = function (a, caster, extra, friends, memo) {
+  if (!caster || caster.ai !== 'tactical') return extra.length * 10 - friends.reduce((q, f) => q + (f.hp <= 0 ? 60 : 16), 0);
+  let v = 0;
+  for (const o of extra) {
+    let e = memo && memo.get(o);
+    if (e === undefined) { e = Math.max(1, Math.min(this.expected(caster, a, o), this.kHp(caster, o) + 4)); if (memo) memo.set(o, e); }
+    v += e;
+  }
+  if (friends.length) v -= this.friendPenalty(caster, a, friends);
+  return v;
+};
 Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
   const n = Math.max(1, Math.round(spec.size / 5)), bear = Math.atan2(t.y - oy, t.x - ox);
   let best = null, bs = -Infinity;
+  const memo = new Map();
   for (let k = 0; k < 8; k++) {
     const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4));
     const ax = ox + sx * n, ay = oy + sy * n;
@@ -676,7 +786,7 @@ Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
     const r = this.areaAt(a, spec, t, ox, oy, ax, ay, pool, caster, true);
     if (!r) continue;
     let off = Math.abs(k * Math.PI / 4 - bear) % (2 * Math.PI); if (off > Math.PI) off = 2 * Math.PI - off;
-    const sc = r.extra.length * 10 - r.friends.reduce((q, f) => q + (f.hp <= 0 ? 60 : 16), 0) - off * 0.01;
+    const sc = this.aimScore(a, caster, r.extra, r.friends, memo) - off * 0.01;
     if (sc > bs) { best = r; bs = sc; }
   }
   if (best) return this.areaAt(a, spec, t, ox, oy, best.ax, best.ay, pool, caster) || best;
@@ -693,29 +803,46 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
   let best = this.areaAt(a, spec, t, ox, oy, t.x, t.y, pool, caster);
   if (!best) best = { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y };   // walls in the way: just the target
   if (!caster || !spec.explicit || spec.shape === 'emanation' || (spec.shape === 'cube' && !spec.placed)) return best;
-  const score = r => r ? r.extra.length * 10 - r.friends.reduce((s, f) => s + (f.hp <= 0 ? 60 : 16), 0) - (Math.abs(r.ax - t.x) + Math.abs(r.ay - t.y)) * 0.01 : -Infinity;
-  let bs = score(best);
+  // Where a burst can be set down to keep t inside, and who each spot would catch, doesn't depend on where the
+  // caster stands (only range and line of sight do): worked out once per board position, then scored per caster.
+  if (!(spec.shape === 'sphere' || spec.shape === 'cube')) return best;
   const n = Math.round(spec.size / 5), range = Math.max(5, a._range || spec.size) / 5;
-  if (spec.shape === 'sphere' || spec.shape === 'cube') {
-    // nothing to gain if nobody else is near enough to matter
-    const close = o => o !== t && o.onBoard && Math.max(Math.abs(o.x - t.x), Math.abs(o.y - t.y)) <= n * 2;
-    const foesNear = pool.filter(close);
-    if (!foesNear.length && !this.alliesOf(caster).some(o => close(o) && !o.dead)) return best;
+  const close = o => o !== t && o.onBoard && Math.max(Math.abs(o.x - t.x), Math.abs(o.y - t.y)) <= n * 2;
+  if (!pool.some(close) && !this.alliesOf(caster).some(o => close(o) && !o.dead)) return best;
+  if (this._aimVer !== this.posVer || !this._aimC) { this._aimC = new Map(); this._aimVer = this.posVer; }
+  const key = spec.shape + spec.size + (spec.placed ? 'p' : '') + '|' + t.uid;
+  let aims = this._aimC.get(key);
+  if (!aims) {
+    aims = [];
+    const everyone = this.units.filter(o => o.onBoard && !o.dead && !o.swallowedBy);
     for (let y = t.y - n; y <= t.y + n; y++) for (let x = t.x - n; x <= t.x + n; x++) {
-      if ((x === t.x && y === t.y) || x < 0 || y < 0 || x >= this.W || y >= this.H) continue;
-      // cheap bound first: enemies this aim could catch, walls ignored and allies not counted
-      let ub = -(Math.abs(x - t.x) + Math.abs(y - t.y)) * 0.01;
+      if ((x === t.x && y === t.y) || x < 0 || y < 0 || x >= this.W || y >= this.H || this.isWall(x, y)) continue;
       if (!inArea(spec, ox, oy, x, y, t.x, t.y)) continue;
-      for (const o of foesNear) if (inArea(spec, ox, oy, x, y, o.x, o.y)) ub += 10;
-      if (ub <= bs) continue;
-      if (Math.max(Math.abs(x - ox), Math.abs(y - oy)) > range || this.isWall(x, y)) continue;
-      if (this.T.any && !this.los(ox, oy, x, y, true)) continue;
-      const r = this.areaAt(a, spec, t, ox, oy, x, y, pool, caster, true);
-      const sc = score(r);
-      if (sc > bs) { best = r; bs = sc; }
+      const r = this.areaAt(a, spec, t, ox, oy, x, y, everyone, null, true);
+      if (r) aims.push({ x, y, caught: r.extra });
     }
+    this._aimC.set(key, aims);
   }
-  return best.cells ? best : (this.areaAt(a, spec, t, ox, oy, best.ax, best.ay, pool, caster) || best);
+  const inPool = new Set(pool), mine = new Set(this.alliesOf(caster));
+  const selective = !!(a.ext && a.ext.area && a.ext.area.selective);
+  const scored = [], memo = new Map();
+  let bs = this.aimScore(a, caster, best.extra, best.friends, memo);
+  for (const am of aims) {
+    if (Math.max(Math.abs(am.x - ox), Math.abs(am.y - oy)) > range) continue;
+    const ex = [], fr = [];
+    for (const o of am.caught) {
+      if (inPool.has(o)) ex.push(o);
+      else if (!selective && mine.has(o) && (o !== caster || spec.shape === 'sphere')) fr.push(o);
+    }
+    const sc = this.aimScore(a, caster, ex, fr, memo) - (Math.abs(am.x - t.x) + Math.abs(am.y - t.y)) * 0.01;
+    if (sc > bs) scored.push({ am, sc });
+  }
+  scored.sort((p, q) => q.sc - p.sc);
+  for (const c of scored) {
+    if (this.T.any && !this.los(ox, oy, c.am.x, c.am.y, true)) continue;
+    return this.areaAt(a, spec, t, ox, oy, c.am.x, c.am.y, pool, caster) || best;
+  }
+  return best;
 };
 /* height counts toward distance, unless one side flies (it simply rises or dips to meet the other) */
 /* height: the ground under a creature plus how high it's flying, in 5-ft steps. Distances are 3D (5e grid:
@@ -723,12 +850,14 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
 Sim.prototype.zOf = function (u) { return (this.T.anyH ? this.T.h[u.x + u.y * this.W] : 0) + (u.alt || 0); };
 Sim.prototype.dist = function (a, b) {
   const d = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  if (!this.T.anyH && !a.alt && !b.alt) return d * 5;                    // flat ground, nobody up in the air
   return Math.max(d, Math.abs(this.zOf(a) - this.zOf(b))) * 5;
 };
 /* distance from a square to b, for whoever is planning a move there: a flyer planning its own turn can rise or
    drop to b's height (but not below the ground); anyone else stands on the ground */
 Sim.prototype.distXY = function (x, y, b) {
-  const d = Math.max(Math.abs(x - b.x), Math.abs(y - b.y));
+  const dx = x > b.x ? x - b.x : b.x - x, dy = y > b.y ? y - b.y : b.y - y, d = dx > dy ? dx : dy;
+  if (!this.T.anyH && !b.alt) return d * 5;
   const g = this.T.anyH ? this.T.h[x + y * this.W] : 0, zb = this.zOf(b);
   const dz = this._flyer ? Math.max(0, g - zb) : Math.abs(zb - g);
   return Math.max(d, dz) * 5;
@@ -767,6 +896,7 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   if (typeof ax.speedBonus === 'number') b.speedBonus = ax.speedBonus;          // Bladesong +10 ft, Longstrider…
   if (typeof ax.concBonus === 'number') b.concBonus = ax.concBonus;            // Bladesong adds Int to concentration saves
   if (ax.endsOnIncap) b.endsOnIncap = true;
+  if (ax.resist) b.resist = listOf(ax.resist);                                  // Rage: resistance while it lasts
   if (ax.endsOnDamage) b.endsOnDamage = true;
   if (typeof ax.grantFly === 'number' && holder === src) { holder.fly = Math.max(holder.fly || 0, ax.grantFly); holder.speed = Math.max(holder.speed, ax.grantFly); }
   if (typeof ax.mirror === 'number') { b.mirror = ax.mirror; delete b.data.damageTakenMultiplier; }
@@ -837,7 +967,7 @@ Sim.prototype.stillRunning = function (u, a) {
 Sim.prototype.losing = function (u) {
   const frac = team => {
     let hp = 0, max = 0;
-    for (const o of this.units) if (o.team === team && (o.onBoard || o.isPC) && !(o.dead && !o.isPC)) { hp += Math.max(0, o.dead ? 0 : o.hp); max += o.maxHp; }
+    for (const o of this.units) if (o.team === team && (o.onBoard || o.isPC) && !(o.dead && !o.isPC)) { hp += Math.max(0, o.dead ? 0 : this.kHp(u, o)); max += this.kMax(u, o); }
     return max ? hp / max : 1;
   };
   const mine = frac(u.team), theirs = frac(u.team === 'party' ? 'foes' : 'party');
@@ -982,30 +1112,200 @@ Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
 };
 
 /* ----- expected outcomes, used by the tactical AI ----- */
+/* ===== WHAT EACH SIDE KNOWS =====
+   Each side's AI runs in one of three modes (opts.know = { party, foes }):
+     open  — reads the real numbers (hit points, AC, saves, resistances, everyone's actions, how many fights are left)
+     blind — black box: only what's visible at the table. Size, position, conditions, bloodied or not, the damage it
+             has taken and dealt this fight, who it's seen healing or throwing areas around. Hit points, AC, saves and
+             damage output come from rough priors by size; resistances are unknown; the day's length is a guess.
+     learn — starts like blind, then reads what it sees: hits and misses bound AC, saves made and failed give the
+             save bonus, "it resists that" sticks, the damage that bloodied or dropped a creature gives its hit points.
+             It remembers per kind of creature for the rest of the day.
+   Only the AI's estimates use this; the dice always use the real numbers. */
+const KNOW_MODES = ['open', 'blind', 'learn'];
+const SIZE_PRIOR = { Tiny: { hp: 7, dpr: 3 }, Small: { hp: 15, dpr: 6 }, Medium: { hp: 32, dpr: 9 }, Large: { hp: 70, dpr: 16 }, Huge: { hp: 140, dpr: 28 }, Gargantuan: { hp: 260, dpr: 45 } };
+const priorOf = t => SIZE_PRIOR[t.size] || SIZE_PRIOR.Medium;
+const otherTeam = team => team === 'party' ? 'foes' : 'party';
+Sim.prototype.kMode = function (team) { return (this.know && this.know[team]) || 'open'; };
+/* null when u sees the truth about t (its own side, or open mode), else the mode */
+Sim.prototype.kOf = function (u, t) {
+  if (!u || !t || u.team === t.team) return null;
+  const m = this.kMode(u.team);
+  return m === 'open' ? null : m;
+};
+/* what `team` has learned about creatures of t's kind today */
+Sim.prototype.kind = function (team, t) {
+  const K = this.mem[team];
+  let k = K.get(t.tplId);
+  if (!k) { k = { acLo: -Infinity, acHi: Infinity, hpLo: 0, hpHi: Infinity, saves: {}, saveEst: {}, mods: null, heals: false, areas: [], range: 0, dealt: 0, turns: 0, caster: false }; K.set(t.tplId, k); }
+  return k;
+};
+Sim.prototype.learning = function (team) { return this.kMode(team) === 'learn'; };
+Sim.prototype.learnAC = function (att, tgt, base, hit) {
+  if (att.team === tgt.team || !this.learning(att.team)) return;
+  const k = this.kind(att.team, tgt);
+  if (hit) k.acHi = Math.min(k.acHi, base); else k.acLo = Math.max(k.acLo, base + 1);
+  if (k.acLo > k.acHi) { k.acLo = hit ? -Infinity : base + 1; k.acHi = hit ? base : Infinity; }   // a buff it couldn't see: start over
+};
+Sim.prototype.learnSave = function (t, dc, ab, ok) {
+  const team = otherTeam(t.team);
+  if (!this.learning(team) || dc >= 99) return;
+  const k = this.kind(team, t), key = ab || 'any';
+  (k.saves[key] = k.saves[key] || []).push([dc, ok ? 1 : 0]);
+  if (k.saves[key].length > 40) k.saves[key].shift();
+  k.saveEst = {};
+};
+Sim.prototype.learnType = function (tgt, info, tm) {
+  const team = otherTeam(tgt.team);
+  if (!this.learning(team)) return;
+  const type = String(info.type || (info.a && info.a.ext && info.a.ext.damageType) || '').toLowerCase();
+  if (!type || type.indexOf('/') >= 0 || type.indexOf('+') >= 0) return;
+  const k = this.kind(team, tgt);
+  if (!k.mods) { if (tm === 1) return; k.mods = { resist: [], immune: [], vulnerable: [] }; }
+  const m = k.mods;
+  ['resist', 'immune', 'vulnerable'].forEach(f => { const i = m[f].indexOf(type); if (i >= 0) m[f].splice(i, 1); });
+  if (tm === 0) m.immune.push(type); else if (tm < 1) m.resist.push(type); else if (tm > 1) m.vulnerable.push(type);
+};
+Sim.prototype.learnHp = function (t) {
+  const team = otherTeam(t.team);
+  if (!this.learning(team) || !t.startFull) return;
+  const k = this.kind(team, t), lost = t.visLost;
+  if (t.hp <= 0) k.hpHi = Math.min(k.hpHi, lost);
+  else { k.hpLo = Math.max(k.hpLo, lost + 1); if (t.hp < t.maxHp / 2) k.hpHi = Math.min(k.hpHi, lost * 2); else k.hpLo = Math.max(k.hpLo, lost * 2); }
+  if (k.hpLo > k.hpHi) { k.hpLo = lost; k.hpHi = Infinity; }
+};
+Sim.prototype.learnHeal = function (src) {
+  src.seenHeal = true;
+  if (this.learning(otherTeam(src.team))) this.kind(otherTeam(src.team), src).heals = true;
+};
+Sim.prototype.learnAction = function (u, a) {
+  if (a._spell) u.seenCaster = true;
+  if ((a.type === 'atk' || a.type === 'debuff') && a._range) u.seenRange = Math.max(u.seenRange || 0, a._range);
+  const sp = areaSpec(a);
+  const area = sp && (a.type === 'atk' || a.type === 'debuff') ? { id: a.id, shape: sp.shape, size: sp.size, range: Math.max(5, a._range || 5), dmg: a.type === 'atk' ? avgDice((a.ext && a.ext.wtDpr) || a.dpr) : 8 } : null;
+  if (area) { u.seenAreas = u.seenAreas || []; if (!u.seenAreas.some(x => x.id === a.id)) u.seenAreas.push(area); }
+  const team = otherTeam(u.team);
+  if (!this.learning(team)) return;
+  const k = this.kind(team, u);
+  if (a._spell) k.caster = true;
+  if (a.type === 'atk' || a.type === 'debuff') k.range = Math.max(k.range, a._range || 5);
+  if (area && !k.areas.some(x => x.id === a.id)) k.areas.push(area);
+};
+/* end of a fight: fold what each creature did into its kind's record */
+Sim.prototype.learnFight = function () {
+  for (const u of this.units) {
+    const team = otherTeam(u.team);
+    if (!this.learning(team) || !u.fightTurns) continue;
+    const k = this.kind(team, u);
+    k.dealt += u.dmgDealt; k.turns += u.fightTurns;
+  }
+};
+// ---- the estimates the AI uses ----
+Sim.prototype.kMax = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return t.maxHp;
+  const pr = priorOf(t).hp;
+  if (m === 'blind') return pr;
+  const k = this.kind(u.team, t);
+  if (k.hpHi < Infinity && k.hpLo > 0) return Math.max(1, (k.hpLo + k.hpHi) / 2);
+  if (k.hpHi < Infinity) return Math.max(1, Math.min(pr, k.hpHi * 0.85));
+  if (k.hpLo > 0) return Math.max(pr, k.hpLo * 1.15);
+  return pr;
+};
+Sim.prototype.kHp = function (u, t) {
+  if (!this.kOf(u, t) || t.dead || t.hp <= 0) return t.hp;        // down and dead are plain to see
+  const max = this.kMax(u, t);
+  let est = max - (t.visLost || 0);
+  if (t.hp < t.maxHp / 2) est = Math.min(est, max * 0.45); else est = Math.max(est, max * 0.55);   // bloodied or not
+  return Math.max(1, est);
+};
+Sim.prototype.kFrac = function (u, t) { return this.kOf(u, t) ? Math.max(0, Math.min(1, this.kHp(u, t) / this.kMax(u, t))) : Math.max(0, t.hp / t.maxHp); };
+Sim.prototype.kDpr = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return t.dpr;
+  const pr = priorOf(t).dpr;
+  let dealt = t.dmgDealt || 0, turns = t.fightTurns || 0;
+  if (m === 'learn') { const k = this.kind(u.team, t); dealt += k.dealt; turns += k.turns; }
+  return (dealt + pr * 1.5) / (turns + 1.5);
+};
+Sim.prototype.kAc = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return this.ac(t);
+  const vis = this.sumBuff(t, 'ac', false), pr = 14;
+  if (m === 'blind') return pr + vis;
+  const k = this.kind(u.team, t);
+  let e = pr;
+  if (k.acLo > -Infinity && k.acHi < Infinity) e = (k.acLo + k.acHi) / 2;
+  else if (k.acLo > -Infinity) e = Math.max(pr, k.acLo + 0.5);
+  else if (k.acHi < Infinity) e = Math.min(pr, k.acHi - 0.5);
+  return e + vis;
+};
+Sim.prototype.kSave = function (u, t, ab) {
+  const m = this.kOf(u, t); if (!m) return this.saveBonusFor(t, ab);
+  if (m === 'blind') return 2;
+  const k = this.kind(u.team, t), key = ab || 'any';
+  if (k.saveEst[key] !== undefined) return k.saveEst[key];
+  // most likely bonus given the saves seen (this ability counts fully, the others a little), pulled toward +2
+  const obs = [];
+  for (const kk in k.saves) for (const o of k.saves[kk]) obs.push([o[0], o[1], kk === key ? 1 : 0.3]);
+  let best = 2, bestL = -Infinity;
+  for (let b = -2; b <= 14; b++) {
+    let L = -((b - 2) * (b - 2)) / 18;
+    for (const o of obs) { const p = Math.min(0.95, Math.max(0.05, (21 + b - o[0]) / 20)); L += o[2] * Math.log(o[1] ? p : 1 - p); }
+    if (L > bestL) { bestL = L; best = b; }
+  }
+  k.saveEst[key] = best;
+  return best;
+};
+Sim.prototype.kMult = function (u, a, t) {
+  const m = this.kOf(u, t); if (!m) return damageMultFor(a, t);
+  if (m === 'blind') return 1;
+  const k = this.kind(u.team, t);
+  return k.mods ? damageMultFor(a, { dmgMods: k.mods, buffs: [] }) : 1;
+};
+Sim.prototype.kHeals = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return t.actions.some(o => o.type === 'heal' && o.target !== 'self');
+  return !!t.seenHeal || (m === 'learn' && this.kind(u.team, t).heals);
+};
+/* area attacks u's side knows t has: [{ shape, size, range, dmg }] */
+Sim.prototype.kAreas = function (u, t) {
+  const m = this.kOf(u, t);
+  if (!m) return t.actions.filter(a => (a.type === 'atk' || a.type === 'debuff') && a.actionSlot === 0 && (areaSpec(a) || ((a.useSaves || a.type === 'debuff') && (a.targets || 1) > 1)) && this.usable(t, a))
+    .map(a => { const sp = areaSpec(a) || { shape: 'sphere', size: 10 }; return { id: a.id, shape: sp.shape, size: sp.size, range: Math.max(5, a._range || 5), dmg: a.type === 'atk' ? avgDice((a.ext && a.ext.wtDpr) || a.dpr) : 8 }; });
+  const seen = t.seenAreas || [];
+  return m === 'learn' ? seen.concat(this.kind(u.team, t).areas.filter(x => !seen.some(y => y.id === x.id))) : seen;
+};
+Sim.prototype.kReach = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return null;
+  return Math.max(5, t.seenRange || 0, m === 'learn' ? this.kind(u.team, t).range : 0);
+};
+/* fights still to come today, as u's side reckons it: known in open mode, otherwise assume a three-fight day */
+Sim.prototype.leftFor = function (u) {
+  if (this.kMode(u.team) === 'open') return this.encountersLeft || 0;
+  return Math.max(1, 2 - (this.fightNo || 0));
+};
+
 Sim.prototype.hitChance = function (u, t, a) {
   const tc = this.conds(t), atc = this.conds(u);
   if (u.blindsight) { atc.delete('Blinded'); tc.delete('Invisible'); }
   const close = this.dist(u, t) <= 5;
   const adv = ADV_TARGET.some(x => tc.has(x)) || ADV_SELF.some(x => atc.has(x)) || !!this.featureAdv(u, t) || (tc.has('Prone') && close);
   const dis = DIS_TARGET.some(x => tc.has(x)) || DIS_SELF.some(x => atc.has(x)) || (tc.has('Prone') && !close);
-  let p = Math.min(0.95, Math.max(0.05, (21 + avgDice(a.toHit) + this.sumBuff(u, 'toHit', false) - this.ac(t) - this.coverAC(u, t)) / 20));
+  let p = Math.min(0.95, Math.max(0.05, (21 + avgDice(a.toHit) + this.sumBuff(u, 'toHit', false) - this.kAc(u, t) - this.coverAC(u, t)) / 20));
   if (adv && !dis) p = 1 - Math.pow(1 - p, u.elvenAccuracy ? 3 : 2);
   else if (dis && !adv) p = p * p;
   return p;
 };
 Sim.prototype.expected = function (u, a, t) {
   const sab = a.ext && a.ext.saveAbility;
-  const saveP = dc => Math.min(1, Math.max(0, (21 + this.saveBonusFor(t, sab) - dc) / 20));
+  const saveP = dc => Math.min(1, Math.max(0, (21 + this.kSave(u, t, sab) - dc) / 20));
   if (a.type === 'atk') {
     const sneakAvg = u.sneak && a.ext && a.ext.sneak && u.saSeq !== this.turnSeq ? avgDice(u.sneak.dice) * (this.featureAdv(u, t) || this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && this.dist(o, t) <= 5) ? 0.95 : 0.35) : 0;
-    const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * damageMultFor(a, t));
+    const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * this.kMult(u, a, t));
     if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
     return dmg * this.hitChance(u, t, a) * (a.targets || 1);
   }
   if (a.type === 'debuff') {
-    let v = this.effectValue(a.buff, t, true);
+    let v = this.effectValue(a.buff, t, true, u);
     const ex = a.ext || {};
-    if (typeof ex.speedBonus === 'number' && ex.speedBonus < 0) v += this.meleeReach(t) > 0 ? t.dpr * (ex.speedBonus <= -30 ? 0.5 : 0.25) : 1;
+    if (typeof ex.speedBonus === 'number' && ex.speedBonus < 0) v += this.meleeReach(t) > 0 ? this.kDpr(u, t) * (ex.speedBonus <= -30 ? 0.5 : 0.25) : 1;
     if (ex.onHit && ex.onHit.noReactions) v += 1.5;
     return (1 - saveP(avgDice(a.saveDC))) * v;
   }
@@ -1032,19 +1332,32 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
     const p = a.useSaves ? 1 : this.hitChance(u, t, a);
     const need = Math.max(1, 3 - t.deathF);
     const pKill = Math.min(1, hits * p * (near && !a.useSaves ? 2 : 1) / need);
-    const healers = this.alliesOf(t).filter(o => o !== t && this.alive(o) && o.actions.some(h => h.type === 'heal' && h.target !== 'self')).length;
-    return { val: pKill * (10 + t.dpr) * (healers ? 1.4 : 0.8), why: 'execute' };
+    const healers = this.alliesOf(t).filter(o => o !== t && this.alive(o) && this.kHeals(u, o)).length;
+    return { val: pKill * (10 + this.kDpr(u, t)) * (healers ? 1.4 : 0.8), why: 'execute' };
   }
   if (offensive) {
     const exp = this.expected(u, a, t);
-    val = Math.min(exp, t.hp + 4) * (1 + t.dpr / 20);
-    if (a.type === 'atk' && exp >= t.hp * 0.9) { val += 12 + t.dpr * 0.5; why = 'finish'; }
-    if (t.actions.some(o => o.type === 'heal' && o.target !== 'self')) { val += 3; why = why || 'healer'; }
-    val += (1 - t.hp / t.maxHp) * 4;
+    const tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
+    val = Math.min(exp, tHp + 4) * (1 + tDpr / 20);
+    if (a.type === 'atk' && exp >= tHp * 0.9) { val += 12 + tDpr * 0.5; why = 'finish'; }
+    if (this.kHeals(u, t)) { val += 4; why = why || 'healer'; }
+    // break its concentration: worth what the spell it's holding is doing, times the chance the hits make it drop
+    if (t.concentrating && a.type === 'atk' && exp < tHp) {
+      const held = this.concValue(u, t);
+      if (held > 0) {
+        const con = this.kOf(u, t) ? this.kSave(u, t, 'con') : (t.conSave || 0);
+        const hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
+        const perHit = exp / Math.max(0.05, hits * p);
+        const pf = Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20));
+        val += held * (1 - Math.pow(1 - p * pf, hits));
+        why = why || 'concentration';
+      }
+    }
+    val += (1 - this.kFrac(u, t)) * 4;
     const allyOn = this.alliesOf(u).filter(o => o !== u && this.alive(o) && o.onBoard && this.dist(o, t) <= 5).length;
     val += allyOn * 1.5;   // focus fire
     // don't wake up a creature our side has laughing (Hideous Laughter breaks on a save each time it's hurt), unless it'll drop
-    if (a.type === 'atk' && exp < t.hp && t.buffs.some(b => b.saveOnDamage && this.byId[b.src] && this.byId[b.src].team === u.team)) { val *= 0.25; why = why || 'leave it laughing'; }
+    if (a.type === 'atk' && exp < tHp && t.buffs.some(b => b.saveOnDamage && this.byId[b.src] && this.byId[b.src].team === u.team)) { val *= 0.25; why = why || 'leave it laughing'; }
     // protect our casters: whoever is in their face is worth more
     const menacing = this.alliesOf(u).filter(o => o !== u && this.alive(o) && o.onBoard && this.dist(o, t) <= 5 && !this.hasMelee(o)).length;
     if (menacing && this.hasMelee(u)) { val += 4 * menacing; why = why || 'guard'; }
@@ -1057,14 +1370,14 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
       if (extra.length) why = 'cluster';
       if (ac.friends.length) { friendly = true; val -= this.friendPenalty(u, a, ac.friends); }
     }
-    const top = Math.max(0, ...pool.filter(o => o.hp > 0).map(o => o.dpr));
-    const others = pool.filter(o => o !== t && o.hp > 0).map(o => o.dpr);
-    if (!why && others.length && t.dpr >= top && t.dpr > 0 && Math.min(...others) < t.dpr * 0.8) why = 'threat';
+    const top = Math.max(0, ...pool.filter(o => o.hp > 0).map(o => this.kDpr(u, o)));
+    const others = pool.filter(o => o !== t && o.hp > 0).map(o => this.kDpr(u, o));
+    if (!why && others.length && tDpr >= top && tDpr > 0 && Math.min(...others) < tDpr * 0.8) why = 'threat';
     if (!why && allyOn) why = 'focus';
     // leave a creature that's been talked out of the fight (Suggestion) alone, unless this kills it
     const lulled = o => o.buffs.some(b => b.endsOnDamage) && this.incap(o);
-    if (lulled(t) && pool.some(o => o !== t && o.hp > 0 && !lulled(o)) && !(a.type === 'atk' && exp >= t.hp * 0.9)) { val = val * 0.1 - 6 - t.dpr; why = ''; }
-    if (ac && a.type === 'atk') for (const o of ac.extra) if (lulled(o)) val -= 6 + o.dpr * 1.5;
+    if (lulled(t) && pool.some(o => o !== t && o.hp > 0 && !lulled(o)) && !(a.type === 'atk' && exp >= tHp * 0.9)) { val = val * 0.1 - 6 - tDpr; why = ''; }
+    if (ac && a.type === 'atk') for (const o of ac.extra) if (lulled(o)) val -= 6 + this.kDpr(u, o) * 1.5;
     if (friendly && !why) why = 'cluster';
     // Fog Cloud: worth the damage it stops ranged enemies (not already in someone's face) from dealing,
     // minus the targets it takes away from our own shooters
@@ -1076,8 +1389,9 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
       val = 0;
       for (const c of caught) {
         const engagedC = mine.some(o => this.dist(o, c) <= Math.max(5, this.meleeReach(c)));
-        const rangedC = this.meleeReach(c) === 0 || c.actions.some(q => q.type === 'atk' && (q._range || 5) > 15);
-        val += rangedC && !engagedC ? c.dpr * 2.2 : -c.dpr * 0.2;
+        const kr = this.kReach(u, c);
+        const rangedC = kr !== null ? kr > 15 : (this.meleeReach(c) === 0 || c.actions.some(q => q.type === 'atk' && (q._range || 5) > 15));
+        val += rangedC && !engagedC ? this.kDpr(u, c) * 2.2 : -this.kDpr(u, c) * 0.2;
       }
       val -= shooters * 2 * caught.length / Math.max(1, pool.length);
       return { val, why: 'cluster' };
@@ -1085,35 +1399,50 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
     return { val, why, friendly };
   }
   if (a.type === 'heal') return { val: (t.hp <= 0 ? 50 : 0) + (1 - t.hp / t.maxHp) * 20, why: t.hp <= 0 ? 'revive' : '' };
-  return { val: this.effectValue(a.buff, t, false) + (t === u ? 0.3 : 0), why: '' };
+  return { val: this.effectValue(a.buff, t, false, u) + (t === u ? 0.3 : 0), why: '' };
+};
+/* what t's concentration spell is worth to t's side, as u sees it: the effects it holds on u's side and on its own,
+   the zone it keeps up, the weapon it conjured */
+Sim.prototype.concValue = function (u, t) {
+  const id = t.concentrating;
+  if (!id) return 0;
+  let v = 3;
+  for (const o of this.units) {
+    if (!o.onBoard || o.dead) continue;
+    for (const b of o.buffs) if (b.src === t.uid && b.id === id) v += o.team === u.team ? this.effectValue(b.data, o, true) : this.effectValue(b.data, o, false, u) * 0.6;
+  }
+  if (t.buffs.some(b => b.id === id && b.src === t.uid)) v += 5;
+  for (const z of this.zones || []) if (z.src === t.uid && z.conc) for (const o of this.alliesOf(u)) if (o.onBoard && this.alive(o) && z.cells.has(o.x + o.y * this.W)) v += 3;
+  return v;
 };
 /* the value of putting buff/debuff `b` on `t` (tactical) */
 const DUR_WEIGHT = { 'entire encounter': 3, 'repeat the save each round': 2, '1 round': 1, 'until next attack made': 0.6, 'until next attack taken': 0.6 };
-Sim.prototype.effectValue = function (b, t, hostile) {
+Sim.prototype.effectValue = function (b, t, hostile, obs) {
   if (!b) return 0;
+  const tDpr = obs ? this.kDpr(obs, t) : t.dpr;
   const dur = DUR_WEIGHT[b.duration] || 1;
   let v = 0;
   const c = b.condition;
   if (hostile) {
     // the target's own offence it loses, and how much easier it becomes to hit
-    if (['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].includes(c)) v += t.dpr * 2 + 8;
-    else if (c === 'Restrained') v += t.dpr * 0.4 + 4;
-    else if (c === 'Blinded') v += t.dpr * 0.4 + 3;
-    else if (['Frightened', 'Poisoned', 'Attacks with Disadvantage', 'Attacks and saves with Disadvantage'].includes(c)) v += t.dpr * 0.3 + 1;
+    if (['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].includes(c)) v += tDpr * 2 + 8;
+    else if (c === 'Restrained') v += tDpr * 0.4 + 4;
+    else if (c === 'Blinded') v += tDpr * 0.4 + 3;
+    else if (['Frightened', 'Poisoned', 'Attacks with Disadvantage', 'Attacks and saves with Disadvantage'].includes(c)) v += tDpr * 0.3 + 1;
     else if (c === 'Is attacked with Advantage' || c === 'Attacks and is attacked with Advantage') v += 3;
-    if (b.toHit !== undefined) v += Math.max(0, -avgDice(b.toHit)) * 0.05 * t.dpr * 2;
+    if (b.toHit !== undefined) v += Math.max(0, -avgDice(b.toHit)) * 0.05 * tDpr * 2;
     if (b.ac !== undefined) v += Math.max(0, -avgDice(b.ac)) * 1.5;
     if (typeof b.damageTakenMultiplier === 'number') v += Math.max(0, b.damageTakenMultiplier - 1) * 12;
-    if (typeof b.damageMultiplier === 'number') v += Math.max(0, 1 - b.damageMultiplier) * t.dpr * 1.5;
+    if (typeof b.damageMultiplier === 'number') v += Math.max(0, 1 - b.damageMultiplier) * tDpr * 1.5;
     if (b.damage !== undefined) v += Math.max(0, avgDice(b.damage));
     // no point spending it on something about to drop
-    v *= Math.min(1, t.hp / Math.max(8, t.maxHp * 0.25));
+    v *= obs ? Math.min(1, this.kHp(obs, t) / Math.max(8, this.kMax(obs, t) * 0.25)) : Math.min(1, t.hp / Math.max(8, t.maxHp * 0.25));
   } else {
-    const incoming = this.enemiesOf(t).filter(e => e.onBoard && this.alive(e) && this.dist(e, t) <= Math.max(5, this.meleeReach(e)) + 5).reduce((sum, e) => sum + e.dpr, 0);
-    if (b.toHit !== undefined) v += Math.max(0, avgDice(b.toHit)) * 0.05 * t.dpr * 2;
-    if (b.damage !== undefined) v += Math.max(0, avgDice(b.damage)) * 0.65 * Math.max(1, t.dpr / 8);
-    if (typeof b.damageMultiplier === 'number') v += Math.max(0, b.damageMultiplier - 1) * t.dpr;
-    if (c === 'Attacks with Advantage') v += t.dpr * 0.25;
+    const incoming = this.enemiesOf(t).filter(e => e.onBoard && this.alive(e) && this.dist(e, t) <= Math.max(5, this.meleeReach(e)) + 5).reduce((sum, e) => sum + (obs ? this.kDpr(obs, e) : e.dpr), 0);
+    if (b.toHit !== undefined) v += Math.max(0, avgDice(b.toHit)) * 0.05 * tDpr * 2;
+    if (b.damage !== undefined) v += Math.max(0, avgDice(b.damage)) * 0.65 * Math.max(1, tDpr / 8);
+    if (typeof b.damageMultiplier === 'number') v += Math.max(0, b.damageMultiplier - 1) * tDpr;
+    if (c === 'Attacks with Advantage') v += tDpr * 0.25;
     if (b.ac !== undefined) v += Math.max(0, avgDice(b.ac)) * 0.05 * (incoming + 2) * 1.5;
     if (typeof b.damageTakenMultiplier === 'number') v += Math.max(0, 1 - b.damageTakenMultiplier) * (incoming + 2);
     if (b.damageReduction !== undefined) v += Math.max(0, avgDice(b.damageReduction)) * 0.5;
@@ -1141,10 +1470,10 @@ Sim.prototype.healNeeded = function (u, a, t) {
 };
 /* party pacing: hold long-rest resources when the fight is in hand and more fights are coming */
 Sim.prototype.fightInHand = function (u) {
-  if (u.team !== 'party' || !this.encountersLeft) return false;
+  if (u.team !== 'party' || !this.leftFor(u)) return false;
   const mine = this.alliesOf(u).filter(o => this.alive(o) && o.onBoard), theirs = this.enemiesOf(u).filter(e => this.alive(e) && e.onBoard);
-  const myDpr = mine.reduce((t, o) => t + o.dpr, 0) * 0.6, theirDpr = theirs.reduce((t, e) => t + e.dpr, 0) * 0.6;
-  const roundsToWin = theirs.reduce((t, e) => t + e.hp, 0) / Math.max(1, myDpr);
+  const myDpr = mine.reduce((t, o) => t + o.dpr, 0) * 0.6, theirDpr = theirs.reduce((t, e) => t + this.kDpr(u, e), 0) * 0.6;
+  const roundsToWin = theirs.reduce((t, e) => t + this.kHp(u, e), 0) / Math.max(1, myDpr);
   const roundsToLose = mine.reduce((t, o) => t + o.hp, 0) / Math.max(1, theirDpr);
   return roundsToLose >= roundsToWin * 3 && mine.every(o => o.hp > o.maxHp * 0.35);
 };
@@ -1175,7 +1504,7 @@ Sim.prototype.canBonusDisengage = function (u) {
 Sim.prototype.slotCost = function (u, level) {
   if (!level) return 0;
   if (u.team !== 'party') return level * 1.5;
-  const left = this.encountersLeft || 0;
+  const left = this.leftFor(u);
   const slotsLeft = u.slots.reduce((t, n, i) => t + n * (i + 1), 0);
   const perFight = slotsLeft / (left + 1);                        // slot levels it can afford per fight from here
   if (!left) return level * 0.5;                                  // last fight of the day: unspent slots are wasted
@@ -1205,10 +1534,10 @@ Sim.prototype.optionValue = function (u, a, budget) {
     v = this.targetValue(u, act, t, pool, p.dest.x, p.dest.y).val;
     // shoving a creature out of someone's face is worth roughly the hits it won't land
     if (a.ext && a.ext.onHit && a.ext.onHit.push && this.meleeReach(t) > 0 && this.meleeReach(t) < a.ext.onHit.push + 5 &&
-        this.alliesOf(u).some(o => o.onBoard && this.alive(o) && this.dist(o, t) <= this.meleeReach(t))) v += t.dpr * 0.5;
+        this.alliesOf(u).some(o => o.onBoard && this.alive(o) && this.dist(o, t) <= this.meleeReach(t))) v += this.kDpr(u, t) * 0.5;
     if (a.ext && a.ext.zone && a.ext.zone.difficult) v += 2;
     if (!this.areaCatch(act, t, p.dest.x, p.dest.y, pool, u) && a.type === 'debuff') for (const o of p.targets.slice(1)) v += this.expected(u, act, o);
-    if (a.type === 'atk' && !act.useSaves) for (const o of p.targets.slice(1)) v += Math.min(this.expected(u, act, o), o.hp + 4);
+    if (a.type === 'atk' && !act.useSaves) for (const o of p.targets.slice(1)) v += Math.min(this.expected(u, act, o), this.kHp(u, o) + 4);
   } else if (a.type === 'heal') {
     const amt = avgDice(act.amount);
     const hx = a.ext || {};
@@ -1219,7 +1548,7 @@ Sim.prototype.optionValue = function (u, a, budget) {
     }
     else for (const t of p.targets) v += t.hp <= 0 ? 25 + t.dpr + amt * 0.3 : Math.min(amt, t.maxHp - t.hp) * (t.hp < t.maxHp * 0.5 ? 1.1 : 0.4);
   } else if (a.type === 'buff') {
-    for (const t of p.targets) v += this.effectValue(act.buff, t, false);
+    for (const t of p.targets) v += this.effectValue(act.buff, t, false, u);
   }
   if (lvl && a._spell.conc && u.concentrating && u.concentrating !== a.id) v -= 8;   // drops what it's already holding
   if (p.path && p.path.length && budget) v -= p.path.length * 0.1;
@@ -1260,7 +1589,7 @@ Sim.prototype.rankSpells = function (u) {
      dash       — double move toward the fight when nothing is in reach
    and weighs what it could do from each square against how much it would get hurt there next round. */
 Sim.prototype.notePacing = function (u) {
-  if (this.record && !u.notedPacing && u.team === 'party' && this.encountersLeft && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
+  if (this.record && !u.notedPacing && u.team === 'party' && this.leftFor(u) && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
     u.notedPacing = true;
     this.ev('intent', `${u.name} saves their bigger spells and abilities: this fight is in hand and there's more to come today`, { uid: u.uid });
   }
@@ -1349,7 +1678,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
     const seen = t => { let v = sC.get(t); if (v === undefined) { v = this.canSee(x, y, t); sC.set(t, v); } return v; };
     for (const pl of ordered) {
       if (pl.self) { if (!overall) return { pl, t: u, val: 5, why: '' }; continue; }
-      if (pl.limited && lone && atWill.length && lone.hp <= Math.max(...atWill.map(w => this.expected(u, w.a, lone))) * 1.5) continue;
+      if (pl.limited && lone && atWill.length && this.kHp(u, lone) <= Math.max(...atWill.map(w => this.expected(u, w.a, lone))) * 1.5) continue;
       let best = null;
       for (const t of pl.pool) {
         if (dOf(t) > pl.range || !seen(t)) continue;
@@ -1393,9 +1722,11 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
   };
 
   // how hard it would get hit standing at (x,y) next round
+  const blindTo = this.kMode(u.team) !== 'open';
   const threatInfo = foes.filter(e => !this.incap(e) && e.hp > 0).map(e => {
     let dmg = 0, reach = 5;
-    for (const a of e.actions) {
+    if (blindTo) { dmg = this.kDpr(u, e) * Math.min(1, Math.max(0.3, (21 + 5 - u.baseAC) / 20)) / 0.65; reach = this.kReach(u, e); }
+    else for (const a of e.actions) {
       if (a.actionSlot !== 0 || a.type !== 'atk' || !this.usable(e, a) || (a.ext && a.ext.swallow)) continue;
       const d = this.expected(e, a, u);
       if (d > dmg) { dmg = d; reach = Math.max(5, a._range || 5); }
@@ -1434,8 +1765,29 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
     return t;
   };
   // group sensibly: spread out against area attacks
-  const foeAoE = foes.some(e => e.actions.some(a => (a.useSaves || a.type === 'debuff') && (a.targets || 1) > 1));
-  const spacingAt = (x, y) => foeAoE ? myTeam.filter(o => o !== u && this.distXY(x, y, o) <= 10).length * 1.2 : 0;
+  // the area attacks it knows the other side has: don't bunch up where one could catch several of us
+  const areaThreats = [];
+  for (const e of foes) if (!this.incap(e)) for (const ar of this.kAreas(u, e)) areaThreats.push({ e, shape: ar.shape, size: ar.size, range: ar.range, w: Math.min(3, Math.max(0.6, ar.dmg / 10)) });
+  const spacingAt = (x, y) => {
+    let pen = 0;
+    for (const at of areaThreats) {
+      let near;
+      if (at.shape === 'cone' || at.shape === 'line') {
+        // a cone or line starts at its user: in a bunch within its length of them is where it lands
+        if (this.distXY(x, y, at.e) > at.size + 5) continue;
+        const r = Math.max(10, at.size / 2);
+        near = 0;
+        for (const o of myTeam) if (o !== u && this.distXY(x, y, o) <= r && this.dist(o, at.e) <= at.size + 5) near++;
+      } else {
+        if (this.distXY(x, y, at.e) > at.range + at.size * 2) continue;
+        const r = Math.min(30, at.shape === 'sphere' ? at.size * 2 : at.size);     // two creatures this close can share one blast
+        near = 0;
+        for (const o of myTeam) if (o !== u && this.distXY(x, y, o) <= r) near++;
+      }
+      pen += near * 1.2 * at.w;
+    }
+    return pen;
+  };
 
   // opportunity attacks it would take walking a path
   const oaCost = (path, disengaged) => {
@@ -1446,7 +1798,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
       for (const e of this.adjacentEnemies(u, cx, cy)) {
         if (used.has(e) || !e.reaction || this.distXY(st.x, st.y, e) <= this.meleeReach(e)) continue;
         const a = e.actions.find(o => o.type === 'atk' && !o.useSaves && o.actionSlot === 0 && o._range <= 10 && !(o.ext && o.ext.swallow));
-        if (a) { cost += this.expected(e, Object.assign({}, a, { targets: 1 }), u); used.add(e); }
+        if (a) { cost += blindTo ? this.kDpr(u, e) * 0.4 : this.expected(e, Object.assign({}, a, { targets: 1 }), u); used.add(e); }
       }
       cx = st.x; cy = st.y;
     }
@@ -1811,6 +2163,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   }
   // Legendary Resistance: only when failing would be dangerous — a disabling condition (paralysed, stunned,
   // restrained, frightened, blinded…), or damage that would drop it or take a big bite out of what it has left
+  this.learnSave(t, dc, ab, total >= dc);
   const failDmg = this._saveDmg || 0;
   const dangerous = (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
   if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
@@ -1846,7 +2199,8 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   let total = r + toHit;
   let ac = this.ac(tgt) + this.coverAC(att, tgt);
   let hit = r === 20 || (r !== 1 && total >= ac);
-  let crit = r === 20;
+  let crit = r === 20 || (hit && !a._spell && r >= (att.critOn || 20));
+  if (r !== 20 && r !== 1 && !opt.inside) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
   // Silvery-Barbs-style reactions from the target's side: reroll, take the lower
   if (hit && !opt.noReact) {
     const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
@@ -1909,6 +2263,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   if (tgt.dead) return 0;
   // damage type against resistances, immunities and vulnerabilities
   const tm = info.a || info.type ? damageMultFor(info.a, tgt, info.type) : 1;
+  if (raw > 0) this.learnType(tgt, info, tm);
   if (tm !== 1 && raw > 0) {
     info.typeNote = tm === 0 ? 'immune' : tm < 1 ? 'resisted' : tm > 1 ? 'vulnerable' : '';
     if (tm === 0 && this.record) this.ev('effect', `${tgt.name} is immune to ${info.type || (info.a && (bestTypeFor(info.a, tgt) || info.a.ext.damageType))} damage`, { uid: tgt.uid });
@@ -1944,7 +2299,9 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
     return dmg;
   }
   const overflow = dmg - tgt.hp;
+  tgt.visLost = (tgt.visLost || 0) + Math.min(dmg, tgt.hp);
   tgt.hp = Math.max(0, tgt.hp - dmg);
+  this.learnHp(tgt);
   if (tgt.hp <= 0) {
     if (tgt.isPC && overflow >= tgt.maxHp) this.kill(tgt, src, 'massive damage');
     else if (tgt.isPC) this.downPC(tgt);
@@ -2027,6 +2384,8 @@ Sim.prototype.heal = function (src, tgt, amt, temp) {
   tgt.hp = Math.min(tgt.maxHp, tgt.hp + amt);
   if (was <= 0) this.boardChanged();
   src.healed += tgt.hp - was;
+  tgt.visLost = Math.max(0, (tgt.visLost || 0) - (tgt.hp - was));
+  if (src !== tgt && tgt.hp > was) this.learnHeal(src);
   if (was <= 0 && tgt.hp > 0) { tgt.deathS = 0; tgt.deathF = 0; tgt.stable = false; this.revives[tgt.team] = (this.revives[tgt.team] || 0) + 1; }
 };
 Sim.prototype.releaseGrappleOf = function (u) {
@@ -2300,6 +2659,7 @@ Sim.prototype.expel = function (w, v, why) {
 
 Sim.prototype.doAction = function (u, a, plan, opt) {
   opt = opt || {};
+  this.learnAction(u, a);
   if (!isHideAction(a) && (a._spell || a.useSaves || a.type === 'debuff') && !(a.type === 'atk' && !a.useSaves) && this.isHidden(u)) {
     this.dropBuffs(u, b => b.expiry === 'hide');
     if (this.record) this.ev('effect', `${u.name} gives away its hiding place`, { uid: u.uid });
@@ -2419,7 +2779,7 @@ Sim.prototype.choose = function (u, slot, budget) {
       if (limited && rest.length) {
         const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
         // don't burn a spell slot on one foe the at-will attack can finish
-        if (foes.length === 1 && foes[0].hp <= Math.max(...rest.map(b => this.expected(u, b, foes[0]))) * 1.5) continue;
+        if (foes.length === 1 && this.kHp(u, foes[0]) <= Math.max(...rest.map(b => this.expected(u, b, foes[0]))) * 1.5) continue;
         // don't waste an area effect on a single creature
         if (a.useSaves && (a.targets || 1) > 1 && p.targets.length < 2) continue;
       }
@@ -2432,6 +2792,7 @@ Sim.prototype.choose = function (u, slot, budget) {
 /* a line in the log saying why the AI did what it did */
 Sim.prototype.intent = function (u, a, p) {
   if (!this.record || !p || !p.why || !p.targets.length) return;
+  if (p.why === 'cluster' && p.targets.filter(o => o.team !== u.team).length < 2) return;
   const t = p.targets[0];
   const key = p.why + ':' + t.uid;
   if (u.lastIntent === key) return;
@@ -2439,9 +2800,10 @@ Sim.prototype.intent = function (u, a, p) {
   const txt = {
     finish: `${u.name} goes after ${t.name}, who looks ready to drop`,
     healer: `${u.name} goes for the healer, ${t.name}`,
+    concentration: `${u.name} hits ${t.name} to break their concentration${t.concentrating ? ' on ' + ((t.actions.find(x => x.id === t.concentrating) || {}).name || 'a spell') : ''}`,
     threat: `${u.name} focuses ${t.name}, the biggest threat`,
     focus: `${u.name} piles onto ${t.name} with the others`,
-    cluster: `${u.name} lines up ${a.name} to catch ${p.targets.length} of them`,
+    cluster: `${u.name} lines up ${a.name} to catch ${p.targets.filter(o => o.team !== u.team).length} of them`,
     revive: `${u.name} rushes to get ${t.name} back up`,
     retaliate: `${u.name} turns on ${t.name}, who hurt it`,
     nearest: `${u.name} lunges at the nearest prey, ${t.name}`,
@@ -2456,6 +2818,7 @@ Sim.prototype.intent = function (u, a, p) {
 Sim.prototype.turn = function (u) {
   // start of turn
   u.turnNo = (u.turnNo || 0) + 1;
+  u.fightTurns = (u.fightTurns || 0) + 1;
   this.turnSeq = (this.turnSeq || 0) + 1;
   this._flyMapVer = -1;   // effects run out at turn boundaries
   u._settled = false;
@@ -2858,6 +3221,39 @@ Sim.prototype.lair = function () {
   }
 };
 
+/* Morale (optional): a monster that's bloodied, sees half its side fall, or loses its leader makes a DC 10 Wisdom
+   save at the start of its turn when its side is losing; on a failure it flees, or surrenders if it can't get away.
+   Either way it's out of the fight and counts as defeated. Mindless creatures and legendary ones fight on. */
+const FEARLESS = ['undead', 'construct', 'ooze', 'plant'];
+Sim.prototype.moraleBreaks = function (u) {
+  if (!this.morale || u.team !== 'foes' || u.isPC || u.legResMax || u.hasLegendary) return false;
+  if (FEARLESS.includes(String(u.tpl.type || '').toLowerCase()) || (u.tpl.ext && u.tpl.ext.fearless)) return false;
+  const side = this.units.filter(o => o.team === u.team);
+  const fallen = side.filter(o => o.dead || o.hp <= 0).length;
+  const leader = side.reduce((m, o) => (!m || o.maxHp > m.maxHp ? o : m), null);
+  const triggers = [];
+  if (u.hp < u.maxHp / 2) triggers.push('bloodied');
+  if (side.length > 1 && fallen * 2 >= side.length) triggers.push('half');
+  if (leader && leader !== u && (leader.dead || leader.hp <= 0) && leader.maxHp > u.maxHp) triggers.push('leader');
+  u.moraleSeen = u.moraleSeen || {};
+  const fresh = triggers.filter(k => !u.moraleSeen[k]);
+  if (!fresh.length || !this.losing(u)) return false;
+  fresh.forEach(k => { u.moraleSeen[k] = true; });
+  const r = this.d20(false, false, false) + this.saveBonusFor(u, 'wis');
+  return r < 10;
+};
+Sim.prototype.leave = function (u) {
+  const caught = !!u.grappledBy || this.has(u, ['Restrained', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified']) || this.speedOf(u) <= 0 ||
+    this.adjacentEnemies(u, u.x, u.y).some(e => this.alive(e) && !this.incap(e) && this.speedOf(e) >= this.speedOf(u));
+  this.boardChanged();
+  u.alt = 0;
+  this.endConcentration(u, caught ? 'surrenders' : 'flees');
+  u.dead = true; u.fled = caught ? 'surrendered' : 'fled';
+  this.releaseGrappleOf(u);
+  for (const vid of u.inside.slice()) this.expel(u, this.byId[vid], 'freed');
+  u.onBoard = false;
+  this.ev('flee', caught ? `${u.name} throws down its weapons and surrenders` : `${u.name} loses its nerve and flees the fight`, { uid: u.uid });
+};
 Sim.prototype.partyStanding = function () { return this.units.some(u => u.team === 'party' && this.alive(u)); };
 Sim.prototype.foesStanding = function () { return this.units.some(u => u.team === 'foes' && this.alive(u)); };
 Sim.prototype.over = function () { return !this.partyStanding() || !this.foesStanding(); };
@@ -2891,6 +3287,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
       if (u.dead) continue;
       if (u.team === 'foes' && !u.onBoard) continue;
       this.ev('turn', `${u.name}'s turn`, { uid: u.uid });
+      if (u.hp > 0 && !this.incap(u) && this.moraleBreaks(u)) { this.leave(u); if (this.over()) break; continue; }
       this.current = u; this.turn(u); this.current = null;
       if (this.over()) break;
       this.legendary(u);
@@ -2982,17 +3379,20 @@ function runDay(day, opts) {
     sim.encountersLeft = later.length;
     if (results.length) party.forEach(u => { if (!u.dead && u.slots && u.recovery && u.recovery.anyBreak && !u.recoveryUsed && u.slots.some((n, i) => n < u.slotsMax[i])) recoverSlots(u); });
     sim.restBeforeNext = !!(later[0] && later[0].shortRest);
+    sim.fightNo = results.length;
     const r = sim.runEncounter(party, foes, enc, layout);
+    sim.learnFight();
     results.push({
       index: realIdx, won: r.won, rounds: r.rounds,
       events: sim.record ? sim.events : null,
       start: sim.record ? sim.events.length && null : null,
       party: party.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, down: !u.dead && u.hp <= 0, everDowned: u.everDowned, downs: u.downs, dealt: u.dmgDealt, taken: u.dmgTaken, healed: u.healed })),
-      foes: foes.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, dealt: u.dmgDealt, taken: u.dmgTaken })),
-      units: sim.record ? sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, isPC: u.isPC, maxHp: u.maxHp, size: u.size, init: u.init, auras: aurasOf(u), areas: areasOf(u) })) : null,
+      foes: foes.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, fled: u.fled || undefined, dealt: u.dmgDealt, taken: u.dmgTaken })),
+      units: sim.record ? sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, isPC: u.isPC, maxHp: u.maxHp, size: u.size, init: u.init, auras: aurasOf(u), areas: areasOf(u), sheet: sheetOf(u) })) : null,
     });
     if (!r.won) return;
   });
+  if (opts._keep) results._sim = sim;      // tests look at what each side learned
   return results;
 }
 
@@ -3091,6 +3491,12 @@ function aurasOf(u) {
   return u.actions.filter(a => (a.actionSlot === 5 || a.actionSlot === 6) && (a.type === 'atk' || a.type === 'debuff'))
     .map(a => ({ name: a.name, r: Math.max(5, a._range || 10) }));
 }
+/* what a creature is, for the token inspector (the parts that don't change during a fight) */
+function sheetOf(u) {
+  const ex = (u.tpl && u.tpl.ext) || {};
+  return { ac: u.baseAC, speed: u.speed, fly: u.fly || 0, climb: u.climb || 0, saves: u.saves, saveBonus: u.saveBonus, mods: u.dmgMods, condImmune: u.condImmune && u.condImmune.length ? u.condImmune : null,
+    type: u.tpl && u.tpl.type, cr: u.tpl && u.tpl.cr, build: ex.build || '', ai: u.ai, slots: u.slotsMax ? u.slotsMax.map(n => n + '/' + n).slice(0, u.slotsMax.reduce((m, n, i) => n ? i + 1 : m, 0)).join(' ') : '' };
+}
 function areasOf(u) {
   return u.actions.map(a => { const s = areaSpec(a); return s ? { name: a.name, shape: s.shape, size: s.size, range: Math.max(5, a._range || 5) } : null; }).filter(Boolean);
 }
@@ -3102,7 +3508,8 @@ function previewPlacement(day, encIndex, layout, opts) {
   sim.units = party.concat(foes);
   sim.setTerrain(layout && layout.terrain);
   sim.place(party, foes, layout || {});
-  return sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, x: u.x, y: u.y, maxHp: u.maxHp, size: u.size, auras: aurasOf(u), areas: areasOf(u) }));
+  return sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, x: u.x, y: u.y, maxHp: u.maxHp, size: u.size, auras: aurasOf(u), areas: areasOf(u), sheet: sheetOf(u),
+    state: sim.unitState(u) }));
 }
 
 root.TacEngine = { Sim, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };

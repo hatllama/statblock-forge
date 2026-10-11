@@ -1402,12 +1402,7 @@ document.getElementById('forgeSide').addEventListener('click', ev=>{
   if(b.dataset.selEnc !== undefined) return select({ kind: 'enc', e: +b.dataset.selEnc });
   if(b.dataset.selMon){ const [e, i] = b.dataset.selMon.split(':').map(Number); return select({ kind: 'mon', e, i }); }
   if(b.dataset.importTo !== undefined) return select({ kind: 'import', e: +b.dataset.importTo });
-  if(b.dataset.addPc !== undefined){
-    const p = { id: uid(), mode:'custom', class:{ type:'fighter', level:4, options:{} }, name:'New Adventurer', count:1, hp:30, AC:15, saveBonus:2,
-      actions:[ { ...newAction('atk'), name:'Weapon Attack', dpr:'1d8 + 3', toHit:5, target:'enemy with least HP', ext: { range: 5 } } ] };
-    PARTY_PLAYERS.push(p); renderPartyBar(); refreshPreview();
-    return select({ kind: 'pc', i: PARTY_PLAYERS.length - 1 });
-  }
+  if(b.dataset.addPc !== undefined) return select({ kind: 'roster' });
   if(b.dataset.newEnc !== undefined){ encounters.push(freshEncounter()); refreshPreview(); return select({ kind: 'enc', e: encounters.length - 1 }); }
 });
 
@@ -1419,6 +1414,7 @@ function renderMain(){
   if(sel.kind === 'import'){ dyn.innerHTML = ''; fillImportTargets(); return; }
   if(sel.kind === 'file'){ dyn.innerHTML = ''; return; }
   if(sel.kind === 'library'){ dyn.innerHTML = libraryHtml(); return; }
+  if(sel.kind === 'roster'){ dyn.innerHTML = rosterHtml(); return; }
   if(sel.kind === 'enc'){ dyn.innerHTML = encounterHtml(sel.e); return; }
   const key = keyOfSel(), c = key !== null ? creatureByKey(key) : null;
   if(!c){ sel = { kind: 'enc', e: activeIdx }; dyn.innerHTML = encounterHtml(activeIdx); return; }
@@ -1809,10 +1805,43 @@ function addToLibrary(c){
 function cloneCreature(src){
   const c = JSON.parse(JSON.stringify(stripInternal(src)));
   c.id = uid(); delete c.savedAt;
-  (c.actions || []).forEach(a=>{ a.id = uid(); });
-  if(c.ext && c.ext.spellbook) (c.ext.spellbook.spells || []).forEach(sp=>{ sp.id = uid(); });
+  const ren = {};
+  (c.actions || []).forEach(a=>{ const n = uid(); ren[a.id] = n; a.id = n; });
+  const spells = (c.ext && c.ext.spellbook && c.ext.spellbook.spells) || [];
+  spells.forEach(sp=>{ const n = uid(); ren[sp.id] = n; sp.id = n; });
+  // a summon tied to its own spell (Spiritual Weapon) keeps pointing at that spell under its new id
+  c.actions.concat(spells).forEach(a=>{
+    const ex = a && a.ext; if(!ex) return;
+    if(ex.grantsBuff && ren[ex.grantsBuff.id]) ex.grantsBuff.id = ren[ex.grantsBuff.id];
+    if(ex.requiresBuff && ren[ex.requiresBuff]) ex.requiresBuff = ren[ex.requiresBuff];
+  });
   c._warnings = validateMonster(c);
   return c;
+}
+
+/* ---------------- the class roster: ready-made level-5 characters ---------------- */
+function rosterHtml(){
+  const builds = typeof CLASS_BUILDS !== 'undefined' ? CLASS_BUILDS : [];
+  const defNames = DEFAULT_PARTY.map(p=>p.name).join(', ');
+  return `<article class="sheet lib-page">
+    <div class="sheet-top">
+      <div class="sheet-id"><div class="sheet-title">Add a party member</div><div class="sheet-sub">Ready-made level-5 characters (2024 rules), one for every class. Add one, then edit it like any other sheet.</div></div>
+    </div>
+    <div class="crit-list">${builds.map(c=>{
+      const sb = c.ext && c.ext.spellbook;
+      const meta = [c.ext && c.ext.build, 'AC ' + c.AC, c.hp + ' HP', sb ? sb.spells.length + ' spells' : (c.actions || []).length + ' actions'].filter(Boolean).join(' · ');
+      return `<div class="crit">
+        <div class="crit-main static"><span class="sr-name">${escapeHtml(c.name)}</span><span class="sr-meta">${escapeHtml(meta)}</span></div>
+        <button class="mini-btn" data-roster-add="${escapeAttr(c.id)}">＋ Add</button>
+      </div>`; }).join('')}
+      <div class="crit">
+        <div class="crit-main static"><span class="sr-name">Blank adventurer</span><span class="sr-meta">One weapon attack, fill in the rest yourself</span></div>
+        <button class="mini-btn" data-roster-blank>＋ Add</button>
+      </div>
+    </div>
+    <div class="empty-note">Want the starting party back? <button class="mini-btn" data-roster-party>Use the default party</button>
+      <span class="sr-meta">${escapeHtml(defNames)}. Replaces the current party; download it first from Day file if you want to keep it.</span></div>
+  </article>`;
 }
 function libraryHtml(){
   const q = libQuery.trim().toLowerCase();
@@ -1850,6 +1879,21 @@ dyn.addEventListener('click', ev=>{
   if(d.statview){ const c = creatureByKey(d.statview); if(c){ statView.add(c.id); renderMain(); } return; }
   if(d.editview){ const c = creatureByKey(d.editview); if(c){ statView.delete(c.id); renderMain(); } return; }
   if(d.print !== undefined){ window.print(); return; }
+  if(d.rosterAdd || d.rosterBlank !== undefined){
+    let p;
+    if(d.rosterAdd){ const src = (typeof CLASS_BUILDS !== 'undefined' ? CLASS_BUILDS : []).find(x=>x.id === d.rosterAdd); if(!src) return; p = cloneCreature(src); }
+    else p = { id: uid(), mode:'custom', class:{ type:'fighter', level:5, options:{} }, name:'New Adventurer', count:1, hp:40, AC:16, saveBonus:2,
+      actions:[ { ...newAction('atk'), name:'Weapon Attack', dpr:'1d8 + 3', toHit:6, target:'enemy with least HP', ext: { range: 5 } } ] };
+    if(PARTY_PLAYERS.some(x=>x.name === p.name)){ let n = 2; while(PARTY_PLAYERS.some(x=>x.name === p.name + ' ' + n)) n++; p.name += ' ' + n; }
+    PARTY_PLAYERS.push(p); renderPartyBar(); refreshPreview();
+    return select({ kind: 'pc', i: PARTY_PLAYERS.length - 1 });
+  }
+  if(d.rosterParty !== undefined){
+    if(!confirm('Replace the current party with the default level-5 party? Your encounters stay.')) return;
+    PARTY_PLAYERS.splice(0, PARTY_PLAYERS.length, ...JSON.parse(JSON.stringify(DEFAULT_PARTY)));
+    renderPartyBar(); refreshPreview();
+    return select({ kind: 'pc', i: 0 });
+  }
   if(d.libSave){
     const c = creatureByKey(d.libSave); if(!c) return;
     const r = addToLibrary(c);
@@ -2305,6 +2349,34 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
   if(typeof scheduleSave === 'function') scheduleSave();
 });
 
+/* just the party: take the players out of a day file (or a party file), keep the encounters */
+document.getElementById('loadPartyInput').addEventListener('change', async (ev)=>{
+  const file = ev.target.files[0];
+  ev.target.value = '';
+  if(!file) return;
+  let day;
+  try{ day = JSON.parse(await file.text()); }
+  catch(e){ setStatus('loadStatus', "That file isn't valid JSON.", 'err'); return; }
+  const players = Array.isArray(day) ? day : day && day.players;
+  if(!Array.isArray(players) || !players.length){ setStatus('loadStatus', `"${escapeHtml(file.name)}" has no party in it.`, 'err'); return; }
+  const check = checkRealSchema({ players, encounters: [] });
+  if(!check.ok){
+    const el = document.getElementById('loadStatus'); el.className = 'status err';
+    el.innerHTML = `The party in "${escapeHtml(file.name)}" has ${check.errors.length} issue${check.errors.length===1?'':'s'}:<ul class="schema-errors">${check.errors.slice(0,12).map(e=>`<li>${escapeHtml(e)}</li>`).join('')}</ul>`;
+    return;
+  }
+  PARTY_PLAYERS.splice(0, PARTY_PLAYERS.length, ...JSON.parse(JSON.stringify(players)));
+  renderPartyBar(); renderAll();
+  setStatus('loadStatus', `Loaded the party from "${escapeHtml(file.name)}": ${PARTY_PLAYERS.map(p=>escapeHtml(p.name)).join(', ')}. Encounters kept.`, 'ok');
+  scheduleSave();
+});
+document.getElementById('downloadPartyBtn').addEventListener('click', ()=>{
+  const obj = { updated: Date.now(), name: (document.getElementById('dayNameInput').value || 'Party') + ' (party)', players: PARTY_PLAYERS.map(stripInternal), encounters: [ { monsters: [], playersSurprised: false, monstersSurprised: false } ] };
+  const blob = new Blob([JSON.stringify(obj, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = 'party.json'; document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+});
+
 /* ---------------------------------------------------------
    Init
 --------------------------------------------------------- */
@@ -2317,7 +2389,9 @@ document.getElementById('loadDayInput').addEventListener('change', async (ev)=>{
 const SAVE_KEY = 'forge-workspace-v1';
 // Bump PARTY_VERSION when a built-in party member is rebuilt; list which player ids changed in that version.
 // Saved workspaces from older versions get exactly those players swapped in, nothing else touched.
-const PARTY_VERSION = 9;
+const PARTY_VERSION = 10;
+// v10: the built-in party is now a generic level-5 one (data/party.js, made by tools/build-party.js). A saved party is left
+// as it is, it's the user's work; the old sheets are in parties/zaki-party-level-4.json.
 // v5: real saving throws for Eldar and Tacitus (from their sheets) and the save each of Eldar's spells calls for; only fills what's missing
 const PARTY_FN_UPDATES = { 5: p => {
   const fresh = DEFAULT_PARTY.find(x=>x.id === p.id); if(!fresh || !fresh.ext) return false;
@@ -2433,6 +2507,7 @@ async function loadWorkspace(){
       const ws = JSON.parse(raw);
       setSaveStatus(`✓ Restored work from ${new Date(ws.savedAt).toLocaleString([], {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'})}${updated.length ? ` · updated ${updated.join(', ')} to the latest sheet build` : ''}`, 'saved');
       if(updated.length) saveNote = ` · updated ${updated.join(', ')} to the latest sheet build`;
+      if((ws.partyVersion || 1) < 10) setSaveStatus('✓ Restored your work · the built-in party is now a level-5 group: press ＋ next to Party to add a class or swap it in', 'saved');
       if(updated.length || (ws.partyVersion || 1) < PARTY_VERSION){ saveReady = true; scheduleSave(); }
     } else {
       setSaveStatus(store.kind === 'none' ? 'Saving unavailable here — export a JSON to keep your work' : 'Autosave on', store.kind === 'none' ? 'unsaved' : '');

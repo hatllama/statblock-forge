@@ -330,7 +330,6 @@
 #viewWar svg.painting .tok{pointer-events:none;}
 #viewWar .terrain-legend{display:flex;gap:12px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--parchment-faint);margin:4px 2px 0;}
 #viewWar .terrain-legend i{display:inline-block;width:11px;height:11px;margin-right:5px;vertical-align:-1px;border-radius:2px;}
-#viewWar .tok{cursor:default;}
 #viewWar .setup .tok{cursor:grab;}
 #viewWar .setup .tok.dragging{cursor:grabbing;}
 #viewWar .tok text{pointer-events:none;}
@@ -338,6 +337,27 @@
 #viewWar .tok .ini{font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:500;}
 #viewWar .tok.active .halo{opacity:1;}
 #viewWar .halo{opacity:0;transition:opacity .15s;}
+#viewWar .tok.picked .halo{opacity:1;stroke:#9cc3e6;fill:rgba(156,195,230,.12);}
+#viewWar .tok{cursor:pointer;}
+#viewWar .inspect{margin:8px 2px 0;padding:10px 12px;border:1px solid var(--line);border-left:3px solid var(--gold-dim);background:var(--bg-raised);border-radius:2px;font-size:14px;color:var(--parchment-dim);}
+#viewWar .inspect.party{border-left-color:var(--party);}
+#viewWar .inspect.foes{border-left-color:var(--foe);}
+#viewWar .inspect .ih{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;margin-bottom:6px;}
+#viewWar .inspect .in{font-family:'Cinzel',serif;font-size:16px;color:var(--parchment);}
+#viewWar .inspect .isub{font-size:13px;color:var(--parchment-faint);flex:1;min-width:0;}
+#viewWar .inspect .ix{margin-left:auto;}
+#viewWar .inspect .istats{display:flex;flex-wrap:wrap;gap:6px 16px;font-family:'JetBrains Mono',monospace;font-size:11.5px;color:var(--parchment);margin-bottom:6px;}
+#viewWar .inspect .istats b{font-weight:500;color:var(--parchment-faint);margin-right:4px;font-size:10px;letter-spacing:.08em;text-transform:uppercase;}
+#viewWar .inspect .ihp{height:6px;background:#2a221b;border-radius:3px;overflow:hidden;margin:2px 0 8px;}
+#viewWar .inspect .ihp div{height:100%;}
+#viewWar .inspect .irow{margin:4px 0;line-height:1.45;}
+#viewWar .inspect .irow > b{font-family:'JetBrains Mono',monospace;font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--parchment-faint);margin-right:6px;font-weight:500;}
+#viewWar .inspect .chip{display:inline-block;font-family:'JetBrains Mono',monospace;font-size:11px;padding:1px 7px;margin:1px 3px 1px 0;border:1px solid var(--line);border-radius:10px;color:var(--parchment);}
+#viewWar .inspect .chip.bad{border-color:rgba(210,74,74,.6);color:#e9a3a3;}
+#viewWar .inspect .chip.good{border-color:rgba(122,162,103,.6);color:#b8d4a8;}
+#viewWar .inspect .chip.cool{border-color:rgba(156,195,230,.5);color:#bcd6ee;}
+#viewWar .inspect .ief{display:block;margin:2px 0;}
+#viewWar .inspect .ief i{font-style:normal;color:var(--parchment-faint);}
 #viewWar .aoe-legend{display:flex;gap:14px;flex-wrap:wrap;font-family:'JetBrains Mono',monospace;font-size:10.5px;color:var(--parchment-faint);margin:6px 2px 0;}
 #viewWar .aoe-legend i{display:inline-block;width:11px;height:11px;margin-right:5px;vertical-align:-1px;border-radius:2px;}
 #viewWar .aoe-legend i.dash{border:1.5px dashed rgba(224,80,60,.8);}
@@ -583,3 +603,4 @@ button.crit-main:hover .sr-name{color:var(--gold);}
 .sh .saves6 input{background:var(--bg);border:1px solid var(--line);color:var(--parchment);padding:6px 4px;font-family:'JetBrains Mono',monospace;font-size:13px;border-radius:2px;}
 .sh .saves6 input:focus{outline:none;border-color:var(--gold-dim);}
 @media (max-width:520px){ .sh .saves6{grid-template-columns:repeat(3,minmax(0,1fr));} }
+#viewWar .help.warn-note{color:#d9a35f;}
