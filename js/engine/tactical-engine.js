@@ -357,6 +357,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     climb: typeof ex.climb === 'number' && ex.climb > 0 ? ex.climb : 0,
     hover: !!ex.hover,                                                     // can stay up when knocked prone or stopped
     alt: 0,                                                                 // height above the ground under it, in 5-ft steps (flyers only)
+    noOA: !!ex.noOpportunityAttacks,                                        // "can't make opportunity attacks"
     critOn: typeof ex.critRange === 'number' && ex.critRange >= 15 && ex.critRange < 20 ? ex.critRange : 20,   // Champion: weapon crits on 19–20
     dmgMods: dmgModsOf(ex),                                                 // { resist, immune, vulnerable } by damage type, or null
     condImmune: Array.isArray(ex.condImmune) ? ex.condImmune.map(c => String(c).toLowerCase()) : [],     // climb speed: scales ledges with no check and no extra cost
@@ -419,7 +420,7 @@ function resetFightState(u) {
   u.focus = null; u.lastAttacker = null; u.lastIntent = ''; u.notedPacing = false;
   u.dmgDealt = 0; u.dmgTaken = 0; u.healed = 0;
   u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
-  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false;
+  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false; u.seenCancel = false;
   u.onBoard = true;
   u.concentrating = null; u.slotTurn = -1; u.reserveSlot = false;
   u.tookTurn = false; u.vex = null; u.saSeq = -1; u.movedThisTurn = false;
@@ -1299,15 +1300,16 @@ Sim.prototype.expected = function (u, a, t) {
   if (a.type === 'atk') {
     const sneakAvg = u.sneak && a.ext && a.ext.sneak && u.saSeq !== this.turnSeq ? avgDice(u.sneak.dice) * (this.featureAdv(u, t) || this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && this.dist(o, t) <= 5) ? 0.95 : 0.35) : 0;
     const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * this.kMult(u, a, t));
-    if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
-    return dmg * this.hitChance(u, t, a) * (a.targets || 1);
+    const thru = areaSpec(a) ? 1 : this.throughChance(u, t);
+    if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return thru * dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
+    return thru * dmg * this.hitChance(u, t, a) * (a.targets || 1);
   }
   if (a.type === 'debuff') {
     let v = this.effectValue(a.buff, t, true, u);
     const ex = a.ext || {};
     if (typeof ex.speedBonus === 'number' && ex.speedBonus < 0) v += this.meleeReach(t) > 0 ? this.kDpr(u, t) * (ex.speedBonus <= -30 ? 0.5 : 0.25) : 1;
-    if (ex.onHit && ex.onHit.noReactions) v += 1.5;
-    return (1 - saveP(avgDice(a.saveDC))) * v;
+    if (ex.onHit && ex.onHit.noReactions && t.reaction) v += 1.5 + (this.cancelReaction(t) || t.actions.some(o => o.actionSlot === 4 && this.usable(t, o)) ? 2 : 0);
+    return (areaSpec(a) ? 1 : this.throughChance(u, t)) * (1 - saveP(avgDice(a.saveDC))) * v;
   }
   return 0;
 };
@@ -1454,6 +1456,8 @@ Sim.prototype.effectValue = function (b, t, hostile, obs) {
 /* would this buff/debuff be wasted on `t` because the effect is already there? */
 Sim.prototype.alreadyHas = function (a, t) {
   if (a.type !== 'buff' && a.type !== 'debuff') return false;
+  // all it does is take away reactions, and this one has already spent its reaction
+  if (a.type === 'debuff' && a.ext && a.ext.onHit && a.ext.onHit.noReactions && !(a.buff && a.buff.condition) && !t.reaction) return true;
   const d = a.buff && a.buff.duration;
   if (d !== 'entire encounter' && d !== 'repeat the save each round') return false;
   return t.buffs.some(b => b.id === a.id);
@@ -1796,7 +1800,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
     const used = new Set();
     for (const st of path) {
       for (const e of this.adjacentEnemies(u, cx, cy)) {
-        if (used.has(e) || !e.reaction || this.distXY(st.x, st.y, e) <= this.meleeReach(e)) continue;
+        if (used.has(e) || !e.reaction || e.noOA || this.distXY(st.x, st.y, e) <= this.meleeReach(e)) continue;
         const a = e.actions.find(o => o.type === 'atk' && !o.useSaves && o.actionSlot === 0 && o._range <= 10 && !(o.ext && o.ext.swallow));
         if (a) { cost += blindTo ? this.kDpr(u, e) * 0.4 : this.expected(e, Object.assign({}, a, { targets: 1 }), u); used.add(e); }
       }
@@ -2083,7 +2087,7 @@ Sim.prototype.moveAlong = function (u, path) {
   for (const step of path) {
     const after = new Set(this.adjacentEnemies(u, step.x, step.y));
     for (const e of (u.disengaged ? [] : this.adjacentEnemies(u, u.x, u.y))) {
-      if (after.has(e) || !e.reaction || this.incap(e)) continue;
+      if (after.has(e) || !e.reaction || this.incap(e) || e.noOA) continue;
       const atk = e.actions.find(a => a.type === 'atk' && !a.useSaves && a.actionSlot === 0 && a._range <= 10 && !(a.ext && a.ext.swallow));
       if (!atk) continue;
       flush();
@@ -2206,9 +2210,9 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
     const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
     const matters = r === 20 || avgHit >= tgt.maxHp * 0.25 || avgHit >= tgt.hp || (a.ext && (a.ext.grapple || a.ext.swallow)) || !!a.riderEffect;
     const helper = this.alliesOf(tgt).find(h => h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.los(h.x, h.y, att.x, att.y) && (h.ai !== 'tactical' || matters) &&
-      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
+      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && !(x.ext && x.ext.cancelAction) && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
     if (helper) {
-      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
+      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && !(y.ext && y.ext.cancelAction) && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
       helper.reaction = false; this.spend(helper, x);
       const xdc = Number(avgDice(x.saveDC));
       const resisted = xdc < 99 && this.saveRoll(att, xdc, helper, x.ext && x.ext.saveAbility).success;
@@ -2680,6 +2684,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   if (!plan) plan = this.plan(u, a, 0) || { targets: [] };
   const targets = plan.friends && plan.friends.length ? plan.targets.concat(plan.friends.filter(f => !plan.targets.includes(f) && !f.dead)) : plan.targets;
   if (!targets.length && a.target !== 'self') return false;
+  if ((a.type === 'atk' || a.type === 'debuff') && !plan.area && !opt.inside && this.cancelled(u, a, targets)) return true;
   if (plan.area && a.ext && a.ext.zone) {
     const cells = new Set(plan.area.cells.map(c => c[0] + c[1] * this.W));
     const old = this.zones.filter(z => z.src === u.uid && z.id === a.id);
@@ -2706,6 +2711,38 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   this._coverFrom = ar0 && (ar0.shape === 'sphere' || (ar0.shape === 'cube' && Math.max(Math.abs(ar0.tx - ar0.ox), Math.abs(ar0.ty - ar0.oy)) > 1)) ? { x: ar0.tx, y: ar0.ty } : null;
   this._ignoreCover = /sacred flame/i.test(a.name || '') || !!(a.ext && a.ext.ignoreCover);
   try { return this.doActionInner(u, a, plan, opt, targets); } finally { this._coverFrom = keepC; this._ignoreCover = keepI; }
+};
+/* a reaction that voids an attack or spell aimed at its user (ext.cancelAction): the attacker saves or loses the action */
+Sim.prototype.cancelReaction = function (t) {
+  if (!t.reaction || t.dead || t.hp <= 0 || this.incap(t)) return null;
+  return t.actions.find(y => y.actionSlot === 4 && y.ext && y.ext.cancelAction && this.usable(t, y) && this.condOk(t, y)) || null;
+};
+Sim.prototype.cancelled = function (u, a, targets) {
+  for (const t of targets) {
+    if (t.team === u.team) continue;
+    const x = this.cancelReaction(t);
+    if (!x || this.dist(t, u) > Math.max(5, x.ext.range || 60)) continue;
+    t.reaction = false; this.spend(t, x);
+    t.seenCancel = true;
+    if (this.learning(otherTeam(t.team))) this.kind(otherTeam(t.team), t).cancel = true;
+    const dc = Number(avgDice(x.saveDC));
+    const s = dc < 99 ? this.saveRoll(u, dc, t, x.ext.saveAbility) : { success: false, total: 0 };
+    if (s.success) { this.ev('react', `${t.name} uses ${x.name}, but ${u.name} pushes through (${s.total} vs DC ${dc})`, { uid: t.uid, target: u.uid }); return false; }
+    this.ev('react', `${t.name} uses ${x.name}: ${u.name}'s ${a.name} is cancelled${dc < 99 ? ` (${s.total} vs DC ${dc})` : ''}`, { uid: t.uid, target: u.uid });
+    return true;
+  }
+  return false;
+};
+/* the chance u's action against t goes through, as u's side sees it */
+Sim.prototype.throughChance = function (u, t) {
+  if (t.team === u.team) return 1;
+  const m = this.kOf(u, t);
+  if (m && !(t.seenCancel || (m === 'learn' && this.kind(u.team, t).cancel))) return 1;
+  const x = this.cancelReaction(t);
+  if (!x) return 1;
+  const dc = Number(avgDice(x.saveDC));
+  if (dc >= 99) return 0.05;
+  return Math.min(1, Math.max(0.05, (21 + this.saveBonusFor(u, x.ext.saveAbility) - dc) / 20));
 };
 Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
   if (a.type === 'atk') {
@@ -3179,7 +3216,7 @@ Sim.prototype.settleAltitude = function (u, a, p) {
   if (!u.disengaged) {
     const before = new Set(this.adjacentEnemies(u, u.x, u.y, cur)), after = new Set(this.adjacentEnemies(u, u.x, u.y, to));
     for (const e of before) {
-      if (after.has(e) || !e.reaction || this.incap(e)) continue;
+      if (after.has(e) || !e.reaction || this.incap(e) || e.noOA) continue;
       const atk = e.actions.find(x => x.type === 'atk' && !x.useSaves && x.actionSlot === 0 && x._range <= 10 && !(x.ext && x.ext.swallow));
       if (!atk) continue;
       e.reaction = false;

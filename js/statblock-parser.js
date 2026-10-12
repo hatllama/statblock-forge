@@ -53,7 +53,7 @@ function normalize(text) {
     // markdown from Homebrewery / GM Binder / 5etools exports
     .replace(/^\s*>\s?/gm, '').replace(/^\s*#{1,6}\s*/gm, '').replace(/^\s*_{3,}\s*$/gm, '').replace(/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/gm, '')
     .replace(/\*\*\*?|__/g, '').replace(/(^|\s)\*(?=\S)/gm, '$1').replace(/(\S)\*(?=\s|[.,:;]|$)/gm, '$1').replace(/\|/g, ' ')
-    .replace(/^\s*[-•]\s+(?=[A-Z])/gm, '')
+    .replace(/^\s*[-•]\s+(?=[A-Z])/gm, '\u0007')          // list bullets: a marker parseBody reads (options of an action)
     .replace(/[−‒–—](?=\s*\d)/g, '-')          // −1, –1 → -1 (minus signs before numbers)
     .replace(/(\d)\s*[–—]\s*(\d)/g, '$1-$2')             // Recharge 5–6 → 5-6
     .replace(/[‘’]/g, "'").replace(/[“”]/g, '"')
@@ -82,7 +82,8 @@ function parseHeader(lines, flat, notes) {
   const h = { ext: {} };
   // name: the first line that isn't the size/type line
   h.name = lines[0] && !META_RE.test(lines[0]) ? lines[0].replace(/[*_#]/g, '').trim() : 'Unnamed creature';
-  if (h.name === h.name.toUpperCase() && /[A-Z]{3}/.test(h.name)) h.name = h.name.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (m, a, b) => a + b.toUpperCase());
+  if (h.name === h.name.toUpperCase() && /[A-Z]{3}/.test(h.name)) h.name = h.name.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (m, a, b) => a + b.toUpperCase())
+    .replace(/(\S\s+)(The|Of|And|A|An|In|On|To|For|At|By|From|With)(?=\s)/g, (m, a, w) => a + w.toLowerCase());
   const meta = lines.find(l => META_RE.test(l)) || '';
   const sm = meta.match(/^(Tiny|Small|Medium|Large|Huge|Gargantuan)/i);
   h.ext.size = sm ? cap(sm[1].toLowerCase()) : 'Medium';
@@ -222,7 +223,12 @@ function parseBody(lines) {
   let cur = 'traits', entry = null, started = false, intro = [];
   const push = () => { if (entry) sections[cur].push(entry); entry = null; };
   for (let i = 1; i < lines.length; i++) {
-    const l = lines[i];
+    let l = lines[i];
+    // a bulleted list right after an action that offers options ("Choose one option:") belongs to that action
+    if (l.charAt(0) === '\u0007') {
+      l = l.slice(1).trim();
+      if (entry && cur !== 'traits' && (entry._options || /:\s*$|choose one|one of the following|options?\b/i.test(entry.text))) { entry._options = true; entry.text += ' ' + l; continue; }
+    }
     const sec = l.match(SECTION_RE);
     if (sec) { push(); cur = sec[1].toLowerCase(); started = true; continue; }
     const em = l.match(/^([^.:]{1,70}?(?:\s*\([^)]*\))?)\s*[.:]\s+(.*)$/) || l.match(/^([^.:]{1,70}?\([^)]*\))\s*[.:]?\s+(.*)$/);
@@ -281,6 +287,8 @@ function setDamageType(a, parts) {
   a.ext.damageType = names.join(' + ');
   if (names.length > 1) a.ext.damageMix = names.map(n => [n, by[n]]);
 }
+const SKILL_ABIL = { athletics: 'str', acrobatics: 'dex', stealth: 'dex', sleight: 'dex', arcana: 'int', history: 'int', investigation: 'int', nature: 'int', religion: 'int',
+  insight: 'wis', medicine: 'wis', perception: 'wis', survival: 'wis', animal: 'wis', deception: 'cha', intimidation: 'cha', performance: 'cha', persuasion: 'cha' };
 function saveInfo(txt) {
   let m = txt.match(/DC\s*(\d+)\s*(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s*saving throw/i);
   if (m) return { dc: +m[1], ab: ABIL_NAMES[m[2].toLowerCase()] };
@@ -288,6 +296,13 @@ function saveInfo(txt) {
   if (m) return { dc: +m[2], ab: ABIL_NAMES[m[1].toLowerCase()] };
   m = txt.match(/(Strength|Dexterity|Constitution|Intelligence|Wisdom|Charisma)\s*\(?\s*DC\s*(\d+)\s*\)?\s*saving throw/i);
   if (m) return { dc: +m[2], ab: ABIL_NAMES[m[1].toLowerCase()] };
+  // "a DC 22 History or Intelligence check": an ability check to resist, rolled like a save of that ability
+  m = txt.match(/DC\s*(\d+)\s*((?:\(?[A-Z][a-z]+\)?\s*(?:or|\/)?\s*){1,3})(?:ability\s*)?check/);
+  if (m) {
+    const words = m[2].replace(/[()]/g, ' ').split(/\s+|\bor\b|\//).map(w => w.toLowerCase()).filter(Boolean);
+    const ab = words.map(w => ABIL_NAMES[w] || SKILL_ABIL[w]).filter(Boolean)[0];
+    if (ab) return { dc: +m[1], ab, check: true };
+  }
   return null;
 }
 function areaInfo(txt) {
@@ -327,7 +342,7 @@ function conditionIn(txt) {
 function durationIn(txt, cond) {
   if (cond === 'Is attacked with Advantage') return '1 round';                       // prone: stands up next turn
   if (/repeat the (?:saving throw|save)|at the end of each of its turns|end of each of (?:its|their) turns/i.test(txt)) return 'repeat the save each round';
-  if (/until the (?:end|start) of (?:its|the \w+'s|your|the target's) next turn|until the end of the target's next turn/i.test(txt)) return '1 round';
+  if (/until the (?:end|start) of (?:its|his|her|their|the \w+'s|your|the target's) next turn|until the end of the target's next turn/i.test(txt)) return '1 round';
   if (/\b(?:1|one) minute|\bhour|until it is freed|until the grapple ends|escape DC/i.test(txt)) return 'repeat the save each round';
   return '1 round';
 }
@@ -394,6 +409,13 @@ function readAttack(entry, nm, notes) {
     a.riderEffect = { dc: sv ? sv.dc : 99, buff: { duration: durationIn(hitText, cond), condition: cond } };
     if (sv && sv.ab) a.ext.riderSave = sv.ab;
   }
+  // "… reduces/alters its AC (…) by 3": a lower AC until it wears off
+  const acm = !a.riderEffect && !gm && (hitText.match(/(?:reduc|lower|decreas|alter|subtract)\w*[^.]{0,80}?\bAC\b[^.]{0,70}?\bby\s*(\d+)/i) || hitText.match(/\b(?:-|minus\s*|penalty of\s*)(\d+)\s*(?:penalty\s*)?to (?:its|their|the target's) AC/i));
+  if (acm) {
+    a.riderEffect = { dc: sv ? sv.dc : 99, buff: { duration: durationIn(hitText, null), ac: -(+acm[1]) } };
+    if (sv && sv.ab) a.ext.riderSave = sv.ab;
+    if (/\bor\b[^.]{0,40}(?:speed|saving throw)|one key statistic|one of/i.test(hitText)) notes.push(`${nm.name}: of the statistics it can lower, the War Table uses AC (−${acm[1]}).`);
+  }
   if (/\bsaving throw\b/i.test(hitText) && !sv) notes.push(`${nm.name}: has a save on hit whose DC wasn't readable.`);
   // "the target's speed is reduced by 10 feet" / "can't take reactions" on a hit (War Table only)
   const mvh = !sv ? movementEffect(hitText) : null;
@@ -445,7 +467,7 @@ function readSaveEffect(entry, nm, notes, h) {
     Object.assign(a, { type: 'debuff', saveDC: sv.dc, buff: { duration: durationIn(t, null) } });
     Object.assign(a.ext, mv, { wtOnly: true });
     a._avg = 2 * targets;
-    notes.push(`${nm.name}: ${mv.speedBonus ? (mv.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mv.speedBonus && mv.onHit ? ' and ' : ''}${mv.onHit ? 'blocks its reactions' : ''} — War Table only; the exported day has no movement.`);
+    notes.push(`${nm.name}: ${mv.speedBonus ? (mv.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mv.speedBonus && mv.onHit ? ' and ' : ''}${mv.onHit ? 'blocks its reactions' : ''} — War Table only; the exported day has no ${mv.speedBonus ? 'movement' : 'reactions'}.`);
   } else {
     notes.push(`${nm.name}: a save with no damage or condition the simulator can use; left out.`);
     return null;
@@ -715,17 +737,19 @@ function comboAction(name, combo) {
 /* ---------- one statblock ---------- */
 function parseOne(block) {
   const notes = [];
-  const lines = block.split('\n').map(l => l.trim()).filter(Boolean);
+  const bodyLines = block.split('\n').map(l => l.trim()).filter(Boolean);
+  const lines = bodyLines.map(l => l.replace(/^\u0007/, ''));
   // D&D Beyond puts labels on their own line ("Armor Class" / "11 (hide armor)"): join them back up
-  const joined = [];
+  const joined = [], bullet = [];
   for (let i = 0; i < lines.length; i++) {
     const l = lines[i];
+    bullet.push(bodyLines[i].charAt(0) === '\u0007');
     if (/^(Armor Class|Hit Points|Speed|Saving Throws|Skills|Senses|Languages|Challenge|Proficiency Bonus|Damage Resistances|Damage Immunities|Damage Vulnerabilities|Condition Immunities|STR|DEX|CON|INT|WIS|CHA|Initiative)$/i.test(l) && lines[i + 1] && !SECTION_RE.test(lines[i + 1])) { joined.push(l + ' ' + lines[i + 1]); i++; }
     else joined.push(l);
   }
   const flat = joined.join('\n');
   const h = parseHeader(joined, flat, notes);
-  const body = parseBody(joined);
+  const body = parseBody(joined.map((l, i) => (bullet[i] ? '\u0007' : '') + l));
 
   const actions = [];
   const spellOut = [];
@@ -734,15 +758,26 @@ function parseOne(block) {
   if (firstDC) h._dc = +firstDC;
 
   // traits
+  const acNote = (flat.match(/\b(?:Armor Class|AC)\b\s*:?\s*\d+\s*\(([^)]*)\)/i) || [])[1] || '';
   for (const e of body.traits) {
+    const nm0 = nameAndUsage(e.raw);
+    // "Can't make opportunity attacks" (War Table)
+    const noOA = /(?:can't|cannot|can not|doesn't|does not|never) (?:make|take) opportunity attacks/i.test(e.text);
+    if (noOA) h.ext.noOpportunityAttacks = true;
+    // the trait that explains its AC ("Armor Class 18 (Calculated Defense)") is already in the number
+    if (acNote && acNote.toLowerCase().indexOf(nm0.name.toLowerCase()) >= 0) { notes.push(`"${nm0.name}" is already counted in its Armor Class.`); continue; }
+    if (noOA && !/\d|\bDC\b|advantage|resist|immun|saving throw|hit points|damage/i.test(e.text.replace(/opportunity attacks?/gi, ''))) { notes.push(`"${nm0.name}": can't make opportunity attacks (War Table).`); continue; }
     const r = readTrait(e, h, notes, actions);
     if (r === 'spell') { const so = parseSpellcasting(e, h, notes); if (so.spellbook) spellbook = so.spellbook; spellOut.push(...so.actions); }
     else if (!r) {
       const nm = nameAndUsage(e.raw);
+      // set off by something other creatures do ("Whenever a creature within 60 feet scores a critical hit…"): not an aura
+      if (/^(?:whenever|each time|every time)\b[^.]*\b(?:deals?|scores?|fails?|expends?|casts?|spends?|uses?|makes?|regains?|hits?)\b/i.test(e.text) &&
+          !/(?:start|end)s? (?:of )?(?:its|their|each of its) turns?/i.test(e.text)) { notes.push(`Trait "${nm.name}" is set off by what other creatures do; not modelled.`); continue; }
       const a = readAttack(e, nm, notes) || readSaveEffect(e, nm, notes, h);
       if (a) { a.actionSlot = 5; actions.push(a); }
       else if (!/^(Amphibious|Keen|Standing Leap|Spider Climb|Water Breathing|Hold Breath|False Appearance|Sunlight Sensitivity|Devil's Sight|Shapechanger|Echolocation|Flyby|Aggressive|Charge|Pounce|Trampling Charge|Siege Monster|Dark Devotion|Brave|Mimicry|Illumination|Web Sense|Web Walker|Limited Amphibiousness|Beast of Burden|Labyrinthine Recall|Fey Ancestry|Avoidance|Turn Immunity|Turn Resistance|Undead Fortitude|Immutable Form|Magic Weapons|Rejuvenation|Incorporeal Movement|Ethereal Sight)/i.test(nm.name))
-        notes.push(`Trait "${nm.name}" isn't modelled.`);
+        notes.push(noOA ? `Trait "${nm.name}": can't make opportunity attacks (War Table); the rest isn't modelled.` : `Trait "${nm.name}" isn't modelled.`);
       else notes.push(`Trait "${nm.name}" has no combat number; left out.`);
     }
   }
@@ -758,6 +793,9 @@ function parseOne(block) {
       const nm = nameAndUsage(e.raw);
       const low = nm.name.toLowerCase();
       if (/^multiattack/.test(low)) { multis.push({ e, sec }); continue; }
+      // a routine under its own name: "Legislative Revision. Elparin makes two Statutory Editing strikes…"
+      if (sec === 'actions' && !/\bto hit\b|Attack(?:\s*Roll)?\s*:|saving throw|\bDC\s*\d/i.test(e.text) &&
+          /\bmakes?\s+(?:two|three|four|five|six|[2-9])\b[^.]{0,60}?\b(?:attacks?|strikes?)\b/i.test(e.text) && !/swallow/i.test(low + ' ' + e.text)) { multis.push({ e, sec, label: nm.name }); continue; }
       if (/^spellcasting/.test(low)) { const so = parseSpellcasting(e, h, notes); if (so.spellbook) spellbook = so.spellbook; so.actions.forEach(a => { if (sec === 'bonus actions' && a.actionSlot === 0) a.actionSlot = 1; spellOut.push(a); }); continue; }
       // bonus-action spell menus ("Divine Aid (3/Day). The priest casts Bless, …, Healing Word …")
       const castsList = e.text.match(/\bcasts?\s+(?:one of the following spells?:?\s*)?([A-Z][^.]*?)(?:,\s*using|\.\s|$)/);
@@ -777,6 +815,17 @@ function parseOne(block) {
         continue;
       }
       if (/nimble escape|cunning action/i.test(low) || (/\bHide action\b/i.test(e.text) && sec === 'bonus actions')) { h.ext.bonusDisengage = true; parsedBySection[sec].push(hideAction(h, 'Hide (' + nm.name + ')')); continue; }
+      // "When a creature targets it with an attack or spell … must succeed on a DC 22 Intelligence saving throw or the action is canceled"
+      const firstName = h.name.split(/[\s,]+/)[0];
+      if (sec === 'reactions' && /\btargets?\s+(?:it|him|her|them|[A-Z][\w'-]+)\s+with an attack/i.test(e.text) && /\b(?:cancel+ed|negated|wasted|is lost|fails? automatically|has no effect)\b/i.test(e.text)) {
+        const sv = saveInfo(e.text);
+        const self = new RegExp('targets?\\s+(?:it|him|her|them|' + firstName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + ')\\b', 'i').test(e.text) && !/an ally|another creature/i.test(e.text);
+        if (self) {
+          parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'debuff', saveDC: sv ? sv.dc : 99, target: 'enemy with highest DPR', buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: rangeOf(e.text, 60).ranged || 60, cancelAction: true, selfOnly: true, ...(sv ? { saveAbility: sv.ab } : {}) } });
+          notes.push(`${nm.name}: on the War Table it can void an attack or spell aimed at ${firstName} (save or the action is lost); the export treats it as disadvantage on that attack.`);
+          continue;
+        }
+      }
       if (sec === 'reactions' && /attack roll against (?:it|him|her|them)|is targeted by an attack|would hit (?:it|him|her)/i.test(e.text) && /disadvantage/i.test(e.text) && !/to (?:its|his|her|their) AC/i.test(e.text)) {
         const sv = saveInfo(e.text);
         parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'debuff', saveDC: sv ? sv.dc : 99, target: 'enemy with highest DPR', buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: rangeOf(e.text, 60).ranged || 60, ...(sv ? { saveAbility: sv.ab } : {}), ...(/against (?:it|him|her|them)self|against (?:it|him|her)\b/i.test(e.text) && !/ally|another creature/i.test(e.text) ? { selfOnly: true } : {}) } });
@@ -819,13 +868,15 @@ function parseOne(block) {
 
   // multiattack: replace its component attacks with one routine
   let slot0 = parsedBySection.actions;
-  for (const { e } of multis) {
+  for (const { e, label } of multis) {
     const others = slot0.filter(a => a.type !== 'atk' || a.useSaves);
     const ma = readMultiattack(e, slot0, notes, others);
     if (!ma) continue;
     const used = new Set(ma.main.map(c => c.a));
     const multi = comboAction('Multiattack', ma.main);
-    multi.name = 'Multiattack (' + ma.main.map(c => `${c.n} ${c.a.name}`).join(', ') + ')';
+    multi.name = (label || 'Multiattack') + ' (' + ma.main.map(c => `${c.n} ${c.a.name}`).join(', ') + ')';
+    const optOut = label && e.text.match(/\bor\s+uses?\s+(?:its\s+)?([A-Z][\w' ]+?)(?:\s+once)?\s*\.?$/);
+    if (optOut && !slot0.concat(spellOut).some(a => a.name.toLowerCase() === optOut[1].trim().toLowerCase())) notes.push(`${label}: the ${optOut[1].trim()} option isn't modelled; it always makes the attacks.`);
     const altActs = ma.alts.map((c, i) => { c.forEach(x => used.add(x.a)); const x = comboAction('Multiattack' + (ma.alts.length > 1 ? ` ${i + 2}` : ' (alternative)'), c); x.name = 'Multiattack (' + c.map(y => `${y.n} ${y.a.name}`).join(', ') + ')'; x.ext.wtOnly = true; return x; });
     // Frightful Presence & co. used as part of the routine: fire them before the fight starts
     ma.pre.forEach(p => { p.actionSlot = -3; p.condition = 'default'; p.freq = 'at will'; p._pre = true; });

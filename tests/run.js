@@ -240,6 +240,11 @@ section('Statblock parser (no AI)');
   expect(rd.ext.immune.includes('fire') && act('adult-red-dragon-2014.txt', /Fire Breath/).ext.damageType === 'fire' && /piercing \+ fire \+ slashing/.test(act('adult-red-dragon-2014.txt', /Multiattack/).ext.damageType), 'damage types on attacks, breath weapons and mixed multiattacks');
   expect(parsed['wolf-2014.txt'].ext.packTactics && !act('wolf-2014.txt', /Pack Tactics/), 'wolf Pack Tactics is a trait, not an action');
   expect(os.actions.filter(a => a.actionSlot === 3).length === 3 && act('osric-homebrew.txt', /Ruinous/).ext.zone.difficult, 'Osric: lair actions and difficult terrain');
+  const el = parsed['elparin-homebrew.txt'];
+  expect(el.name === 'Elparin, the Attendant Athacus' && el.ext.noOpportunityAttacks, 'Elparin: name casing, no opportunity attacks');
+  expect(act('elparin-homebrew.txt', /^Legislative Revision/).targets === 2 && act('elparin-homebrew.txt', /^Legislative Revision/).riderEffect.buff.ac === -3, 'Elparin: a named routine of two Statutory Editing strikes, each lowering AC by 3 on a failed save');
+  expect(act('elparin-homebrew.txt', /Procedural Nullification/).ext.cancelAction && act('elparin-homebrew.txt', /Cite Precedent/).ext.onHit.noReactions && act('elparin-homebrew.txt', /Cite Precedent/).ext.saveAbility === 'int', 'Elparin: cancelling reaction; an ability check read as a save');
+  expect(!el.actions.some(a => /Majd|Suspension/.test(a.name)) && !el._notes.some(n => /Suspension of/.test(n)), 'Elparin: triggered traits aren\'t auras; an action\'s bulleted options stay with it');
   // every parsed creature can fight in both simulators
   const party = fixture('worms-day.json').players;
   let tacErr = 0;
@@ -251,6 +256,13 @@ section('Statblock parser (no AI)');
     try { for (let i = 0; i < 5; i++) Tac.runDay(JSON.parse(JSON.stringify(day)), { seed: 7 + i, partyAI: 'tactical' }); } catch (e) { tacErr++; console.log('  War Table error on', f, e.message); }
   }
   check(tacErr === 0, `${tacErr} parsed creatures broke the War Table`);
+  {
+    const mon = JSON.parse(JSON.stringify(el)); mon.id = 'elp'; mon.mode = 'custom'; mon.actions.forEach((a, i) => { a.id = 'elp' + i; });
+    let cancels = 0, elOA = 0;
+    for (let i = 0; i < 4; i++) for (const r of Tac.runDay({ players: party, encounters: [{ monsters: [mon] }] }, { seed: 40 + i, partyAI: 'tactical', record: true }))
+      for (const e of r.events) { if (/is cancelled/.test(e.text)) cancels++; if (e.kind === 'oa' && e.uid && e.uid.indexOf('elp') >= 0) elOA++; }
+    check(cancels > 0 && elOA === 0, `Elparin voids attacks aimed at him (${cancels}) and never takes opportunity attacks (${elOA})`);
+  }
   console.log(`  ${Object.keys(parsed).length} statblocks parsed`);
 }
 

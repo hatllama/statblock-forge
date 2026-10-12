@@ -1,0 +1,80 @@
+ELPARIN, THE ATTENDANT ATHACUS
+Medium Humanoid (Half-Elf, Attendant), Lawful Neutral
+Armor Class 18 (Calculated Defense)
+Hit Points 210 (28d8 + 84)
+Speed 30 ft.
+STR
+10 (+0)
+
+DEX
+14 (+2)
+
+CON
+16 (+3)
+
+INT
+26 (+8)
+
+WIS
+22 (+6)
+
+CHA
+18 (+4)
+
+Saving Throws Con +9, Int +14, Wis +12, Cha +10
+Skills History +20, Insight +18, Investigation +20, Perception +12, Persuasion +16
+Damage Immunities Psychic; Bludgeoning, Piercing, and Slashing from Nonmagical Attacks
+Condition Immunities Charmed, Frightened, Stunned
+Senses Passive Perception 22
+Languages Common, Elvish, Celestial, Infernal, Draconic, Undercommon
+Challenge 17 (18,000 XP)
+Calculated Defense. Elparin adds his Intelligence modifier (+8) to his Armor Class. He relies on spatial geometry and predictive timing
+rather than martial skill or magic armor.
+Unfit for Violence. Elparin possesses no innate martial prowess or standard magical spellcasting. He cannot make opportunity attacks, and
+his physical attacks deal no non-supernatural damage. However, his mastery of constitutional reality alters how mechanics function for
+everyone around him.
+Encyclopedic Jurisprudence. Elparin draws upon legal concepts learned across the continent, applying distinct passive fields based on
+regional precedents:
+• Reultran Economic Law: Whenever a creature within 60 feet expends a spell slot, superiority die, or daily resource, it must pay a
+"transaction tax" of 10 force damage unless it expends its movement to pay the fee.
+• Majd Emotional Custom: Whenever a creature within 60 feet deals critical hit damage or fails a saving throw by 5 or more, the emotional
+outburst triggers a civil penalty, forcing the target to make a DC 22 Wisdom saving throw or become frightened of Elparin until the end of
+its next turn.
+• Ters Ursel Rebuilding Charter: Creatures within 30 feet of Elparin cannot regain hit points or gain temporary hit points while standing on
+broken, damaged, or altered terrain.
+
+Actions
+Legislative Revision. Elparin makes two Statutory Editing strikes or uses Expunge Clause once.
+Statutory Editing. Ranged Spell Attack: +14 to hit, range 90 ft., one target. Hit: 26 (4d8 + 8) psychic damage. Elparin cites a fundamental
+flaw in the target's physical logic, forcing the target to make a DC 22 Intelligence saving throw. On a failure, Elparin alters one key statistic
+on the target (AC, movement speed, or a single saving throw modifier) by 3 until the start of his next turn.
+Expunge Clause (Recharge 5–6). Elparin selects one established rule of combat or magic within 90 feet and temporarily erases it from
+existence until the start of his next turn. Choose one option:
+• Suspension of Gravity: Fall damage, flying restrictions, and ground movement mechanics cease to exist. All creatures float helplessly in
+place; ground movement is 0 ft., and attack rolls have disadvantage.
+• Suspension of Immunity: All damage immunities and resistances across all creatures within 90 feet vanish completely.
+• Suspension of Causality: Spells and attacks made this turn deal zero immediate damage. Instead, all accumulated damage is delayed
+and dealt all at once at the start of Elparin's next turn as pure psychic damage.
+Constitutional Amendment (3/Day). Elparin rewrites an active spell, ability, or mechanic currently affecting the battlefield. He can change a
+spell's damage type, swap the required saving throw statistic of an ongoing effect to Intelligence, or change the target of a concentration
+spell to another creature within range.
+
+Reactions
+Stay of Execution. When Elparin or an ally within 60 feet takes damage that would reduce them to 0 hit points, Elparin taps his journal and
+issues an immediate injunction. The damage is momentarily erased from the record, leaving the target at 1 hit point until the end of the
+next turn, at which point the clause reappears.
+Procedural Nullification. When a creature within 60 feet targets Elparin with an attack or spell, Elparin cites an illegal entry in the action.
+The attacker must succeed on a DC 22 Intelligence saving throw or the action is canceled and the attacker's action is wasted.
+
+Legendary Actions
+Elparin can take 3 legendary actions, choosing from the options below. Only one option can be used at a time and only at the end of another
+creature's turn. Elparin regains spent legendary actions at the start of his turn.
+Cite Precedent. Elparin forces one creature within 60 feet to make a DC 22 History or Intelligence check. On a failure, the creature is
+overwhelmed by legal paradoxes and cannot take reactions until the end of its next turn.
+Redact Position (Costs 2 Actions). Elparin temporarily erases the spatial coordinates of one creature within 60 feet. The target vanishes
+from the battlefield until the start of its turn, reappearing in an unoccupied space of Elparin's choosing within 30 feet of its original position.
+Draft Injunction (Costs 3 Actions). Elparin declares a specific action type (e.g., "Casting spells of 3rd level or higher," "Making melee
+attacks," or "Using bonus actions") illegal. Until the end of his next turn, any creature that performs that action takes 33 (6d10) psychic
+damage.
+
+
