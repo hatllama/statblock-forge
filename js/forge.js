@@ -264,7 +264,7 @@ function validateBuffObject(buff, issues, prefix, ax){
     }
   });
   const hasEffect = ['ac','toHit','damage','damageReduction','damageMultiplier','damageTakenMultiplier','condition','save'].some(f=>buff[f] !== undefined);
-  if(!hasEffect && !(ax && (ax.teleport || ax.grantFly || ax.speedBonus || ax.mirror || ax.concBonus || ax.stepAway || (ax.onHit && ax.onHit.noReactions) || ax.resist))) issues.push(`${prefix} has a duration but no actual effect field (ac/toHit/damage/damageReduction/damageMultiplier/damageTakenMultiplier/condition) — it won't do anything`);
+  if(!hasEffect && !(ax && (ax.teleport || ax.grantFly || ax.speedBonus || ax.mirror || ax.concBonus || ax.stepAway || (ax.onHit && ax.onHit.noReactions) || ax.resist || ax.riposte || ax.brace || ax.spellbreaker || ax.extraAction))) issues.push(`${prefix} has a duration but no actual effect field (ac/toHit/damage/damageReduction/damageMultiplier/damageTakenMultiplier/condition) — it won't do anything`);
 }
 
 function validateAction(a, issues, prefix){

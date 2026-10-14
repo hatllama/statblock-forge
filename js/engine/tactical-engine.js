@@ -357,7 +357,10 @@ function makeUnit(tpl, team, idx, count, isPC) {
     climb: typeof ex.climb === 'number' && ex.climb > 0 ? ex.climb : 0,
     hover: !!ex.hover,                                                     // can stay up when knocked prone or stopped
     alt: 0,                                                                 // height above the ground under it, in 5-ft steps (flyers only)
-    noOA: !!ex.noOpportunityAttacks,                                        // "can't make opportunity attacks"
+    noOA: !!ex.noOpportunityAttacks,
+    indomitable: ex.indomitable && ex.indomitable.uses ? { uses: +ex.indomitable.uses, bonus: +ex.indomitable.bonus || 0 } : null,   // reroll a failed save
+    saveAdvVs: Array.isArray(ex.saveAdvVs) ? ex.saveAdvVs.map(c => String(c).toLowerCase()) : [],                          // Advantage on saves against these conditions
+    resMax: ex.resources && typeof ex.resources === 'object' ? ex.resources : null,                                         // shared pools: { 'Superiority Dice': { uses, reset, regainOnInit } }                                        // "can't make opportunity attacks"
     critOn: typeof ex.critRange === 'number' && ex.critRange >= 15 && ex.critRange < 20 ? ex.critRange : 20,   // Champion: weapon crits on 19–20
     dmgMods: dmgModsOf(ex),                                                 // { resist, immune, vulnerable } by damage type, or null
     condImmune: Array.isArray(ex.condImmune) ? ex.condImmune.map(c => String(c).toLowerCase()) : [],     // climb speed: scales ledges with no check and no extra cost
@@ -391,6 +394,11 @@ function makeUnit(tpl, team, idx, count, isPC) {
     u.recovery = sb.recovery && sb.recovery.levels ? sb.recovery : null;   // e.g. Arcane Recovery { levels: 2, maxSlot: 5, restores: [actionId] }
   }
   u.baseFly = u.fly;
+  // "takes one additional action" (Action Surge) sits outside the normal action lists: it's used at the end of a turn
+  u.surges = u.actions.filter(a => a.ext && a.ext.extraAction);
+  if (u.surges.length) { u.actions = u.actions.filter(a => !u.surges.includes(a)); u.surges.forEach(a => initUses(u, a)); }
+  if (u.resMax) for (const k in u.resMax) u.uses.set('res:' + k, +u.resMax[k].uses || 0);
+  if (u.indomitable) u.uses.set('__indom', u.indomitable.uses);
   u.uses.set('__luck', u.luckMax);
   u.uses.set('__legres', u.legResMax);
   resetFightState(u);
@@ -422,6 +430,8 @@ function resetFightState(u) {
   u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
   u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false; u.seenCancel = false;
   u.onBoard = true;
+  // Relentless & co.: rolling initiative with an empty pool gives one back
+  if (u.resMax) for (const k in u.resMax) if (u.resMax[k].regainOnInit && !(u.uses.get('res:' + k) > 0)) u.uses.set('res:' + k, +u.resMax[k].regainOnInit);
   u.concentrating = null; u.slotTurn = -1; u.reserveSlot = false;
   u.tookTurn = false; u.vex = null; u.saSeq = -1; u.movedThisTurn = false;
   if (u.baseFly !== undefined) u.fly = u.baseFly;
@@ -673,6 +683,9 @@ Sim.prototype.buffInfo = function (u, b) {
 /* limited uses left: "Rage 2/3", recharges, once-a-fight features */
 Sim.prototype.usesInfo = function (u) {
   const out = [];
+  if (u.resMax) for (const k in u.resMax) out.push(`${k} ${u.uses.get('res:' + k) || 0}/${u.resMax[k].uses}`);
+  if (u.indomitable) out.push(`Indomitable ${u.uses.get('__indom') || 0}/${u.indomitable.uses}`);
+  for (const a of u.surges || []) { const k = freqKind(a.freq); if (k !== 'at will') out.push(`${a.name} ${u.uses.get(a.id) || 0}/${a.freq.uses || 1}`); }
   for (const a of u.actions) {
     if (a._spell) continue;
     const k = freqKind(a.freq);
@@ -931,6 +944,7 @@ Sim.prototype.usable = function (u, a) {
     return this.slotFor(u, a._spell.level) > 0;
   }
   if (a.ext && a.ext.pool) return (u.uses.get(a.id) || 0) >= 1;
+  if (a.ext && a.ext.resource && !((u.uses.get('res:' + a.ext.resource) || 0) >= (a.ext.resourceCost || 1))) return false;   // a superiority die to spend
   const k = freqKind(a.freq);
   if (k === 'at will') return true;
   if (k === '1/fight') return !u.fightUses.has(a.id);
@@ -950,6 +964,7 @@ Sim.prototype.spend = function (u, a) {
     if (a._spell.conc) { this.endConcentration(u, 'casts ' + a.name); u.concentrating = a.id; }
     return;
   }
+  if (a.ext && a.ext.resource) u.uses.set('res:' + a.ext.resource, Math.max(0, (u.uses.get('res:' + a.ext.resource) || 0) - (a.ext.resourceCost || 1)));
   const k = freqKind(a.freq);
   if (k === '1/fight') u.fightUses.set(a.id, true);
   else if (k === 'recharge') u.recharge.set(a.id, false);
@@ -2115,7 +2130,13 @@ Sim.prototype.moveAlong = function (u, path) {
       }
       if (this.record) { flush(); this.ev('effect', `${u.name} climbs ${rise > 0 ? 'up' : 'down'} the ${Math.abs(rise) * 5}-ft ledge (Athletics ${tot} vs DC ${dc})`, { uid: u.uid }); }
     }
+    const was = this._braceCheck ? null : this.enemiesOf(u).filter(e => e.reaction && e.onBoard && !e.dead && e.actions.some(y => y.actionSlot === 4 && y.ext && y.ext.brace) && this.dist(e, u) > this.meleeReach(e));
     u.x = step.x; u.y = step.y; seg.push({ x: step.x, y: step.y }); u.movedThisTurn = true; this.boardChanged();
+    if (was && was.length) for (const e of was) if (this.dist(e, u) <= this.meleeReach(e)) {
+      flush(); this._braceCheck = true;
+      try { this.counterAttack(e, u, 'brace'); } finally { this._braceCheck = false; }
+      if (u.dead || u.hp <= 0) return;
+    }
     const rough = !u.fly && this.T.any && (this.T.rough[step.x + step.y * this.W] || this.T.cover[step.x + step.y * this.W]);
     u._steps = (u._steps || 0) + (rough ? 2 : 1) + (u.fly || (u.climb && Math.abs(rise) >= 2) ? 0 : (Math.abs(rise) >= 2 ? Math.abs(rise) : Math.max(0, rise)));
   }
@@ -2150,7 +2171,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   const physical = ab === 'str' || ab === 'dex' || ab === 'strdex';
   // paralysed, stunned, unconscious or petrified creatures automatically fail Strength and Dexterity saves
   if (physical && ['Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].some(x => c.has(x))) return { success: false, roll: 0, total: 0, autoFail: true };
-  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv);
+  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
   const dis = c.has('Save with Disadvantage') || c.has('Attacks and saves with Disadvantage') || ((ab === 'dex') && c.has('Restrained'));
   let r = this.d20(adv, dis, false);
   let total = r + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true);
@@ -2169,6 +2190,15 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   // restrained, frightened, blinded…), or damage that would drop it or take a big bite out of what it has left
   this.learnSave(t, dc, ab, total >= dc);
   const failDmg = this._saveDmg || 0;
+  // Indomitable: reroll a failed save with a bonus (saved for ones that matter)
+  if (total < dc && t.indomitable && (t.uses.get('__indom') || 0) > 0 && dc < 99 &&
+      ((this._saveStakes || 0) >= 1 || failDmg >= t.hp * 0.25 || t.ai !== 'tactical')) {
+    t.uses.set('__indom', t.uses.get('__indom') - 1);
+    const r2 = this.d20(adv, dis, false);
+    const tot2 = r2 + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + t.indomitable.bonus;
+    this.ev('react', `${t.name} uses Indomitable: rerolls the save (${Math.round(total)} → ${Math.round(tot2)})`, { uid: t.uid });
+    r = r2; total = tot2;
+  }
   const dangerous = (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
   if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
@@ -2449,8 +2479,9 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
       if (t.dead) continue;
       this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1);
       if (a.riderEffect && a.riderEffect.buff && DANGER_CONDS.includes(a.riderEffect.buff.condition)) this._saveStakes = 1;
+      this._saveCond = a.riderEffect && a.riderEffect.buff ? a.riderEffect.buff.condition : null;
       const s = this.saveRoll(t, Number(avgDice(a.toHit)), u, a.ext && a.ext.saveAbility);
-      this._saveDmg = 0; this._saveStakes = 0;
+      this._saveDmg = 0; this._saveStakes = 0; this._saveCond = null;
       const at = this.mark();
       const roll = (a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? rollDice(a.ext.dprIfHurt, this.R, false) + this.sumBuff(u, 'damage', true) : dmgRoll;
       let dmg = s.success ? (a.halfOnSave ? Math.floor(roll * mult / 2) : 0) : Math.floor(roll * mult);
@@ -2529,7 +2560,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
   this.hoist(at);
   if (agathys && !u.dead) {
     const at2 = this.mark();
-    const d = this.damage(t, u, agathys.retaliate, { type: 'cold' });
+    const d = this.damage(t, u, agathys.retaliate, { type: agathys.retaliateType || 'cold' });
     this.ev('attack', `${t.name}'s ${agathys.name} bites back at ${u.name}, ${d} damage`, { uid: t.uid, target: u.uid, hit: true, dmg: d });
     this.hoist(at2);
   }
@@ -2537,8 +2568,27 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
   if (r.hit && ex.onHit) this.onHitEffects(u, t, a, dealt);
   if (r.hit && ex.leap) this.leap(u, a, t, opt);
   this.afterHitExt(u, t, a, r.hit);
+  if (!r.hit && !opt.inside && !a.useSaves && (a._range || 5) <= 10 && !u.dead && u.onBoard) this.counterAttack(t, u, 'riposte');
   return r;
 };
+/* Riposte / Brace: a reaction that answers with one melee attack (ext.riposte or ext.brace: { bonus: '1d10' }) */
+Sim.prototype.counterAttack = function (t, u, kind) {
+  if (!t.reaction || t.dead || t.hp <= 0 || this.incap(t) || !t.onBoard || t.team === u.team) return false;
+  const x = t.actions.find(y => y.actionSlot === 4 && y.ext && y.ext[kind] && this.usable(t, y) && this.condOk(t, y));
+  if (!x) return false;
+  const melee = t.actions.filter(o => o.type === 'atk' && !o.useSaves && o.actionSlot === 0 && (o._range || 5) <= 10 && !(o.ext && (o.ext.swallow || o.ext.resource)))
+    .map(o => ({ o, per: avgDice((o.ext && o.ext.wtDpr) || o.dpr) }))
+    .filter(m => this.dist(t, u) <= Math.max(5, m.o._range || 5));
+  if (!melee.length) return false;
+  const best = melee.sort((p, q) => q.per - p.per)[0].o;
+  t.reaction = false; this.spend(t, x);
+  const bonus = x.ext[kind].bonus;
+  const strike = Object.assign({}, best, { name: x.name, targets: 1, dpr: bonus ? cleanDiceE(best.dpr + ' + ' + bonus) : best.dpr, ext: Object.assign({}, best.ext, { wtDpr: undefined }) });
+  this.ev('react', kind === 'riposte' ? `${t.name} ripostes as ${u.name} misses` : `${t.name} braces as ${u.name} comes into reach`, { uid: t.uid, target: u.uid });
+  this.attackOnce(t, strike, u, { counter: true });
+  return true;
+};
+function cleanDiceE(s) { return String(s).replace(/\s+/g, ' ').replace(/\s*\+\s*/g, ' + ').trim(); }
 /* ext.onHit: { vex, slow: ft, noReactions, splash: { dmg, range } } */
 Sim.prototype.onHitEffects = function (u, t, a, dealt) {
   const oh = a.ext.onHit;
@@ -2612,8 +2662,9 @@ Sim.prototype.applyRider = function (u, t, a) {
   const rab = a.ext && (a.ext.riderSave || a.ext.saveAbility);
   if (re.dc < 99) {
     this._saveStakes = re.buff && DANGER_CONDS.includes(re.buff.condition) ? 1 : 0;
+    this._saveCond = re.buff && re.buff.condition;
     const s = this.saveRoll(t, re.dc, u, rab);
-    this._saveStakes = 0;
+    this._saveStakes = 0; this._saveCond = null;
     if (s.success) { this.ev('save', `${t.name} resists ${a.name}'s effect (${s.total} vs DC ${re.dc})`, { uid: t.uid }); return; }
   }
   this.addBuff(t, u, a, re.buff, { dc: re.dc, saveAbility: rab });
@@ -2685,6 +2736,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   const targets = plan.friends && plan.friends.length ? plan.targets.concat(plan.friends.filter(f => !plan.targets.includes(f) && !f.dead)) : plan.targets;
   if (!targets.length && a.target !== 'self') return false;
   if ((a.type === 'atk' || a.type === 'debuff') && !plan.area && !opt.inside && this.cancelled(u, a, targets)) return true;
+  if (a._spell && (a.type === 'atk' || a.type === 'debuff') && !opt.inside) a = this.spellbreak(u, a);
   if (plan.area && a.ext && a.ext.zone) {
     const cells = new Set(plan.area.cells.map(c => c[0] + c[1] * this.W));
     const old = this.zones.filter(z => z.src === u.uid && z.id === a.id);
@@ -2733,6 +2785,30 @@ Sim.prototype.cancelled = function (u, a, targets) {
   }
   return false;
 };
+/* a reaction that strikes at a spell cast next to it (ext.spellbreaker): a damaging spell loses what the blow deals,
+   any other spell's DC drops by 2 */
+Sim.prototype.spellbreak = function (u, a) {
+  for (const t of this.enemiesOf(u)) {
+    if (!t.reaction || t.dead || t.hp <= 0 || this.incap(t) || !t.onBoard) continue;
+    const x = t.actions.find(y => y.actionSlot === 4 && y.ext && y.ext.spellbreaker && this.usable(t, y) && this.condOk(t, y));
+    if (!x || this.dist(t, u) > Math.max(5, x.ext.spellbreaker.range || 5)) continue;
+    const w = t.actions.filter(o => o.type === 'atk' && !o.useSaves && o.actionSlot === 0).map(o => avgDice((o.ext && o.ext.wtDpr) || o.dpr) / Math.max(1, o.targets || 1)).sort((p, q) => q - p)[0] || 0;
+    t.reaction = false; this.spend(t, x);
+    const blow = Math.max(0, Math.round(rollDice(String(Math.round(w * 2) / 2 || 0), this.R, false)));
+    if (a.type === 'atk' && a.useSaves) {
+      a = Object.assign({}, a, { toHit: Number(avgDice(a.toHit)) - 2, dpr: blow ? a.dpr + ' - ' + Math.round(blow / Math.max(1, a.targets || 1)) : a.dpr });
+      this.ev('react', `${t.name} strikes at ${u.name}'s ${a.name}: DC down by 2, ${blow} less damage`, { uid: t.uid, target: u.uid });
+    } else if (a.type === 'atk') {
+      a = Object.assign({}, a, { dpr: blow ? a.dpr + ' - ' + Math.round(blow / Math.max(1, a.targets || 1)) : a.dpr });
+      this.ev('react', `${t.name} strikes at ${u.name}'s ${a.name}: ${blow} less damage`, { uid: t.uid, target: u.uid });
+    } else {
+      a = Object.assign({}, a, { saveDC: Number(avgDice(a.saveDC)) - 2 });
+      this.ev('react', `${t.name} strikes at ${u.name}'s ${a.name}: its DC drops by 2`, { uid: t.uid, target: u.uid });
+    }
+    return a;
+  }
+  return a;
+};
 /* the chance u's action against t goes through, as u's side sees it */
 Sim.prototype.throughChance = function (u, t) {
   if (t.team === u.team) return 1;
@@ -2773,7 +2849,7 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
       if (a.tempHP && (hx.retaliate || hx.tempBuff)) {
         const lvl = (a._spell && u.castLevel) || 1;
         const data = Object.assign({ duration: 'entire encounter' }, hx.tempBuff || {});
-        this.addBuff(t, u, a, data, { whileTemp: true, retaliate: hx.retaliate ? hx.retaliate.dmg * (hx.retaliate.perLevel ? lvl : 1) : 0 });
+        this.addBuff(t, u, a, data, { whileTemp: true, retaliate: hx.retaliate ? hx.retaliate.dmg * (hx.retaliate.perLevel ? lvl : 1) : 0, retaliateType: hx.retaliate && hx.retaliate.type });
       }
       this.ev('heal', `${u.name} → ${t.name}: ${a.name}, +${Math.round(amt)}${a.tempHP ? ' temp' : ''} HP`, { uid: u.uid, target: t.uid });
     }
@@ -2791,8 +2867,9 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
       const dc = Number(avgDice(a.saveDC));
       const sab = a.ext && a.ext.saveAbility;
       this._saveStakes = a.buff && DANGER_CONDS.includes(a.buff.condition) ? 1 : 0;
+      this._saveCond = a.buff && a.buff.condition;
       const s = this.saveRoll(t, dc, u, sab);
-      this._saveStakes = 0;
+      this._saveStakes = 0; this._saveCond = null;
       if (!s.success) { this.addBuff(t, u, a, a.buff, { dc, saveAbility: sab }); if (a.ext && a.ext.onHit) this.onHitEffects(u, t, a, 0); }
       this.ev('save', `${u.name} → ${t.name}: ${a.name}, DC ${dc >= 99 ? '—' : dc}${sab && sab !== 'strdex' && dc < 99 ? ' ' + sab.toUpperCase() : ''} — ${s.autoFail ? 'auto-fails, ' : ''}${s.success ? 'saved' : 'affected' + (a.buff.condition ? ' (' + a.buff.condition + ')' : '')}`,
         { uid: u.uid, target: t.uid, hit: !s.success, dmg: 0, ranged: this.dist(u, t) > 5 });
@@ -3085,9 +3162,25 @@ Sim.prototype.turn = function (u) {
     const p = this.plan(u, bonus.a, 0);
     if (p) { this.spend(u, bonus.a); this.doAction(u, bonus.a, p); }
   }
+  if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) this.surge(u);
   // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
   if (u.fly && !u._settled && !u.dead && u.hp > 0) this.settleAltitude(u, null, null);
   this.endTurn(u);
+};
+/* Action Surge: one more action this turn. Monsters use it as soon as it lands an attack; the party holds it while a
+   fight is in hand and more are coming. Its buff (Tactical Supremacy's extra damage) comes with it. */
+Sim.prototype.surge = function (u) {
+  const s = u.surges.find(a => this.usable(u, a));
+  if (!s || !this.enemiesOf(u).some(e => e.onBoard && this.alive(e))) return;
+  if (u.team === 'party' && u.ai === 'tactical' && this.fightInHand(u)) return;
+  const c = this.choose(u, 0, 0);
+  if (!c || !c.p || !c.p.targets.length || (c.a.type !== 'atk' && c.a.type !== 'debuff')) return;
+  this.spend(u, s);
+  if (s.buff && (s.buff.damage || s.buff.toHit || s.buff.ac || s.buff.condition)) this.addBuff(u, u, s, s.buff);
+  this.ev('buff', `${u.name} uses ${s.name}: one more action`, { uid: u.uid });
+  this.intent(u, c.a, c.p);
+  this.spend(u, c.a);
+  this.doAction(u, c.a, c.p);
 };
 Sim.prototype.approach = function (u, budget) {
   const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
@@ -3127,7 +3220,9 @@ Sim.prototype.endTurn = function (u) {
   // "repeat the save each round" effects on this creature
   for (const b of u.buffs.slice()) {
     if (b.expiry === 'repeat the save each round' && typeof b.dc === 'number' && b.dc < 99) {
+      this._saveCond = b.data && b.data.condition;
       const s = this.saveRoll(u, b.dc, null, b.saveAbility);
+      this._saveCond = null;
       if (s.success) { u.buffs = u.buffs.filter(x => x !== b); this._flyMapVer = -1; this.ev('save', `${u.name} shakes off ${b.name}`, { uid: u.uid }); }
     }
   }
@@ -3405,7 +3500,7 @@ function runDay(day, opts) {
     if (!enc || !enc.monsters || !enc.monsters.length) return;
     if (!party.some(u => !u.dead)) return;
     if (enc.shortRest && results.length) {
-      party.forEach(u => { if (!u.dead) { u.hp = u.maxHp; u.temp = 0; u.actions.forEach(a => { if (freqKind(a.freq) === 'sr') u.uses.set(a.id, a.freq.uses || 1); }); if (u.slots && u.slotReset === 'sr') u.slots = u.slotsMax.slice(); else if (u.slots && u.recovery && !u.recovery.anyBreak && !u.recoveryUsed) recoverSlots(u); } });
+      party.forEach(u => { if (!u.dead) { u.hp = u.maxHp; u.temp = 0; u.actions.concat(u.surges || []).forEach(a => { if (freqKind(a.freq) === 'sr') u.uses.set(a.id, a.freq.uses || 1); }); if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'sr') u.uses.set('res:' + k, +u.resMax[k].uses || 0); if (u.slots && u.slotReset === 'sr') u.slots = u.slotsMax.slice(); else if (u.slots && u.recovery && !u.recovery.anyBreak && !u.recoveryUsed) recoverSlots(u); } });
     }
     party.forEach(u => { if (!u.dead && u.hp <= 0) u.hp = 1; resetFightState(u); });
     const foes = expandTeam(enc.monsters, 'foes', false);

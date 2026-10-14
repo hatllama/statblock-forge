@@ -257,6 +257,7 @@ function nameAndUsage(raw) {
     } else if ((m = t.match(/(\d+)\s*\/\s*Day/i))) out.freq = +m[1] === 1 ? '1/day' : { reset: 'lr', uses: +m[1] };
     else if (/Recharges? after a Short or Long Rest|\/\s*Short Rest/i.test(t)) { m = t.match(/(\d+)/); out.freq = { reset: 'sr', uses: m ? +m[1] : 1 }; }
     else if ((m = t.match(/Costs?\s*(\d+)\s*Actions?/i))) out.cost = +m[1];
+    else (out.tags = out.tags || []).push(t.trim());
   }
   return out;
 }
@@ -483,7 +484,9 @@ function readHeal(entry, nm) {
   if (!m) return null;
   const temp = /temporary hit points/i.test(t);
   const amount = m[2] ? cleanDice(m[2]) : String(m[1] || m[3]);
-  const self = /\b(?:the \w+|it|itself)\s+(?:regains|gains)\b/i.test(t) && !/\b(?:one|a|each|another) (?:creature|ally|willing)/i.test(t);
+  // "the troll regains…", "it gains…", or the creature's own name ("Demir regains…")
+  const who = entry._selfName ? '|' + entry._selfName.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+  const self = new RegExp('\\b(?:the \\w+|it|itself' + who + ')\\s+(?:regains|gains)\\b', 'i').test(t) && !/\b(?:one|a|each|another) (?:creature|ally|willing)/i.test(t);
   return { name: nm.name, actionSlot: 0, freq: nm.freq, condition: self ? (temp ? 'has no THP' : 'is under half HP') : 'ally under half HP', targets: 1, type: 'heal', amount, ...(temp ? { tempHP: true } : {}), target: self ? 'self' : 'ally with the least HP', ext: { range: self ? 0 : (rangeOf(t, 5).ranged || 5) } };
 }
 
@@ -624,6 +627,36 @@ function readTrait(entry, h, notes, out) {
       return true;
     }
   }
+  // a pool other entries spend from: "Superiority Dice (7/Day). … can expend one of these d10s to fuel a maneuver"
+  if (nm.freq && typeof nm.freq === 'object' && nm.freq.uses && /\bexpend\b/i.test(t) && !/saving throw|damage/i.test(t.replace(/regains? one/i, ''))) {
+    h.ext.resources = h.ext.resources || {};
+    const pool = { uses: nm.freq.uses, reset: nm.freq.reset === 'sr' ? 'sr' : 'lr' };
+    const re = t.match(/regains? (one|two|\d+)[^.]*?(?:rolls? initiative|initiative)/i);
+    if (re && /none|no \w+ (?:left|remaining)/i.test(t)) pool.regainOnInit = num(re[1]) || 1;
+    h.ext.resources[nm.name] = pool;
+    h._pools = (h._pools || []).concat([nm.name]);
+    notes.push(`${nm.name}: a shared pool of ${pool.uses}${pool.regainOnInit ? ` (one back on Initiative when empty)` : ''}; the entries tagged with it spend from it on the War Table.`);
+    return true;
+  }
+  // "If X fails a saving throw, he can reroll it with a +15 bonus"
+  const indom = t.match(/fails? a saving throw,?\s*(?:it|he|she|they|[A-Z][\w'-]+)\s+can reroll it(?:[^.]*?(?:with a|adding a?)\s*\+?(\d+)\s*(?:bonus)?)?/i);
+  if (indom && !/legendary resistance/i.test(low)) {
+    const uses = nm.freq && typeof nm.freq === 'object' ? nm.freq.uses : nm.freq === '1/day' ? 1 : 1;
+    h.ext.indomitable = { uses, bonus: indom[1] ? +indom[1] : 0 };
+    notes.push(`${nm.name}: rerolls a failed save that matters${indom[1] ? ` with +${indom[1]}` : ''}, ${uses}/day (War Table).`);
+    return true;
+  }
+  // "Advantage on saving throws to avoid or end the Stunned, Paralyzed, or Unconscious condition"
+  const sav = t.match(/advantage on saving throws (?:made )?(?:to avoid or end|against(?: being)?|to resist)(?: the)? ([A-Za-z, ]+?)(?: conditions?|\.|$)/i);
+  if (sav) {
+    const conds = sav[1].split(/,|\bor\b|\band\b/).map(x => x.replace(/knocked/i, '').trim().toLowerCase())
+      .map(x => (CONDITION_WORDS.find(([w]) => w === x) || [])[1]).filter((c, i, arr) => c && arr.indexOf(c) === i);   // charmed plays as Incapacitated here
+    if (conds.length) {
+      h.ext.saveAdvVs = (h.ext.saveAdvVs || []).concat(conds);
+      notes.push(`${nm.name}: Advantage on saves against ${conds.join(', ')} (War Table).`);
+      return true;
+    }
+  }
   if (/legendary resistance/i.test(low)) {
     const m = (entry.raw + ' ' + t).match(/(\d+)\s*\/\s*Day/i);
     h.ext.legendaryResistance = m ? +m[1] : 3;
@@ -633,6 +666,15 @@ function readTrait(entry, h, notes, out) {
   // pure flavour: no numbers, dice, saves or rules words
   if (!/\d|\bDC\b|advantage|disadvantage|resist|immun|saving throw|hit points|damage|attack|condition|speed|reaction|bonus action|regain/i.test(t)) { notes.push(`"${nm.name}" is flavour text; nothing to model.`); return true; }
   return false;
+}
+function poolOf(h, nm) {
+  if (!h._pools || !nm.tags) return null;
+  for (const tag of nm.tags) {
+    const tw = tag.toLowerCase().replace(/^(?:costs?|uses?|spends?)\s+(?:\d+|one|an?)\s+/, '').split(/\s+/)[0];
+    const hit = h._pools.find(p => p.toLowerCase().split(/\s+/)[0] === tw);
+    if (hit) return hit;
+  }
+  return null;
 }
 function hideAction(h, name) {
   const chance = Math.max(0.05, Math.min(1, (21 + h.stealth - 15) / 20));
@@ -763,6 +805,8 @@ function parseOne(block) {
   if (firstDC) h._dc = +firstDC;
 
   // traits
+  const selfName = (h.name.split(/[\s,]+/)[0] || '').length > 2 ? h.name.split(/[\s,]+/)[0] : '';
+  for (const k in body) if (Array.isArray(body[k])) body[k].forEach(e => { if (e && typeof e === 'object') e._selfName = selfName; });
   const acNote = (flat.match(/\b(?:Armor Class|AC)\b\s*:?\s*\d+\s*\(([^)]*)\)/i) || [])[1] || '';
   for (const e of body.traits) {
     const nm0 = nameAndUsage(e.raw);
@@ -798,6 +842,46 @@ function parseOne(block) {
       const nm = nameAndUsage(e.raw);
       const low = nm.name.toLowerCase();
       if (/^multiattack/.test(low)) { multis.push({ e, sec }); continue; }
+      const pool = poolOf(h, nm);
+      const resExt = pool ? { resource: pool } : {};
+      // "takes one additional action" (Action Surge): an extra action at the end of its turn; any lasting extra comes along
+      if (/\btakes? (?:one|an) (?:additional|extra) action\b/i.test(e.text)) {
+        const ex = e.text.match(/deal an extra \d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)/i);
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self',
+          buff: ex ? { duration: 'entire encounter', damage: cleanDice(ex[1]) } : { duration: '1 round' }, ext: Object.assign({ range: 0, extraAction: true, wtOnly: true }, resExt) });
+        notes.push(`${nm.name}: one more action at the end of a turn on the War Table${ex ? `, with +${cleanDice(ex[1])} damage after` : ''}${/two reactions/i.test(e.text) ? ' (the second Reaction each round isn\'t modelled)' : ''}.`);
+        continue;
+      }
+      // a self-buff for a while: "For 1 minute, X's Speed increases by 10 feet, his … attacks deal an extra 4 (1d8) Necrotic damage"
+      const sbDmg = e.text.match(/attacks? deals? an extra \d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)/i), sbSpd = e.text.match(/speed increases by (\d+) feet/i);
+      if ((sbDmg || sbSpd) && !saveInfo(e.text) && !/Attack(?:\s*Roll)?\s*:/i.test(e.text) && /\bfor (?:1|one) minute|\buntil|for \d+ (?:rounds|turns)/i.test(e.text)) {
+        const a = { name: nm.name, actionSlot: slotOf[sec], freq: nm.freq, condition: nm.freq === 'at will' ? 'default' : 'not used yet', targets: 1, type: 'buff', target: 'self',
+          buff: Object.assign({ duration: /1 minute|one minute|until/i.test(e.text) ? 'entire encounter' : '1 round' }, sbDmg ? { damage: cleanDice(sbDmg[1]) } : {}), ext: Object.assign({ range: 0 }, sbSpd ? { speedBonus: +sbSpd[1] } : {}, resExt) };
+        if (!sbDmg) a.ext.wtOnly = true;
+        parsedBySection[sec].push(a);
+        if (/\b(?:Bident|Sword|Axe|Spear|Bow|weapon)\b[^.]{0,20}attacks? deal/i.test(e.text) && sbDmg) notes.push(`${nm.name}: the extra damage applies to all its attacks on the War Table, not only the weapon named.`);
+        continue;
+      }
+      // Riposte: "When a creature misses X with a melee attack… X makes one melee attack against it, adding 5 (1d10)"
+      const bonusDie = (e.text.match(/adding \d+\s*\((\d+d\d+)\)/i) || [])[1];
+      if (sec === 'reactions' && /\bmiss(?:es)?\s+(?:it|him|her|them|the \w+|[A-Z][\w'-]+) with a melee attack/i.test(e.text) && /makes? (?:one|a) (?:melee|weapon) attack/i.test(e.text)) {
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: Object.assign({ range: 0, riposte: bonusDie ? { bonus: bonusDie } : {}, wtOnly: true }, resExt) });
+        notes.push(`${nm.name}: answers a melee miss with an attack${bonusDie ? ` (+${bonusDie})` : ''} on the War Table.`);
+        continue;
+      }
+      // Brace: "When a creature moves into X's reach… makes one melee attack against it"
+      if (sec === 'reactions' && /moves? into (?:its|his|her|their|the \w+'s|[A-Z][\w'-]+'s) reach/i.test(e.text) && /makes? (?:one|a) (?:melee|weapon) attack/i.test(e.text)) {
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: Object.assign({ range: 0, brace: bonusDie ? { bonus: bonusDie } : {}, wtOnly: true }, resExt) });
+        notes.push(`${nm.name}: strikes whoever steps into its reach${bonusDie ? ` (+${bonusDie})` : ''} on the War Table.`);
+        continue;
+      }
+      // a reaction against a spell cast nearby that weakens it ("…deals less damage …; any other spell's save DC drops by 2")
+      const sbr = sec === 'reactions' && e.text.match(/casts? a spell within (\d+) (?:feet|ft)/i);
+      if (sbr && /attack against the spell|reduc|less damage|DC (?:drops|decreases|by)/i.test(e.text)) {
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: Object.assign({ range: 0, spellbreaker: { range: +sbr[1] }, wtOnly: true }, resExt) });
+        notes.push(`${nm.name}: blunts a spell cast within ${sbr[1]} ft (less damage, or its DC down by 2) on the War Table.`);
+        continue;
+      }
       // a routine under its own name: "Legislative Revision. Elparin makes two Statutory Editing strikes…"
       if (sec === 'actions' && !/\bto hit\b|Attack(?:\s*Roll)?\s*:|saving throw|\bDC\s*\d/i.test(e.text) &&
           /\bmakes?\s+(?:two|three|four|five|six|[2-9])\b[^.]{0,60}?\b(?:attacks?|strikes?)\b/i.test(e.text) && !/swallow/i.test(low + ' ' + e.text)) { multis.push({ e, sec, label: nm.name }); continue; }
@@ -866,6 +950,11 @@ function parseOne(block) {
       if (a.freq === 'at will' && nm.freq !== 'at will') a.freq = nm.freq;
       if (sec === 'lair actions' && noRepeatLair && a.freq === 'at will') { a.freq = { reset: 'recharge', cooldownRounds: 2 }; a.condition = 'is available'; }
       a._cost = nm.cost;
+      if (pool) { a.ext = Object.assign({}, a.ext, { resource: pool }); a._pool = pool; }
+      if (a.type === 'heal' && a.tempHP) {
+        const bite = e.text.match(/(?:hits?|touches?) (?:it|him|her|them|[A-Z][\w'-]+) with a melee attack takes? (\d+)(?:\s*\([^)]*\))? (\w+) damage/i);
+        if (bite) a.ext = Object.assign({}, a.ext, { retaliate: { dmg: +bite[1], type: bite[2].toLowerCase() } });
+      }
       if (/swallow/i.test(low) && a.type === 'atk' && !a.ext.swallow) { const s = readSwallow(e, nm, parsedBySection.actions, notes); if (s) a = Object.assign(s, { actionSlot: a.actionSlot }); }
       parsedBySection[sec].push(a);
     }
@@ -894,7 +983,24 @@ function parseOne(block) {
     slot0.concat(spellOut).forEach(a => {
       if (a.actionSlot === 0 && a.freq !== 'at will' && !(a.ext && a.ext.area) && a.type !== 'heal' && a.type !== 'buff' && !(a.freq && a.freq.reset === 'recharge') && (a._avg === undefined || a._avg < multi._avg)) { a.ext.wtOnly = true; a._below = true; }
     });
-    slot0.push(multi, ...altActs);
+    // maneuvers that are one of the routine's swings with something extra ("Trip Attack (Superiority Die)"): the routine
+    // with one swing swapped for it, spending from the pool (War Table)
+    const variants = [];
+    for (const m of slot0.concat(spellOut)) {
+      if (!m._pool || m.type !== 'atk' || m.useSaves || m.actionSlot !== 0) continue;
+      const comp = ma.main.find(c => String(m.dpr).replace(/\s+/g, '').indexOf(String(c.a.dpr).replace(/\s+/g, '')) === 0 && c.a._melee === m._melee);
+      if (!comp) continue;
+      const parts = [{ a: m, n: 1 }].concat(ma.main.map(c => c === comp ? { a: c.a, n: c.n - 1 } : c).filter(c => c.n > 0));
+      const v = comboAction('Multiattack', parts);
+      v.name = (label || 'Multiattack') + ' with ' + m.name;
+      v.ext = Object.assign({}, v.ext, { resource: m._pool, wtOnly: true });
+      v.condition = 'is available';     // ahead of the plain routine while there are dice to spend
+      if (m.riderEffect) v.riderEffect = JSON.parse(JSON.stringify(m.riderEffect));
+      if (m.ext && m.ext.riderSave) v.ext.riderSave = m.ext.riderSave;
+      variants.push(v);
+    }
+    if (variants.length) notes.push(`${variants.map(v => v.name.replace(/^.* with /, '')).join(', ')}: on the War Table, one swing of the routine becomes the maneuver, spending from ${variants[0].ext.resource}.`);
+    slot0.push(multi, ...altActs, ...variants);
     if (ma.replace) notes.push('Multiattack can swap an attack for something else; only the attack routine is modelled.');
   }
   parsedBySection.actions = slot0;
@@ -910,7 +1016,7 @@ function parseOne(block) {
 
   if (h.damageMult !== 1) {
     all.push({ name: h.damageMult < 1 ? 'Damage resistances' : 'Damage vulnerabilities', actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', damageTakenMultiplier: h.damageMult }, ext: { range: 0, avgResist: h.damageMult } });
-    notes.push(`${h.resText.charAt(0).toUpperCase() + h.resText.slice(1)}: the War Table checks each hit's damage type; the export averages it to damage taken ×${h.damageMult}.`);
+    notes.push(`${h.resText.charAt(0).toUpperCase() + h.resText.slice(1)}: modelled on the War Table hit by hit; a plain export can only average it (damage taken ×${h.damageMult}).`);
   }
   // passive self-buffs (Magic Resistance, resistances…) merge into one, so they all fit the two passive slots
   const passBuffs = all.filter(a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.duration === 'entire encounter' && !(a.ext && a.ext.wtSkip));

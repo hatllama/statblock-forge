@@ -245,6 +245,36 @@ section('Statblock parser (no AI)');
   expect(act('elparin-homebrew.txt', /^Legislative Revision/).targets === 2 && act('elparin-homebrew.txt', /^Legislative Revision/).riderEffect.buff.ac === -3, 'Elparin: a named routine of two Statutory Editing strikes, each lowering AC by 3 on a failed save');
   expect(act('elparin-homebrew.txt', /Procedural Nullification/).ext.cancelAction && act('elparin-homebrew.txt', /Cite Precedent/).ext.onHit.noReactions && act('elparin-homebrew.txt', /Cite Precedent/).ext.saveAbility === 'int', 'Elparin: cancelling reaction; an ability check read as a save');
   expect(!el.actions.some(a => /Majd|Suspension/.test(a.name)) && !el._notes.some(n => /Suspension of/.test(n)), 'Elparin: triggered traits aren\'t auras; an action\'s bulleted options stay with it');
+  {
+    const kn = Parser.parse('Aldric the Bold\nMedium Humanoid (Human), Neutral\nAC 18\nHP 90 (12d8 + 36)\nSpeed 30 ft.\nCR 5 (XP 1,800; PB +3)\nActions\nLongsword. Melee Attack Roll: +7, reach 5 ft. Hit: 9 (1d8 + 5) Slashing damage.\nBonus Actions\nSecond Wind (2/Day). Aldric regains 10 (1d10 + 5) Hit Points.').monsters[0];
+    const sw = kn && kn.actions.find(a => /Second Wind/.test(a.name));
+    expect(sw && sw.target === 'self' && sw.type === 'heal', 'healing that names the creature ("Aldric regains…") heals itself');
+  }
+  {
+    // a battle master-style foe: a shared die pool, Indomitable, save advantage, Action Surge, timed self-buff, Riposte, Brace, spellbreaking
+    const bm = Parser.parse(['Duelist Captain', 'Medium Humanoid (Human), Neutral', 'AC 18', 'HP 120 (16d8 + 48)', 'Speed 30 ft.', 'CR 8 (XP 3,900; PB +3)',
+      'Traits', 'Indomitable (2/Day). If the captain fails a saving throw, it can reroll it with a +10 bonus, and it must use the new roll.',
+      'Steel Will. The captain has Advantage on saving throws to avoid or end the Stunned or Paralyzed condition.',
+      'Superiority Dice (5/Day). The captain can expend one of these d8s to fuel a maneuver. It regains one when it rolls Initiative with none left.',
+      'Actions', 'Multiattack. The captain makes two Longsword attacks.',
+      'Longsword. Melee Attack Roll: +7, reach 5 ft. Hit: 9 (1d8 + 5) Slashing damage.',
+      'Trip Attack (Superiority Die). Melee Attack Roll: +7, reach 5 ft. Hit: 13 (1d8 + 5 + 1d8) Slashing damage. The target must succeed on a DC 15 Strength saving throw or have the Prone condition.',
+      'Action Surge (1/Day). The captain takes one additional action on this turn, and for the next minute its weapon attacks deal an extra 3 (1d6) damage.',
+      'Bonus Actions', 'Battle Fury (1/Day). For 1 minute, the captain\'s Speed increases by 10 feet and its attacks deal an extra 4 (1d8) Slashing damage.',
+      'Reactions', 'Riposte (Superiority Die). Trigger: A creature misses the captain with a melee attack roll. Response: The captain makes one melee attack against it, adding 4 (1d8) to the damage on a hit.',
+      'Brace. Trigger: A creature moves into the captain\'s reach. Response: The captain makes one melee attack against it.',
+      'Spellguard. Trigger: A creature casts a spell within 5 feet of the captain. Response: The captain makes one weapon attack against the spell; a damaging spell deals less damage, any other spell\'s DC drops by 2.'].join('\n')).monsters[0];
+    const ba = re => bm.actions.find(a => re.test(a.name));
+    expect(bm.ext.resources && bm.ext.resources['Superiority Dice'].uses === 5 && bm.ext.resources['Superiority Dice'].regainOnInit === 1, 'a shared die pool, refilled by one on Initiative');
+    expect(bm.ext.indomitable && bm.ext.indomitable.uses === 2 && bm.ext.indomitable.bonus === 10 && bm.ext.saveAdvVs.join() === 'Stunned,Paralyzed', 'Indomitable and Advantage against named conditions');
+    expect(ba(/with Trip Attack/) && ba(/with Trip Attack/).ext.resource === 'Superiority Dice' && ba(/^Riposte/).ext.riposte.bonus === '1d8' && ba(/^Riposte/).ext.resource, 'maneuvers spend from the pool, one swing of the routine at a time');
+    expect(ba(/Action Surge/).ext.extraAction && ba(/Battle Fury/).buff.damage === '1d8' && ba(/Battle Fury/).ext.speedBonus === 10 && ba(/^Brace/).ext.brace && ba(/Spellguard/).ext.spellbreaker, 'Action Surge, a timed self-buff, Brace and a spell-blunting reaction');
+    const mon = JSON.parse(JSON.stringify(bm)); mon.id = 'bm'; mon.mode = 'custom'; mon.actions.forEach((a, i) => { a.id = 'bm' + i; });
+    const seen = {};
+    for (let i = 0; i < 6; i++) for (const r of Tac.runDay({ players: fixture('worms-day.json').players, encounters: [{ monsters: [mon] }] }, { seed: 70 + i, partyAI: 'tactical', record: true }))
+      for (const e of r.events) for (const [k, re] of [['surge', /uses Action Surge/], ['riposte', /ripostes/], ['trip', /with Trip Attack/], ['indom', /uses Indomitable/]]) if (re.test(e.text)) seen[k] = 1;
+    check(seen.surge && seen.riposte && seen.trip, `the duelist surges, ripostes and trips on the War Table (${Object.keys(seen).join(', ')})`);
+  }
   // every parsed creature can fight in both simulators
   const party = fixture('worms-day.json').players;
   let tacErr = 0;
