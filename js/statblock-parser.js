@@ -434,7 +434,8 @@ function readSaveEffect(entry, nm, notes, h) {
   const area = areaInfo(t);
   const rg = rangeOf(t, area ? area.size : 60);
   const parts = damageParts(t);
-  const cond = conditionIn(t);
+  // "one creature … that has the Grappled, Incapacitated, or Restrained condition" says who it can target, not what it does
+  const cond = conditionIn(t.replace(/\b(?:that|who) (?:is willing or that )?(?:has|have) the [A-Za-z, ]+? conditions?/gi, ''));
   let targets = area ? areaTargets(area) : 1;
   const upTo = t.match(/(?:up to|choose up to)\s*(\w+)\s*(?:creatures|targets)/i);
   if (upTo && !isNaN(num(upTo[1]))) targets = num(upTo[1]);
@@ -691,12 +692,16 @@ function readMultiattack(entry, attacks, notes, others) {
     }
     return combo;
   };
+  // "makes as many Bite attacks as it has heads" (the hydra): its starting number of heads
+  const heads = t.match(/as many ([A-Za-z' -]+?) attacks as it has heads/i);
+  if (heads && entry._heads) routines[0] = `makes ${entry._heads} ${heads[1]} attacks`;
   const main = parseRoutine(routines[0]);
   const alts = routines.slice(1).map(rt => { const c = parseRoutine(rt); c.ranged = /ranged|throw|shoot|range/i.test(rt) && !/melee/i.test(rt); return c; }).filter(c => c.length);
   main.ranged = /ranged attacks?/i.test(routines[0]) && !/melee/i.test(routines[0]);
   if (main.others) alts.push(...main.others);
   const pre = [];
-  for (const o of others) if (new RegExp('\\buses?\\s+(?:its\\s+)?' + o.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(t)) pre.push(o);
+  // "…and uses Frightful Presence": a fear effect fires before the fight; a damaging one ("and uses Bite") stays its own option
+  for (const o of others) if (o.type !== 'atk' && new RegExp('\\buses?\\s+(?:its\\s+)?' + o.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(t)) pre.push(o);
   if (!main.length) { notes.push('Multiattack: couldn\'t tell which attacks it makes; kept the individual attacks instead.'); return null; }
   return { main, alts, pre, replace: swaps };
 }
@@ -868,7 +873,9 @@ function parseOne(block) {
 
   // multiattack: replace its component attacks with one routine
   let slot0 = parsedBySection.actions;
+  const headsM = flat.match(/\bhas (two|three|four|five|six|seven|eight|\d+) heads\b/i);
   for (const { e, label } of multis) {
+    if (headsM) e._heads = isNaN(num(headsM[1])) ? 0 : num(headsM[1]);
     const others = slot0.filter(a => a.type !== 'atk' || a.useSaves);
     const ma = readMultiattack(e, slot0, notes, others);
     if (!ma) continue;

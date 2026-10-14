@@ -2,7 +2,7 @@
 
 A D&D 5e encounter-prep workshop that runs entirely in the browser. It has two views:
 
-- **Forge** is the workshop where the party and the day's encounters are built. A sidebar lists the party and each encounter; the main panel shows the selected creature as an editable sheet, a roster of ready-made level-5 characters for every class (or a printable statblock), an encounter page with quick odds, a library of saved creatures, the statblock importer, or save & load. Pasted statblocks are read by a built-in parser with no AI and no network: 2014 and 2024 layouts, D&D Beyond and 5etools copy-pastes, and Homebrewery markdown. Claude can optionally be used instead with your own API key. Everything autosaves; days can be downloaded and loaded as JSON.
+- **Forge** is the workshop where the party and the day's encounters are built. A sidebar lists the party and each encounter; the main panel shows the selected creature as an editable sheet, a roster of ready-made level-5 characters for every class (or a printable statblock), an encounter page with quick odds, a library of saved creatures and official SRD 5.2 monsters, the statblock importer, or save & load. Pasted statblocks are read by a built-in parser with no AI and no network: 2014 and 2024 layouts, D&D Beyond and 5etools copy-pastes, and Homebrewery markdown. Claude can optionally be used instead with your own API key. Everything autosaves; days can be downloaded and loaded as JSON.
 - **War Table** is an original tactical engine. It plays every fight out with real dice on a grid that has walls, high ground, difficult terrain, cover and fog. Party and monsters use a tactical AI, and you can run the odds over hundreds of fights or replay any single one turn by turn; click any token to see its hit points, height, conditions, effects and what it has left. Each side's AI can know every number (open info), only what's visible at the table (black box), or learn as it goes (AC from hits and misses, saves, hit points, resistances, healers, area attacks), and monsters can be set to flee or surrender when a fight turns.
 
 There's no build step and there are no dependencies. Open `index.html` directly or serve the folder.
@@ -30,6 +30,8 @@ index.html                     page markup, loads the scripts below in order
 css/styles.css                 all styling
 data/party.js                  generated: the level-5 class roster (CLASS_BUILDS) and the default party (PARTY_PLAYERS)
 tools/build-party.js           builds data/party.js: `node tools/build-party.js`
+data/srd-monsters.js           generated: official monsters from the SRD 5.2 (CC-BY-4.0)
+tools/build-srd.js             builds data/srd-monsters.js from the 5e-database SRD data
 parties/                       saved parties to load (Day file → Load just the party)
 js/spell-data.js               combat spells the parser knows (damage, saves, areas, conditions)
 js/statblock-parser.js         statblock text → Forge creatures, no AI (exposes StatblockParser)
@@ -67,3 +69,9 @@ The workspace autosaves to `localStorage` under `forge-workspace-v1`, per browse
 ## Credits
 
 - Everything here (Forge, statblock reader, War Table engine and UI) was written for this project.
+
+## Licences
+
+This work includes material from the System Reference Document 5.2 ("SRD 5.2") by Wizards of the Coast LLC, available at https://www.dndbeyond.com/srd. The SRD 5.2 is licensed under the Creative Commons Attribution 4.0 International License, available at https://creativecommons.org/licenses/by/4.0/legalcode.
+
+Statblock Forge is unofficial fan content and is not affiliated with or endorsed by Wizards of the Coast.

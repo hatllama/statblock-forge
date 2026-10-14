@@ -328,5 +328,26 @@ section('Statblock parser (no AI)');
   check(fled > 0 && actAfterFlee === 0, `with morale on, monsters flee (${fled}) and don't act after leaving`);
 }
 
+// the official SRD 5.2 monsters in the Library: every one parses with its real header and can fight
+{
+  section('Official SRD 5.2 monsters');
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.M = SRD_MONSTERS; globalThis.A = SRD_ATTRIBUTION;', ctx);
+  const party = fixture('worms-day.json').players;
+  let bad = 0, err = 0, empty = 0;
+  for (const s of ctx.M) {
+    const r = Parser.parse(s.text), m = r.monsters[0];
+    if (!m || m.name !== s.name || m.AC !== s.ac || m.hp !== s.hp || m.cr !== s.cr) { bad++; console.log('  header mismatch', s.name); continue; }
+    if (!m.actions.some(a => a.type === 'atk' && a.actionSlot === 0)) { empty++; console.log('  no attack', s.name); }
+    const mon = JSON.parse(JSON.stringify(m)); mon.id = s.id; mon.mode = 'custom';
+    mon.actions.forEach((a, i) => { a.id = s.id + i; });
+    if (mon.ext.spellbook) mon.ext.spellbook.spells.forEach((x, i) => { x.id = s.id + 's' + i; });
+    try { Tac.runDay({ players: party, encounters: [{ monsters: [mon] }] }, { seed: 3, partyAI: 'tactical' }); } catch (e) { err++; console.log('  War Table error on', s.name, e.message); }
+  }
+  check(ctx.M.length >= 40 && bad === 0, `${ctx.M.length} official monsters read with their real name, AC, HP and CR (${bad} off)`);
+  check(empty === 0 && err === 0, `every official monster has an attack and fights (${empty} without, ${err} errors)`);
+  check(/System Reference Document 5\.2/.test(ctx.A) && /creativecommons\.org\/licenses\/by\/4\.0/.test(ctx.A), 'the SRD attribution statement ships with them');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

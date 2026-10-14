@@ -1846,22 +1846,34 @@ function rosterHtml(){
 function libraryHtml(){
   const q = libQuery.trim().toLowerCase();
   const all = libraryItems();
-  const list = all.filter(c=>!q || [c.name, c.type, c.cr].join(' ').toLowerCase().includes(q));
+  const hit = c => !q || [c.name, c.type, c.cr, 'cr ' + c.cr].join(' ').toLowerCase().includes(q);
+  const list = all.filter(hit);
+  const srd = (typeof SRD_MONSTERS !== 'undefined' ? SRD_MONSTERS : []).filter(hit);
   const encOpts = encounters.map((e, i)=>`<option value="${i}" ${i === activeIdx ? 'selected' : ''}>${escapeHtml(encName(e, i))}</option>`).join('');
   return `<article class="sheet lib-page">
     <div class="sheet-top">
-      <div class="sheet-id"><div class="sheet-title">Library</div><div class="sheet-sub">Creatures you've saved, ready to drop into any encounter. Kept in this browser.</div></div>
+      <div class="sheet-id"><div class="sheet-title">Library</div><div class="sheet-sub">Creatures ready to drop into any encounter: the ones you've saved, and official monsters from the fifth edition System Reference Document.</div></div>
       <div class="sheet-tools"><label class="inl">Add to <select id="libTarget">${encOpts}</select></label></div>
     </div>
     <input class="lib-search" id="libSearch" placeholder="Search by name, type or CR…" value="${escapeAttr(libQuery)}">
+    <section class="sh"><h3>Your creatures <small>kept in this browser</small></h3>
     ${!all.length ? `<div class="empty-note">Nothing saved yet. Open a creature and press <b>Save to library</b>.</div>`
-      : !list.length ? `<div class="empty-note">No match.</div>`
+      : !list.length ? `<div class="empty-note">None of yours match.</div>`
       : `<div class="crit-list">${list.map(c=>`<div class="crit">
           <div class="crit-main static"><span class="sr-name">${escapeHtml(c.name || 'Unnamed')}</span>
             <span class="sr-meta">${escapeHtml([((c.ext && c.ext.size) || 'Medium') + ' ' + (c.type || ''), crText(c), 'AC ' + c.AC, c.hp + ' HP', (c.actions || []).length + ' actions'].filter(Boolean).join(' · '))}</span></div>
           <button class="mini-btn" data-lib-add="${escapeAttr(c.libId)}">＋ Add</button>
           <button class="mini-btn danger" data-lib-del="${escapeAttr(c.libId)}" title="Remove from the library">✕</button>
         </div>`).join('')}</div>`}
+    </section>
+    <section class="sh"><h3>Official monsters <small>System Reference Document 5.2, 2024 rules</small></h3>
+    ${!srd.length ? `<div class="empty-note">No official monster matches.</div>` : `<div class="crit-list">${srd.map(c=>`<div class="crit">
+          <div class="crit-main static"><span class="sr-name">${escapeHtml(c.name)}</span>
+            <span class="sr-meta">${escapeHtml([c.size + ' ' + c.type, 'CR ' + c.cr, 'AC ' + c.ac, c.hp + ' HP'].join(' · '))}</span></div>
+          <button class="mini-btn" data-srd-add="${escapeAttr(c.id)}">＋ Add</button>
+        </div>`).join('')}</div>`}
+    <p class="srd-credit">${escapeHtml(typeof SRD_ATTRIBUTION !== 'undefined' ? SRD_ATTRIBUTION : '')} The statblocks are read into War Table creatures by this site's own reader; anything it couldn't model is listed in the parser notes on each creature. Statblock Forge is unofficial fan content and is not affiliated with or endorsed by Wizards of the Coast.</p>
+    </section>
   </article>`;
 }
 
@@ -1968,6 +1980,17 @@ dyn.addEventListener('click', ev=>{
     const t = document.getElementById('libTarget'), ei = t ? +t.value : activeIdx;
     const c = cloneCreature(src); c.libId = src.libId; c.count = 1;
     encounters[ei].monsters.push(c); refreshPreview();
+    return select({ kind: 'mon', e: ei, i: encounters[ei].monsters.length - 1 });
+  }
+  if(d.srdAdd){
+    const src = (typeof SRD_MONSTERS !== 'undefined' ? SRD_MONSTERS : []).find(x=>x.id === d.srdAdd); if(!src) return;
+    const t = document.getElementById('libTarget'), ei = t ? +t.value : activeIdx;
+    let m;
+    try{ m = StatblockParser.parse(src.text).monsters[0]; }catch(e){ console.error(e); }
+    if(!m) return;
+    finishParsed([m]);
+    m.src = 'SRD 5.2';
+    encounters[ei].monsters.push(m); refreshPreview();
     return select({ kind: 'mon', e: ei, i: encounters[ei].monsters.length - 1 });
   }
   if(d.libDel){
