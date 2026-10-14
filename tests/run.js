@@ -396,6 +396,16 @@ section('Character sheets');
   check(p['ddbcopy.txt'] && p['ddbcopy.txt'].ext.sneakAttack.dice === '2d6' && p['ddbcopy.txt'].ext.spellbook.slotReset === 'sr' && /\+ 3/.test(p['ddbcopy.txt'].ext.spellbook.spells[0].dpr), 'a pasted rogue/warlock: sneak attack, pact slots, Agonizing Blast');
   check(p['ddb.json'] && p['ddb.json'].AC === 18 && p['ddb.json'].hp === 46 && p['ddb.json'].ext.saves.cha === 6 && p['ddb.json'].ext.spellbook.slots.slice(0, 2).join() === '4,2' && !sp(p['ddb.json']).includes('Command'), 'a D&D Beyond JSON paladin: AC from armor, HP, saves, prepared spells only');
   check(p['foundry.json'] && p['foundry.json'].AC === 15 && p['foundry.json'].actions.some(a => /Longbow/.test(a.name) && a.ext.range === 150 && !a.ext.wtOnly), 'a Foundry VTT ranger: AC and the bow as the main attack');
+  const kr = p['kraax-ddb.json'], ka = n => kr && kr.actions.find(a => n.test(a.name));
+  check(kr && kr.AC === 16 && kr.hp === 30 && kr.ext.speed === 40 && kr.ext.initBonus === 6 && kr.ext.size === 'Small' && kr.ext.resources['Focus Points'].uses === 4 && ka(/^Flurry/).ext.resource === 'Focus Points' && ka(/^Elemental Strikes/).ext.range === 15, 'Kraax from D&D Beyond: Alert, unarmored movement, Focus Points spent by Flurry, Elemental Strikes');
+  {
+    let flurries = 0, maxSpent = 0;
+    for (let i = 0; i < 6; i++) for (const r of Tac.runDay({ players: [JSON.parse(JSON.stringify(kr))], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 90, AC: 11, saveBonus: 0, count: 1, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1d8 + 2', toHit: 4, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 21 + i, partyAI: 'tactical', record: true })) {
+      let n = 0; for (const e of r.events) if (/Kraax.*(Flurry|Patient Defense|Elemental Attunement)/.test(e.text || '') && /^Kraax/.test(e.text || '') && !/→.*Flurry/.test('')) n++;
+      flurries += n; maxSpent = Math.max(maxSpent, n);
+    }
+    check(flurries > 0 && maxSpent <= 8, `Focus Points get spent and run out (${flurries} uses, at most ${maxSpent} in a fight)`);
+  }
   let err = 0;
   const party = Object.values(got);
   for (let i = 0; i < 4; i++) try { Tac.runDay({ players: JSON.parse(JSON.stringify(party)), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 68, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 11 + i, partyAI: 'tactical' }); } catch (e) { err++; console.log('  ', e.message); }

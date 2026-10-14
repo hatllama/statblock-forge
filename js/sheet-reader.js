@@ -84,7 +84,10 @@ function fromDDB(d) {
   ac += bonus('armor-class') + (armor ? bonus('armored-armor-class') : bonus('unarmored-armor-class'));
   if (d.characterValues) { const ov = d.characterValues.find(v => v.typeId === 1 && v.value); if (ov) ac = ov.value; }
   const ws = (d.race && d.race.weightSpeeds && d.race.weightSpeeds.normal) || {};
-  const speed = (ws.walk || 30) + bonus('speed') + bonus('speed-walking');
+  const speed = (ws.walk || 30) + bonus('speed') + bonus('speed-walking') + (armor ? 0 : bonus('unarmored-movement'));
+  const pbInit = mods.some(m => m.type === 'bonus' && m.subType === 'initiative' && !m.value && !m.fixedValue) ? pbOf((d.classes || []).reduce((t, c) => t + (c.level || 0), 0)) : 0;
+  const init = dexM + pbInit + mods.filter(m => m.type === 'bonus' && m.subType === 'initiative' && (m.value || m.fixedValue)).reduce((t, m) => t + (m.value || m.fixedValue), 0);
+  const traits = [].concat(...Object.values(d.actions || {}).map(l => Array.isArray(l) ? l.map(a => a.name) : [])).concat((d.feats || []).map(f => f.definition && f.definition.name)).filter(Boolean);
   const fly = ws.fly || setTo('fly') || setTo('innate-speed-flying');
   const saveProf = ABS.filter(k => mods.some(m => m.type === 'proficiency' && m.subType === ABN[k] + '-saving-throws'));
   const pb = pbOf(level);
@@ -104,7 +107,12 @@ function fromDDB(d) {
   (d.classSpells || []).forEach(cs => (cs.spells || []).forEach(addSp));
   Object.values(d.spells || {}).forEach(list => (list || []).forEach(addSp));
   const resist = mods.filter(m => m.type === 'resistance').map(m => m.subType).filter(t => DTYPES.test(t || ''));
-  return { name: d.name, classes, scores, hp, ac, speed, fly, saveProf, attacks, spells, resist, notes, src: 'D&D Beyond' };
+  const skills = ['athletics', 'acrobatics'].filter(k => mods.some(m => (m.type === 'proficiency' || m.type === 'expertise') && m.subType === k));
+  const race = (d.race && (d.race.fullName || d.race.baseName)) || '';
+  const size = d.race && d.race.sizeId === 2 ? 'Small' : /\b(goblin|halfling|gnome|kobold|fairy)\b/i.test(race) ? 'Small' : '';
+  if (/fury of the small/i.test(traits.join('|'))) notes.push('Fury of the Small (extra damage a few times a day) isn\'t modelled.');
+  if (/uncanny metabolism/i.test(traits.join('|'))) notes.push('Uncanny Metabolism (Focus Points back on initiative once a day) isn\'t modelled.');
+  return { name: d.name, classes, scores, hp, ac, speed, fly, init, saveProf, skills, size, attacks, spells, resist, traits, notes, src: 'D&D Beyond' };
 }
 
 /* ---------- facts from a Foundry VTT dnd5e actor ---------- */
@@ -278,9 +286,14 @@ function classFeatures(f, pb, add, ext) {
   }
   if (mo) {
     const die = mo >= 17 ? 'd12' : mo >= 11 ? 'd10' : mo >= 5 ? 'd8' : 'd6', dm = Math.max(M(0), M(1));
+    if (mo >= 2) ext.resources = Object.assign(ext.resources || {}, { 'Focus Points': { uses: mo, reset: 'sr' } });
+    if (!f.attacks.some(a => /unarmed/i.test(a.name))) f.attacks.push({ name: 'Unarmed Strike', toHit: dm + pb, dmg: `1${die} + ${dm}`, type: 'bludgeoning', range: 5 });
     add({ name: 'Martial Arts (bonus strike)', actionSlot: 1, type: 'atk', dpr: `1${die} + ${dm}`, toHit: dm + pb, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } });
     if (mo >= 3) add({ name: 'Deflect Attacks', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: `1d10 + ${M(1) + mo}` } });
+    if (mo >= 2) add({ name: 'Patient Defense (1 Focus Point)', actionSlot: 1, condition: 'is under half HP', type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Is attacked with Disadvantage' }, ext: { resource: 'Focus Points' } });
   }
+  const tr = (f.traits || []).join('|') + '|' + (f.featuresText || '');
+  if (/nimble escape|cunning action/i.test(tr)) ext.bonusDisengage = true;
   if (pa) add({ name: 'Lay on Hands', actionSlot: 1, freq: { reset: 'lr', uses: 5 * pa }, condition: 'ally under half HP', type: 'heal', amount: '1', target: 'ally with the least HP', ext: { range: 5, pool: { dice: 5 * pa, die: 1, maxPer: 5 * pa } } });
   if (ba) {
     const die = ba >= 15 ? 'd12' : ba >= 10 ? 'd10' : ba >= 5 ? 'd8' : 'd6';
@@ -307,11 +320,12 @@ function build(f, opts) {
   let n = 0;
   const aid = () => `${id}-a${++n}`;
   const actions = [];
-  const add = a => actions.push(Object.assign({ id: aid(), freq: 'at will', condition: 'default', targets: 1 }, a));
+  const add = a => actions.push(Object.assign({ freq: 'at will', condition: 'default', targets: 1 }, a, { id: aid() }));
   const ext = { speed: f.speed || 30, initBonus: f.init !== null && f.init !== undefined ? f.init : M(1), saves };
   if (f.fly) ext.fly = f.fly;
   if (f.resist && f.resist.length) ext.resist = Array.from(new Set(f.resist));
-  const athl = M(0) + pb, acro = M(1);
+  const athl = M(0) + (!f.skills || f.skills.includes('athletics') ? pb : 0), acro = M(1) + (f.skills && f.skills.includes('acrobatics') ? pb : 0);
+  if (f.size) ext.size = f.size;
   ext.athletics = athl; ext.escapeBonus = Math.max(athl, acro);
 
   const cf = classFeatures(f, pb, add, ext);
@@ -332,11 +346,26 @@ function build(f, opts) {
     if (!w.ext.damageType) delete w.ext.damageType;
     if (cf.ro) { w.dpr = `${a.dmg} + ${ext.sneakAttack.dice}`; w.ext.wtDpr = a.dmg; w.ext.sneak = true; }
     if (!primary || (isCaster && f.spells && f.spells.length)) w.ext.wtOnly = true;
-    if (primary) lead = w;
     add(w);
+    if (primary) lead = actions[actions.length - 1];
   });
   if (cf.fi >= 2 && lead) add(Object.assign(JSON.parse(JSON.stringify(lead)), { name: `Action Surge (${extra > 1 ? extra + ' more attacks' : 'one more attack'})`, actionSlot: 1, freq: { reset: 'sr', uses: cf.fi >= 17 ? 2 : 1 }, ext: Object.assign({}, lead.ext, { wtOnly: undefined }) }));
-  if (cf.mo >= 2) add({ name: 'Flurry of Blows', actionSlot: 1, freq: { reset: 'sr', uses: cf.mo }, type: 'atk', dpr: `1${cf.mo >= 17 ? 'd12' : cf.mo >= 11 ? 'd10' : cf.mo >= 5 ? 'd8' : 'd6'} + ${Math.max(M(0), M(1))}`, toHit: Math.max(M(0), M(1)) + pb, targets: cf.mo >= 10 ? 3 : 2, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } });
+  if (cf.mo >= 2 && lead) {
+    const wis = M(4), dc = 8 + pb + wis;
+    if (cf.mo >= 5) add(Object.assign(JSON.parse(JSON.stringify(lead)), { name: `Stunning Strike (${lead.name.replace(/ \(Extra Attack\)/, '')}, 1 Focus Point)`, condition: 'is available', target: 'enemy with highest DPR',
+      riderEffect: { dc, buff: { duration: '1 round', condition: 'Stunned' } }, ext: Object.assign({}, lead.ext, { riderSave: 'con', resource: 'Focus Points' }) }));
+    if (f.classes.some(c => c.name === 'monk' && /element/i.test(c.sub))) {
+      const att = { name: 'Elemental Attunement (1 Focus Point)', actionSlot: -3, type: 'buff', target: 'self', buff: { duration: 'entire encounter' }, ext: { resource: 'Focus Points' } };
+      add(att);
+      const attId = actions[actions.length - 1].id;
+      actions[actions.length - 1].ext.grantsBuff = { id: attId, name: 'Elemental Attunement' };
+      // reach 15 ft and a 10-ft push while attuned: ahead of the plain strikes
+      actions.splice(actions.indexOf(lead), 0, Object.assign(JSON.parse(JSON.stringify(lead)), { id: aid(), name: `Elemental Strikes (${lead.name.replace(/ \(Extra Attack\)/, '')}, 15 ft, push)`,
+        ext: Object.assign({}, lead.ext, { range: 15, requiresBuff: attId, onHit: { push: 10 } }) }));
+    }
+  }
+  if (cf.mo >= 2) add({ name: 'Flurry of Blows (1 Focus Point)', actionSlot: 1, ext: { resource: 'Focus Points' }, type: 'atk', dpr: `1${cf.mo >= 17 ? 'd12' : cf.mo >= 11 ? 'd10' : cf.mo >= 5 ? 'd8' : 'd6'} + ${Math.max(M(0), M(1))}`, toHit: Math.max(M(0), M(1)) + pb, targets: cf.mo >= 10 ? 3 : 2, target: 'enemy with least HP' });
+  if (cf.mo >= 2) Object.assign(actions[actions.length - 1].ext, { range: 5, damageType: 'bludgeoning' });
   if (!actions.some(a => a.actionSlot === 0 && a.type === 'atk' && !(a.ext && a.ext.wtOnly)) && !(f.spells && f.spells.length)) {
     const sm = Math.max(M(0), cf.mo ? M(1) : -9);
     add({ name: 'Unarmed Strike', actionSlot: 0, type: 'atk', dpr: cf.mo ? `1${cf.mo >= 5 ? 'd8' : 'd6'} + ${sm}` : String(Math.max(1, 1 + sm)), toHit: sm + pb, targets: extra, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } });

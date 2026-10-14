@@ -692,3 +692,6 @@ footer a{color:var(--text-dim);}
 .sheet-import .sheet-h{font-weight:600;margin-bottom:8px;}
 .sheet-import textarea{min-height:140px;}
 .sheet-import .parse-row{flex-wrap:wrap;gap:8px;}
+.res-row{display:grid;grid-template-columns:minmax(0,2fr) minmax(0,1fr) minmax(0,1.4fr) minmax(0,1.4fr) auto;gap:8px;align-items:end;margin-bottom:10px;}
+.res-row .res-users{grid-column:1 / -1;font-size:12.5px;color:var(--parchment-dim);margin-top:-2px;}
+@media (max-width:640px){ .res-row{grid-template-columns:1fr 1fr;} }

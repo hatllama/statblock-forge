@@ -368,48 +368,163 @@
    "mode": "custom",
    "class": {
     "type": "monk",
-    "level": 3,
+    "level": 4,
     "options": {}
    },
    "name": "Kraax",
    "count": 1,
-   "hp": 31,
+   "hp": 30,
    "AC": 16,
    "saveBonus": 2,
-   "actions": [
-    {
-     "id": "1533f004-4e73-424c-8306-408abb72894e",
-     "name": "Flurry of Blows",
-     "actionSlot": 1,
-     "freq": {
-      "reset": "sr",
-      "uses": 4
-     },
-     "condition": "default",
-     "targets": 2,
-     "type": "atk",
-     "dpr": "1d6 +4",
-     "toHit": "6",
-     "target": "enemy with highest DPR",
-     "ext": {
-      "damageType": "bludgeoning"
+   "ext": {
+    "speed": 40,
+    "initBonus": 6,
+    "saves": {
+     "str": 2,
+     "dex": 6,
+     "con": 2,
+     "int": 1,
+     "wis": 2,
+     "cha": -1
+    },
+    "size": "Small",
+    "athletics": 0,
+    "escapeBonus": 6,
+    "resources": {
+     "Focus Points": {
+      "uses": 4,
+      "reset": "sr"
      }
     },
+    "bonusDisengage": true,
+    "build": "Monk 4 (Warrior of the Elements) · read from D&D Beyond"
+   },
+   "actions": [
     {
-     "id": "f68c16b7-eb31-45f8-a23f-3d50ec12a943",
-     "name": "Punch",
-     "actionSlot": 0,
      "freq": "at will",
      "condition": "default",
      "targets": 1,
+     "name": "Martial Arts (bonus strike)",
+     "actionSlot": 1,
      "type": "atk",
      "dpr": "1d6 + 4",
-     "toHit": "6",
-     "target": "enemy with highest DPR",
+     "toHit": 6,
+     "target": "enemy with least HP",
      "ext": {
+      "range": 5,
       "damageType": "bludgeoning"
-     }
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a1"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Deflect Attacks",
+     "actionSlot": 4,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "until next attack taken",
+      "damageReduction": "1d10 + 8"
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a2"
+    },
+    {
+     "freq": "at will",
+     "condition": "is under half HP",
+     "targets": 1,
+     "name": "Patient Defense (1 Focus Point)",
+     "actionSlot": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round",
+      "condition": "Is attacked with Disadvantage"
+     },
+     "ext": {
+      "resource": "Focus Points"
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a3"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Elemental Strikes (Unarmed Strike, 15 ft, push)",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d6 + 4",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 15,
+      "damageType": "bludgeoning",
+      "requiresBuff": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5",
+      "onHit": {
+       "push": 10
+      }
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a6"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Unarmed Strike",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d6 + 4",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "bludgeoning"
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a4"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Elemental Attunement (1 Focus Point)",
+     "actionSlot": -3,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "entire encounter"
+     },
+     "ext": {
+      "resource": "Focus Points",
+      "grantsBuff": {
+       "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5",
+       "name": "Elemental Attunement"
+      }
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 2,
+     "name": "Flurry of Blows (1 Focus Point)",
+     "actionSlot": 1,
+     "ext": {
+      "resource": "Focus Points",
+      "range": 5,
+      "damageType": "bludgeoning"
+     },
+     "type": "atk",
+     "dpr": "1d6 + 4",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a7"
     }
+   ],
+   "_notes": [
+    "Fury of the Small (extra damage a few times a day) isn't modelled.",
+    "Uncanny Metabolism (Focus Points back on initiative once a day) isn't modelled.",
+    "Not in its spell list (no rules for them yet): Elementalism."
    ]
   },
   {

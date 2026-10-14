@@ -739,6 +739,13 @@ function mechanicsPanel(mi, a){
 function freqFields(mi, a){
   const k = freqKind(a.freq);
   let extra = '';
+  const owner = creatureByKey(mi), pools = Object.keys((owner && owner.ext && owner.ext.resources) || {});
+  const ex = a.ext || {};
+  if(pools.length || ex.resource){
+    const names = pools.indexOf(ex.resource) < 0 && ex.resource ? pools.concat([ex.resource]) : pools;
+    extra += fSelect('Spends from', mi, a.id, '__resource', 'str', [['', 'Nothing']].concat(names.map(n=>[n, n])), ex.resource || '', true, 'A shared pool set under Resources (Focus Points, Superiority Dice…). It can only be used while the pool has enough left.');
+    if(ex.resource) extra += fInput('Cost', mi, a.id, '__resourceCost', 'int', ex.resourceCost || 1);
+  }
   if(k === 'recharge') extra = fInput('Cooldown (rounds)', mi, a.id, 'freq.cooldownRounds', 'int', a.freq.cooldownRounds, 'Recharge 6 → 6 · 5–6 → 3 · 4–6 → 2');
   if(k === 'sr' || k === 'lr') extra = fInput('Uses', mi, a.id, 'freq.uses', 'int', a.freq.uses);
   return fSelect('Frequency', mi, a.id, '__freqKind', 'str', FREQ_KINDS, k, true) + extra;
@@ -1077,6 +1084,13 @@ function handleFieldChange(el){
     const list = el.value.split(',').map(x=>x.trim().toLowerCase()).filter(Boolean);
     a.ext = a.ext || {};
     if(list.length) a.ext.targetTypes = list; else delete a.ext.targetTypes;
+  } else if(k === '__resource'){
+    a.ext = a.ext || {};
+    if(el.value) a.ext.resource = el.value; else { delete a.ext.resource; delete a.ext.resourceCost; }
+  } else if(k === '__resourceCost'){
+    a.ext = a.ext || {};
+    const n = parseInt(el.value, 10);
+    if(n > 1) a.ext.resourceCost = n; else delete a.ext.resourceCost;
   } else if(k === '__freqKind'){
     const v = el.value;
     if(v === 'recharge') a.freq = { reset:'recharge', cooldownRounds: a.freq?.cooldownRounds || 3 };
@@ -1549,6 +1563,11 @@ function sheetHtml(key, c){
     </section>
 
     <section class="sh">
+      <h3>Resources</h3>
+      ${resourcesPanel(key, c)}
+    </section>
+
+    <section class="sh">
       <h3>Actions</h3>
       ${actionEditor(key, c)}
     </section>
@@ -1828,6 +1847,36 @@ function cloneCreature(src){
 }
 
 /* ---------------- the class roster: ready-made level-5 characters ---------------- */
+/* ---------------- resources: shared pools (Focus Points, Superiority Dice, Sorcery Points…) ---------------- */
+function resourcesPanel(key, c){
+  const R = (c.ext && c.ext.resources) || {}, names = Object.keys(R);
+  const users = n => (c.actions || []).filter(a=>a.ext && a.ext.resource === n).map(a=>a.name);
+  return `<div class="res-list">${names.map((n, i)=>{ const r = R[n] || {}, u = users(n); return `<div class="res-row">
+      <label class="sf"><span>Name</span><input data-res="${i}" data-rf="name" data-owner="${key}" value="${escapeAttr(n)}"></label>
+      <label class="sf"><span>Amount</span><input data-res="${i}" data-rf="uses" data-owner="${key}" type="number" min="0" value="${+r.uses || 0}"></label>
+      <label class="sf"><span>Comes back on</span><select data-res="${i}" data-rf="reset" data-owner="${key}">${[['sr','a short rest'],['lr','a long rest']].map(([v,l])=>`<option value="${v}" ${(r.reset||'lr')===v?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="sf" title="Regains this many when it rolls initiative with none left (Superiority Dice, Uncanny Metabolism and the like). Blank = none."><span>Back on initiative if out</span><input data-res="${i}" data-rf="regainOnInit" data-owner="${key}" type="number" min="0" value="${r.regainOnInit || ''}" placeholder="—"></label>
+      <button class="mini-btn" data-res-del="${i}" data-owner="${key}" title="Remove this resource">✕</button>
+      <div class="res-users">${u.length ? 'Spent by: ' + escapeHtml(u.join(', ')) : 'No action spends it yet: pick it under an action\'s "Spends from".'}</div>
+    </div>`; }).join('')}</div>
+    <button class="mini-btn" data-res-add data-owner="${key}">＋ Add a resource</button>
+    <p class="hint">Points or dice several actions share, like Ki or Focus Points, Superiority Dice or Sorcery Points. Give an action a cost from one under its frequency.</p>`;
+}
+function onResourceField(el){
+  const c = creatureByKey(el.dataset.owner); if(!c || !c.ext || !c.ext.resources) return;
+  const names = Object.keys(c.ext.resources), old = names[+el.dataset.res]; if(old === undefined) return;
+  const r = c.ext.resources[old], f = el.dataset.rf;
+  if(f === 'name'){
+    const nn = el.value.trim(); if(!nn || nn === old || c.ext.resources[nn]) return;
+    const out = {}; names.forEach(n=>{ out[n === old ? nn : n] = c.ext.resources[n]; }); c.ext.resources = out;
+    (c.actions || []).concat((c.ext.spellbook && c.ext.spellbook.spells) || []).forEach(a=>{ if(a.ext && a.ext.resource === old) a.ext.resource = nn; });
+  }
+  else if(f === 'uses') r.uses = Math.max(0, parseInt(el.value, 10) || 0);
+  else if(f === 'reset') r.reset = el.value;
+  else if(f === 'regainOnInit'){ const n = parseInt(el.value, 10); if(n > 0) r.regainOnInit = n; else delete r.regainOnInit; }
+  c._warnings = validateMonster(c); refreshPreview(); if(typeof scheduleSave === 'function') scheduleSave();
+}
+
 /* ---------------- character sheets → party members ---------------- */
 let sheetDraft = '', sheetFile = null;      // sheetFile: { name, kind: 'pdf'|'image', mime, b64, text }
 function sheetFileInfo(){ return sheetFile ? `Loaded ${escapeHtml(sheetFile.name)}${sheetFile.text ? '' : ' (no text in it: use Read with Claude)'}.` : ''; }
@@ -2010,6 +2059,14 @@ dyn.addEventListener('click', ev=>{
   if(d.statview){ const c = creatureByKey(d.statview); if(c){ statView.add(c.id); renderMain(); } return; }
   if(d.editview){ const c = creatureByKey(d.editview); if(c){ statView.delete(c.id); renderMain(); } return; }
   if(d.print !== undefined){ window.print(); return; }
+  if(d.resAdd !== undefined || d.resDel !== undefined){
+    const c = creatureByKey(d.owner); if(!c) return;
+    c.ext = c.ext || {};
+    const R = c.ext.resources || {};
+    if(d.resAdd !== undefined){ let n = 'Points', i = 2; while(R[n]) n = 'Points ' + i++; R[n] = { uses: 2, reset: 'sr' }; c.ext.resources = R; }
+    else { const nm = Object.keys(R)[+d.resDel]; delete R[nm]; (c.actions || []).forEach(a=>{ if(a.ext && a.ext.resource === nm){ delete a.ext.resource; delete a.ext.resourceCost; } }); if(!Object.keys(R).length) delete c.ext.resources; }
+    return rerenderFor(d.owner);
+  }
   if(d.sheetRead !== undefined){ readSheet(); return; }
   if(d.sheetClaude !== undefined){ readSheetWithClaude(); return; }
   if(d.rosterAdd || d.rosterBlank !== undefined){
@@ -2134,10 +2191,12 @@ dyn.addEventListener('input', ev=>{
     renderSide(); refreshPreview(); return;
   }
   if(el.dataset.cf !== undefined && el.tagName === 'INPUT') onCoreField(el);
+  if(el.dataset.rf && el.dataset.rf !== 'name' && el.tagName === 'INPUT') onResourceField(el);
 });
 dyn.addEventListener('change', ev=>{
   const el = ev.target;
   if(el.id === 'sheetFile'){ onSheetFile(el.files && el.files[0]); el.value = ''; return; }
+  if(el.dataset.rf){ onResourceField(el); if(el.dataset.rf === 'name') renderForge(); return; }
   if(el.dataset.encOpt){ const e = encounters[+el.dataset.e]; e[el.dataset.encOpt] = el.checked; refreshPreview(); renderSide(); return; }
   if(el.dataset.cf !== undefined && el.tagName === 'SELECT'){ onCoreField(el); renderForge(); }
 });
