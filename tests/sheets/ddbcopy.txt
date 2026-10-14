@@ -1,0 +1,36 @@
+Kess
+Half-Elf Rogue 3 / Warlock 2
+STRENGTH
++0
+10
+DEXTERITY
++4
+18
+CONSTITUTION
++2
+14
+INTELLIGENCE
++1
+12
+WISDOM
++0
+10
+CHARISMA
++3
+16
+ARMOR CLASS
+15
+HIT POINTS
+33
+Walking 30 ft.
+ACTIONS
+Rapier	5 ft.	+6	1d8+4	Piercing
+Shortbow	80 ft. (320)	+6	1d6+4	Piercing
+Eldritch Blast	120 ft.	+5	1d10	Force
+CANTRIPS
+Eldritch Blast
+Minor Illusion
+1ST LEVEL
+Hex
+Armor of Agathys
+Eldritch Invocations: Agonizing Blast

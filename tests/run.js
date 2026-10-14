@@ -383,5 +383,24 @@ section('Statblock parser (no AI)');
   check(/System Reference Document 5\.2/.test(ctx.A) && /creativecommons\.org\/licenses\/by\/4\.0/.test(ctx.A), 'the SRD attribution statement ships with them');
 }
 
+section('Character sheets');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  for (const f of ['js/spell-data.js', 'js/statblock-parser.js', 'js/sheet-reader.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
+  const SR = ctx.SheetReader, dir = path.join(__dirname, 'sheets');
+  const got = {};
+  for (const f of fs.readdirSync(dir)) { try { got[f] = SR.read(fs.readFileSync(path.join(dir, f), 'utf8')).player; } catch (e) { console.log('  ', f, e.message); } }
+  const p = got, sp = c => ((c && c.ext.spellbook && c.ext.spellbook.spells) || []).map(s => s.name);
+  check(p['typed.txt'] && p['typed.txt'].AC === 18 && p['typed.txt'].hp === 58 && p['typed.txt'].class.level === 6 && p['typed.txt'].actions.some(a => /Longsword ×2/.test(a.name) && a.toHit === 7) && p['typed.txt'].actions.some(a => /Action Surge/.test(a.name)), 'a typed fighter sheet: AC, HP, level, Extra Attack, Action Surge');
+  check(p['pdf.txt'] && p['pdf.txt'].name === 'Lyra Vane' && p['pdf.txt'].ext.spellbook.slots.slice(0, 3).join() === '4,3,2' && sp(p['pdf.txt']).includes('Fireball') && sp(p['pdf.txt']).includes('Misty Step'), 'fillable PDF fields: name, wizard slots and spells');
+  check(p['ddbcopy.txt'] && p['ddbcopy.txt'].ext.sneakAttack.dice === '2d6' && p['ddbcopy.txt'].ext.spellbook.slotReset === 'sr' && /\+ 3/.test(p['ddbcopy.txt'].ext.spellbook.spells[0].dpr), 'a pasted rogue/warlock: sneak attack, pact slots, Agonizing Blast');
+  check(p['ddb.json'] && p['ddb.json'].AC === 18 && p['ddb.json'].hp === 46 && p['ddb.json'].ext.saves.cha === 6 && p['ddb.json'].ext.spellbook.slots.slice(0, 2).join() === '4,2' && !sp(p['ddb.json']).includes('Command'), 'a D&D Beyond JSON paladin: AC from armor, HP, saves, prepared spells only');
+  check(p['foundry.json'] && p['foundry.json'].AC === 15 && p['foundry.json'].actions.some(a => /Longbow/.test(a.name) && a.ext.range === 150 && !a.ext.wtOnly), 'a Foundry VTT ranger: AC and the bow as the main attack');
+  let err = 0;
+  const party = Object.values(got);
+  for (let i = 0; i < 4; i++) try { Tac.runDay({ players: JSON.parse(JSON.stringify(party)), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 68, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 11 + i, partyAI: 'tactical' }); } catch (e) { err++; console.log('  ', e.message); }
+  check(err === 0, `characters read from sheets fight on the War Table (${err} errors)`);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

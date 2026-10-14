@@ -1,8 +1,8 @@
 # Notes for working on this repo
 
 - No build step. `index.html` loads classic scripts that share globals; keep the load order
-  (data/party.js → data/srd-monsters.js → js/spell-data.js → js/statblock-parser.js → js/forge.js → js/engine/tactical-engine.js → js/war-table.js).
-- `js/statblock-parser.js` and `js/spell-data.js` must stay DOM-free too (tested under Node). When a statblock parses wrong,
+  (data/party.js → data/srd-monsters.js → js/spell-data.js → js/statblock-parser.js → js/sheet-reader.js → js/forge.js → js/engine/tactical-engine.js → js/war-table.js).
+- `js/statblock-parser.js`, `js/spell-data.js` and `js/sheet-reader.js` (character sheets → party members; samples in `tests/sheets/`) must stay DOM-free too (tested under Node). When a statblock parses wrong,
   add it to `tests/statblocks/`, check it with `node tests/parse-dump.js <name>`, and add an expectation in `tests/run.js`.
 - `js/engine/tactical-engine.js` must stay DOM-free: it also runs under Node in `tests/run.js`.
 - AI knowledge modes (`opts.know = { party, foes }`: open / blind / learn): the AI reads other-side facts only through

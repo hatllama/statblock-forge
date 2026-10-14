@@ -1,0 +1,9 @@
+{"name":"Wren","type":"character","system":{"abilities":{"str":{"value":8},"dex":{"value":16,"proficient":1},"con":{"value":14},"int":{"value":10},"wis":{"value":16,"proficient":1},"cha":{"value":10}},
+"attributes":{"hp":{"value":30,"max":34},"ac":{"calc":"default"},"movement":{"walk":35,"fly":0}}},
+"items":[{"type":"class","name":"Ranger","system":{"levels":5,"identifier":"ranger"}},{"type":"subclass","name":"Gloom Stalker","system":{"classIdentifier":"ranger"}},
+{"type":"equipment","name":"Studded Leather","system":{"equipped":true,"type":{"value":"light"},"armor":{"value":12}}},
+{"type":"weapon","name":"Longbow","system":{"equipped":true,"type":{"value":"martialR"},"range":{"value":150},"damage":{"base":{"number":1,"denomination":8,"types":["piercing"]}},"properties":["amm","hvy","two"]}},
+{"type":"weapon","name":"Shortsword","system":{"equipped":true,"type":{"value":"martialM"},"damage":{"parts":[["1d6 + @mod","piercing"]]},"properties":{"fin":true,"lgt":true}}},
+{"type":"spell","name":"Hunter's Mark","system":{"level":1,"preparation":{"mode":"always","prepared":false}}},
+{"type":"spell","name":"Cure Wounds","system":{"level":1,"preparation":{"mode":"prepared","prepared":true}}},
+{"type":"spell","name":"Fog Cloud","system":{"level":1,"preparation":{"mode":"prepared","prepared":false}}}]}

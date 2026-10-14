@@ -1,0 +1,9 @@
+Brakka Stonefist
+Level 6 Dwarf Fighter (Battle Master)
+Armor Class 18   Hit Points 58   Speed 25 ft.
+STR 18 (+4)  DEX 12 (+1)  CON 16 (+3)  INT 10 (+0)  WIS 12 (+1)  CHA 8 (-1)
+Saving Throws: Str +7, Con +6
+Resistances: Poison
+Attacks
+Longsword | +7 | 1d8+4 slashing
+Heavy Crossbow | +4 | 1d10+1 piercing

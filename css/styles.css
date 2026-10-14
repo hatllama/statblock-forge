@@ -687,3 +687,8 @@ footer a{color:var(--text-dim);}
 #viewWar .act .slot{font-size:12px;color:var(--text-faint);margin-left:4px;}
 #viewWar .ai-sel{background:var(--bg-deep);border:1px solid var(--line);color:var(--text);font-size:13.5px;padding:3px 4px;border-radius:3px;}
 #viewWar .footnote{font-size:13.5px;color:var(--text-faint);margin-top:28px;max-width:80ch;}
+/* character sheet import, on the Add a party member page */
+.sheet-import{margin:4px 0 18px;}
+.sheet-import .sheet-h{font-weight:600;margin-bottom:8px;}
+.sheet-import textarea{min-height:140px;}
+.sheet-import .parse-row{flex-wrap:wrap;gap:8px;}

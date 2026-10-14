@@ -1,0 +1,10 @@
+{"success":true,"data":{"name":"Thorne","stats":[{"id":1,"value":15},{"id":2,"value":10},{"id":3,"value":14},{"id":4,"value":8},{"id":5,"value":13},{"id":6,"value":16}],
+"bonusStats":[],"overrideStats":[],"baseHitPoints":36,"bonusHitPoints":0,"overrideHitPoints":null,
+"race":{"weightSpeeds":{"normal":{"walk":30,"fly":0}}},
+"classes":[{"level":5,"definition":{"name":"Paladin"},"subclassDefinition":{"name":"Oath of Vengeance"}}],
+"modifiers":{"race":[{"type":"bonus","subType":"strength-score","value":2},{"type":"bonus","subType":"charisma-score","value":1},{"type":"resistance","subType":"fire"}],"class":[{"type":"proficiency","subType":"wisdom-saving-throws"},{"type":"proficiency","subType":"charisma-saving-throws"}]},
+"inventory":[{"equipped":true,"definition":{"name":"Chain Mail","armorTypeId":3,"armorClass":16,"filterType":"Armor"}},{"equipped":true,"definition":{"name":"Shield","armorTypeId":4,"armorClass":2,"filterType":"Armor"}},
+{"equipped":true,"definition":{"name":"Longsword, +1","filterType":"Weapon","attackType":1,"damage":{"diceString":"1d8"},"damageType":"Slashing","properties":[{"name":"Versatile"}],"grantedModifiers":[{"type":"bonus","subType":"magic","value":1}]}},
+{"equipped":true,"definition":{"name":"Javelin","filterType":"Weapon","attackType":1,"range":30,"damage":{"diceString":"1d6"},"damageType":"Piercing","properties":[{"name":"Thrown"}]}}],
+"classSpells":[{"spells":[{"prepared":true,"definition":{"name":"Bless","level":1}},{"alwaysPrepared":true,"definition":{"name":"Hunter's Mark","level":1}},{"prepared":false,"definition":{"name":"Command","level":1}},{"prepared":true,"definition":{"name":"Divine Smite","level":1}}]}],
+"spells":{"race":[{"definition":{"name":"Produce Flame","level":0}}]}}}

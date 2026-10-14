@@ -1,0 +1,22 @@
+CharacterName: Lyra Vane
+ClassLevel: Wizard 5
+AC: 12
+HPMax: 27
+Speed: 30
+STR: 8
+DEX: 14
+CON: 14
+INT: 18
+WIS: 12
+CHA: 10
+Wpn Name: Dagger
+Wpn1 AtkBonus: +5
+Wpn1 Damage: 1d4+2 Piercing
+SpellSaveDC  2: 15
+spellName0: Fire Bolt
+spellName1: Mage Hand
+spellName2: Shield
+spellName3: Magic Missile
+spellName4: Misty Step
+spellName5: Fireball
+spellName6: Detect Magic

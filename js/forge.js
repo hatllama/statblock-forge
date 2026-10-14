@@ -1382,6 +1382,7 @@ function renderSide(){
   const libN = libraryItems().length;
   let h = `<div class="side-tools">
       <button class="side-tool ${on('import')?'on':''}" data-go="import" title="Paste a statblock">＋ Statblock</button>
+      <button class="side-tool ${on('roster')?'on':''}" data-add-pc title="Add a party member from a character sheet or a ready-made build">＋ Character</button>
       <button class="side-tool ${on('library')?'on':''}" data-go="library" title="Saved creatures">Library${libN ? ` <b>${libN}</b>` : ''}</button>
       <button class="side-tool ${on('file')?'on':''}" data-go="file" title="Download, load, day name">Save &amp; load</button>
     </div>`;
@@ -1827,12 +1828,123 @@ function cloneCreature(src){
 }
 
 /* ---------------- the class roster: ready-made level-5 characters ---------------- */
+/* ---------------- character sheets → party members ---------------- */
+let sheetDraft = '', sheetFile = null;      // sheetFile: { name, kind: 'pdf'|'image', mime, b64, text }
+function sheetFileInfo(){ return sheetFile ? `Loaded ${escapeHtml(sheetFile.name)}${sheetFile.text ? '' : ' (no text in it: use Read with Claude)'}.` : ''; }
+function addSheetPlayer(res, how){
+  const p = res.player;
+  p.id = uid(); (p.actions || []).forEach(a=>{ a.id = uid(); });
+  ((p.ext && p.ext.spellbook && p.ext.spellbook.spells) || []).forEach(sp=>{ sp.id = uid(); });
+  if(PARTY_PLAYERS.some(x=>x.name === p.name)){ let n = 2; while(PARTY_PLAYERS.some(x=>x.name === p.name + ' ' + n)) n++; p.name += ' ' + n; }
+  PARTY_PLAYERS.push(p); sheetDraft = ''; sheetFile = null;
+  renderPartyBar(); refreshPreview(); if(typeof scheduleSave === 'function') scheduleSave();
+  select({ kind: 'pc', i: PARTY_PLAYERS.length - 1 });
+}
+let pdfjsReady = null;
+function loadPdfJs(){
+  if(pdfjsReady) return pdfjsReady;
+  pdfjsReady = new Promise((ok, no)=>{
+    const s = document.createElement('script');
+    s.src = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js';
+    s.onload = ()=>{ const lib = window.pdfjsLib; if(!lib) return no(new Error('pdf.js did not load')); lib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js'; ok(lib); };
+    s.onerror = ()=>{ pdfjsReady = null; no(new Error("Couldn't load the PDF reader (are you offline?).")); };
+    document.head.appendChild(s);
+  });
+  return pdfjsReady;
+}
+/* a PDF sheet as text: its form fields as "Field: value" lines, then the text on its pages */
+async function pdfText(buf){
+  const lib = await loadPdfJs();
+  const doc = await lib.getDocument({ data: buf }).promise;
+  const out = [];
+  try{
+    const fields = await doc.getFieldObjects();
+    if(fields) for(const k in fields){ const v = (fields[k] || []).map(f=>f.value).find(v=>v !== undefined && v !== null && v !== '' && v !== 'Off'); if(v !== undefined && typeof v !== 'boolean') out.push(`${k}: ${String(v).replace(/\r?\n/g, ', ')}`); }
+  }catch(e){}
+  for(let i = 1; i <= Math.min(doc.numPages, 12); i++){
+    const pg = await doc.getPage(i), tc = await pg.getTextContent();
+    let line = '', lastY = null;
+    tc.items.forEach(it=>{ const y = Math.round(it.transform[5]); if(lastY !== null && Math.abs(y - lastY) > 3){ out.push(line.trim()); line = ''; } line += (line && !/\s$/.test(line) ? '  ' : '') + it.str; lastY = y; });
+    if(line.trim()) out.push(line.trim());
+  }
+  return out.filter(Boolean).join('\n');
+}
+const b64Of = buf => { let s = ''; const b = new Uint8Array(buf); for(let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };
+async function onSheetFile(file){
+  if(!file) return;
+  setStatus('sheetStatus', 'Reading ' + escapeHtml(file.name) + '…');
+  const buf = await file.arrayBuffer();
+  const isPdf = /pdf$/i.test(file.type) || /\.pdf$/i.test(file.name), isImg = /^image\//.test(file.type);
+  try{
+    if(isPdf){
+      sheetFile = { name: file.name, kind: 'pdf', mime: 'application/pdf', b64: b64Of(buf), text: '' };
+      try{ sheetFile.text = await pdfText(buf); }catch(e){ setStatus('sheetStatus', escapeHtml(e.message) + ' Read with Claude still works.', 'err'); return; }
+      if(sheetFile.text.replace(/\s/g, '').length < 40) sheetFile.text = '';
+    } else if(isImg){
+      sheetFile = { name: file.name, kind: 'image', mime: file.type, b64: b64Of(buf), text: '' };
+    } else {
+      sheetFile = null; sheetDraft = new TextDecoder().decode(buf);
+      const ta = document.getElementById('sheetInput'); if(ta) ta.value = sheetDraft;
+    }
+    setStatus('sheetStatus', sheetFile ? sheetFileInfo() : 'Loaded ' + escapeHtml(file.name) + '.', 'ok');
+  }catch(e){ setStatus('sheetStatus', 'Couldn\'t read that file: ' + escapeHtml(e.message), 'err'); }
+}
+async function readSheet(){
+  const ta = document.getElementById('sheetInput'); sheetDraft = ta ? ta.value : sheetDraft;
+  let text = sheetDraft.trim();
+  const link = text.match(/^https?:\/\/(?:www\.)?dndbeyond\.com\/(?:profile\/[^\/]+\/)?characters\/(\d+)/i);
+  if(link){
+    const api = 'https://character-service.dndbeyond.com/character/v5/character/' + link[1];
+    setStatus('sheetStatus', 'Fetching the character from D&D Beyond…');
+    try{ const r = await fetch(api); if(!r.ok) throw new Error('HTTP ' + r.status); text = await r.text(); }
+    catch(e){ setStatus('sheetStatus', `D&amp;D Beyond didn't let this page fetch it. Make sure the character is public, open <a href="${api}" target="_blank" rel="noopener">its JSON</a>, select all, copy, and paste that here.`, 'err'); return; }
+  }
+  if(!text && sheetFile && sheetFile.text) text = sheetFile.text;
+  if(!text){ setStatus('sheetStatus', sheetFile ? 'That file has no text to read. Use Read with Claude.' : 'Paste a sheet or upload a file first.', 'err'); return; }
+  try{ addSheetPlayer(SheetReader.read(text), 'text'); }
+  catch(e){ setStatus('sheetStatus', escapeHtml(e.message), 'err'); }
+}
+async function readSheetWithClaude(){
+  const ta = document.getElementById('sheetInput'); sheetDraft = ta ? ta.value : sheetDraft;
+  const key = lsGet(API_KEY_STORE);
+  if(!key){ setStatus('sheetStatus', 'Add an Anthropic API key first, under ＋ Statblock → Convert with Claude.', 'err'); return; }
+  const content = [];
+  if(sheetFile && sheetFile.kind === 'pdf') content.push({ type: 'document', source: { type: 'base64', media_type: 'application/pdf', data: sheetFile.b64 } });
+  else if(sheetFile && sheetFile.kind === 'image') content.push({ type: 'image', source: { type: 'base64', media_type: sheetFile.mime, data: sheetFile.b64 } });
+  if(sheetDraft.trim()) content.push({ type: 'text', text: sheetDraft.trim() });
+  if(!content.length){ setStatus('sheetStatus', 'Paste a sheet or upload a file first.', 'err'); return; }
+  content.push({ type: 'text', text: 'Read this D&D 5e character sheet. Answer with one JSON object and nothing else, in this shape:\n' + SheetReader.FACTS_SCHEMA + '\nUse the numbers printed on the sheet (totals, not base values). Leave out anything the sheet does not show.' });
+  setStatus('sheetStatus', 'Claude is reading the sheet…');
+  try{
+    const res = await fetch('https://api.anthropic.com/v1/messages', { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'x-api-key': key, 'anthropic-version': '2023-06-01', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify({ model: lsGet(API_MODEL_STORE) || DEFAULT_MODEL, max_tokens: 4000, messages: [{ role: 'user', content }] }) });
+    const data = await res.json().catch(()=>null);
+    if(!res.ok || !data || data.type === 'error') throw new Error(data && data.error ? data.error.message : 'HTTP ' + res.status);
+    const out = (data.content || []).filter(b=>b.type === 'text').map(b=>b.text).join('\n');
+    const fo = out.indexOf('{'), lo = out.lastIndexOf('}');
+    const facts = JSON.parse(out.slice(fo, lo + 1));
+    facts.src = 'Claude';
+    addSheetPlayer(SheetReader.read(facts), 'claude');
+  }catch(e){ setStatus('sheetStatus', 'Claude couldn\'t read it: ' + escapeHtml(e.message), 'err'); }
+}
 function rosterHtml(){
   const builds = typeof CLASS_BUILDS !== 'undefined' ? CLASS_BUILDS : [];
   const defNames = DEFAULT_PARTY.map(p=>p.name).join(', ');
   return `<article class="sheet lib-page">
     <div class="sheet-top">
-      <div class="sheet-id"><div class="sheet-title">Add a party member</div><div class="sheet-sub">Ready-made level-5 characters (2024 rules), one for every class. Add one, then edit it like any other sheet.</div></div>
+      <div class="sheet-id"><div class="sheet-title">Add a party member</div><div class="sheet-sub">Read one from a character sheet, or start from a ready-made level-5 character (2024 rules) and edit it like any other sheet.</div></div>
+    </div>
+    <div class="parse-box sheet-import">
+      <div class="sheet-h">From a character sheet</div>
+      <textarea id="sheetInput" placeholder="Paste a character sheet here: text copied from D&amp;D Beyond, Roll20 or a doc, a D&amp;D Beyond or Foundry VTT JSON export, or a D&amp;D Beyond character link…">${escapeHtml(sheetDraft)}</textarea>
+      <div class="parse-row">
+        <label class="ghost-btn file-btn" title="A fillable PDF sheet (D&amp;D Beyond, the official sheet), a JSON export, a text file, or a picture of a sheet">Upload a file<input type="file" id="sheetFile" accept=".json,.txt,.md,.pdf,.png,.jpg,.jpeg,.webp,application/json,application/pdf,image/*"></label>
+        <span class="status" id="sheetStatus">${sheetFileInfo()}</span>
+        <button class="ghost-btn" data-sheet-claude title="Sends the sheet to Claude with the API key from ＋ Statblock → Convert with Claude">Read with Claude</button>
+        <button class="primary-btn" data-sheet-read>Read sheet</button>
+      </div>
+      <div class="hint">Read right here in your browser: name, class and level, AC, HP, speed, scores, saves, weapon attacks, spells and spell slots, plus the class features the War Table has rules for (Extra Attack, Action Surge, Second Wind, Rage, Sneak Attack, Lay on Hands, Bardic Inspiration…). Anything it had to guess is listed as a note on the new character. A scanned or printed PDF, or a photo, has no text to read: use Read with Claude for those.</div>
     </div>
     <div class="crit-list">${builds.map(c=>{
       const sb = c.ext && c.ext.spellbook;
@@ -1898,6 +2010,8 @@ dyn.addEventListener('click', ev=>{
   if(d.statview){ const c = creatureByKey(d.statview); if(c){ statView.add(c.id); renderMain(); } return; }
   if(d.editview){ const c = creatureByKey(d.editview); if(c){ statView.delete(c.id); renderMain(); } return; }
   if(d.print !== undefined){ window.print(); return; }
+  if(d.sheetRead !== undefined){ readSheet(); return; }
+  if(d.sheetClaude !== undefined){ readSheetWithClaude(); return; }
   if(d.rosterAdd || d.rosterBlank !== undefined){
     let p;
     if(d.rosterAdd){ const src = (typeof CLASS_BUILDS !== 'undefined' ? CLASS_BUILDS : []).find(x=>x.id === d.rosterAdd); if(!src) return; p = cloneCreature(src); }
@@ -2023,6 +2137,7 @@ dyn.addEventListener('input', ev=>{
 });
 dyn.addEventListener('change', ev=>{
   const el = ev.target;
+  if(el.id === 'sheetFile'){ onSheetFile(el.files && el.files[0]); el.value = ''; return; }
   if(el.dataset.encOpt){ const e = encounters[+el.dataset.e]; e[el.dataset.encOpt] = el.checked; refreshPreview(); renderSide(); return; }
   if(el.dataset.cf !== undefined && el.tagName === 'SELECT'){ onCoreField(el); renderForge(); }
 });
