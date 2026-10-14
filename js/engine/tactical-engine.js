@@ -118,7 +118,7 @@ function areaSpec(a) {
     const size = Math.max(5, Number(ar.size) || def);
     // a cube or square set down at a point (Shattering Display, Faerie Fire) is centred there; a cube with range = size starts at the caster (Thunderwave)
     const placed = ar.shape === 'cube' && (a._range || 0) > size + 5;
-    return { shape: ar.shape, size, explicit: true, placed, width: Number(ar.width) || 5 };
+    return { shape: ar.shape, size, explicit: true, placed, width: Number(ar.width) || 5, square: !!ar.square };
   }
   if ((a.targets || 1) < 2) return null;
   const n = (a.name || '').toLowerCase();
@@ -144,7 +144,7 @@ function areaCells(spec, ox, oy, tx, ty, W, H) {
     for (let y = cy - n; y <= cy + n; y++) for (let x = cx - n; x <= cx + n; x++) {
       if (spec.shape === 'emanation' && x === ox && y === oy) continue;
       const dx = x - cx, dy = y - cy;
-      if (dx * dx + dy * dy <= R2) add(x, y);
+      if (spec.square || dx * dx + dy * dy <= R2) add(x, y);
     }
     return out;
   }
@@ -202,6 +202,7 @@ function inArea(spec, ox, oy, tx, ty, x, y) {
     if (spec.shape === 'emanation' && x === ox && y === oy) return false;
     const cx = spec.shape === 'emanation' ? ox : tx, cy = spec.shape === 'emanation' ? oy : ty;
     const dx = x - cx, dy = y - cy;
+    if (spec.square) return Math.abs(dx) <= n && Math.abs(dy) <= n;
     return dx * dx + dy * dy <= (n + 0.45) * (n + 0.45);
   }
   if (spec.shape === 'cube') {
@@ -472,7 +473,7 @@ Sim.prototype.setTerrain = function (t) {
     if (!(x >= 0 && y >= 0 && x < W && y < H)) continue;
     const c = cells[k] || {}, i = x + y * W;
     if (c.t === 'wall') T.wall[i] = 1; else if (c.t === 'difficult') T.rough[i] = 1; else if (c.t === 'cover') T.cover[i] = 1;
-    const h = Math.max(-6, Math.min(12, parseInt(c.h, 10) || 0));
+    const h = Math.max(-6, Math.min(24, parseInt(c.h, 10) || 0));
     if (h) { T.h[i] = h; T.anyH = true; }
     if (c.t || h) T.any = true;
   }
@@ -487,7 +488,7 @@ Sim.prototype.hAt = function (x, y) { return this.T.anyH ? this.T.h[x + y * this
 Sim.prototype.isWall = function (x, y) { return this.T.any && this.T.wall[x + y * this.W] === 1; };
 /* who is up in the air right now: a fly speed, conscious, and not knocked prone, grappled or restrained */
 const FLY_LIFT = 3;    // how high a flyer planning to shoot expects to be (15 ft)
-const MAX_ALT = 12;    // 60 ft
+const MAX_ALT = 24;    // 120 ft
 /* able to stay in the air: a fly speed, conscious, free to move, and not knocked prone */
 Sim.prototype.airborne = function (u) {
   return !!(u && u.fly && u.onBoard && !u.dead && u.hp > 0 && !u.grappledBy && this.speedOf(u) > 0 &&
@@ -716,7 +717,7 @@ Sim.prototype.cellsFor = function (spec, ox, oy, ax, ay, cx, cy) {
   const fromPoint = spec.shape === 'sphere' || (spec.shape === 'cube' && spec.placed);
   let key;
   if (fromPoint) key = spec.shape + spec.size + 'p' + ax + ',' + ay;
-  else if (spec.shape === 'emanation') key = 'e' + spec.size + ',' + ox + ',' + oy;
+  else if (spec.shape === 'emanation') key = (spec.square ? 'q' : 'e') + spec.size + ',' + ox + ',' + oy;
   else if (spec.shape === 'cube') key = 'c' + spec.size + ',' + ox + ',' + oy + ',' + ax + ',' + ay;
   else { const d = dir8(ax - ox, ay - oy); key = spec.shape + spec.size + 'w' + (spec.width || 5) + ',' + ox + ',' + oy + ',' + d[0] + ',' + d[1]; }
   const C = this.T.cellC || (this.T.cellC = new Map());
@@ -1931,7 +1932,8 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
   else if (best.mode === 'actionDis') note = `${u.name} disengages to get out of reach`;
   else if (best.mode === 'hide') note = `${u.name} slips out of sight to hide`;
   else if (best.mode === 'dodge') note = engaged ? `${u.name} goes on the defensive and Dodges` : nearestNeed(best.x, best.y) < nearestNeed(u.x, u.y) ? `${u.name} closes in carefully, Dodging as it comes` : `${u.name} holds back and Dodges`;
-  else if (best.mode === 'act' && best.path.length && nearFoe(best.x, best.y) > nearFoe(u.x, u.y) && nearFoe(u.x, u.y) <= 15) note = `${u.name} falls back to keep its distance`;
+  else if (best.mode === 'act' && best.path.length && best.off && best.off.pl && areaSpec(best.off.pl.act) && best.off.why === 'cluster') note = `${u.name} moves to line up ${best.off.pl.a.name}`;
+  else if (best.mode === 'act' && best.path.length && nearFoe(best.x, best.y) > nearFoe(u.x, u.y) && nearFoe(u.x, u.y) <= 15) note = meleeSelf && hpFrac > 0.5 ? `${u.name} repositions` : `${u.name} falls back to keep its distance`;
   else if (best.mode === 'act' && best.off && best.off.why === 'guard') note = `${u.name} steps in to protect an ally`;
   return Object.assign(best, { note });
 };
@@ -2749,7 +2751,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   }
   if (plan.area && this.record) {
     const ar = plan.area;
-    const label = { sphere: `${ar.size}-ft-radius burst`, cone: `${ar.size}-ft cone`, line: `${ar.size}-ft line`, cube: `${ar.size}-ft cube` }[ar.shape];
+    const label = { sphere: `${ar.size}-ft-radius burst`, cone: `${ar.size}-ft cone`, line: `${ar.size}-ft line`, cube: `${ar.size}-ft cube`, emanation: ar.square || (a.ext.area && a.ext.area.square) ? `${ar.size * 2}-ft square around it` : `${ar.size} ft around it` }[ar.shape];
     const ff = plan.friends ? plan.friends.filter(f => targets.includes(f)).length : 0;
     this.ev('aoe', `${u.name} unleashes ${a.name} (${label}), catching ${targets.length}${ff ? ` (${ff} of them on its own side)` : ''}`, { uid: u.uid, target: targets[0] && targets[0].uid, shape: ar.shape, size: ar.size, ox: ar.ox, oy: ar.oy, tx: ar.tx, ty: ar.ty, cells: ar.cells, hits: targets.map(t => t.uid), harm: a.type === 'atk' ? 'dmg' : 'cond' });
   }
@@ -3173,9 +3175,11 @@ Sim.prototype.surge = function (u) {
   const s = u.surges.find(a => this.usable(u, a));
   if (!s || !this.enemiesOf(u).some(e => e.onBoard && this.alive(e))) return;
   if (u.team === 'party' && u.ai === 'tactical' && this.fightInHand(u)) return;
-  const c = this.choose(u, 0, 0);
+  const left = this.has(u, ['Restrained']) || u.grappledBy ? 0 : Math.max(0, this.speedOf(u) - (u._steps || 0) * 5);
+  const c = this.choose(u, 0, left);
   if (!c || !c.p || !c.p.targets.length || (c.a.type !== 'atk' && c.a.type !== 'debuff')) return;
   this.spend(u, s);
+  if (c.p.path && c.p.path.length) { this.moveAlong(u, c.p.path); if (u.dead || u.hp <= 0) return; }
   if (s.buff && (s.buff.damage || s.buff.toHit || s.buff.ac || s.buff.condition)) this.addBuff(u, u, s, s.buff);
   this.ev('buff', `${u.name} uses ${s.name}: one more action`, { uid: u.uid });
   this.intent(u, c.a, c.p);
@@ -3294,6 +3298,7 @@ Sim.prototype.settleAltitude = function (u, a, p) {
     // out of reach of nearby foes that fight on the ground (or can't follow as high)
     const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && Math.max(Math.abs(e.x - u.x), Math.abs(e.y - u.y)) <= 8);
     want = foes.length ? Math.max(...foes.map(e => this.zOf(e) + Math.round(this.meleeReach(e) / 5) + 1)) - g : (u.alt || 0);
+    if (a && t && t !== u && Math.max(5, a._range || 5) >= 30) want = Math.max(want, 6);       // a shooter or caster stays up, about 30 ft
     // …but the shot or spell still has to reach and see its target
     if (a && t && t !== u) {
       const R = Math.max(1, Math.round(Math.max(5, a._range || 5) / 5));

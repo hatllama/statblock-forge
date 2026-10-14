@@ -1367,6 +1367,13 @@ function fixSel(){
 }
 
 /* ---------------- sidebar ---------------- */
+/* which AI a creature fights with: its own setting, or what the War Table picks from its type */
+function aiOf(c){
+  const a = c && c.ext && c.ext.ai;
+  if(a && a !== 'auto') return a.charAt(0).toUpperCase() + a.slice(1);
+  try{ if(window.TacEngine && TacEngine.autoAI){ const v = TacEngine.autoAI(c); return v.charAt(0).toUpperCase() + v.slice(1); } }catch(e){}
+  return 'Auto';
+}
 function crText(c){ return c.cr !== undefined && c.cr !== '' && c.cr !== '—' ? 'CR ' + c.cr : ''; }
 function renderSide(){
   const side = document.getElementById('forgeSide'); if(!side) return;
@@ -1389,7 +1396,7 @@ function renderSide(){
     h += `<div class="side-group"><button class="side-h enc ${on('enc', ()=>sel.e===ei)?'on':''}" data-sel-enc="${ei}"><span>${escapeHtml(encName(e, ei))}</span>${badge}</button>`;
     h += e.monsters.map((m, mi)=>`<button class="side-row sub ${on('mon', ()=>sel.e===ei && sel.i===mi)?'on':''}" data-sel-mon="${ei}:${mi}">
         <span class="sr-name">${(m.count||1) > 1 ? `<i>${m.count}×</i> ` : ''}${escapeHtml(m.name || 'Unnamed')}${dot(m)}</span>
-        <span class="sr-meta">${escapeHtml([crText(m), 'AC ' + m.AC, m.hp + ' HP'].filter(Boolean).join(' · '))}</span></button>`).join('');
+        <span class="sr-meta">${escapeHtml([crText(m), 'AC ' + m.AC, m.hp + ' HP', aiOf(m) + ' AI'].filter(Boolean).join(' · '))}</span></button>`).join('');
     h += `<button class="side-add" data-import-to="${ei}">＋ add creatures</button></div>`;
   });
   h += `<button class="side-new" data-new-enc>＋ New encounter</button>`;
@@ -1536,7 +1543,7 @@ function sheetHtml(key, c){
       <div class="sh-grid">
         ${exInput(key, 'sneakDice', 'Sneak Attack', xv(c,'sneakAttack') && c.ext.sneakAttack.dice, 'placeholder="e.g. 2d6"', 'Once per turn, on a hit with a finesse or ranged weapon, with advantage or an ally next to the target.')}
         ${exInput(key, 'legendaryActions', 'Legendary actions / round', xv(c,'legendaryActions'), 'type="number" min="0" placeholder="3"', 'Only matters if it has legendary actions.')}
-        <label class="sf"><span>Fights like</span><select data-ext="ai" data-owner="${key}">${[['auto', pc ? 'Party setting' : 'Auto (by type)'],['tactical','Tactical'],['regular','Regular'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${ai===v?'selected':''}>${l}</option>`).join('')}</select></label>
+        <label class="sf"><span>Fights like</span><select data-ext="ai" data-owner="${key}">${[['auto', pc ? 'Party setting' : `Auto: ${aiOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { ai: undefined }) }))}`],['tactical','Tactical'],['regular','Regular'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${ai===v?'selected':''}>${l}</option>`).join('')}</select></label>
       </div>
     </section>
 

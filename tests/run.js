@@ -268,6 +268,10 @@ section('Statblock parser (no AI)');
     expect(bm.ext.resources && bm.ext.resources['Superiority Dice'].uses === 5 && bm.ext.resources['Superiority Dice'].regainOnInit === 1, 'a shared die pool, refilled by one on Initiative');
     expect(bm.ext.indomitable && bm.ext.indomitable.uses === 2 && bm.ext.indomitable.bonus === 10 && bm.ext.saveAdvVs.join() === 'Stunned,Paralyzed', 'Indomitable and Advantage against named conditions');
     expect(ba(/with Trip Attack/) && ba(/with Trip Attack/).ext.resource === 'Superiority Dice' && ba(/^Riposte/).ext.riposte.bonus === '1d8' && ba(/^Riposte/).ext.resource, 'maneuvers spend from the pool, one swing of the routine at a time');
+    {
+      const g = Parser.parse('Vor\nMedium Humanoid, Neutral\nAC 15\nHP 60 (8d8 + 24)\nSpeed 30 ft.\nCR 4 (XP 1,100; PB +2)\nActions\nBlood Grasp (Recharge 5–6). Strength Saving Throw: DC 14, each enemy in a 20-foot Cube originating from Vor. Failure: 13 (3d8) Necrotic damage. Success: Half damage.').monsters[0].actions.find(a => /Grasp/.test(a.name));
+      expect(g && g.ext.area.shape === 'emanation' && g.ext.area.square && g.ext.area.size === 10, 'a cube originating from the creature is a square around it');
+    }
     expect(ba(/Action Surge/).ext.extraAction && ba(/Battle Fury/).buff.damage === '1d8' && ba(/Battle Fury/).ext.speedBonus === 10 && ba(/^Brace/).ext.brace && ba(/Spellguard/).ext.spellbreaker, 'Action Surge, a timed self-buff, Brace and a spell-blunting reaction');
     const mon = JSON.parse(JSON.stringify(bm)); mon.id = 'bm'; mon.mode = 'custom'; mon.actions.forEach((a, i) => { a.id = 'bm' + i; });
     const seen = {};

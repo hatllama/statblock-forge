@@ -306,7 +306,7 @@ function saveInfo(txt) {
   }
   return null;
 }
-function areaInfo(txt) {
+function areaInfo(txt, self) {
   let m = txt.match(/(\d+)[- ](?:foot|feet|ft\.?)[- ]long[^.]{0,30}?\bline\b/i);
   if (m) return { shape: 'line', size: +m[1] };
   m = txt.match(/(\d+)[- ](?:foot|feet|ft\.?)[- ](?:radius\s+)?(cone|line|cube|sphere|cylinder|emanation|radius|square)/i);
@@ -315,6 +315,9 @@ function areaInfo(txt) {
     const shape = k === 'radius' || k === 'cylinder' ? 'sphere' : k === 'square' ? 'cube' : k;
     // "a 20-foot-radius sphere centered on itself" or "within 10 feet of it" are emanations
     if ((shape === 'sphere') && /centered on (?:itself|it|the \w+)\b/i.test(txt)) return { shape: 'emanation', size };
+    // "a 20-foot Cube originating from Demir" / "centered on itself": a square around the creature, which it isn't caught in
+    const me = self ? '|' + self.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
+    if (shape === 'cube' && new RegExp('(?:originating from|centered on|centred on|around) (?:itself|it|him|her|them|the \\w+' + me + ')\\b', 'i').test(txt)) return { shape: 'emanation', size: Math.max(5, Math.floor(size / 10) * 5), square: true };
     return { shape, size };
   }
   m = txt.match(/(?:each|every|all|any) (?:other )?creatures?[^.]{0,60}?within (\d+) (?:feet|ft\.?)(?! of (?:a|an|the) (?:point|target))/i);
@@ -432,7 +435,7 @@ function readSaveEffect(entry, nm, notes, h) {
   const t = entry.text;
   const sv = saveInfo(t);
   if (!sv) return null;
-  const area = areaInfo(t);
+  const area = areaInfo(t, entry._selfName);
   const rg = rangeOf(t, area ? area.size : 60);
   const parts = damageParts(t);
   // "one creature … that has the Grappled, Incapacitated, or Restrained condition" says who it can target, not what it does
@@ -444,7 +447,7 @@ function readSaveEffect(entry, nm, notes, h) {
   const nCreat = !area && !upTo && t.match(/\b(two|three|four|five|six)\s+(?:other\s+)?creatures\b/i);
   if (nCreat) targets = num(nCreat[1]);
   const a = { name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: Math.max(1, targets), target: 'enemy with most HP', ext: { range: area && (['cone', 'line', 'emanation'].includes(area.shape) || (area.shape === 'cube' && !/can see|a point|centered|centred|within \d+/i.test(t))) ? area.size : (area ? (rangeOf(t).ranged || 120) : (rg.ranged || rg.melee || 60)), saveAbility: sv.ab } };
-  if (area) a.ext.area = { shape: area.shape, size: area.size };
+  if (area) a.ext.area = area.square ? { shape: area.shape, size: area.size, square: true } : { shape: area.shape, size: area.size };
   if (/difficult terrain/i.test(t) && area) a.ext.zone = { difficult: true };
   const mv = movementEffect(t);
   if (parts.length) {
@@ -729,7 +732,7 @@ function readMultiattack(entry, attacks, notes, others) {
       const best = combo.slice().sort((p, q) => q.a._avg - p.a._avg)[0];
       const out = [{ a: best.a, n }];
       // the others as War Table alternatives: n ranged shots when the best is melee, and so on
-      out.others = combo.filter(c => c.a !== best.a && (c.a._melee !== best.a._melee || c.a.ext.onHit)).map(c => { const r = [{ a: c.a, n }]; r.ranged = !c.a._melee; return r; });
+      out.others = combo.filter(c => c.a !== best.a && (c.a._melee !== best.a._melee || c.a.ext.onHit || (c.a._melee && (c.a.ext.range || 5) > (best.a.ext.range || 5)))).map(c => { const r = [{ a: c.a, n }]; r.ranged = !c.a._melee; return r; });
       return out;
     }
     return combo;
@@ -973,7 +976,7 @@ function parseOne(block) {
     multi.name = (label || 'Multiattack') + ' (' + ma.main.map(c => `${c.n} ${c.a.name}`).join(', ') + ')';
     const optOut = label && e.text.match(/\bor\s+uses?\s+(?:its\s+)?([A-Z][\w' ]+?)(?:\s+once)?\s*\.?$/);
     if (optOut && !slot0.concat(spellOut).some(a => a.name.toLowerCase() === optOut[1].trim().toLowerCase())) notes.push(`${label}: the ${optOut[1].trim()} option isn't modelled; it always makes the attacks.`);
-    const altActs = ma.alts.map((c, i) => { c.forEach(x => used.add(x.a)); const x = comboAction('Multiattack' + (ma.alts.length > 1 ? ` ${i + 2}` : ' (alternative)'), c); x.name = 'Multiattack (' + c.map(y => `${y.n} ${y.a.name}`).join(', ') + ')'; x.ext.wtOnly = true; return x; });
+    const altActs = ma.alts.map((c, i) => { c.forEach(x => used.add(x.a)); const x = comboAction('Multiattack' + (ma.alts.length > 1 ? ` ${i + 2}` : ' (alternative)'), c); x.name = 'Multiattack (' + c.map(y => `${y.n} ${y.a.name}`).join(', ') + ')'; x.ext.wtOnly = true; x._alt = true; return x; });
     // Frightful Presence & co. used as part of the routine: fire them before the fight starts
     ma.pre.forEach(p => { p.actionSlot = -3; p.condition = 'default'; p.freq = 'at will'; p._pre = true; });
     slot0 = slot0.filter(a => !used.has(a) || a.ext.swallow);
@@ -1046,7 +1049,7 @@ function parseOne(block) {
       const keep = defs.slice().sort((p, q) => worth(q) - worth(p))[0];
       defs.forEach(a => { if (a !== keep) { a.ext.wtOnly = true; if (a._ranged && keep._melee) a.ext.range = a._ranged; } });
     }
-    const rank = a => a.ext.swallow ? 0 : a._below ? 6 : a.condition !== 'default' ? (a.freq && a.freq.reset === 'recharge' ? 1 : 2) : isDefault(a) ? 4 : a.ext.wtOnly ? 5 : 3;
+    const rank = a => a.ext.swallow ? 0 : a._below ? 6 : a.condition !== 'default' ? (a.freq && a.freq.reset === 'recharge' ? 1 : 2) : isDefault(a) ? 4 : a._alt ? 4.5 : a.ext.wtOnly ? 5 : 3;   // a whole routine with other weapons beats one swing
     list = list.map((a, i) => ({ a, i })).sort((p, q) => rank(p.a) - rank(q.a) || p.i - q.i).map(x => x.a);
     out.push(...list);
   }

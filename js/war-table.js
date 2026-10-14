@@ -35,7 +35,7 @@ const S = {
   get day(){ return { name: (document.getElementById('dayNameInput') || {}).value || 'Adventuring Day', players: PARTY_PLAYERS, encounters: encounters }; },
   enc: 0,
   layouts: {},                       // encIndex -> { gapFt, positions: {key:{x,y}} }
-  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false, climbDC: 10, knowParty: 'open', knowFoes: 'open', morale: 'off' },
+  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false, climbDC: 10, knowParty: 'learn', knowFoes: 'open', morale: 'off', settingsVer: 2 },
   mode: 'setup',
   odds: {},                          // encIndex -> summary
   replay: null,                      // { events, frames, units, idx }
@@ -45,7 +45,7 @@ const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
 const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills,
-  know: { party: S.settings.knowParty || 'open', foes: S.settings.knowFoes || 'open' }, morale: S.settings.morale || 'off', climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
+  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, morale: S.settings.morale || 'off', climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -179,6 +179,7 @@ function paintToken(uid, st, maxHp, name){
 /* ---------------- token inspector: click a token to see what it has ---------------- */
 let inspectUid = null;
 function inspect(uid){ inspectUid = inspectUid === uid ? null : uid; renderInspect(); }
+const cap1 = x => String(x).charAt(0).toUpperCase() + String(x).slice(1);
 const signed = n => (n >= 0 ? '+' : '') + n;
 function renderInspect(){
   const box = document.getElementById('wt-inspect'); if(!box) return;
@@ -190,7 +191,7 @@ function renderInspect(){
   const sh = u.sheet || {};
   const hp = Math.max(0, Math.round(st.hp)), frac = Math.max(0, Math.min(1, st.hp / u.maxHp));
   const col = frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f';
-  const sub = [u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
+  const sub = [sh.ai ? cap1(sh.ai) + ' AI' : '', u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
   // height: the ground it stands on plus how high it flies
   const ground = st.ground || 0, alt = st.alt || 0;
   const height = alt ? `flying ${alt} ft up${ground ? ` (${ground + alt} ft above the floor)` : ''}` : ground > 0 ? `on ${ground} ft high ground` : ground < 0 ? `in a ${-ground} ft dip` : 'ground level';
@@ -304,7 +305,7 @@ function paintCell(x, y){
   const cells = lay.terrain.cells;
   const c = Object.assign({}, cells[k] || {});
   if(tool === 'erase'){ delete cells[k]; return; }
-  if(tool === 'up') c.h = Math.min(8, (c.h || 0) + 1);
+  if(tool === 'up') c.h = Math.min(24, (c.h || 0) + 1);
   else if(tool === 'down') c.h = Math.max(-4, (c.h || 0) - 1);
   else c.t = tool;
   if(!c.h) delete c.h;
@@ -770,7 +771,7 @@ function renderAll(){
   document.getElementById('wt-runs').value = String(S.settings.runs);
   document.getElementById('wt-partyAI').value = S.settings.partyAI || 'tactical';
   document.getElementById('wt-morale').value = S.settings.morale || 'off';
-  document.getElementById('wt-knowParty').value = S.settings.knowParty || 'open';
+  document.getElementById('wt-knowParty').value = S.settings.knowParty || 'learn';
   document.getElementById('wt-knowFoes').value = S.settings.knowFoes || 'open';
   knowNote();
   showPane(S.settings.sideTab || 'map');
@@ -800,7 +801,7 @@ function show(){
 (async function init(){
   try{
     const raw = await store.get();
-    if(raw){ const w = JSON.parse(raw); if(w.layouts) S.layouts = w.layouts; if(w.settings) Object.assign(S.settings, w.settings); if(typeof w.enc === 'number') S.enc = w.enc; }
+    if(raw){ const w = JSON.parse(raw); if(w.layouts) S.layouts = w.layouts; if(w.settings){ const old = !w.settings.settingsVer; Object.assign(S.settings, w.settings); if(old){ S.settings.knowParty = 'learn'; S.settings.settingsVer = 2; } } if(typeof w.enc === 'number') S.enc = w.enc; }
   }catch(e){}
   ready = true;
   setMode('setup');
