@@ -2,6 +2,7 @@
 'use strict';
 
 const CELL = 36;
+const SETUP_LABEL = '<b>Setup</b>: drag tokens to place them, click one to inspect it';
 const SLOT_NAMES = {0:'action',1:'bonus',2:'legendary',3:'lair',4:'reaction',5:'other',6:'other','-1':'on 0 HP','-2':'on kill','-3':'pre-fight'};
 
 /* ---------------- persistence (Claude storage, or the browser) ---------------- */
@@ -77,8 +78,8 @@ function buildBoard(units){
   tokenEls = {};
   const defs = el('defs', {}, svg);
   const pat = el('pattern', { id: 'wt-rough', width: 8, height: 8, patternUnits: 'userSpaceOnUse', patternTransform: 'rotate(45)' }, defs);
-  el('rect', { width: 8, height: 8, fill: 'rgba(120,140,80,.10)' }, pat);
-  el('line', { x1: 0, y1: 0, x2: 0, y2: 8, stroke: 'rgba(160,180,110,.55)', 'stroke-width': 2 }, pat);
+  el('rect', { width: 8, height: 8, fill: 'rgba(110,150,90,.10)' }, pat);
+  el('line', { x1: 0, y1: 0, x2: 0, y2: 8, stroke: 'rgba(140,170,100,.6)', 'stroke-width': 2 }, pat);
   layers.terrain = el('g', {}, svg);
   const g = el('g', {}, svg);
   for(let x=0;x<=W();x++) el('line',{x1:x*CELL,y1:0,x2:x*CELL,y2:H()*CELL,class:'gridline'},g);
@@ -95,10 +96,10 @@ function buildBoard(units){
     const r = big ? 16.5 : 14;
     const fill = u.team === 'party' ? 'var(--party)' : 'var(--foe)';
     const ink = u.team === 'party' ? 'var(--party-ink)' : 'var(--foe-ink)';
-    el('circle', { r: r+7, class: 'halo', fill: 'rgba(242,214,140,.10)', stroke: '#f2d68c', 'stroke-width': 2.5 }, t);
-    el('circle', { r: r+2.5, fill: 'none', stroke: '#0d0b09', 'stroke-width': 3.5 }, t);
-    const ring = el('circle', { r: r+2.5, fill: 'none', stroke: '#7aa267', 'stroke-width': 3, transform: 'rotate(-90)', 'stroke-linecap': 'round' }, t);
-    const body = el('circle', { r, fill, stroke: '#0d0b09', 'stroke-width': 1.5 }, t);
+    el('circle', { r: r+7, class: 'halo', fill: 'rgba(207,219,138,.10)', stroke: '#cfdb8a', 'stroke-width': 2.5 }, t);
+    el('circle', { r: r+2.5, fill: 'none', stroke: '#040201', 'stroke-width': 3.5 }, t);
+    const ring = el('circle', { r: r+2.5, fill: 'none', stroke: '#6fc28f', 'stroke-width': 3, transform: 'rotate(-90)', 'stroke-linecap': 'round' }, t);
+    const body = el('circle', { r, fill, stroke: '#040201', 'stroke-width': 1.5 }, t);
     const txt = el('text', { class: 'ini', 'text-anchor': 'middle', dy: '3.5', fill: ink }, t); txt.textContent = initials(u.name);
     const badge = el('text', { class: 'ini', 'text-anchor': 'middle', y: -r-7, fill: '#d98a5f', 'font-size': 11 }, t);
     const shadow = el('ellipse', { cx: 0, cy: r+4, rx: r*.8, ry: 3.5, fill: 'rgba(0,0,0,.45)', style: 'display:none' }, t);
@@ -108,7 +109,7 @@ function buildBoard(units){
     // passive auras: a dashed square (5e grid distances) that follows the creature
     const auras = (u.auras || []).map(a=>{
       const n = Math.round(a.r / 5), side = (2*n + 1) * CELL;
-      const rect = el('rect', { width: side, height: side, rx: 6, fill: 'rgba(224,80,60,.06)', stroke: 'rgba(224,80,60,.7)', 'stroke-width': 1.5, 'stroke-dasharray': '6 5', 'pointer-events': 'none' }, layers.auras);
+      const rect = el('rect', { width: side, height: side, rx: 6, fill: 'rgba(217,87,63,.06)', stroke: 'rgba(217,87,63,.7)', 'stroke-width': 1.5, 'stroke-dasharray': '6 5', 'pointer-events': 'none' }, layers.auras);
       const tt = el('title', {}, rect); tt.textContent = `${u.name}: ${a.name} (${a.r} ft aura)`;
       return { rect, n };
     });
@@ -124,7 +125,7 @@ function placeToken(uid, x, y){
 /* areas of effect: the squares an area covers, coloured by what it does, with the caster's origin marked */
 function drawArea(e, strong){
   const g = el('g', { 'pointer-events': 'none' }, layers.areas);
-  const col = e.harm === 'cond' ? '155,107,214' : '224,80,60';
+  const col = e.harm === 'cond' ? '155,120,214' : '217,87,63';
   const cells = e.cells || [];
   const set = new Set(cells.map(c=>c[0]+','+c[1]));
   for(const [x,y] of cells) el('rect', { x: x*CELL + 1, y: y*CELL + 1, width: CELL - 2, height: CELL - 2, rx: 3, fill: `rgba(${col},${strong ? .34 : .2})` }, g);
@@ -151,7 +152,7 @@ function drawZone(z){
   const g = el('g', { 'pointer-events': 'none' }, layers.areas);
   for(const [x,y] of z.cells || []){
     if(z.zkind === 'fog') el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'rgba(205,210,214,.55)' }, g);
-    else { el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'rgba(110,150,70,.22)' }, g); el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'url(#wt-rough)' }, g); }
+    else { el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'rgba(110,160,80,.22)' }, g); el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'url(#wt-rough)' }, g); }
   }
   return g;
 }
@@ -159,14 +160,14 @@ function paintToken(uid, st, maxHp, name){
   const t = tokenEls[uid]; if(!t) return;
   const frac = Math.max(0, Math.min(1, st.hp / maxHp));
   t.ring.setAttribute('stroke-dashoffset', String(t.circ * (1 - frac)));
-  t.ring.setAttribute('stroke', frac > .5 ? '#7aa267' : frac > .25 ? '#c2993f' : '#d24a4a');
+  t.ring.setAttribute('stroke', frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f');
   const gone = st.dead && t.unit.team === 'foes';
   t.g.style.display = (!st.onBoard && !st.dead) || gone ? 'none' : '';
   for(const a of t.auras) a.rect.style.display = st.dead || st.hp <= 0 || !st.onBoard ? 'none' : '';
   t.g.style.opacity = st.dead ? .35 : 1;
-  t.body.setAttribute('fill', st.down || st.dead ? '#4a423a' : t.fill);
+  t.body.setAttribute('fill', st.down || st.dead ? '#36352e' : t.fill);
   t.txt.textContent = st.dead ? '✕' : st.down ? (st.stable ? '✚' : `${st.ds}/${st.df}`) : initials(name);
-  t.txt.setAttribute('fill', st.down || st.dead ? '#e9dfc4' : (t.unit.team === 'party' ? '#20180c' : '#f2e6c9'));
+  t.txt.setAttribute('fill', st.down || st.dead ? '#e4e1d2' : (t.unit.team === 'party' ? '#03130a' : '#fff1ea'));
   // flying height: a shadow under the token and the height in feet
   if(t.altTxt){ t.altTxt.textContent = st.alt && !st.dead ? `↑${st.alt} ft` : ''; t.shadow.style.display = st.alt && !st.dead ? '' : 'none'; }
   const flags = [];
@@ -188,7 +189,7 @@ function renderInspect(){
   if(!u || !st){ inspectUid = null; box.hidden = true; box.innerHTML = ''; return; }
   const sh = u.sheet || {};
   const hp = Math.max(0, Math.round(st.hp)), frac = Math.max(0, Math.min(1, st.hp / u.maxHp));
-  const col = frac > .5 ? '#7aa267' : frac > .25 ? '#c2993f' : '#d24a4a';
+  const col = frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f';
   const sub = [u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
   // height: the ground it stands on plus how high it flies
   const ground = st.ground || 0, alt = st.alt || 0;
@@ -259,24 +260,24 @@ function drawTerrain(terrain){
     const X = x*CELL, Y = y*CELL;
     if(c.h){
       const a = Math.min(.65, .12 + Math.abs(c.h) * .09);
-      el('rect', { x: X, y: Y, width: CELL, height: CELL, fill: c.h > 0 ? `rgba(214,178,98,${a})` : `rgba(60,90,130,${a})` }, layers.terrain);
+      el('rect', { x: X, y: Y, width: CELL, height: CELL, fill: c.h > 0 ? `rgba(190,180,90,${a})` : `rgba(60,90,130,${a})` }, layers.terrain);
     }
     if(c.t === 'wall'){
-      el('rect', { x: X+1, y: Y+1, width: CELL-2, height: CELL-2, rx: 2, fill: '#4b4036', stroke: '#6d5d4c', 'stroke-width': 1.5 }, layers.terrain);
+      el('rect', { x: X+1, y: Y+1, width: CELL-2, height: CELL-2, rx: 2, fill: '#3a3d36', stroke: '#5b6157', 'stroke-width': 1.5 }, layers.terrain);
       el('path', { d: `M${X+4},${Y+CELL*.36}h${CELL-8}M${X+4},${Y+CELL*.68}h${CELL-8}M${X+CELL*.5},${Y+3}v${CELL*.33}M${X+CELL*.3},${Y+CELL*.36}v${CELL*.32}M${X+CELL*.7},${Y+CELL*.68}v${CELL*.3}`, stroke: '#2e2620', 'stroke-width': 1.5, fill: 'none' }, layers.terrain);
     } else if(c.t === 'difficult'){
       el('rect', { x: X, y: Y, width: CELL, height: CELL, fill: 'url(#wt-rough)' }, layers.terrain);
     } else if(c.t === 'cover'){
-      el('rect', { x: X+4, y: Y+CELL*.32, width: CELL-8, height: CELL*.36, rx: 3, fill: '#8a7558', stroke: '#5c4c38', 'stroke-width': 1.2 }, layers.terrain);
+      el('rect', { x: X+4, y: Y+CELL*.32, width: CELL-8, height: CELL*.36, rx: 3, fill: '#6f6a4f', stroke: '#4a4635', 'stroke-width': 1.2 }, layers.terrain);
     }
     if(c.h){
-      const t = el('text', { x: X+3, y: Y+11, class: 'ini', fill: c.h > 0 ? '#f2d68c' : '#a9c4e8', 'font-size': 9.5 }, layers.terrainTop);
+      const t = el('text', { x: X+3, y: Y+11, class: 'ini', fill: c.h > 0 ? '#e2d98a' : '#a9c4e8', 'font-size': 9.5 }, layers.terrainTop);
       t.textContent = (c.h > 0 ? '+' : '') + c.h*5;
       // cliff edges between different heights
       [[1,0],[0,1]].forEach(([dx,dy])=>{
         const h2 = H_(x+dx, y+dy); if(h2 === c.h) return;
         const d = dx ? `M${X+CELL},${Y}v${CELL}` : `M${X},${Y+CELL}h${CELL}`;
-        el('path', { d, stroke: '#e8c773', 'stroke-width': Math.min(4, 1 + Math.abs(h2 - c.h)), opacity: .8 }, layers.terrainTop);
+        el('path', { d, stroke: '#d8cf7a', 'stroke-width': Math.min(4, 1 + Math.abs(h2 - c.h)), opacity: .8 }, layers.terrainTop);
       });
     }
   }
@@ -286,7 +287,7 @@ function drawTerrain(terrain){
     [[-1,0],[0,-1]].forEach(([dx,dy])=>{
       if(cells[(x+dx)+','+(y+dy)] && cells[(x+dx)+','+(y+dy)].h) return;
       const X = x*CELL, Y = y*CELL;
-      el('path', { d: dx ? `M${X},${Y}v${CELL}` : `M${X},${Y}h${CELL}`, stroke: '#e8c773', 'stroke-width': Math.min(4, 1 + Math.abs(c.h)), opacity: .8 }, layers.terrainTop);
+      el('path', { d: dx ? `M${X},${Y}v${CELL}` : `M${X},${Y}h${CELL}`, stroke: '#d8cf7a', 'stroke-width': Math.min(4, 1 + Math.abs(c.h)), opacity: .8 }, layers.terrainTop);
     });
   }
   const lg = document.getElementById('wt-terrainLegend'); if(lg) lg.style.display = any ? '' : 'none';
@@ -314,8 +315,8 @@ document.getElementById('wt-tools').addEventListener('click', ev=>{
   tool = b.dataset.tool;
   document.querySelectorAll('#wt-tools [data-tool]').forEach(x=>x.classList.toggle('on', x === b));
   svg.classList.toggle('painting', tool !== 'move');
-  document.getElementById('wt-modeLabel').textContent = tool === 'move' ? 'Setup · drag tokens to set starting positions' : `Setup · painting: ${b.textContent.replace(/^\S+\s/, '').toLowerCase()}`;
-  document.getElementById('wt-toolHelp').textContent = tool === 'move' ? 'Drag tokens to place them. Pick a terrain tool to paint the map.' :
+  document.getElementById('wt-modeLabel').innerHTML = tool === 'move' ? SETUP_LABEL : `<b>Setup</b>: painting ${esc(b.textContent.trim().toLowerCase())}`;
+  document.getElementById('wt-toolHelp').textContent = tool === 'move' ? 'Pick a terrain tool to paint the map.' :
     tool === 'up' || tool === 'down' ? 'Each click or stroke changes the height by 5 ft. Going up costs 5 ft of movement per 5 ft of height. A 5-ft rise gives half cover to whoever is behind it; a ledge of 10 ft or more needs a climb speed or an Athletics check (up or down). Reach and sight follow the height. Flyers skip all of this: no climbing, no difficult ground, and they see over raised ground.' :
     tool === 'erase' ? 'Drag across squares to clear them.' : 'Click or drag across squares to paint.';
 });
@@ -445,7 +446,7 @@ function drawHist(E){
   const w = 420, h = 170, pad = { l: 8, r: 8, t: 10, b: 24 };
   const bw = (w - pad.l - pad.r) / bins.length;
   let s = `<svg viewBox="0 0 ${w} ${h}" role="img" aria-label="Histogram of party HP left">`;
-  s += `<line x1="${pad.l}" y1="${h-pad.b}" x2="${w-pad.r}" y2="${h-pad.b}" stroke="#382e24"/>`;
+  s += `<line x1="${pad.l}" y1="${h-pad.b}" x2="${w-pad.r}" y2="${h-pad.b}" stroke="#2e231b"/>`;
   bins.forEach((c,i)=>{
     const bh = c / max * (h - pad.t - pad.b);
     const x = pad.l + i*bw + 1, y = h - pad.b - bh, ww = bw - 2;
@@ -538,7 +539,7 @@ function showFrame(idx){
     const st = f[uid];
     if(st.swallowedBy) inside[st.swallowedBy] = (inside[st.swallowedBy]||0) + 1;
     if(st.grappledBy && f[st.grappledBy]){ const g = f[st.grappledBy];
-      el('line', { x1:(st.x+.5)*CELL, y1:(st.y+.5)*CELL, x2:(g.x+.5)*CELL, y2:(g.y+.5)*CELL, stroke:'#c2993f', 'stroke-width':2, 'stroke-dasharray':'2 4', opacity:.8 }, layers.links); }
+      el('line', { x1:(st.x+.5)*CELL, y1:(st.y+.5)*CELL, x2:(g.x+.5)*CELL, y2:(g.y+.5)*CELL, stroke:'#d9a24f', 'stroke-width':2, 'stroke-dasharray':'2 4', opacity:.8 }, layers.links); }
   }
   for(const uid in tokenEls) tokenEls[uid].badge.textContent = inside[uid] ? `◉ ${inside[uid]} inside` : '';
   layers.areas.innerHTML = '';
@@ -564,10 +565,10 @@ function renderInit(f, actor){
     const u = R.units[uid], st = f[uid] || {}; if(!u) return '';
     const frac = Math.max(0, Math.min(1, (st.hp||0) / u.maxHp));
     const gone = st.dead || (!st.onBoard && !st.swallowedBy);
-    const col = frac > .5 ? '#7aa267' : frac > .25 ? '#c2993f' : '#d24a4a';
+    const col = frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f';
     const tag = st.dead ? 'dead' : st.down ? (st.stable ? 'stable' : `${st.ds}✓ ${st.df}✗`) : st.swallowedBy ? 'swallowed' : `${Math.round(st.hp)}/${u.maxHp}`;
     return `<div class="init-row ${uid===actor?'cur':''} ${gone?'gone':''}"><span class="dot" style="background:${u.team==='party'?'var(--party)':'var(--foe)'}"></span><span class="nm">${esc(u.name)}${st.slots || st.conc ? `<span class="spl">${st.slots ? 'slots ' + esc(st.slots) : ''}${st.conc ? ` · ◈ ${esc(st.conc)}` : ''}</span>` : ''}</span>
-      <span><div class="mini-hp"><div style="width:${frac*100}%;background:${col}"></div></div><div class="mono" style="font-size:10px;color:var(--parchment-faint);text-align:right;">${tag}</div></span></div>`;
+      <span><div class="mini-hp"><div style="width:${frac*100}%;background:${col}"></div></div><div class="mono" style="font-size:12px;color:var(--parchment-faint);text-align:right;">${tag}</div></span></div>`;
   }).join('');
 }
 function renderLog(){
@@ -615,7 +616,7 @@ function floater(x, y, text, color){
 }
 function strike(a, b, hit, ranged){
   const x1 = (a.x+.5)*CELL, y1 = (a.y+.5)*CELL, x2 = (b.x+.5)*CELL, y2 = (b.y+.5)*CELL;
-  const line = el('line', { x1, y1, x2, y2, stroke: hit ? '#e0503c' : '#8a7c64', 'stroke-width': ranged ? 2 : 3.5, 'stroke-linecap': 'round', 'stroke-dasharray': hit ? '' : '5 5', opacity: .9 }, layers.fx);
+  const line = el('line', { x1, y1, x2, y2, stroke: hit ? '#d9573f' : '#7d7866', 'stroke-width': ranged ? 2 : 3.5, 'stroke-linecap': 'round', 'stroke-dasharray': hit ? '' : '5 5', opacity: .9 }, layers.fx);
   setTimeout(()=>line.remove(), 420 / speed());
 }
 async function animateEvent(i){
@@ -636,8 +637,8 @@ async function animateEvent(i){
   const inArea = R.aoeAt && R.aoeAt[i] >= 0 && e.kind === 'save';
   if((e.kind === 'attack' || e.kind === 'save' || e.kind === 'react') && A && B && e.target){
     if(!inArea) strike(A, B, e.hit !== false, e.ranged);
-    if(e.dmg) floater(B.x, B.y, (e.crit ? 'CRIT ' : '') + '-' + e.dmg, '#ff7b6b');
-    else if(e.kind === 'attack' && !e.hit) floater(B.x, B.y, 'miss', '#a99a7c');
+    if(e.dmg) floater(B.x, B.y, (e.crit ? 'CRIT ' : '') + '-' + e.dmg, '#ff8a73');
+    else if(e.kind === 'attack' && !e.hit) floater(B.x, B.y, 'miss', '#aca792');
     await wait(e.dmg ? 520 : 380); return;
   }
   if(e.kind === 'heal' && e.target && R.frames[i][e.target]){ const t = R.frames[i][e.target]; const m = e.text.match(/\+(\d+)/); floater(t.x, t.y, '+' + (m ? m[1] : ''), '#7fc08a'); await wait(420); return; }
@@ -680,8 +681,20 @@ function setMode(m){
   document.getElementById('wt-replayPanel').style.display = m === 'replay' ? '' : 'none';
   document.getElementById('wt-playControls').style.display = m === 'replay' ? '' : 'none';
   svg.classList.toggle('setup', m === 'setup');
-  document.getElementById('wt-modeLabel').textContent = m === 'setup' ? 'Setup · drag tokens to set starting positions' : `Replay · run #${S.replay ? S.replay.seed : ''}${S.replay ? (S.replay.won ? ' · party wins' : ' · party loses') : ''}`;
+  document.getElementById('wt-modeLabel').innerHTML = m === 'setup' ? (tool === 'move' ? SETUP_LABEL : document.getElementById('wt-modeLabel').innerHTML) :
+    `<b>Replay</b> of run ${S.replay ? S.replay.seed : ''}${S.replay ? (S.replay.won ? ', the party wins' : ', the party loses') : ''}. Click a token to inspect it.`;
 }
+/* the setup card's tabs: Map, Rules, AI */
+function showPane(name){
+  if(!['map', 'rules', 'ai'].includes(name)) name = 'map';
+  S.settings.sideTab = name;
+  document.querySelectorAll('#wt-setupPanel .side-tabs [data-pane]').forEach(b=>{ b.classList.toggle('on', b.dataset.pane === name); b.setAttribute('aria-selected', b.dataset.pane === name ? 'true' : 'false'); });
+  document.querySelectorAll('#wt-setupPanel .pane').forEach(p=>{ p.hidden = p.dataset.pane !== name; });
+}
+document.querySelector('#wt-setupPanel .side-tabs').addEventListener('click', ev=>{
+  const b = ev.target.closest('[data-pane]'); if(!b) return;
+  showPane(b.dataset.pane); scheduleSave();
+});
 
 /* ---------------- tactical stats ---------------- */
 function renderStats(){
@@ -760,6 +773,7 @@ function renderAll(){
   document.getElementById('wt-knowParty').value = S.settings.knowParty || 'open';
   document.getElementById('wt-knowFoes').value = S.settings.knowFoes || 'open';
   knowNote();
+  showPane(S.settings.sideTab || 'map');
   document.getElementById('wt-tpk').checked = !!S.settings.tpkKills;
   document.getElementById('wt-climb').value = String(S.settings.climbDC === undefined ? 10 : S.settings.climbDC);
   document.getElementById('wt-mapSize').value = S.settings.map;
