@@ -264,7 +264,7 @@ function validateBuffObject(buff, issues, prefix, ax){
     }
   });
   const hasEffect = ['ac','toHit','damage','damageReduction','damageMultiplier','damageTakenMultiplier','condition','save'].some(f=>buff[f] !== undefined);
-  if(!hasEffect && !(ax && (ax.teleport || ax.grantFly || ax.speedBonus || ax.mirror || ax.concBonus || ax.stepAway || (ax.onHit && ax.onHit.noReactions) || ax.resist || ax.riposte || ax.brace || ax.spellbreaker || ax.extraAction))) issues.push(`${prefix} has a duration but no actual effect field (ac/toHit/damage/damageReduction/damageMultiplier/damageTakenMultiplier/condition) — it won't do anything`);
+  if(!hasEffect && !(ax && (ax.teleport || ax.grantFly || ax.speedBonus || ax.mirror || ax.concBonus || ax.stepAway || (ax.onHit && ax.onHit.noReactions) || ax.resist || ax.riposte || ax.brace || ax.spellbreaker || ax.extraAction || ax.grantsBuff))) issues.push(`${prefix} has a duration but no actual effect field (ac/toHit/damage/damageReduction/damageMultiplier/damageTakenMultiplier/condition) — it won't do anything`);
 }
 
 function validateAction(a, issues, prefix){
@@ -315,7 +315,7 @@ function validateOrdering(m, issues){
     // Only an AT-WILL "default" action blocks what's below it forever; a limited-use one
     // stops matching once spent, so the actions under it still get their turn afterwards.
     // gated forge actions (swallow, ambush-only) don't always apply, so they never block what's below
-    const isGated = a => !!(a.ext && (a.ext.swallow || a.ext.onlyIfEnemiesSurprised));
+    const isGated = a => !!(a.ext && (a.ext.swallow || a.ext.onlyIfEnemiesSurprised || a.ext.resource || a.ext.requiresBuff));   // a shared pool runs dry, a needed buff may be down
     const blocking = list.filter(e=>e.a.condition === 'default' && e.a.freq === 'at will' && !isGated(e.a));
     if(blocking.length > 1){
       issues.push(`Slot ${slot} has ${blocking.length} at-will actions with condition "default" (${blocking.map(e=>e.a.name).join(', ')}) — only the first will ever fire, the rest are permanently dead.`);

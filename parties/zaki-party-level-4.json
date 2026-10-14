@@ -402,19 +402,20 @@
    "actions": [
     {
      "freq": "at will",
-     "condition": "default",
+     "condition": "is under half HP",
      "targets": 1,
-     "name": "Martial Arts (bonus strike)",
+     "name": "Patient Defense (1 Focus Point)",
      "actionSlot": 1,
-     "type": "atk",
-     "dpr": "1d6 + 4",
-     "toHit": 6,
-     "target": "enemy with least HP",
-     "ext": {
-      "range": 5,
-      "damageType": "bludgeoning"
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round",
+      "condition": "Is attacked with Disadvantage"
      },
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a1"
+     "ext": {
+      "resource": "Focus Points"
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a3"
     },
     {
      "freq": "at will",
@@ -432,20 +433,20 @@
     },
     {
      "freq": "at will",
-     "condition": "is under half HP",
-     "targets": 1,
-     "name": "Patient Defense (1 Focus Point)",
+     "condition": "default",
+     "targets": 2,
+     "name": "Flurry of Blows (1 Focus Point)",
      "actionSlot": 1,
-     "type": "buff",
-     "target": "self",
-     "buff": {
-      "duration": "1 round",
-      "condition": "Is attacked with Disadvantage"
-     },
      "ext": {
-      "resource": "Focus Points"
+      "resource": "Focus Points",
+      "range": 5,
+      "damageType": "bludgeoning"
      },
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a3"
+     "type": "atk",
+     "dpr": "1d6 + 4",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a7"
     },
     {
      "freq": "at will",
@@ -506,19 +507,18 @@
     {
      "freq": "at will",
      "condition": "default",
-     "targets": 2,
-     "name": "Flurry of Blows (1 Focus Point)",
+     "targets": 1,
+     "name": "Martial Arts (bonus strike)",
      "actionSlot": 1,
-     "ext": {
-      "resource": "Focus Points",
-      "range": 5,
-      "damageType": "bludgeoning"
-     },
      "type": "atk",
      "dpr": "1d6 + 4",
      "toHit": 6,
      "target": "enemy with least HP",
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a7"
+     "ext": {
+      "range": 5,
+      "damageType": "bludgeoning"
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a1"
     }
    ],
    "_notes": [

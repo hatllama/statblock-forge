@@ -408,6 +408,14 @@ function build(f, opts) {
     if (skipped.length) notes.push(`Not in its spell list (no rules for them yet): ${skipped.slice(0, 12).join(', ')}${skipped.length > 12 ? '…' : ''}.`);
     if (out.length) { ext.spellbook = { slots, slotReset: reset, spells: out, conSave: saves.con }; if (top === 0 && out.some(s => s.level > 0)) notes.push('No spell slots found.'); }
   }
+  // within each slot, the plain at-will options go last so pooled, conditional and limited ones get their turn
+  const plain = a => a.condition === 'default' && a.freq === 'at will' && !(a.ext && (a.ext.resource || a.ext.requiresBuff || a.ext.wtOnly));
+  Array.from(new Set(actions.map(a => a.actionSlot))).forEach(sl => {
+    const at = [], list = [];
+    actions.forEach((a, i) => { if (a.actionSlot === sl) { at.push(i); list.push(a); } });
+    const sorted = list.filter(a => !plain(a)).concat(list.filter(plain));
+    at.forEach((i, k) => { actions[i] = sorted[k]; });
+  });
   const avgSave = Math.round(ABS.reduce((t, k) => t + saves[k], 0) / 6 * 100) / 100;
   const cls = { type: CLASSES[main.name] ? main.name : 'fighter', level, options: {} };
   ext.build = f.classes.map(c => `${titleCase(c.name)} ${c.level}${c.sub ? ` (${c.sub})` : ''}`).join(' / ') + ` · read from ${f.src === 'text' ? 'a pasted sheet' : f.src}`;
