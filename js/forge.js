@@ -1879,7 +1879,7 @@ function onResourceField(el){
 
 /* ---------------- character sheets → party members ---------------- */
 let sheetDraft = '', sheetFile = null;      // sheetFile: { name, kind: 'pdf'|'image', mime, b64, text }
-function sheetFileInfo(){ return sheetFile ? `Loaded ${escapeHtml(sheetFile.name)}${sheetFile.text ? '' : ' (no text in it: use Read with Claude)'}.` : ''; }
+function sheetFileInfo(){ return sheetFile ? `Loaded ${escapeHtml(sheetFile.name)}${sheetFile.text ? '' : ' (a picture only: use Read with Claude)'}.` : ''; }
 function addSheetPlayer(res, how){
   const p = res.player;
   p.id = uid(); (p.actions || []).forEach(a=>{ a.id = uid(); });
@@ -1943,13 +1943,13 @@ async function readSheet(){
   let text = sheetDraft.trim();
   const link = text.match(/^https?:\/\/(?:www\.)?dndbeyond\.com\/(?:profile\/[^\/]+\/)?characters\/(\d+)/i);
   if(link){
+    // a browser won't let this page fetch D&D Beyond (it blocks other sites), so the character data goes through a tab and the clipboard
     const api = 'https://character-service.dndbeyond.com/character/v5/character/' + link[1];
-    setStatus('sheetStatus', 'Fetching the character from D&D Beyond…');
-    try{ const r = await fetch(api); if(!r.ok) throw new Error('HTTP ' + r.status); text = await r.text(); }
-    catch(e){ setStatus('sheetStatus', `D&amp;D Beyond didn't let this page fetch it. Make sure the character is public, open <a href="${api}" target="_blank" rel="noopener">its JSON</a>, select all, copy, and paste that here.`, 'err'); return; }
+    setStatus('sheetStatus', `D&amp;D Beyond doesn't let other sites fetch a character, so: <a href="${api}" target="_blank" rel="noopener">open the character data ↗</a> (it must be a public character), press Ctrl+A then Ctrl+C on that page, come back and <button class="mini-btn" data-sheet-clip>paste from clipboard</button>`, 'err');
+    return;
   }
   if(!text && sheetFile && sheetFile.text) text = sheetFile.text;
-  if(!text){ setStatus('sheetStatus', sheetFile ? 'That file has no text to read. Use Read with Claude.' : 'Paste a sheet or upload a file first.', 'err'); return; }
+  if(!text){ setStatus('sheetStatus', sheetFile ? 'This PDF has no text in it (it was printed or exported as a picture), so it can\'t be read here. Use Read with Claude, or paste the sheet from D&amp;D Beyond (the character link or its JSON).' : 'Paste a sheet or upload a file first.', 'err'); return; }
   try{ addSheetPlayer(SheetReader.read(text), 'text'); }
   catch(e){ setStatus('sheetStatus', escapeHtml(e.message), 'err'); }
 }
@@ -2068,6 +2068,11 @@ dyn.addEventListener('click', ev=>{
     return rerenderFor(d.owner);
   }
   if(d.sheetRead !== undefined){ readSheet(); return; }
+  if(d.sheetClip !== undefined){
+    if(!navigator.clipboard || !navigator.clipboard.readText){ setStatus('sheetStatus', 'This browser won\'t let the page read the clipboard: paste into the box above instead.', 'err'); return; }
+    navigator.clipboard.readText().then(t=>{ const ta = document.getElementById('sheetInput'); if(ta) ta.value = t; sheetDraft = t; readSheet(); }).catch(()=>setStatus('sheetStatus', 'The clipboard was blocked: paste into the box above instead.', 'err'));
+    return;
+  }
   if(d.sheetClaude !== undefined){ readSheetWithClaude(); return; }
   if(d.rosterAdd || d.rosterBlank !== undefined){
     let p;
