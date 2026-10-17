@@ -1,0 +1,273 @@
+CharacterName: Baruba Ran
+CLASS  LEVEL: Barbarian 7
+PLAYER NAME: RussianLlama
+RACE: Goliath
+BACKGROUND: Folk Hero
+EXPERIENCE POINTS: (Milestone)
+STR: 20
+STRmod: +5
+DEX: 15
+DEXmod: +2
+CON: 16
+CONmod: +3
+INT: 8
+INTmod: -1
+WIS: 13
+WISmod: +1
+CHA: 10
+CHamod: +0
+StrProf: •
+ST Strength: +8
+ST Dexterity: +2
+ConProf: •
+ST Constitution: +6
+ST Intelligence: -1
+ST Wisdom: +1
+ST Charisma: +0
+Defenses: Resistances - Cold
+SaveModifiers: Advantage on DEX against effects that you can see while not blinded, deafened, or
+Acrobatics: +2
+AcrobaticsMod: DEX
+AnimalHandlingProf: P
+Animal: +4
+AnimalMod: WIS
+Arcana: -1
+ArcanaMod: INT
+AthleticsProf: P
+Athletics: +8
+AthleticsMod: STR
+Deception: +0
+DeceptionMod: CHA
+History: -1
+HistoryMod: INT
+Insight: +1
+InsightMod: WIS
+IntimidationProf: P
+Intimidation: +3
+IntimidationMod: CHA
+Investigation: -1
+InvestigationMod: INT
+Medicine: +1
+MedicineMod: WIS
+Nature: -1
+NatureMod: INT
+PerceptionProf: P
+Perception: +4
+PerceptionMod: WIS
+Performance: +0
+PerformanceMod: CHA
+Persuasion: +0
+PersuasionMod: CHA
+Religion: -1
+SleightofHand: +2
+Stealth: +2
+SurvivalProf: P
+Survival: +4
+Passive1: 14
+Passive2: 11
+Passive3: 9
+Init: +2
+AC: 15
+ProfBonus: +3
+Speed: 40 ft. (Walking)
+MaxHP: 93
+TempHP: --
+Total: 7d12
+ProficienciesLang: === ARMOR === , Light Armor, Medium Armor, Shields , , === WEAPONS === , Martial Weapons, Simple Weapons , , === TOOLS === , Carpenter's Tools, Vehicles (Land) , , === LANGUAGES === , Common, Primordial
+ReligionMod: INT
+SleightofHandMod: DEX
+StealthMod: DEX
+SurvivalMod: WIS
+Actions1: === ACTIONS === , Standard Actions ,      Attack, Magic, Dash, Disengage, Dodge, Help, Hide, Ready, Search, Utilize, Opportunity Attack, Grapple, Shove, Improvise, Two-Weapon Fighting, Interact with an Object, Study, Influence , , === BONUS ACTIONS === , Rage • 4 / Long Rest ,      As a bonus action enter a rage for up to 1 minute (10 rounds).  , , You gain advantage on STR checks and saving throws (not attacks), +2 melee damage with STR weapons, resistance to bludgeoning, piercing, slashing damage. You can't cast or concentrate on
+Actions2: spells while raging. , , Your rage ends early if you are knocked unconscious or if your turn ends and you haven’t attacked a hostile creature since your last turn or taken damage since then. You can also end your rage as a bonus action. , , === REACTIONS === , Spirit Shield ,      If you are raging and another creature you can see within 30 feet of you takes damage, you can use your reaction to reduce that damage by 2d6 , , Stone’s Endurance • 3 / Long Rest ,      When you take damage, you can use your reaction to reduce the damage taken by 1d12+3.
+Wpn Name: Greataxe
+Wpn1 AtkBonus: +8
+Wpn1 Damage: 1d12+5 Slashing
+Wpn Notes 1: Martial, Heavy, Two-Handed, Cleave
+Wpn Name 2: Unarmed Strike
+Wpn2 AtkBonus: +8
+Wpn2 Damage: 6 Bludgeoning
+CharacterName2: Baruba Ran
+CLASS  LEVEL2: Barbarian 7
+PLAYER NAME2: RussianLlama
+RACE2: Goliath
+BACKGROUND2: Folk Hero
+EXPERIENCE POINTS2: (Milestone)
+FeaturesTraits1: === BARBARIAN FEATURES === , , * Hit Points • PHB 47 , , * Proficiencies • PHB 47 , , * Rage • PHB 48 , As a bonus action enter a rage for up to 1 minute (10 rounds).  , , You gain advantage on STR checks and saving throws (not attacks), +2 melee damage with STR weapons, resistance to bludgeoning, piercing, slashing damage. You can't cast or concentrate on spells while raging. , , Your rage ends early if you are knocked unconscious or if your turn ends and you haven’t attacked a hostile creature since your last turn or taken damage since then. You can also end your rage as a bonus action. , ,    | 4 / Long Rest • 1 Bonus Action , , * Unarmored Defense • PHB 48 , While not wearing armor, your AC equals 15 + any shield bonus. , , * Reckless Attack • PHB 48 , When you make your first attack on your turn, you can decide to attack recklessly, giving you advantage on melee weapon attack rolls using STR during this turn, but attack rolls against you have advantage until your next turn. , , * Danger Sense • PHB 48 , You have advantage on DEX saving throws against effects that you can see while not blinded, deafened, or incapacitated. , , * Primal Path • PHB 48 , ,    | Path of the Ancestral Guardian
+FeaturesTraits2: * Ancestral Protectors • XGtE 10 , While raging, the first creature you hit with an attack on your turn has disadvantage on any attack that isn't against you, and when the target hits a creature other than you, that creature has resistance to the damage dealt by the attack. , , * Ability Score Improvement • PHB 49 , , * Extra Attack • PHB 49 , You can attack twice, instead of once, whenever you take the Attack action on your turn. , , * Fast Movement • PHB 49 , Your speed increases by 10 ft. while you aren't wearing heavy armor. , , * Spirit Shield • XGtE 10 , If you are raging and another creature you can see within 30 feet of you takes damage, you can use your reaction to reduce that damage by 2d6 , ,    | 1 Reaction , , * Feral Instinct • PHB 49 , You have advantage on initiative rolls. Also, if you are surprised at the beginning of combat but not incapacitated, you can act normally on your first turn if you enter a rage before doing anything else. , , , === GOLIATH SPECIES TRAITS === , , * Ability Score Increases • MotM 5 , When determining your character’s ability scores, increase one score by 2 and increase a different score by 1, or increase three different scores by 1. , ,    | Increase two scores (+2 / +1) •  , Increase one of these scores by 2 and a different
+FeaturesTraits3: score by 1. , , * Languages • MotM 5 , Your character can speak, read, and write Common and one other language that you and your DM agree is appropriate for the character. , , * Creature Type • MotM 21 , You are a Humanoid. , , * Size • MotM 21 , You are Medium. , , * Speed • MotM 21 , Your walking speed is 30 ft. , , * Little Giant • MotM 21 , You’re proficient with Athletics and you count as one size larger when determining your carrying capacity and the weight you can push, drag, or lift. , , * Mountain Born • MotM 21 , You have resistance to cold damage and naturally acclimate to high altitudes even if you’ve never been to one. This includes elevations above 20,000 ft. , , * Stone’s Endurance • MotM 21 , When you take damage, you can use your reaction to reduce the damage taken by 1d12+3. You can use this trait 3 times per long rest. , ,    | 3 / Long Rest • 1 Reaction
+CP: 0
+SP: 0
+EP: 0
+GP: 10
+PP: 0
+Weight Carried: 152 lb.
+Encumbered: 600 lb.
+PushDragLift: 1200 lb.
+Eq Name0: Cloak of the Manta Ray
+Eq Qty0: 1
+Eq Weight0: --
+Eq Name1: Potion of Water Breathing
+Eq Qty1: 2
+Eq Weight1: --
+Eq Name2: Javelin
+Eq Qty2: 4
+Eq Weight2: 8 lb.
+Eq Name3: Greataxe
+Eq Qty3: 1
+Eq Weight3: 7 lb.
+Eq Name4: Backpack
+Eq Qty4: 1
+Eq Weight4: 5 lb.
+Eq Name5: Clothes, Common
+Eq Qty5: 1
+Eq Weight5: 3 lb.
+Eq Name6: Pot, Iron
+Eq Qty6: 1
+Eq Weight6: 10 lb.
+Eq Name7: Shovel
+Eq Qty7: 1
+Eq Weight7: 5 lb.
+Eq Name8: Carpenter's Tools
+Eq Qty8: 1
+Eq Weight8: 6 lb.
+Eq Name9: Bedroll
+Eq Qty9: 1
+Eq Weight9: 7 lb.
+Eq Name10: Mess Kit
+Eq Qty10: 1
+Eq Weight10: 1 lb.
+Eq Name11: Rations (1 day)
+Eq Qty11: 10
+Eq Weight11: 20 lb.
+Eq Name12: Rope, Hempen (50 feet)
+Eq Qty12: 1
+Eq Weight12: 10 lb.
+Eq Name13: Tinderbox
+Eq Qty13: 1
+Eq Weight13: 1 lb.
+Eq Name14: Torch
+Eq Qty14: 10
+Eq Weight14: 10 lb.
+Eq Name15: Waterskin
+Eq Qty15: 1
+Eq Weight15: 5 lb.
+Eq Name16: Bedroll
+Eq Qty16: 1
+Eq Weight16: 7 lb.
+Eq Name17: Mess Kit
+Eq Qty17: 1
+Eq Weight17: 1 lb.
+Eq Name18: Rations (1 day)
+Eq Qty18: 10
+Eq Weight18: 20 lb.
+Eq Name19: Rope, Hempen (50 feet)
+Eq Qty19: 1
+Eq Weight19: 10 lb.
+Eq Name20: Tinderbox
+Eq Qty20: 1
+Eq Weight20: 1 lb.
+Eq Name21: Torch
+Eq Qty21: 10
+Eq Weight21: 10 lb.
+Eq Name22: Waterskin
+Eq Qty22: 1
+Eq Weight22: 5 lb.
+CharacterName4: Baruba Ran
+SIZE: Medium
+ALIGNMENT: Neutral Good
+SPECIES
+CLASS & LEVEL   PLAYER NAME
+CHARACTER NAME   EXPERIENCE POINTS  BACKGROUND
+PASSIVE   PERCEPTION
+SENSES   WEAPON ATTACKS & CANTRIPS
+NAME   HIT   DAMAGE/TYPE
+INITIATIVE
+STRENGTH
+DEXTERITY
+CONSTITUTION
+INTELLIGENCE
+WISDOM
+CHARISMA
+SAVING THROWS
+SKILLS
+PASSIVE   INSIGHT
+PASSIVE   INVESTIGATION
+Strength
+Dexterity
+Constitution
+Intelligence
+Wisdom
+Charisma
+Acrobatics
+Animal Handling
+Arcana
+Athletics
+Deception
+History
+Insight
+Intimidation
+Investigation
+Medicine
+Nature
+Perception
+Performance
+Persuasion
+Religion
+Sleight of Hand
+Stealth
+Survival
+Saving Throw Modifiers
+NOTES
+ACTIONS
+HEROIC   INSPIRATION
+PROFICIENCIES &   TRAINING
+DEFENSES   DEATH SAVES  HIT DICE
+Total   SUCCESSES
+FAILURES
+HIT POINTS
+Max HP   Current HP   Temp HP
+SPEED
+ARMOR
+CLASS
+TM & © 2018 Wizards of the Coast LLC. ©2018 D&D Beyond | All Rights Reserved. Permission is granted to photo copy this document for personal use.
+PROFICIENCY BONUS
+ABILITY SAVE DC
+FEATURES & TRAITS
+SPECIES
+CLASS & LEVEL   PLAYER NAME
+CHARACTER NAME   EXPERIENCE POINTS  BACKGROUND
+TM & © 2018 Wizards of the Coast LLC. ©2018 D&D Beyond | All Rights Reserved. Permission is granted to photo copy this document for personal use.
+CP
+EP
+PP
+GP
+SP
+EQUIPMENT
+WEIGHT CARRIED
+ENCUMBERED
+PUSH/DRAG/LIFT
+NAME   QTY   WEIGHT   NAME   QTY   WEIGHT
+ATTUNED MAGIC ITEMS   QTY   WEIGHT
+TM & © 2018 Wizards of the Coast LLC. ©2018 D&D Beyond | All Rights Reserved. Permission is granted to photo copy this document for personal use.
+CHARACTER NAME   ALIGNMENT
+GENDER   WEIGHT  SIZE
+HAIR  SKIN
+CHARACTER APPEARANCE   ALLIES & ORGANIZATIONS
+CHARACTER BACKSTORY   ADDITIONAL NOTES
+AGE   HEIGHT
+EYES  FAITH
+IDEALS
+BONDS
+FLAWS
+PERSONALITY TRAITS
+SPELLCASTING
+CLASS
+SPELLCASTING
+ABILITY
+SPELL SAVE DC   SPELL ATTACK
+BONUS
+TM & © 2018 Wizards of the Coast LLC. ©2018 D&D Beyond | All Rights Reserved. Permission is granted to photo copy this document for personal use.
+PAGE REF  SOURCE   SAVE/ATK   TIME   RANGE   COMP   DURATION  P  REP   SPELL NAME
+SPELLS
+NOTES

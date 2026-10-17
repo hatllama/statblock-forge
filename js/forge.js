@@ -1910,6 +1910,15 @@ async function pdfText(buf){
     const fields = await doc.getFieldObjects();
     if(fields) for(const k in fields){ const v = (fields[k] || []).map(f=>f.value).find(v=>v !== undefined && v !== null && v !== '' && v !== 'Off'); if(v !== undefined && typeof v !== 'boolean') out.push(`${k}: ${String(v).replace(/\r?\n/g, ', ')}`); }
   }catch(e){}
+  if(!out.length){
+    // some exports (e.g. D&D Beyond's) have filled form widgets but no AcroForm, so getFieldObjects finds nothing; read the widgets themselves
+    for(let i = 1; i <= Math.min(doc.numPages, 12); i++){
+      try{
+        const an = await (await doc.getPage(i)).getAnnotations();
+        an.forEach(a=>{ const v = Array.isArray(a.fieldValue) ? a.fieldValue[0] : a.fieldValue; if(a.subtype === 'Widget' && a.fieldName && typeof v === 'string' && v.trim() && v !== 'Off') out.push(`${a.fieldName.trim()}: ${v.replace(/\r?\n/g, ', ')}`); });
+      }catch(e){}
+    }
+  }
   for(let i = 1; i <= Math.min(doc.numPages, 12); i++){
     const pg = await doc.getPage(i), tc = await pg.getTextContent();
     let line = '', lastY = null;
