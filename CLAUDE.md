@@ -29,3 +29,22 @@
 - The Forge UI is one sidebar (`#forgeSide`) and one main panel (`#forgeDynamic`, plus the static `#panelImport` and `#panelFile`).
   What shows is `sel` in `js/forge.js`; every editor listens on `#forgeDynamic`. Creature keys: `'p3'` = party member 3,
   `'2'` = monster 2 of `encounters[activeIdx]`. The War Table calls `renderParty`/`renderMonsters`/`renderPartyBar`; keep those names.
+
+## Where things live
+Files are huge: `grep -n "function name"` (or `Sim.prototype.name`) and read just that range, never the whole file. Names are anchors, not line numbers.
+- `tactical-engine.js` rules: `Sim.prototype.usable`/`spend` (uses, pools, recharge), `saveRoll`/`saveBonusFor`, `attackRoll`, `damage`, `moveAlong`, `settleAltitude` (flyers), `doAction` (resolves one action).
+- `tactical-engine.js` areas: `areaSpec` → `areaCells` → `inArea` (top of file, plus `TEMPLATES`).
+- `tactical-engine.js` turn flow: `turn` → `tacticalTurnInner` (movement + action plan) → `choose` (pick an action per slot) → `plan`/`planInner` (target + position scoring); `surge` is the action-surge style extra action; `runDay` is the whole-day loop.
+- `tactical-engine.js` knowledge: `kMax`, `kHp`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kReach`, `leftFor`, `learnSave` (the "WHAT EACH SIDE KNOWS" block).
+- `forge.js` validation/format: `validateMonster`, `checkRealSchema`, `buildDayObject` (export), `exportCreature`, `applyWorkspace`/`loadWorkspace`.
+- `forge.js` UI: `renderSide` (sidebar), `sheetHtml` (creature sheet), `actionEditor` + `freqFields` (action editor), `handleFieldChange` (all field edits), `resourcesPanel`/`onResourceField` (pools).
+- `forge.js` imports: `onSheetFile` → `readSheet` (character sheets; `readSheetWithClaude` for the PDF/AI path); `forgeOne` (Claude API statblock converter).
+- `statblock-parser.js`: `parseOne` (one block → creature; the `rank` const inside it orders actions), `readMultiattack`/`comboAction`, `readSaveEffect`, `areaInfo`.
+- `sheet-reader.js`: `fromDDB`/`fromFoundry`/`fromText` → facts → `build`; `classFeatures` adds per-class actions; `CUSTOM` holds spells the spell data lacks.
+- `war-table.js`: `simOptsFor` (sim settings per encounter), `renderSetup`, `renderInspect`, odds (`runOdds`/`renderOdds`/`drawHist`), replay (`startReplay`/`showFrame`/`play`/`animateEvent`).
+- `tests/run.js` is one script of `section('…')` blocks (area templates, terrain, flying, parser, class roster, knowledge modes, SRD monsters, character sheets). Fixtures: `tests/statblocks`, `tests/sheets`, `tests/fixtures` (day files).
+
+How to:
+- Add a spell the spell data lacks: add an entry to `CUSTOM` in `sheet-reader.js` (same action shape as `misty step`); `build` uses it when `SD` has no entry.
+- Pooled resource: the creature declares pools in `ext.resources`; an action draws on one via `ext.resource` (pool name) and `ext.resourceCost` (default 1). The engine checks/spends it in `usable`/`spend` (`u.uses` key `res:<name>`); the Forge edits it in `resourcesPanel`.
+- Add a class feature to the sheet reader: add an `if (classLevel) { add({...}); ext.x = … }` branch in `classFeatures` (use `lv`/`sub`), then add a sample under `tests/sheets` and an expectation in the "Character sheets" section of `tests/run.js`.
