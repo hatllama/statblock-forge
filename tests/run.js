@@ -395,6 +395,23 @@ section('Character sheets');
   check(p['pdf.txt'] && p['pdf.txt'].name === 'Lyra Vane' && p['pdf.txt'].ext.spellbook.slots.slice(0, 3).join() === '4,3,2' && sp(p['pdf.txt']).includes('Fireball') && sp(p['pdf.txt']).includes('Misty Step'), 'fillable PDF fields: name, wizard slots and spells');
   const rl = p['russianllama.txt'];
   check(rl && rl.name === 'Baruba Ran' && rl.class.type === 'barbarian' && rl.class.level === 7 && rl.AC === 15 && rl.hp === 93 && rl.ext.speed === 40 && rl.ext.saves.str === 8 && rl.ext.saves.con === 6 && rl.ext.saves.int === -1 && rl.ext.resist.includes('cold') && rl.actions.some(a => /Greataxe/.test(a.name) && a.toHit === 8 && /1d12 \+ 5/.test(JSON.stringify(a))), 'a D&D Beyond PDF (form widgets, no AcroForm): name, level, AC, HP, speed, saves, greataxe');
+  const notesOf = c => ((c && c._notes) || []).join('\n'), actOf = (c, re) => c && c.actions.find(a => re.test(a.name));
+  check(rl && rl.ext.dexSaveAdvantage === true && rl.ext.initAdvantage === true && !rl.ext.brutalCritical && !rl.ext.relentlessRage && /Ancestral Guardian/.test(rl.ext.build)
+    && actOf(rl, /^Rage/).freq.uses === 4 && actOf(rl, /^Stone's Endurance/).freq.uses === 3 && actOf(rl, /^Stone's Endurance/).actionSlot === 4 && actOf(rl, /^Stone's Endurance/).buff.damageReduction === '1d12 + 3',
+    'PDF page 2 features: Danger Sense, Feral Instinct, Ancestral Guardian path, Rage uses from the sheet, Stone\'s Endurance as a reaction (no Brutal Critical or Relentless Rage at level 7)');
+  check(/Used in fights: .*Danger Sense.*Feral Instinct/.test(notesOf(rl)) && /Barbarian features \(no fight rules\): .*Ancestral Protectors.*Spirit Shield/.test(notesOf(rl)) && /Goliath species traits \(no fight rules\): .*Little Giant.*Mountain Born/.test(notesOf(rl)) && !/PHB|Little Giant •|As a bonus action/.test(notesOf(rl)),
+    'PDF page 2 features the sim cannot use are name-only notes grouped by section');
+  check(/Weapons in the pack[^\n]*: Javelin ×4\./.test(notesOf(rl)) && !rl.actions.some(a => /Javelin/.test(a.name)) && /Magic items[^\n]*Cloak of the Manta Ray, Potion of Water Breathing ×2/.test(notesOf(rl)) && /Other gear: Backpack;[^\n]*Rations \(1 day\) ×20;[^\n]*10 gp\./.test(notesOf(rl)) && !/Greataxe/.test(notesOf(rl)) && rl.AC === 15,
+    'PDF page 2 inventory: pack javelins without a bonus stay notes, duplicates merge, one gear line with coins, AC stays as stated');
+  const b11 = p['barbarian11.txt'];
+  check(b11 && b11.ext.brutalCritical === 1 && b11.ext.relentlessRage.hp === 22 && /Berserker/.test(b11.ext.build) && /Healing potions[^\n]*Potion of Healing ×2/.test(notesOf(b11)) && /Armor and shields[^\n]*Breastplate, Shield/.test(notesOf(b11)) && b11.AC === 15 && !/Potion of Healing/.test(JSON.stringify(b11.actions)),
+    'a level-11 barbarian sheet: Brutal Critical, Relentless Rage, healing potions and armor as notes only');
+  {
+    // Relentless Rage: a raging barbarian dropped to 0 sometimes stays up on 2 × level HP; one at level 7 never does
+    const run = c => { let n = 0; for (let i = 0; i < 40; i++) for (const r of Tac.runDay({ players: [Object.assign(JSON.parse(JSON.stringify(c)), { hp: 12 })], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 200, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 8, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 100 + i, partyAI: 'tactical', record: true })) n += r.events.filter(e => /Relentless Rage keeps it up/.test(e.text || '')).length; return n; };
+    const k = run(b11), k7 = run(rl);
+    check(k > 0 && k7 === 0, `Relentless Rage keeps a raging barbarian up sometimes (${k} times at level 11, ${k7} at level 7)`);
+  }
   check(p['ddbcopy.txt'] &&p['ddbcopy.txt'].ext.sneakAttack.dice === '2d6' && p['ddbcopy.txt'].ext.spellbook.slotReset === 'sr' && /\+ 3/.test(p['ddbcopy.txt'].ext.spellbook.spells[0].dpr), 'a pasted rogue/warlock: sneak attack, pact slots, Agonizing Blast');
   check(p['ddb.json'] && p['ddb.json'].AC === 18 && p['ddb.json'].hp === 46 && p['ddb.json'].ext.saves.cha === 6 && p['ddb.json'].ext.spellbook.slots.slice(0, 2).join() === '4,2' && !sp(p['ddb.json']).includes('Command'), 'a D&D Beyond JSON paladin: AC from armor, HP, saves, prepared spells only');
   check(p['foundry.json'] && p['foundry.json'].AC === 15 && p['foundry.json'].actions.some(a => /Longbow/.test(a.name) && a.ext.range === 150 && !a.ext.wtOnly), 'a Foundry VTT ranger: AC and the bow as the main attack');

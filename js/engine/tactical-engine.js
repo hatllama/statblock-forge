@@ -376,6 +376,9 @@ function makeUnit(tpl, team, idx, count, isPC) {
     blindsight: !!ex.blindsight, elvenAccuracy: !!ex.elvenAccuracy,
     initBonus: typeof ex.initBonus === 'number' ? ex.initBonus : 0,
     initAdv: !!ex.initAdvantage,
+    dexAdv: !!ex.dexSaveAdvantage,                                          // Danger Sense: advantage on Dex saves while it can see and act
+    brutalCrit: typeof ex.brutalCritical === 'number' ? ex.brutalCritical : 0,   // extra weapon dice on a melee crit
+    relentless: ex.relentlessRage && +ex.relentlessRage.hp > 0 ? { hp: +ex.relentlessRage.hp } : null,   // drops to this many HP instead of 0 while raging (Con save)
     escapeBonus: (ex.escapeBonus !== undefined && ex.escapeBonus !== '') ? Number(ex.escapeBonus) : (tpl.saveBonus || 0),
     athletics: typeof ex.athletics === 'number' ? ex.athletics : ((ex.escapeBonus !== undefined && ex.escapeBonus !== '') ? Number(ex.escapeBonus) : (ex.saves && typeof ex.saves.str === 'number' ? ex.saves.str : (tpl.saveBonus || 0))),
     legendaryMax: typeof ex.legendaryActions === 'number' ? ex.legendaryActions : 3,
@@ -2173,7 +2176,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   const physical = ab === 'str' || ab === 'dex' || ab === 'strdex';
   // paralysed, stunned, unconscious or petrified creatures automatically fail Strength and Dexterity saves
   if (physical && ['Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].some(x => c.has(x))) return { success: false, roll: 0, total: 0, autoFail: true };
-  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
+  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || (t.dexAdv && ab === 'dex' && !this.incap(t) && !c.has('Blinded') && !c.has('Deafened')) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
   const dis = c.has('Save with Disadvantage') || c.has('Attacks and saves with Disadvantage') || ((ab === 'dex') && c.has('Restrained'));
   let r = this.d20(adv, dis, false);
   let total = r + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true);
@@ -2337,6 +2340,12 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   const overflow = dmg - tgt.hp;
   tgt.visLost = (tgt.visLost || 0) + Math.min(dmg, tgt.hp);
   tgt.hp = Math.max(0, tgt.hp - dmg);
+  // Relentless Rage: dropped to 0 while raging, a Con save (DC 10, +5 each time) leaves it standing
+  if (tgt.hp <= 0 && tgt.relentless && !(tgt.isPC && overflow >= tgt.maxHp) && tgt.buffs.some(b => b.name === 'Rage')) {
+    const n = tgt.uses.get('__relentless') || 0, dc = 10 + 5 * n, roll = this.R.d(20) + this.saveBonusFor(tgt, 'con');
+    tgt.uses.set('__relentless', n + 1);
+    if (roll >= dc) { tgt.hp = tgt.relentless.hp; this.ev('react', `${tgt.name}'s Relentless Rage keeps it up (Con ${Math.round(roll)} vs DC ${dc}, ${tgt.hp} HP)`, { uid: tgt.uid }); }
+  }
   this.learnHp(tgt);
   if (tgt.hp <= 0) {
     if (tgt.isPC && overflow >= tgt.maxHp) this.kill(tgt, src, 'massive damage');
@@ -2548,6 +2557,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       }
       raw += this.rollBuffDamage(u, r.crit);
     } else raw = rollDice(formula, this.R, r.crit) + this.rollBuffDamage(u, r.crit);
+    if (r.crit && u.brutalCrit && !a._spell && this.dist(u, t) <= 10) { const bd = parseDice(formula).dice[0]; if (bd) raw += rollDice(`${u.brutalCrit}d${bd.d}`, this.R, false); }   // Brutal Critical
     if (this.sneakOk(u, t, a, r)) {
       sa = true; u.saSeq = this.turnSeq;
       raw += rollDice(u.sneak.dice, this.R, r.crit);

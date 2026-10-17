@@ -260,14 +260,44 @@ function fromText(raw) {
   const resist = [];
   const rl = t.match(/\bresistances?\b\s*[:=]?\s*([^\n]+)/i);
   if (rl) (rl[1].match(new RegExp(DTYPES.source, 'gi')) || []).forEach(x => resist.push(x.toLowerCase()));
-  return { name: name.trim(), classes, scores: sc, hp, ac, speed, fly, init, saveVals, saveProf, attacks, spells, slots: slots.length ? slots : null, dc, spellAtk: satk, resist, notes, src: 'text' };
+  // features & traits: D&D Beyond PDF fields hold "* Name • PHB 48" entries under "=== SECTION ===" headings, split over FeaturesTraits1, 2, 3…
+  const ftFields = lines.map(l => l.match(/^FeaturesTraits(\d*)\s*:\s*(.*)$/i)).filter(Boolean).sort((a, b) => (+a[1] || 0) - (+b[1] || 0));
+  const ftText = ftFields.map(x => x[2]).join(' ');
+  const featList = [];
+  const marks = [], fre = /===\s*([^=]+?)\s*===|(?:^|[\s,])\*\s+([^*•|,=]{2,60}?)\s*•/g;
+  while ((m = fre.exec(ftText))) marks.push({ at: m.index, end: m.index + m[0].length, head: m[1], name: m[2] });
+  let section = '';
+  marks.forEach((k, i) => {
+    if (k.head) { section = k.head.trim(); return; }
+    const body = ftText.slice(k.end, i + 1 < marks.length ? marks[i + 1].at : ftText.length), um = body.match(/\|\s*(\d+)\s*\/\s*(Long|Short)\s*Rest/i);
+    const nm = k.name.trim();
+    if (!featList.some(x => x.name.toLowerCase() === nm.toLowerCase())) featList.push({ name: nm, section, body, uses: um ? +um[1] : 0, reset: um ? (/^s/i.test(um[2]) ? 'sr' : 'lr') : '' });
+  });
+  // a subclass the class line leaves out: "Primal Path • PHB 48 … | Path of the Ancestral Guardian"
+  const sp1 = ftText.match(/\*\s+(?:Primal Path|Martial Archetype|Roguish Archetype|Arcane Tradition|Monastic Tradition|Sacred Oath|Divine Domain|Druid Circle|Bard College|Otherworldly Patron|Sorcerous Origin|Ranger Archetype|Ranger Conclave)\b[^|*]*\|\s*([^*|,]{3,50})/i);
+  if (sp1 && classes.length === 1 && !classes[0].sub) classes[0].sub = sp1[1].trim().replace(/^(?:path|college|circle|oath|school|way|domain) of (?:the )?/i, '');
+  // equipment: Eq Name0 / Eq Qty0 …, and the coin fields
+  const eq = {};
+  lines.forEach(l => { const e = l.match(/^Eq\s*(Name|Qty)\s*(\d+)\s*:\s*(.+)$/i); if (e) (eq[e[2]] = eq[e[2]] || {})[e[1].toLowerCase()] = e[3].trim(); });
+  const inventory = [];
+  Object.keys(eq).sort((a, b) => a - b).forEach(k => {
+    if (!eq[k].name) return;
+    const q = parseInt(eq[k].qty, 10) || 1, have = inventory.find(x => x.name.toLowerCase() === eq[k].name.toLowerCase());
+    if (have) have.qty += q; else inventory.push({ name: eq[k].name, qty: q });
+  });
+  const coins = {};
+  lines.forEach(l => { const c = l.match(/^(CP|SP|EP|GP|PP)\s*:\s*(\d+)\s*$/); if (c && +c[2]) coins[c[1].toLowerCase()] = +c[2]; });
+  return { name: name.trim(), classes, scores: sc, hp, ac, speed, fly, init, saveVals, saveProf, attacks, spells, slots: slots.length ? slots : null, dc, spellAtk: satk, resist, notes, featList, inventory, coins, featuresText: ftText, src: 'text' };
 }
 
 /* ---------- class features the War Table has rules for ---------- */
-function classFeatures(f, pb, add, ext) {
+function classFeatures(f, pb, add, ext, used) {
   const sc = f.scores, M = i => mod(sc[i]);
   const lv = n => { const c = f.classes.find(x => x.name === n); return c ? c.level : 0; };
   const sub = n => { const c = f.classes.find(x => x.name === n); return c ? c.sub || '' : ''; };
+  // with a feature list on the sheet, a feature counts only if it is listed (so 2024 sheets don't get 2014 features); without one, class level decides
+  const ent = n => (f.featList || []).find(x => x.name.toLowerCase() === n);
+  const has = (n, ok) => !!ok && (!(f.featList && f.featList.length) || !!ent(n));
   const fi = lv('fighter'), bb = lv('barbarian'), ro = lv('rogue'), mo = lv('monk'), pa = lv('paladin'), ba = lv('bard');
   if (fi) {
     add({ name: 'Second Wind', actionSlot: 1, freq: { reset: 'lr', uses: fi >= 10 ? 4 : fi >= 4 ? 3 : 2 }, condition: 'is under half HP', type: 'heal', amount: `1d10 + ${fi}`, target: 'self' });
@@ -275,9 +305,15 @@ function classFeatures(f, pb, add, ext) {
   }
   if (bb) {
     const dmg = bb >= 16 ? 4 : bb >= 9 ? 3 : 2;
-    add({ name: 'Rage', actionSlot: 1, freq: { reset: 'lr', uses: bb >= 17 ? 6 : bb >= 12 ? 5 : bb >= 6 ? 4 : bb >= 3 ? 3 : 2 }, condition: 'not used yet', type: 'buff', target: 'self',
+    const rg = ent('rage');
+    add({ name: 'Rage', actionSlot: 1, freq: { reset: 'lr', uses: rg && rg.uses ? rg.uses : bb >= 17 ? 6 : bb >= 12 ? 5 : bb >= 6 ? 4 : bb >= 3 ? 3 : 2 }, condition: 'not used yet', type: 'buff', target: 'self',
       buff: { duration: 'entire encounter', damage: String(dmg) }, ext: { endsOnIncap: true, resist: ['bludgeoning', 'piercing', 'slashing'] } });
-    if (bb >= 2) add({ name: 'Reckless Attack', actionSlot: 5, type: 'buff', target: 'self', buff: { duration: 'entire encounter', condition: 'Attacks and is attacked with Advantage' } });
+    used.push('rage');
+    if (bb >= 2) { add({ name: 'Reckless Attack', actionSlot: 5, type: 'buff', target: 'self', buff: { duration: 'entire encounter', condition: 'Attacks and is attacked with Advantage' } }); used.push('reckless attack'); }
+    if (has('danger sense', bb >= 2)) { ext.dexSaveAdvantage = true; used.push('danger sense'); }
+    if (has('feral instinct', bb >= 7)) { ext.initAdvantage = true; used.push('feral instinct'); }
+    if (has('brutal critical', bb >= 9)) { ext.brutalCritical = bb >= 17 ? 3 : bb >= 13 ? 2 : 1; used.push('brutal critical'); }
+    if (has('relentless rage', bb >= 11)) { ext.relentlessRage = { hp: 2 * bb }; used.push('relentless rage'); }
   }
   if (ro) {
     ext.sneakAttack = { dice: `${Math.ceil(ro / 2)}d6` };
@@ -291,6 +327,13 @@ function classFeatures(f, pb, add, ext) {
     add({ name: 'Martial Arts (bonus strike)', actionSlot: 1, type: 'atk', dpr: `1${die} + ${dm}`, toHit: dm + pb, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } });
     if (mo >= 3) add({ name: 'Deflect Attacks', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: `1d10 + ${M(1) + mo}` } });
     if (mo >= 2) add({ name: 'Patient Defense (1 Focus Point)', actionSlot: 1, condition: 'is under half HP', type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Is attacked with Disadvantage' }, ext: { resource: 'Focus Points' } });
+  }
+  // Goliath's Stone's Endurance: a reaction that cuts one hit's damage (dice and uses as the sheet states them)
+  const se = ent("stone's endurance") || ent('stone’s endurance');
+  if (se) {
+    const dd = se.body.match(/reduce the damage (?:taken )?by (\d+d\d+(?:\s*\+\s*\d+)?)/i);
+    add({ name: "Stone's Endurance", actionSlot: 4, freq: { reset: se.reset || 'lr', uses: se.uses || pb }, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: dd ? dd[1].replace(/\s*\+\s*/, ' + ') : `1d12 + ${M(2)}` } });
+    used.push("stone's endurance");
   }
   const tr = (f.traits || []).join('|') + '|' + (f.featuresText || '');
   if (/nimble escape|cunning action/i.test(tr)) ext.bonusDisengage = true;
@@ -328,7 +371,8 @@ function build(f, opts) {
   if (f.size) ext.size = f.size;
   ext.athletics = athl; ext.escapeBonus = Math.max(athl, acro);
 
-  const cf = classFeatures(f, pb, add, ext);
+  const used = [];
+  const cf = classFeatures(f, pb, add, ext, used);
   // weapon attacks: the best melee and the best ranged one lead; the rest stay War Table alternatives
   const extra = cf.fi >= 20 ? 4 : cf.fi >= 11 ? 3 : (cf.fi >= 5 || cf.bb >= 5 || cf.pa >= 5 || cf.mo >= 5 || lv(f, 'ranger') >= 5 || /valor|swords|bladesing/i.test(f.classes.map(c => c.sub).join(' ')) && level >= 6) ? 2 : 1;
   const avg = d => String(d).split(/\s*([+-])\s*/).reduce((s, p, i, arr) => { if (i % 2) return s; const sign = i && arr[i - 1] === '-' ? -1 : 1; const dm = p.match(/^(\d*)d(\d+)$/); return s + sign * (dm ? (+dm[1] || 1) * (+dm[2] + 1) / 2 : +p || 0); }, 0);
@@ -371,6 +415,9 @@ function build(f, opts) {
     add({ name: 'Unarmed Strike', actionSlot: 0, type: 'atk', dpr: cf.mo ? `1${cf.mo >= 5 ? 'd8' : 'd6'} + ${sm}` : String(Math.max(1, 1 + sm)), toHit: sm + pb, targets: extra, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } });
     notes.push('No weapon attacks found; gave it an unarmed strike. Add its weapons on the sheet.');
   }
+
+  if (extra > 1) used.push('extra attack');
+  sheetNotes(f, used, actions).forEach(x => notes.push(x));
 
   // spells
   const SD = root.SpellData || {}, spellAction = root.StatblockParser && root.StatblockParser._internals.spellAction;
@@ -422,6 +469,41 @@ function build(f, opts) {
   const c = { id, mode: 'custom', class: cls, name: (f.name || 'Adventurer').slice(0, 60), count: 1, hp, AC: ac, saveBonus: avgSave, ext, actions };
   if (notes.length) c._notes = notes;
   return c;
+}
+/* what the sheet lists that the War Table has no rules for, as short name-only notes: features and traits, then the pack */
+const STATED = /^(fast movement|unarmored defense|unarmored movement)$/i;
+const ARMOR = /\b(?:padded|studded leather|leather armor|hide armor|chain shirt|scale mail|breastplate|half plate|ring mail|chain mail|splint|plate(?: armor)?)\b|\bshield\b/i;
+function sheetNotes(f, used, actions) {
+  const key = n => n.toLowerCase().replace(/’/g, "'");
+  const out = [], list = f.featList || [], inv = f.inventory || [];
+  const names = a => a.map(x => x.name + (x.qty > 1 ? ' \u00d7' + x.qty : ''));
+  const line = (label, a) => { if (a.length) out.push(label + ': ' + a.join(', ') + '.'); };
+  if (list.length) {
+    line('Used in fights', list.filter(x => used.indexOf(key(x.name)) >= 0).map(x => x.name));
+    line('Already in the stated speed and AC', list.filter(x => STATED.test(x.name)).map(x => x.name));
+    const bySection = {};
+    list.filter(x => used.indexOf(key(x.name)) < 0 && !STATED.test(x.name)).forEach(x => { const k = x.section || 'Other'; (bySection[k] = bySection[k] || []).push(x.name); });
+    Object.keys(bySection).forEach(k => line(titleCase(k.toLowerCase()).replace(/\bTraits\b/, 'traits').replace(/\bFeatures\b/, 'features').replace(/\bSpecies\b/, 'species') + ' (no fight rules)', bySection[k]));
+  }
+  if (inv.length) {
+    const atk = actions.map(a => a.name.toLowerCase()).join('|');
+    const rest = [], weapons = [], armor = [], heal = [], magic = [];
+    inv.forEach(it => {
+      const n = it.name, w = weaponOf(n);
+      if (/\bpotions?\b.*\bhealing\b|\bhealing\b.*\bpotions?\b/i.test(n)) heal.push(it);
+      else if (ARMOR.test(n)) armor.push(it);
+      else if (w && !/\b(tools?|kit|pot|case)\b/i.test(n)) { if (atk.indexOf(w.key) < 0) weapons.push(it); }
+      else if (/\b(potions?|scrolls?|wand|rod|staff of|ring of|cloak of|boots of|amulet|bracers?|gauntlets?|helm|belt of|elixir)\b/i.test(n)) magic.push(it);
+      else rest.push(it);
+    });
+    line('Healing potions (no use rule yet)', names(heal));
+    line('Weapons in the pack with no attack bonus or damage on the sheet', names(weapons));
+    line('Armor and shields (the stated AC is used as is)', names(armor));
+    line('Magic items and other consumables', names(magic));
+    const gear = names(rest), c = f.coins || {}, coins = ['pp', 'gp', 'ep', 'sp', 'cp'].filter(k => c[k]).map(k => c[k] + ' ' + k);
+    if (gear.length || coins.length) out.push('Other gear: ' + gear.slice(0, 14).join('; ') + (gear.length > 14 ? `; +${gear.length - 14} more` : '') + (coins.length ? (gear.length ? '; ' : '') + coins.join(' ') : '') + '.');
+  }
+  return out;
 }
 function lv(f, n) { const c = f.classes.find(x => x.name === n); return c ? c.level : 0; }
 
