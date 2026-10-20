@@ -110,6 +110,9 @@
 
         <div class="pane" data-pane="ai" hidden>
           <div class="opt"><label for="wt-partyAI">The party plays</label><select id="wt-partyAI"><option value="tactical">Tactically: focus fire, finish foes, protect healers</option><option value="regular">By the book: each action's own targeting</option></select></div>
+          <div class="opt"><label for="wt-aiParty">Party AI</label><select id="wt-aiParty"><option value="v1">Classic</option><option value="v2">New (beta)</option></select></div>
+          <div class="opt"><label for="wt-aiFoes">Enemy AI</label><select id="wt-aiFoes"><option value="v1">Classic</option><option value="v2">Smart (beta)</option></select>
+            <p class="help">The new AI only changes fighters without spells (casters stay classic either way). For the party that is the tactical setting; monsters need to be on the tactical AI.</p></div>
           <div class="opt"><label for="wt-knowParty">The party knows</label><select id="wt-knowParty"><option value="open">Every number (open info)</option><option value="blind">Only what's seen at the table (black box)</option><option value="learn">What it works out as it goes (learning)</option></select></div>
           <div class="opt"><label for="wt-knowFoes">The monsters know</label><select id="wt-knowFoes"><option value="open">Every number (open info)</option><option value="blind">Only what's seen at the table (black box)</option><option value="learn">What it works out as it goes (learning)</option></select>
             <p class="help warn-note" id="wt-learnWarn" style="display:none;">Learning keeps notes on every roll, so running the odds takes a little longer.</p>
@@ -208,7 +211,7 @@
 <script src="js/statblock-parser.js?v=20261016a"></script>
 <script src="js/sheet-reader.js?v=20261017b"></script>
 <script src="js/forge.js?v=20261017a"></script>
-<script src="js/engine/tactical-engine.js?v=20261020a"></script>
-<script src="js/war-table.js?v=20261016a"></script>
+<script src="js/engine/tactical-engine.js?v=20261020b"></script>
+<script src="js/war-table.js?v=20261020a"></script>
 </body>
 </html>

@@ -4213,7 +4213,9 @@ function runDay(day, opts) {
   const party = expandTeam(day.players, 'party', true);
   const encs = (opts.only !== undefined) ? [day.encounters[opts.only]] : day.encounters;
   const results = [];
+  let lostDay = false;     // a lost fight ends the day
   encs.forEach((enc, ei) => {
+    if (lostDay) return;
     const realIdx = opts.only !== undefined ? opts.only : ei;
     if (!enc || !enc.monsters || !enc.monsters.length) return;
     if (!party.some(u => !u.dead)) return;
@@ -4242,7 +4244,7 @@ function runDay(day, opts) {
       foes: foes.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, fled: u.fled || undefined, dealt: u.dmgDealt, taken: u.dmgTaken })),
       units: sim.record ? sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, isPC: u.isPC, maxHp: u.maxHp, size: u.size, init: u.init, auras: aurasOf(u), areas: areasOf(u), sheet: sheetOf(u) })) : null,
     });
-    if (!r.won) return;
+    if (!r.won) lostDay = true;
   });
   if (opts._keep) results._sim = sim;      // tests look at what each side learned
   return results;
