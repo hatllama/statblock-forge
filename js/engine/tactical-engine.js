@@ -454,6 +454,9 @@ function Sim(opts) {
   this.tpkKills = !!opts.tpkKills;     // the whole party down with foes still standing: nobody is left to save them
   this.maxRounds = opts.maxRounds || 40;
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
+  // AI v2 for non-casters (docs/ai-v2.md): 'v2' for both sides, or { party: 'v2', foes: 'v1' }
+  const ai = opts.ai;
+  this.aiV2 = ai === 'v2' ? { party: true, foes: true } : ai && typeof ai === 'object' && (ai.party === 'v2' || ai.foes === 'v2') ? { party: ai.party === 'v2', foes: ai.foes === 'v2' } : null;
   const kn = opts.know || {};
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
@@ -1291,6 +1294,10 @@ Sim.prototype.kAreas = function (u, t) {
     .map(a => { const sp = areaSpec(a) || { shape: 'sphere', size: 10 }; return { id: a.id, shape: sp.shape, size: sp.size, range: Math.max(5, a._range || 5), dmg: a.type === 'atk' ? avgDice((a.ext && a.ext.wtDpr) || a.dpr) : 8 }; });
   const seen = t.seenAreas || [];
   return m === 'learn' ? seen.concat(this.kind(u.team, t).areas.filter(x => !seen.some(y => y.id === x.id))) : seen;
+};
+Sim.prototype.kCaster = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return !!t.hasSpells;
+  return !!t.seenCaster || (m === 'learn' && this.kind(u.team, t).caster);
 };
 Sim.prototype.kReach = function (u, t) {
   const m = this.kOf(u, t); if (!m) return null;
@@ -2314,7 +2321,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   if (info.attack && tgt.reaction && !this.incap(tgt) && tgt.hp > 0) {
     const r = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac === undefined &&
       (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) && this.usable(tgt, x) && this.condOk(tgt, x));
-    if (r) {
+    if (r && (!tgt.v2 || this.v2ReactOk(tgt, r, dmg))) {
       tgt.reaction = false; this.spend(tgt, r);
       const red = Math.floor(Math.max(0, dmg * (typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1) - avgDice(r.buff.damageReduction || 0)));
       this.ev('react', `${tgt.name} uses ${r.name} (${dmg} → ${red})`, { uid: tgt.uid });
@@ -2940,6 +2947,694 @@ Sim.prototype.intent = function (u, a, p) {
   if (txt) this.ev('intent', txt, { uid: u.uid, target: t.uid });
 };
 
+/* ===== AI v2 (docs/ai-v2.md) =====
+   Non-casters only for now (opts.ai = 'v2'). Three layers: a posture (what the creature is trying to do this round),
+   one utility score per (mode, action, target, square), and resource pacing. It decides; the turn code in `turn`
+   carries the decision out with the same rules as before. Every weight and threshold lives in AI_PROFILES. */
+const AI_BASE = {
+  posture: { retreatHp: 0.3, retreatDanger: 0.5, recoverHp: 0.5, protectAllyHp: 0.35, squishyHp: 0.6, finishAt: 0.9 },
+  w: {
+    damage: 1, dprScale: 20, overkill: 4, spill: 0.4,           // expected damage (capped near what it has left), × how dangerous the target is
+    kill: 1, killRounds: 1.5,                                    // dropping it: its damage for this many rounds, + 5
+    control: 1,                                                  // riders and debuffs (Stunning Strike, Sap, push)
+    focus: 1.5, wounded: 4, healer: 4, caster: 4, conc: 1,       // focus fire: per ally on it, how hurt it looks, healers, casters, concentration
+    pick: 5, protect: 0.6, finishBoost: 0,                       // the posture's own target
+    guard: 4,                                                    // a foe in the face of our casters / back line / badly hurt
+    bonus: 0.8, aim: 1,                                          // the bonus attack it could add from a square; Steady Aim
+    risk: 0.45, riskRanged: 0.9, hurt: 1.6, downCap: 1.25,       // damage it would take there (melee / back line), more when hurt, capped at its HP × downCap
+    retreatSafety: 2.5, retreatOffense: 0.5,
+    oa: 1, spacing: 1.2, move: 0.15, dodge: 0.45, meleeShoot: 0.6, hide: 0.3,
+    progress: 0.5,                                               // a full move closer is worth this share of its best hit
+    recover: 6, recklessRisk: 0.8, recklessDrop: 3,              // self-heal when hurt; Reckless: extra hits taken, × recklessDrop if they could drop it
+  },
+  pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75 },
+  finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
+  reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
+};
+const AI_PRESETS = {
+  balanced: {},
+  aggressive: { posture: { retreatHp: 0.15 }, w: { risk: 0.25, riskRanged: 0.5, hurt: 0.8, oa: 0.7 }, pacing: { costPerUse: 0.05, overTax: 0.4, easyFight: 1.2, easyTax: 0.15 } },
+  cautious: { posture: { retreatHp: 0.45, retreatDanger: 0.35, recoverHp: 0.6 }, w: { risk: 0.8, riskRanged: 1.3, hurt: 2.5, oa: 1.5, recklessRisk: 1.5 }, pacing: { costPerUse: 0.2, overTax: 0.75, easyTax: 0.4 } },
+  protector: { posture: { protectAllyHp: 0.6 }, w: { protect: 1.5, pick: 7, risk: 0.5 } },
+  assassin: { posture: { squishyHp: 0.9 }, w: { caster: 10, healer: 8, wounded: 6, pick: 8, kill: 1.5 } },
+  berserker: { posture: { retreatHp: 0, recoverHp: 0.25 }, w: { risk: 0.1, riskRanged: 0.3, hurt: 0, oa: 0.3, progress: 0.8 }, pacing: { costPerUse: 0.02, overTax: 0.2, easyFight: 1, easyTax: 0.1 }, reckless: 'always' },
+  skirmisher: { w: { risk: 0.7, riskRanged: 1.2, meleeShoot: 0.5, oa: 1.5, hide: 0.5, progress: 0.35 } },
+};
+function mergeProfile(base, over) {
+  const out = JSON.parse(JSON.stringify(base));
+  if (!over || typeof over !== 'object') return out;
+  for (const k in over) {
+    if (k === 'base') continue;
+    if (over[k] && typeof over[k] === 'object' && !Array.isArray(over[k]) && out[k] && typeof out[k] === 'object') Object.assign(out[k], over[k]);
+    else out[k] = over[k];
+  }
+  return out;
+}
+const AI_PROFILES = {};
+for (const k in AI_PRESETS) AI_PROFILES[k] = mergeProfile(AI_BASE, AI_PRESETS[k]);
+/* a creature's settings: ext.aiProfile is a preset name, or { base: 'preset', ...overrides } */
+function aiProfile(spec) {
+  if (typeof spec === 'string') return AI_PROFILES[spec] || AI_PROFILES.balanced;
+  if (spec && typeof spec === 'object') return mergeProfile(AI_PROFILES[spec.base] || AI_PROFILES.balanced, spec);
+  return AI_PROFILES.balanced;
+}
+const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
+
+/* which creatures v2 drives: no spellbook, plays tactically (or names a profile), and nothing it can't score yet */
+Sim.prototype.v2Eligible = function (u) {
+  const prof = u.tpl.ext && u.tpl.ext.aiProfile;
+  if (!this.aiV2 || !this.aiV2[u.team] || u.hasSpells || (u.ai !== 'tactical' && !prof)) return false;
+  return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && ((a.ext && (a.ext.teleport || a.ext.zone || a.ext.swallow || a.ext.pool)) ||
+    ((a.type === 'heal' || a.type === 'buff') && a.target !== 'self' && a._range !== 0)));
+};
+Sim.prototype.v2Setup = function (u) {
+  u.v2 = this.v2Eligible(u);
+  u._v2c = null;
+  if (!u.v2) return;
+  u.ai = 'tactical';
+  u.v2P = aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
+  u.v2Start = new Map(u.uses);      // what it had when the fight started, for pacing
+};
+
+/* ---- layer 3: pacing. What one use of a limited ability costs, in points of damage ---- */
+Sim.prototype.v2Pool = function (u, a) {
+  const ex = a.ext || {};
+  if (ex.resource && u.resMax && u.resMax[ex.resource]) { const r = u.resMax[ex.resource]; return { key: 'res:' + ex.resource, reset: r.reset === 'sr' ? 'sr' : 'lr', n: ex.resourceCost || 1 }; }
+  const k = freqKind(a.freq);
+  if (k === 'sr' || k === 'lr' || k === '1/day') return { key: a.id, reset: k === 'sr' ? 'sr' : 'lr', n: 1 };
+  return null;
+};
+/* { base, tax }: a use costs base points, and gives up `tax` of what it's worth once this fight has had its share of
+   the pool (so it has to be clearly better than the free option to be spent) */
+Sim.prototype.v2Pace = function (u, a) {
+  const pl = this.v2Pool(u, a);
+  if (!pl) return { base: 0, tax: 0 };
+  const P = u.v2P.pacing;
+  let F = u.team === 'party' ? this.leftFor(u) : 0;                      // a monster's day is this fight
+  if (pl.reset === 'sr') F = Math.min(F, typeof this.fightsBeforeRest === 'number' ? this.fightsBeforeRest : P.srFights);
+  const base = Math.max(4, u.dpr) * P.costPerUse * pl.n;
+  if (!F) return { base: base * P.lastFight, tax: 0 };
+  const left = u.uses.get(pl.key) || 0;
+  const start = u.v2Start && u.v2Start.has(pl.key) ? u.v2Start.get(pl.key) : left;
+  let c = base * F / (F + 1), tax = start - left + pl.n > start / (F + 1) + 1e-9 ? P.overTax : 0;   // this fight has had its share
+  if (this.losing(u)) { c *= P.losing; tax *= P.losing; }
+  else if (this.fightInHand(u)) { c *= P.easyFight; tax = Math.max(tax, P.easyTax); }
+  return { base: c, tax };
+};
+Sim.prototype.v2PaceCost = function (u, a, val) {
+  const p = this.v2Pace(u, a);
+  return p.base + p.tax * Math.max(0, val || 0);
+};
+/* a limited damage-cutting reaction (Stone's Endurance): only on a hit that uses most of it, or that would drop it,
+   and is worth the use (at-will ones like Uncanny Dodge keep the old rule: the first hit) */
+Sim.prototype.v2ReactOk = function (u, r, dmg) {
+  if (!this.v2Pool(u, r)) return true;
+  const P = u.v2P.pacing, mult = typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1, cut = avgDice(r.buff.damageReduction || 0);
+  const after = Math.floor(Math.max(0, dmg * mult - cut)), drops = dmg >= u.hp && after < u.hp;
+  const full = cut ? cut : dmg * (1 - mult);                                // what a use can save at best
+  if (!drops && dmg - after < full * P.reactFull) return false;
+  const saved = (dmg - after) * (drops ? P.reactDrop : 1);
+  return saved > this.v2PaceCost(u, r, saved);
+};
+
+/* ---- what the turn looks like from where it stands: foes, danger, the fight's length, the posture ---- */
+Sim.prototype.v2Danger = function (u, foes, myTeam) {
+  const blindTo = this.kMode(u.team) !== 'open';
+  const info = foes.filter(e => !this.incap(e) && e.hp > 0).map(e => {
+    let dmg = 0, reach = 5, p = Math.min(0.95, Math.max(0.05, (21 + 5 - this.ac(u)) / 20));
+    if (blindTo) { dmg = this.kDpr(u, e) * Math.min(1, Math.max(0.3, (21 + 5 - u.baseAC) / 20)) / 0.65; reach = this.kReach(u, e); }
+    else for (const a of e.actions) {
+      if (a.actionSlot !== 0 || a.type !== 'atk' || !this.usable(e, a) || (a.ext && a.ext.swallow)) continue;
+      const d = this.expected(e, a, u);
+      if (d > dmg) { dmg = d; reach = Math.max(5, a._range || 5); p = a.useSaves ? 1 : this.hitChance(e, u, a); }
+    }
+    const move = e.grappledBy || this.has(e, ['Restrained']) ? 0 : this.speedOf(e);
+    const others = myTeam.filter(o => o !== u && this.dist(o, e) <= move + reach).length;
+    const aura = e.actions.filter(a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'atk' && this.usable(e, a)).map(a => ({ r: Math.max(5, a._range || 10), d: this.expected(e, a, u) }));
+    let zone = null;
+    if (this.T.any && reach <= 10) {
+      const rm = this.reachMap(e, move), r = Math.round(reach / 5), Wd = this.W, Hd = this.H;
+      zone = new Uint8Array(Wd * Hd);
+      for (let i = 0; i < rm.dist.length; i++) {
+        if (rm.dist[i] < 0) continue;
+        const cx = i % Wd, cy = (i / Wd) | 0, ch = this.T.h[i];
+        for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
+          const nx = cx + dx, ny = cy + dy;
+          if (nx < 0 || ny < 0 || nx >= Wd || ny >= Hd) continue;
+          const n = nx + ny * Wd;
+          if (Math.abs(this.T.h[n] - ch) <= r) zone[n] = 1;
+        }
+      }
+    }
+    return { e, dmg, p, reach: move + reach, others, aura, zone };
+  });
+  const at = (x, y) => {
+    let t = 0;
+    for (const ti of info) {
+      const d = this.distXY(x, y, ti.e);
+      if (ti.zone) { if (ti.zone[x + y * this.W]) t += ti.dmg / (1 + ti.others); }
+      else if (d <= ti.reach) t += ti.dmg / (1 + ti.others) * (this.T.any && !this.los(ti.e.x, ti.e.y, x, y) ? 0.4 : 1);
+      for (const au of ti.aura) if (d <= au.r) t += au.d;
+    }
+    return t;
+  };
+  const areas = [];
+  for (const e of foes) if (!this.incap(e)) for (const ar of this.kAreas(u, e)) areas.push({ e, shape: ar.shape, size: ar.size, range: ar.range, w: Math.min(3, Math.max(0.6, ar.dmg / 10)) });
+  const spacing = (x, y) => {
+    let pen = 0;
+    for (const at2 of areas) {
+      let near = 0;
+      if (at2.shape === 'cone' || at2.shape === 'line') {
+        if (this.distXY(x, y, at2.e) > at2.size + 5) continue;
+        const r = Math.max(10, at2.size / 2);
+        for (const o of myTeam) if (o !== u && this.distXY(x, y, o) <= r && this.dist(o, at2.e) <= at2.size + 5) near++;
+      } else {
+        if (this.distXY(x, y, at2.e) > at2.range + at2.size * 2) continue;
+        const r = Math.min(30, at2.shape === 'sphere' ? at2.size * 2 : at2.size);
+        for (const o of myTeam) if (o !== u && this.distXY(x, y, o) <= r) near++;
+      }
+      pen += near * at2.w;
+    }
+    return pen;
+  };
+  const adjC = new Map(), hitC = new Map();
+  const oaFoes = foes.filter(e => e.reaction && !e.noOA && !this.incap(e) && this.meleeReach(e) > 0);
+  // the same test as adjacentEnemies, on the few foes close enough to matter
+  const adjAt = (x, y) => {
+    const k = x + y * this.W;
+    let l = adjC.get(k);
+    if (!l) {
+      const zm = (this.T.anyH ? this.T.h[k] : 0) + (u.alt || 0);
+      l = oaFoes.filter(e => { const r = this.meleeReach(e); return Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) * 5 <= r && Math.max(Math.abs(x - e.x), Math.abs(y - e.y), Math.abs(this.zOf(e) - zm)) * 5 <= r && this.los(e.x, e.y, x, y); });
+      adjC.set(k, l);
+    }
+    return l;
+  };
+  const oaHit = e => {
+    let v = hitC.get(e);
+    if (v === undefined) {
+      const a = e.actions.find(o => o.type === 'atk' && !o.useSaves && o.actionSlot === 0 && o._range <= 10 && !(o.ext && o.ext.swallow));
+      v = !a ? 0 : blindTo ? this.kDpr(u, e) * 0.4 : this.expected(e, Object.assign({}, a, { targets: 1 }), u);
+      hitC.set(e, v);
+    }
+    return v;
+  };
+  const oa = path => {
+    if (!path.length) return 0;
+    let cost = 0, cx = u.x, cy = u.y;
+    const used = new Set();
+    for (const st of path) {
+      for (const e of adjAt(cx, cy)) {
+        if (used.has(e) || this.distXY(st.x, st.y, e) <= this.meleeReach(e)) continue;
+        cost += oaHit(e); used.add(e);
+      }
+      cx = st.x; cy = st.y;
+    }
+    return cost;
+  };
+  return { info, at, spacing, oa };
+};
+Sim.prototype.v2Ctx = function (u, speed) {
+  const key = this.turnSeq + ':' + (this.posVer || 0) + ':' + speed + ':' + u.hp + ':' + u.buffs.length + ':' + this.units.reduce((t, o) => t + (o.hp > 0 ? 1 : 0), 0);
+  if (u._v2c && u._v2c.key === key) return u._v2c;
+  const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
+  const pol = u.v2P.finishDowned;
+  const downed = pol === 'never' ? [] : this.enemiesOf(u).filter(e => e.onBoard && !e.dead && e.hp <= 0 && e.isPC && (pol === 'always' || e.downs >= 2));
+  const myTeam = this.alliesOf(u).filter(o => o.onBoard && this.alive(o));
+  const danger = this.v2Danger(u, foes, myTeam);
+  const myDpr = myTeam.reduce((t, o) => t + (o.dpr || 0), 0) * 0.6;
+  const rounds = Math.max(1, Math.min(8, foes.reduce((t, e) => t + this.kHp(u, e), 0) / Math.max(1, myDpr)));
+  const proj = foes.reduce((t, e) => t + this.kDpr(u, e), 0) * 0.6 / Math.max(1, myTeam.length);
+  // its main attack against the nearest foe: hits per round, for buffs that add damage per hit
+  const near = foes.slice().sort((p, q) => this.dist(u, p) - this.dist(u, q))[0];
+  let main = null;
+  for (const a of u.actions) if (a.actionSlot === 0 && a.type === 'atk' && !a.useSaves && this.usable(u, a) && near) {
+    const e = this.expected(u, a, near);
+    if (!main || e > main.e) main = { a, e, p: this.hitChance(u, near, a), n: a.targets || 1, melee: (a._range || 5) <= 10 };
+  }
+  const ctx = { key, speed, foes, pool: foes.concat(downed), myTeam, danger, rounds, incoming: Math.max(danger.at(u.x, u.y), proj), main };
+  ctx.posture = this.v2Posture(u, ctx, speed);
+  u._v2c = ctx;
+  return ctx;
+};
+/* ---- layer 1: posture ---- */
+Sim.prototype.v2Posture = function (u, ctx, speed) {
+  const P = u.v2P.posture, hp = Math.max(0, u.hp) / u.maxHp;
+  // falling back only helps with someone to patch it up, or a way to keep fighting from range faster than they close
+  if (hp <= P.retreatHp && speed > 0 && ctx.danger.at(u.x, u.y) >= u.hp * P.retreatDanger) {
+    const healer = ctx.myTeam.some(o => o !== u && !this.incap(o) && o.actions.some(a => a.type === 'heal' && a.target !== 'self' && a._range !== 0 && this.usable(o, a)));
+    const kite = u.actions.some(a => a.actionSlot === 0 && a.type === 'atk' && (a._range || 5) > 15 && this.usable(u, a)) &&
+      ctx.foes.every(e => this.meleeReach(e) === 0 || this.speedOf(e) < speed);
+    if (healer || kite) return { kind: 'retreat', kite: !healer };
+  }
+  const heal = u.actions.find(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.type === 'heal' && (a.target === 'self' || a._range === 0) && this.usable(u, a) && this.condOk(u, a) && this.healNeeded(u, a, u));
+  if (hp <= P.recoverHp && heal) return { kind: 'recover', heal };
+  const atks = u.actions.filter(a => a.actionSlot === 0 && a.type === 'atk' && this.usable(u, a) && this.condOk(u, a));
+  const inReach = t => atks.filter(a => this.dist(u, t) - Math.max(5, a._range || 5) <= speed);
+  const near = ctx.foes.filter(t => inReach(t).length);
+  if (!near.length) return { kind: 'advance' };
+  // someone in the face of our back line
+  if (this.hasMelee(u)) {
+    let best = null, bv = 0, ally = null;
+    for (const o of ctx.myTeam) {
+      if (o === u || (this.hasMelee(o) && !o.hasSpells && o.hp >= o.maxHp * P.protectAllyHp)) continue;
+      for (const e of this.adjacentEnemies(o, o.x, o.y)) if (near.includes(e) && this.kDpr(u, e) > bv) { bv = this.kDpr(u, e); best = e; ally = o; }
+    }
+    if (best) return { kind: 'protect', t: best, ally };
+  }
+  // their healers and casters, then whatever it can drop this turn, then the softest target
+  const pickBy = list => { let o = null, ov = 0; for (const t of list) { const v = (this.kDpr(u, t) + 1) / Math.max(1, this.kHp(u, t)); if (v > ov) { ov = v; o = t; } } return o; };
+  const key = pickBy(near.filter(t => this.kCaster(u, t) || this.kHeals(u, t)));
+  if (key) return { kind: 'focus', t: key };
+  let fin = null;
+  for (const t of near) {
+    const e = Math.max(...inReach(t).map(a => this.expected(u, a, t)));
+    if (e >= this.kHp(u, t) * P.finishAt && (!fin || this.kDpr(u, t) > this.kDpr(u, fin))) fin = t;
+  }
+  if (fin) return { kind: 'finish', t: fin };
+  const avgMax = ctx.foes.reduce((t, e) => t + this.kMax(u, e), 0) / Math.max(1, ctx.foes.length);
+  const soft = pickBy(near.filter(t => ctx.foes.length > 1 && this.kMax(u, t) <= avgMax * P.squishyHp));
+  if (soft) return { kind: 'focus', t: soft };
+  return { kind: 'engage' };
+};
+
+/* ---- layer 2: what one use of an action on one target is worth (where it stands is scored separately) ---- */
+Sim.prototype.v2PoolFor = function (u, a, ctx) {
+  if (a.target === 'self' || a._range === 0) return (this.alreadyHas(a, u) || !this.healNeeded(u, a, u)) ? [] : [u];
+  if (a.type !== 'atk' && a.type !== 'debuff') return [];
+  let p = (a.type === 'atk' ? ctx.pool : ctx.foes).filter(e => !this.alreadyHas(a, e));
+  if (a.ext && a.ext.swallow) { const mx = sizeIdx(a.ext.swallow.maxSize, 2); p = p.filter(t => t.grappledBy === u.uid && sizeIdx(t.size, 2) <= mx); }
+  const types = a.ext && Array.isArray(a.ext.targetTypes) && a.ext.targetTypes.length ? a.ext.targetTypes.map(x => String(x).toLowerCase()) : null;
+  if (types) p = p.filter(t => types.includes(String(t.isPC ? 'humanoid' : (t.tpl.type || '')).toLowerCase()));
+  return p;
+};
+Sim.prototype.v2AdvGain = function (u, a, t) {
+  const e0 = this.expected(u, a, t);
+  u.buffs.push({ id: '__v2adv', data: { condition: 'Attacks with Advantage' } });
+  let e1;
+  try { e1 = this.expected(u, a, t); } finally { u.buffs = u.buffs.filter(b => b.id !== '__v2adv'); }
+  // advantage also unlocks Sneak Attack when no ally stands next to the target
+  if (u.sneak && a.ext && a.ext.sneak && u.saSeq !== this.turnSeq && !this.featureAdv(u, t) && !this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && this.dist(o, t) <= 5))
+    e1 += avgDice(u.sneak.dice) * 0.6 * this.hitChance(u, t, a) * this.kMult(u, a, t);
+  return Math.max(0, e1 - e0);
+};
+Sim.prototype.v2SelfValue = function (u, a, ctx) {
+  const W = u.v2P.w;
+  if (a.type === 'heal') {
+    if (!this.healNeeded(u, a, u)) return -Infinity;
+    const amt = avgDice(a.amount);
+    if (a.tempHP) return Math.max(0, amt - (u.temp || 0)) * 0.7;
+    let v = Math.min(amt, u.maxHp - Math.max(0, u.hp)) * (u.hp < u.maxHp * 0.5 ? 1.1 : 0.4);
+    if (ctx.posture.kind === 'recover' || ctx.posture.kind === 'retreat') v += W.recover;
+    return v;
+  }
+  if (a.type !== 'buff' || isHideAction(a) || this.alreadyHas(a, u) || u.buffs.some(b => b.id === a.id && b.src === u.uid)) return -Infinity;
+  // what it adds over the rounds it lasts
+  const b = a.buff || {}, R = b.duration === 'entire encounter' ? ctx.rounds : 1;
+  const m = ctx.main, hits = m ? m.n * m.p : 0, inc = ctx.incoming;
+  let v = 0;
+  if (b.damage !== undefined && b.damage !== '') v += avgDice(b.damage) * (b.duration === 'until next attack made' ? (m ? m.p : 0) : hits * R);
+  if (b.toHit !== undefined && b.toHit !== '') v += avgDice(b.toHit) * 0.05 * (m ? m.e / Math.max(0.05, m.p) : 0) * R;
+  if (typeof b.damageMultiplier === 'number') v += Math.max(0, b.damageMultiplier - 1) * (m ? m.e : 0) * R;
+  if (b.condition === 'Attacks with Advantage' && m) v += this.v2AdvGain(u, m.a, ctx.foes[0] || u) * R;
+  if (a.ext && a.ext.resist) v += inc * 0.5 * 0.8 * R;                              // Rage: physical damage halved
+  if (b.ac !== undefined && b.ac !== '') v += avgDice(b.ac) * 0.05 * inc * 1.5 * R;
+  if (typeof b.damageTakenMultiplier === 'number') v += Math.max(0, 1 - b.damageTakenMultiplier) * inc * R;
+  if (b.damageReduction !== undefined) v += Math.min(inc, avgDice(b.damageReduction)) * 0.5 * R;
+  if (b.condition === 'Is attacked with Disadvantage' || b.condition === 'Invisible') v += inc * 0.4 * R;
+  if (!v && !b.condition && !b.damage && !b.toHit) v = this.effectValue(b, u, false, u);
+  return v;
+};
+Sim.prototype.v2Value = function (u, a, t, ctx) {
+  const W = u.v2P.w;
+  if (t === u || a.type === 'heal' || a.type === 'buff') return { val: this.v2SelfValue(u, a, ctx), why: '', pKill: 0 };
+  if (t.hp <= 0) {
+    // a downed PC: each hit is a failed death save (two up close)
+    const hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
+    const pKill = Math.min(1, hits * p * (a.useSaves ? 1 : 2) / Math.max(1, 3 - t.deathF));
+    const healers = this.alliesOf(t).filter(o => o !== t && this.alive(o) && this.kHeals(u, o)).length;
+    return { val: pKill * (10 + this.kDpr(u, t)) * (healers ? 1.4 : 0.8) * W.kill, why: 'execute', pKill };
+  }
+  const exp = this.expected(u, a, t), tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
+  let val, why = '', pKill = 0;
+  if (a.type === 'debuff') val = exp * W.control;
+  else {
+    val = Math.min(exp, tHp + W.overkill) * (1 + tDpr / W.dprScale) * W.damage;
+    pKill = 1 / (1 + Math.exp(-5 * (exp - tHp) / Math.max(4, exp)));
+    val += pKill * (tDpr * W.killRounds + 5) * W.kill;
+    if (pKill >= 0.5) why = 'finish';
+    // Extra Attack: what's left after it drops goes to the next one in reach
+    if (!a.useSaves && (a.targets || 1) > 1 && exp > tHp && ctx.foes.some(o => o !== t && this.dist(o, t) <= Math.max(10, a._range || 5))) val += (exp - tHp) * W.spill;
+    // riders: Stunning Strike, Sap… worth the effect, times the chance it lands, unless the hits drop it anyway
+    const re = a.riderEffect;
+    if (re && re.buff && !t.buffs.some(b => b.id === a.id && b.src === u.uid)) {
+      const rab = a.ext && (a.ext.riderSave || a.ext.saveAbility);
+      const pFail = re.dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, rab) - re.dc) / 20));
+      const pLand = a.useSaves ? 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - avgDice(a.toHit)) / 20))
+                               : 1 - Math.pow(1 - this.hitChance(u, t, a) * pFail, a.targets || 1);
+      val += pLand * this.effectValue(re.buff, t, true, u) * (1 - pKill) * W.control;
+    }
+    const oh = a.ext && a.ext.onHit;
+    if (oh && oh.push && this.meleeReach(t) > 0 && this.meleeReach(t) < oh.push + 5 && ctx.myTeam.some(o => o !== u && this.dist(o, t) <= this.meleeReach(t)))
+      val += this.kDpr(u, t) * 0.5 * (1 - pKill) * W.control;
+    // break its concentration
+    if (t.concentrating && exp < tHp) {
+      const held = this.concValue(u, t);
+      if (held > 0) {
+        const con = this.kSave(u, t, 'con'), hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
+        const perHit = exp / Math.max(0.05, hits * p);
+        const pf = Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20));
+        val += held * (1 - Math.pow(1 - p * pf, hits)) * W.conc;
+        why = why || 'concentration';
+      }
+    }
+  }
+  const allyOn = ctx.myTeam.filter(o => o !== u && this.dist(o, t) <= 5).length;
+  val += allyOn * W.focus + (1 - this.kFrac(u, t)) * W.wounded;
+  // a foe in the face of our back line (casters, archers, the badly hurt) is worth more to a front-liner
+  if (this.hasMelee(u)) {
+    const back = ctx.myTeam.filter(o => o !== u && this.dist(o, t) <= Math.max(5, this.meleeReach(t)) && (o.hasSpells || !this.hasMelee(o) || o.hp < o.maxHp * u.v2P.posture.protectAllyHp)).length;
+    if (back) { val += back * W.guard; why = why || 'guard'; }
+  }
+  if (this.kHeals(u, t)) { val += W.healer; why = why || 'healer'; }
+  if (this.kCaster(u, t)) { val += W.caster; why = why || 'caster'; }
+  // leave alone what our side has talked or laughed out of the fight, unless this finishes it
+  const lulled = o => o.buffs.some(b => b.endsOnDamage) && this.incap(o);
+  if (lulled(t) && ctx.foes.some(o => o !== t && !lulled(o)) && pKill < 0.5) { val = val * 0.1 - 6 - tDpr; why = ''; }
+  if (a.type === 'atk' && exp < tHp && t.buffs.some(b => b.saveOnDamage && this.byId[b.src] && this.byId[b.src].team === u.team)) { val *= 0.25; why = ''; }
+  if (!why) {
+    const top = Math.max(0, ...ctx.foes.map(o => this.kDpr(u, o)));
+    if (ctx.foes.length > 1 && tDpr >= top && tDpr > 0) why = 'threat';
+    else if (allyOn) why = 'focus';
+  }
+  return { val, why, pKill };
+};
+
+/* ---- the turn: every square it could end on × every way to spend it ---- */
+Sim.prototype.v2Turn = function (u, speed, bonusSpent, onlyAct) {
+  const prevF = this._flyer; this._flyer = u.fly && this.airborne(u) ? u : null;
+  try { return this.v2TurnInner(u, speed, bonusSpent, onlyAct); } finally { this._flyer = prevF; }
+};
+Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
+  const ctx = this.v2Ctx(u, speed);
+  if (!ctx.foes.length) return null;
+  const W = u.v2P.w, Wd = this.W, post = ctx.posture;
+  const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u);
+  let safety = (meleeSelf ? W.risk : W.riskRanged) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
+  if (post.kind === 'retreat') { safety *= W.retreatSafety; if (!post.kite) offMult = W.retreatOffense; }
+  // it can't lose more than it has: past that, more incoming damage only means going down (a bit worse than its HP)
+  const hpCap = Math.max(1, u.hp) * W.downCap;
+  const threat = (x, y) => Math.min(ctx.danger.at(x, y), hpCap);
+  const postBonus = t => post.t !== t ? 0 : W.pick * (post.kind === 'protect' ? 1 + W.protect * this.kDpr(u, t) / 5 : post.kind === 'finish' ? 1 + W.finishBoost : 1);
+
+  const plans = u.actions.filter(a => a.actionSlot === 0 && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a)).map(a => {
+    const pool = this.v2PoolFor(u, a, ctx), sp = areaSpec(a);
+    const pl = { a, pool, range: Math.max(5, a._range || 5), self: a.target === 'self' || a._range === 0, area: !!sp, sphere: !!sp && sp.shape === 'sphere',
+                 pace: this.v2Pace(u, a), vals: new Map(), acCache: new Map(), multi: new Map() };
+    for (const t of pool) pl.vals.set(t.uid, this.v2Value(u, a, t, ctx));
+    // several targets with one save (no template): the others near the first
+    if (!sp && a.useSaves && (a.targets || 1) > 1) for (const t of pool) {
+      const ex = pool.filter(o => o !== t && o.hp > 0 && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10)).map(o => pl.vals.get(o.uid).val).sort((p, q) => q - p).slice(0, (a.targets || 1) - 1);
+      pl.multi.set(t.uid, ex.reduce((s, v) => s + Math.max(0, v), 0));
+    }
+    return pl;
+  }).filter(pl => pl.pool.length && !(pl.self && !(pl.vals.get(u.uid).val > 0)));
+  const atk = plans.filter(pl => !pl.self);
+  const net = (pl, v) => v - pl.pace.base - pl.pace.tax * Math.max(0, v);
+  // bonus attacks (Flurry, Martial Arts, a slot-1 Action Surge…): what it could add from a square
+  const bonusAtk = bonusSpent ? [] : u.actions.filter(a => a.actionSlot === 1 && (a.type === 'atk' || a.type === 'debuff') && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a)).map(a => {
+    return { a, range: Math.max(5, a._range || 5), vals: this.v2PoolFor(u, a, ctx).map(t => { const v = this.v2Value(u, a, t, ctx).val; return { t, v: v - this.v2PaceCost(u, a, v) }; }).filter(o => o.v > 0) };
+  }).filter(b => b.vals.length);
+
+  const taken = new Uint8Array(Wd * this.H);
+  for (const o of this.units) if (o !== u && o.onBoard && !o.dead) taken[o.x + o.y * Wd] = 1;
+  const consider = (budget, fn) => {
+    const rm = this.reachMap(u, speed > 0 ? budget : 0);
+    for (let i = 0; i < rm.dist.length; i++) if (rm.dist[i] >= 0 && !taken[i]) fn(i % Wd, (i / Wd) | 0, rm, rm.dist[i]);
+  };
+  // how far a square is from being able to use its main action
+  const reachOf = new Map();
+  for (const pl of atk) for (const t of pl.pool) if (t.hp > 0) reachOf.set(t, Math.max(reachOf.get(t) || 0, pl.range));
+  if (!reachOf.size) for (const t of ctx.foes) reachOf.set(t, 5);
+  const needs = Array.from(reachOf);
+  const need = (x, y) => {
+    let best = Infinity;
+    for (const [t, r] of needs) { const d = this.distXY(x, y, t) - r; if (d < best) best = d; }
+    return best === Infinity ? 0 : Math.max(0, best);
+  };
+  const need0 = need(u.x, u.y);
+  // closing in is worth the offense it brings a turn nearer: a full move of progress ≈ W.progress × its best hit
+  let offense = 4;
+  for (const pl of atk) for (const t of pl.pool) if (t.hp > 0) offense = Math.max(offense, net(pl, pl.vals.get(t.uid).val));
+  const progUnit = offense * W.progress / Math.max(5, speed || this.speedOf(u) || 30);
+  const meleeFoes = ctx.foes.filter(e => !this.incap(e) && this.meleeReach(e) > 0);
+  const engaged = this.adjacentEnemies(u, u.x, u.y).some(e => e.reaction);
+  const bonusDis = engaged && !bonusSpent && this.canBonusDisengage(u);
+  // a path can brush past a foe on the way: count the opportunity attacks whenever one could reach it
+  const oaNear = meleeFoes.some(e => e.reaction && !e.noOA && this.dist(u, e) <= speed * 2 + this.meleeReach(e) + 5);
+  const canAim = u.steadyAim && !bonusSpent && !u.movedThisTurn;
+  // hiding: which squares nobody can see, and how far each square is from one
+  const hideA = this.T.any && !bonusSpent && !bonusDis ? u.actions.find(a => isHideAction(a) && a.actionSlot === 1 && this.usable(u, a) && this.condOk(u, a)) : null;
+  const spSteps = Math.floor(speed / 5);
+  let distH = null;
+  if (hideA && speed > 0) {
+    const N = Wd * this.H, q = [];
+    distH = new Int16Array(N).fill(-1);
+    for (let i = 0; i < N; i++) if (!this.T.wall[i] && !taken[i] && this.concealedAt(u, i % Wd, (i / Wd) | 0)) { distH[i] = 0; q.push(i); }
+    for (let k = 0; k < q.length; k++) {
+      const c = q[k], cx = c % Wd, cy = (c / Wd) | 0;
+      if (distH[c] >= spSteps) continue;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const nx = cx + dx, ny = cy + dy; if (nx < 0 || ny < 0 || nx >= Wd || ny >= this.H) continue;
+        const n = nx + ny * Wd; if (distH[n] >= 0 || this.T.wall[n]) continue;
+        distH[n] = distH[c] + 1; q.push(n);
+      }
+    }
+  }
+
+  const options = [];
+  let anyOffense = false;
+  consider(speed, (x, y, rm, steps) => {
+    const seen = new Map(), dC = new Map();
+    const dOf = t => { let d = dC.get(t); if (d === undefined) { d = this.distXY(x, y, t); dC.set(t, d); } return d; };
+    const sees = t => { let v = seen.get(t); if (v === undefined) { v = this.canSee(x, y, t); seen.set(t, v); } return v; };
+    const engagedHere = meleeFoes.some(e => dOf(e) <= this.meleeReach(e));
+    let best = null;
+    for (const pl of plans) {
+      if (pl.self) { const v = net(pl, pl.vals.get(u.uid).val * offMult); if (!best || v > best.val) best = { pl, t: u, val: v, why: '' }; continue; }
+      for (const t of pl.pool) {
+        if (dOf(t) > pl.range || !sees(t)) continue;
+        const b = pl.vals.get(t.uid);
+        let v = b.val, why = b.why;
+        if (pl.area) {
+          let ac = pl.sphere ? pl.acCache.get(t.uid) : null;
+          if (ac && Math.max(Math.abs(ac.ax - x), Math.abs(ac.ay - y)) * 5 > pl.range) ac = null;
+          if (!ac) {
+            ac = this.areaCatch(pl.a, t, x, y, pl.pool.filter(o => o.hp > 0), u);
+            if (!ac) continue;
+            if (pl.sphere) { ac.cellSet = new Set(ac.cells.map(c => c[0] + ',' + c[1])); ac.others = ac.friends.filter(f => f !== u); pl.acCache.set(t.uid, ac); }
+          }
+          if (pl.a.ext && pl.a.ext.minCatch && 1 + ac.extra.length < pl.a.ext.minCatch) continue;
+          for (const o of ac.extra) { const ov = pl.vals.get(o.uid); if (ov) v += Math.max(0, ov.val); }
+          if (ac.extra.length) why = 'cluster';
+          const friends = pl.sphere ? (ac.cellSet.has(x + ',' + y) ? ac.others.concat([u]) : ac.others) : ac.friends;
+          if (friends.length) v -= this.friendPenalty(u, pl.a, friends);
+        } else if (pl.multi.has(t.uid)) v += pl.multi.get(t.uid);
+        if (t.hp <= 0 && pl.a.type === 'atk' && !pl.a.useSaves && dOf(t) > 5) v *= 0.5;            // a downed foe is crit only up close
+        if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere) v *= W.meleeShoot;  // shooting in melee
+        v = net(pl, v * offMult + postBonus(t));
+        if (!best || v > best.val) best = { pl, t, val: v, why };
+      }
+    }
+    const th = threat(x, y), sp = ctx.danger.spacing(x, y) * W.spacing;
+    const risk = th * safety + sp, walk = steps * W.move;
+    const oa = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0;
+    const prog = (need0 - need(x, y)) * progUnit;
+    if (best) {
+      anyOffense = true;
+      let bon = 0;
+      for (const b of bonusAtk) for (const o of b.vals) if (o.v > bon && dOf(o.t) <= b.range && sees(o.t)) bon = o.v;
+      bon *= W.bonus;
+      let aim = 0;
+      if (canAim && steps === 0 && best.pl.a.type === 'atk' && !best.pl.a.useSaves && best.t !== u) aim = this.v2AdvGain(u, best.pl.a, best.t) * W.aim;
+      const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - walk, aim: aim > bon && aim > 0 };
+      // shoot, then use the rest of the move to get out of sight and Hide
+      if (distH && !opt.aim && best.pl.a.type === 'atk') {
+        const dh = distH[x + y * Wd];
+        if (dh >= 0 && dh <= spSteps - steps && (dh === 0 || !this.adjacentEnemies(u, x, y).length)) { opt.hideAfter = spSteps - steps; opt.score += best.val * W.hide + risk * 0.5 + 2 - bon; }
+      }
+      options.push(opt);
+      if (bonusDis && steps > 0) options.push({ mode: 'bonusDis', x, y, rm, off: best, steps, score: best.val - risk - walk });
+    }
+    if (onlyAct) return;
+    if (engaged && steps > 0) options.push({ mode: 'actionDis', x, y, rm, steps, score: -risk - walk + prog - 2 });
+    options.push({ mode: 'dodge', x, y, rm, steps, prog, score: -th * safety * (1 - W.dodge) - sp - oa - walk + prog });
+    if (distH && distH[x + y * Wd] === 0) options.push({ mode: 'hide', x, y, rm, steps, score: -th * safety * 0.3 - sp - oa - walk + prog });
+  });
+  // nothing to hit from anywhere it can walk: Dash is the other way to spend the action
+  if (!onlyAct && !anyOffense && speed > 0) consider(speed * 2, (x, y, rm, steps) => {
+    const oa = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0;
+    options.push({ mode: 'dash', x, y, rm, steps, score: (need0 - need(x, y)) * progUnit - threat(x, y) * safety - ctx.danger.spacing(x, y) * W.spacing - oa - steps * W.move * 0.5 });
+  });
+  if (!options.length) return null;
+  options.sort((p, q) => q.score - p.score);
+  const best = options[0];
+  best.path = this.pathTo(best.rm, best.x, best.y);
+  best.note = '';
+  best.say = this.v2Words(u, best, ctx, engaged);
+  return best;
+};
+/* the replay's "why" line, from the posture and what it chose */
+Sim.prototype.v2Words = function (u, o, ctx, engaged) {
+  const post = ctx.posture, t = o.off && o.off.t !== u ? o.off.t : null, n = u.name;
+  const foeNear = (x, y) => ctx.foes.reduce((m, e) => Math.min(m, this.distXY(x, y, e)), 999);
+  if (o.mode === 'bonusDis') return { text: `${n} slips away with a bonus-action Disengage`, key: 'bdis' };
+  if (o.mode === 'actionDis') return { text: post.kind === 'retreat' ? `${n} is badly hurt and disengages to get clear` : `${n} disengages to get out of reach`, key: 'adis' };
+  if (o.mode === 'hide') return { text: `${n} slips out of sight to hide`, key: 'hide' };
+  if (o.mode === 'dodge') return { text: post.kind === 'retreat' ? `${n} is badly hurt and turns defensive, Dodging` : engaged ? `${n} goes on the defensive and Dodges` : o.prog > 0 ? `${n} closes in carefully, Dodging as it comes` : `${n} holds back and Dodges`, key: 'dodge' };
+  if (o.mode === 'dash') return { text: `${n} has nothing in reach and dashes toward the fight`, key: 'dash' };
+  if (!t) return null;
+  if (post.kind === 'retreat' && o.path.length && foeNear(o.x, o.y) > foeNear(u.x, u.y)) return { text: `${n} is badly hurt and fights from further back`, key: 'retreat', t };
+  if (post.t === t) {
+    if (post.kind === 'finish') return { text: `${n} moves to finish off ${t.name}`, key: 'finish', t };
+    if (post.kind === 'protect') return { text: `${n} steps in to protect ${post.ally.name} from ${t.name}`, key: 'protect', t };
+    if (post.kind === 'focus') return { text: `${n} goes for ${this.kCaster(u, t) ? 'the caster' : this.kHeals(u, t) ? 'the healer' : 'the softer target'}, ${t.name}`, key: 'focus', t };
+  }
+  const why = o.off.why;
+  if (why === 'execute') return { text: `${n} decides to finish off ${t.name}, who keeps getting back up`, key: 'execute', t };
+  if (why === 'finish') return { text: `${n} goes after ${t.name}, who looks ready to drop`, key: 'finish', t };
+  if (why === 'cluster') return { text: `${n} lines up ${o.off.pl.a.name} to catch several of them`, key: 'cluster', t };
+  if (why === 'threat') return { text: `${n} focuses ${t.name}, the biggest threat`, key: 'threat', t };
+  if (why === 'focus') return { text: `${n} piles onto ${t.name} with the others`, key: 'focus', t };
+  if (why === 'guard') return { text: `${n} steps in to protect an ally from ${t.name}`, key: 'guard', t };
+  return null;
+};
+Sim.prototype.v2Say = function (u, tp) {
+  const s = tp && tp.say;
+  if (!this.record || !s) return;
+  const key = 'v2:' + s.key + ':' + (s.t ? s.t.uid : '');
+  if (u.lastIntent === key) return;
+  u.lastIntent = key;
+  this.ev('intent', s.text, s.t ? { uid: u.uid, target: s.t.uid } : { uid: u.uid });
+};
+/* aim action `a` from where it stands now (after moving, or a bonus action): the best target in reach */
+Sim.prototype.v2Aim = function (u, a, prefer) {
+  if (!this.usable(u, a) || !this.condOk(u, a)) return null;
+  const ctx = this.v2Ctx(u, 0), W = u.v2P.w;
+  if (a.target === 'self' || a._range === 0) return this.v2PoolFor(u, a, ctx).length ? { dest: { x: u.x, y: u.y }, path: [], targets: [u] } : null;
+  const pool = this.v2PoolFor(u, a, ctx), range = Math.max(5, a._range || 5), live = pool.filter(o => o.hp > 0);
+  let best = null;
+  for (const t of pool) {
+    if (this.dist(u, t) > range || !this.canSee(u.x, u.y, t)) continue;
+    let v = this.v2Value(u, a, t, ctx).val + (t === prefer ? W.pick : 0) + (ctx.posture.t === t ? W.pick : 0), ac = null;
+    if (areaSpec(a)) {
+      ac = this.areaCatch(a, t, u.x, u.y, live, u);
+      if (!ac || (a.ext && a.ext.minCatch && 1 + ac.extra.length < a.ext.minCatch)) continue;
+      for (const o of ac.extra) v += Math.max(0, this.v2Value(u, a, o, ctx).val);
+      if (ac.friends.length) v -= this.friendPenalty(u, a, ac.friends);
+    }
+    if (!best || v > best.v) best = { t, v, ac };
+  }
+  if (!best || (best.ac && best.v <= 0)) return null;
+  const t = best.t, ac = best.ac;
+  if (ac) return { friends: ac.friends, dest: { x: u.x, y: u.y }, path: [], targets: [t].concat(ac.extra), why: '',
+                   area: { shape: ac.spec.shape, size: ac.spec.size, ox: u.x, oy: u.y, tx: ac.ax, ty: ac.ay, cells: ac.cells } };
+  const targets = [t], n = a.targets || 1;
+  if (n > 1 && (a.useSaves || a.type === 'debuff'))
+    targets.push(...live.filter(o => o !== t && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10) && this.dist(u, o) <= range).sort((p, q) => this.dist(p, t) - this.dist(q, t)).slice(0, n - 1));
+  return { dest: { x: u.x, y: u.y }, path: [], targets, why: '' };
+};
+/* the bonus action: 'pre' = a self-buff worth taking before it moves (Rage), 'post' = the best one from where it ended up */
+Sim.prototype.v2Bonus = function (u, phase) {
+  const speed = (this.has(u, ['Restrained']) || u.grappledBy) ? 0 : this.speedOf(u);
+  const ctx = this.v2Ctx(u, phase === 'pre' ? speed : 0);
+  const list = u.actions.filter(a => a.actionSlot === 1 && !(a.ext && a.ext.teleport) && !isHideAction(a) && !a._spell && this.usable(u, a) && this.condOk(u, a));
+  let best = null;
+  let held = null;
+  const offer = (a, p, v) => { if (v > 0 && (!best || v > best.v)) best = { a, p, v }; };
+  for (const a of list) {
+    if (a.target === 'self' || a._range === 0) {
+      if (phase === 'pre' && a.type !== 'buff') continue;
+      if (!this.v2PoolFor(u, a, ctx).length) continue;
+      const v = this.v2SelfValue(u, a, ctx);
+      offer(a, { dest: { x: u.x, y: u.y }, path: [], targets: [u] }, v - this.v2PaceCost(u, a, v));
+      if (phase === 'pre' && v > 0 && v - this.v2PaceCost(u, a, v) <= 0) held = a;
+    } else if (phase === 'post' && (a.type === 'atk' || a.type === 'debuff')) {
+      const p = this.v2Aim(u, a);
+      if (p && p.targets[0]) { const v = this.v2Value(u, a, p.targets[0], ctx).val; offer(a, p, v - this.v2PaceCost(u, a, v)); }
+    }
+  }
+  if (phase === 'pre' && !best && held) this.v2NotePacing(u, held);
+  if (phase === 'pre' && best) {
+    // a buff now takes the bonus action: worth it only over the best bonus attack it could make this turn
+    let atk = 0;
+    for (const a of list) if (a.type === 'atk') for (const t of this.v2PoolFor(u, a, ctx)) if (this.dist(u, t) - Math.max(5, a._range || 5) <= speed) { const v = this.v2Value(u, a, t, ctx).val; atk = Math.max(atk, v - this.v2PaceCost(u, a, v)); }
+    if (best.v <= atk * u.v2P.w.bonus) return null;
+  }
+  return best;
+};
+/* Reckless Attack: advantage on its attacks this turn against advantage on everyone's attacks on it until its next turn */
+Sim.prototype.v2Reckless = function (u, a, p) {
+  const rk = u.actions.find(isReckless);
+  if (!rk || a.type !== 'atk' || a.useSaves || (a._range || 5) > 10 || !p || !p.targets[0] || p.targets[0] === u) return;
+  if (u.buffs.some(b => b.data && b.data.condition === rk.buff.condition)) return;
+  const mode = u.v2P.reckless;
+  if (mode === 'never') return;
+  if (mode !== 'always') {
+    const t = p.targets[0], W = u.v2P.w, ctx = this.v2Ctx(u, 0);
+    const gain = this.v2AdvGain(u, a, t) * (1 + this.kDpr(u, t) / W.dprScale);
+    let extra = 0, incoming = 0;
+    for (const ti of ctx.danger.info) if (this.distXY(u.x, u.y, ti.e) <= ti.reach && ti.p < 1) { extra += ti.dmg * (1 - ti.p) / (1 + ti.others); incoming += ti.dmg / (1 + ti.others); }
+    // the extra hits could be the ones that drop it
+    if (incoming + extra >= u.hp) extra *= W.recklessDrop;
+    if (gain <= extra * W.recklessRisk * (1 + W.hurt * (1 - Math.max(0, u.hp / u.maxHp)))) return;
+  }
+  this.addBuff(u, u, rk, Object.assign({}, rk.buff, { duration: '1 round' }));
+  this.ev('buff', `${u.name}: ${rk.name}`, { uid: u.uid });
+};
+/* Action Surge (ext.extraAction): one more action when it's worth the use */
+Sim.prototype.v2Surge = function (u) {
+  const s = u.surges.find(a => this.usable(u, a));
+  if (!s || !this.enemiesOf(u).some(e => e.onBoard && this.alive(e))) return;
+  const left = this.has(u, ['Restrained']) || u.grappledBy ? 0 : Math.max(0, this.speedOf(u) - (u._steps || 0) * 5);
+  const tp = this.v2Turn(u, left, true, true);
+  if (!tp || tp.mode !== 'act' || !tp.off || tp.off.t === u || (tp.off.pl.a.type !== 'atk' && tp.off.pl.a.type !== 'debuff')) return;
+  if (tp.off.val <= this.v2PaceCost(u, s, tp.off.val)) { this.v2NotePacing(u, s); return; }
+  this.spend(u, s);
+  if (tp.path.length) { this.moveAlong(u, tp.path); if (u.dead || u.hp <= 0) return; }
+  if (s.buff && (s.buff.damage || s.buff.toHit || s.buff.ac || s.buff.condition)) this.addBuff(u, u, s, s.buff);
+  this.ev('buff', `${u.name} uses ${s.name}: one more action`, { uid: u.uid });
+  const a = tp.off.pl.a, p = this.v2Aim(u, a, tp.off.t);
+  if (!p) return;
+  this.v2Say(u, tp);
+  this.v2Reckless(u, a, p);
+  this.spend(u, a);
+  this.doAction(u, a, p);
+};
+Sim.prototype.v2NotePacing = function (u, a) {
+  if (!this.record || u.notedPacing || u.team !== 'party' || !this.leftFor(u)) return;
+  u.notedPacing = true;
+  this.ev('intent', `${u.name} holds ${a.name} back: it's worth more in a fight still to come`, { uid: u.uid });
+};
+/* after it moved: aim the planned action again, or the best other one from here */
+Sim.prototype.v2Act = function (u, choice) {
+  let a = choice.a, p = this.v2Aim(u, a, choice.p.targets[0]);
+  if (!p) {
+    const ctx = this.v2Ctx(u, 0);
+    let best = null;
+    for (const b of u.actions) {
+      if (b.actionSlot !== 0 || (b.ext && b.ext.teleport) || !this.usable(u, b) || !this.condOk(u, b)) continue;
+      const q = this.v2Aim(u, b);
+      if (!q || !q.targets[0]) continue;
+      const v0 = this.v2Value(u, b, q.targets[0], ctx).val, v = v0 - this.v2PaceCost(u, b, v0);
+      if (!best || v > best.v) best = { a: b, p: q, v };
+    }
+    if (!best) return null;
+    a = best.a; p = best.p;
+  }
+  return { a, p };
+};
+
 /* ----- a creature's turn ----- */
 Sim.prototype.turn = function (u) {
   // start of turn
@@ -2996,6 +3691,7 @@ Sim.prototype.turn = function (u) {
   // passives (Other 1 / Other 2): self buffs keep themselves up
   for (const a of u.actions) {
     if ((a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && this.usable(u, a) && this.condOk(u, a)) {
+      if (u.v2 && isReckless(a)) continue;     // v2 weighs Reckless Attack each turn (v2Reckless)
       const already = u.buffs.some(b => b.id === a.id);
       if (!already) { this.spend(u, a); this.doAction(u, a, { targets: this.plan(u, a, 0) ? this.plan(u, a, 0).targets : [u] }); }
     }
@@ -3026,10 +3722,10 @@ Sim.prototype.turn = function (u) {
     }
   }
   // what will the action be?
-  let choice = null, moved = false, bonusSpent = false, hideAfter = null;
+  let choice = null, moved = false, bonusSpent = false, hideAfter = null, v2tp = null;
   // self-buffs that change how the turn goes (Bladesong's speed and AC, Rage…) are invoked before moving
   if (!actionUsed) {
-    const pre = this.choose(u, 1, 0);
+    const pre = u.v2 ? this.v2Bonus(u, 'pre') : this.choose(u, 1, 0);
     if (pre && pre.a.type === 'buff' && pre.a.target === 'self' && !(pre.a._spell && pre.a._spell.level) && !(pre.a.buff && pre.a.buff.condition === 'Invisible')) {
       this.spend(u, pre.a); this.doAction(u, pre.a, pre.p); bonusSpent = true;
     }
@@ -3056,9 +3752,10 @@ Sim.prototype.turn = function (u) {
     }
   }
   if (!actionUsed && u.ai === 'tactical') {
-    let tp = this.tacticalTurn(u, speed);
+    let tp = u.v2 ? this.v2Turn(u, speed, bonusSpent) : this.tacticalTurn(u, speed);
+    if (u.v2) { v2tp = tp; this.v2Say(u, tp); }
     // if saving resources leaves nothing better than dashing or dodging, spend one instead of wasting the turn
-    if (tp && (tp.mode === 'dash' || tp.mode === 'dodge' || tp.mode === 'actionDis') && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
+    else if (tp && (tp.mode === 'dash' || tp.mode === 'dodge' || tp.mode === 'actionDis') && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
       u._noHold = true;
       const tp2 = this.tacticalTurn(u, speed);
       u._noHold = false;
@@ -3067,7 +3764,7 @@ Sim.prototype.turn = function (u) {
     } else this.notePacing(u);
     if (tp) {
       if (tp.mode === 'act' || tp.mode === 'bonusDis' || (tp.mode === 'jump' && tp.off)) {
-        choice = { a: tp.off.pl.a, p: { targets: [tp.off.t], path: tp.path, why: tp.off.why } };
+        choice = { a: tp.off.pl.a, p: { targets: [tp.off.t], path: tp.path, why: u.v2 ? '' : tp.off.why } };
         this.intent(u, choice.a, choice.p);
       }
       if (tp.mode === 'jump') {
@@ -3128,7 +3825,7 @@ Sim.prototype.turn = function (u) {
     }
     moved = true; actionUsed = true;
   }
-  if (u.steadyAim && hideAfter === null && !bonusSpent && !actionUsed && choice && choice.a.type === 'atk' && !choice.a.useSaves && !u.movedThisTurn &&
+  if (u.steadyAim && (!u.v2 || (v2tp && v2tp.aim)) && hideAfter === null && !bonusSpent && !actionUsed && choice && choice.a.type === 'atk' && !choice.a.useSaves && !u.movedThisTurn &&
       !(choice.p.path && choice.p.path.length) && choice.p.targets && choice.p.targets[0]) {
     const t = choice.p.targets[0];
     const tc = this.conds(t), atc = this.conds(u);
@@ -3147,14 +3844,18 @@ Sim.prototype.turn = function (u) {
 
   // bonus action: first usable one, before or after the action depending on what it is
   u.reserveSlot = !!(choice && !actionUsed && choice.a._spell && choice.a._spell.level);
-  const bonus = bonusSpent ? null : this.choose(u, 1, 0);
+  const bonus = bonusSpent ? null : u.v2 ? this.v2Bonus(u, 'post') : this.choose(u, 1, 0);
   u.reserveSlot = false;
   const after = bonus && (bonus.a.type === 'atk' || (bonus.a.buff && bonus.a.buff.condition === 'Invisible'));
   if (bonus && !after) { this.spend(u, bonus.a); this.doAction(u, bonus.a, bonus.p); }
   if (choice && !actionUsed) {
     // re-plan from where it ended up: it may have been stopped, or the target may have dropped
-    let a = choice.a, p = this.usable(u, a) && this.condOk(u, a) ? this.plan(u, a, 0) : null;
-    if (!p) { const c2 = this.choose(u, 0, 0); if (c2) { a = c2.a; p = c2.p; } }
+    let a = choice.a, p = null;
+    if (u.v2) { const c2 = this.v2Act(u, choice); if (c2) { a = c2.a; p = c2.p; } }
+    else {
+      p = this.usable(u, a) && this.condOk(u, a) ? this.plan(u, a, 0) : null;
+      if (!p) { const c2 = this.choose(u, 0, 0); if (c2) { a = c2.a; p = c2.p; } }
+    }
     if (p && p.targets.length && u.fly) {
       this.settleAltitude(u, a, p);
       // couldn't get level with it this turn: a melee swing can't reach
@@ -3162,6 +3863,7 @@ Sim.prototype.turn = function (u) {
       if (t0 && t0 !== u && a.type === 'atk' && !a.useSaves && this.dist(u, t0) > Math.max(5, a._range || 5)) { this.ev('skip', `${u.name} can't reach ${t0.name} from ${(u.alt || 0) * 5} ft up`, { uid: u.uid }); p = null; }
     }
     if (p && p.targets.length) {
+      if (u.v2) this.v2Reckless(u, a, p);
       this.spend(u, a); this.doAction(u, a, p, { finishDowned: !!(p.targets[0] && p.targets[0].hp <= 0) });
       if ((a.type === 'atk' || a.type === 'debuff') && p.targets[0] && p.targets[0] !== u) u.focus = p.targets[0].uid;
     }
@@ -3171,10 +3873,10 @@ Sim.prototype.turn = function (u) {
     if (this.slipAndHide(u, hideAfter !== null ? Math.min(hideAfter, left) : left)) bonusSpent = true;
   }
   if (bonus && after && !bonusSpent && !u.dead && u.hp > 0) {
-    const p = this.plan(u, bonus.a, 0);
-    if (p) { this.spend(u, bonus.a); this.doAction(u, bonus.a, p); }
+    const p = u.v2 ? this.v2Aim(u, bonus.a, bonus.p.targets[0]) : this.plan(u, bonus.a, 0);
+    if (p) { if (u.v2) this.v2Reckless(u, bonus.a, p); this.spend(u, bonus.a); this.doAction(u, bonus.a, p); }
   }
-  if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) this.surge(u);
+  if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) { if (u.v2) this.v2Surge(u); else this.surge(u); }
   // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
   if (u.fly && !u._settled && !u.dead && u.hp > 0) this.settleAltitude(u, null, null);
   this.endTurn(u);
@@ -3416,6 +4118,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   this.zones = [];
   this.place(party, foes, layout);
   this.boardChanged();
+  if (this.aiV2) this.units.forEach(u => this.v2Setup(u));
   // initiative (2024: surprised creatures roll with disadvantage)
   for (const u of this.units) {
     const sur = this.surprised[u.team] && this.surpriseRules === '2024';
@@ -3526,6 +4229,8 @@ function runDay(day, opts) {
     sim.encountersLeft = later.length;
     if (results.length) party.forEach(u => { if (!u.dead && u.slots && u.recovery && u.recovery.anyBreak && !u.recoveryUsed && u.slots.some((n, i) => n < u.slotsMax[i])) recoverSlots(u); });
     sim.restBeforeNext = !!(later[0] && later[0].shortRest);
+    const restAt = later.findIndex(e => e.shortRest);
+    sim.fightsBeforeRest = restAt < 0 ? later.length : restAt;     // fights after this one that short-rest pools must last
     sim.fightNo = results.length;
     const r = sim.runEncounter(party, foes, enc, layout);
     sim.learnFight();
@@ -3659,5 +4364,5 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, AI_PROFILES, aiProfile, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

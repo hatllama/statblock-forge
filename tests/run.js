@@ -39,14 +39,15 @@ const INCAP = ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconsciou
 
 for (const file of ['worms-day.json', 'bandit-day.json']) {
   const day = fixture(file);
-  for (const ai of ['tactical', 'regular']) for (const layout of [null, walled]) {
+  // 'v2': AI v2 for every non-caster on both sides (docs/ai-v2.md), the old tactical AI for the casters
+  for (const ai of ['tactical', 'regular', 'v2']) for (const layout of [null, walled]) {
     section(`${file} · ${ai} AI · ${layout ? 'walled map' : 'open field'}`);
     const runs = [];
     let wallSteps = 0, throughWalls = 0, deadActs = 0, incapActs = 0, badHide = 0, events = 0;
     const t0 = Date.now();
     for (let i = 0; i < 25; i++) {
       const seed = 1000 + i * 7919;
-      const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, partyAI: ai, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
+      const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, partyAI: ai === 'v2' ? 'tactical' : ai, ai: ai === 'v2' ? 'v2' : undefined, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
       runs.push({ seed, res });
       for (const r of res) {
         let cur = {}, turnOf = null, inArea = false;
@@ -79,7 +80,7 @@ for (const file of ['worms-day.json', 'bandit-day.json']) {
         }
       }
     }
-    const S = Tac.summarize(day, runs, { partyAI: ai });
+    const S = Tac.summarize(day, runs, { partyAI: ai === 'v2' ? 'tactical' : ai });
     const ms = (Date.now() - t0) / runs.length;
     console.log('  ' + S.encounters.map((e, i) => `fight ${i + 1}: win ${(e.winRate * 100).toFixed(0)}% · a PC dies ${(e.anyDeath * 100).toFixed(1)}%`).join(' | ') + ` · ${ms.toFixed(0)} ms/day · ${events} events`);
     check(S.encounters.every(e => e.winRate >= 0 && e.winRate <= 1 && e.anyDeath >= 0 && e.anyDeath <= 1), 'odds are probabilities');
@@ -429,6 +430,100 @@ section('Character sheets');
   const party = Object.values(got);
   for (let i = 0; i < 4; i++) try { Tac.runDay({ players: JSON.parse(JSON.stringify(party)), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 68, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 11 + i, partyAI: 'tactical' }); } catch (e) { err++; console.log('  ', e.message); }
   check(err === 0, `characters read from sheets fight on the War Table (${err} errors)`);
+}
+
+// AI v2 (docs/ai-v2.md): non-casters on v2, casters on the old AI in the same fight; the martial features, pacing,
+// profiles and knowledge modes. The rule checks (walls, the dead, hiding, odds) run above as the "v2 AI" sections.
+{
+  section('AI v2 (non-casters)');
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') +
+    ';globalThis.CB = CLASS_BUILDS; globalThis.PP = PARTY_PLAYERS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const pc = n => cp(ctx.CB.find(c => c.name === n));
+  const srd = (name, count) => {
+    const s = ctx.M.find(m => m.name === name), m = cp(Parser.parse(s.text).monsters[0]);
+    m.id = s.id; m.mode = 'custom'; m.count = count || 1; m.actions.forEach((a, i) => { a.id = s.id + i; });
+    if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = s.id + 's' + i; });
+    return m;
+  };
+  const martials = () => ['Barbarian', 'Fighter', 'Monk', 'Rogue'].map(pc);
+  const hard = fixture('hard-day.json');
+  let err = 0;
+  const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
+
+  // one fight, both AIs: the default party's Fighter and Rogue on v2, its casters on the old AI
+  const mixed = run({ players: cp(ctx.PP), encounters: cp(hard.encounters) }, { seed: 77, ai: 'v2', record: true, _keep: true });
+  const S = mixed._sim, by = n => S && S.units.find(u => u.name === n);
+  check(S && by('Fighter').v2 && by('Rogue').v2 && ['Wizard', 'Cleric', 'Bard', 'Paladin'].every(n => !by(n).v2), 'v2 drives the Fighter and Rogue, the casters keep the old AI');
+  check(mixed.some(r => r.events.some(e => e.kind === 'attack' && /^Fighter →/.test(e.text))) && mixed.some(r => r.events.some(e => /^Wizard → .*(Fire Bolt|Magic Missile|Fireball|Ray of Frost|Scorching|Lightning|Burning|Shocking)/.test(e.text))), 'both act in the same fights');
+  const plain = run({ players: cp(ctx.PP), encounters: cp(hard.encounters) }, { seed: 77, _keep: true });
+  check(plain._sim && plain._sim.units.every(u => !u.v2), 'without the flag nobody uses v2');
+
+  // the martial roster: Rage, Reckless each turn, Action Surge, Stunning Strike / Flurry, Sneak Attack, Second Wind
+  const seen = {};
+  for (let i = 0; i < 10; i++) for (const r of run({ players: martials(), encounters: cp(fixture('bandit-day.json').encounters) }, { seed: 300 + i * 13, ai: { party: 'v2' }, record: true })) {
+    let reckless = 0;
+    for (const e of r.events) {
+      const t = e.text || '';
+      if (/^Barbarian: Rage$/.test(t)) seen.rage = 1;
+      if (/^Barbarian: Reckless Attack$/.test(t)) reckless++;
+      if (/^Fighter → .*Action Surge/.test(t)) seen.surge = 1;
+      if (/^Monk → .*(Stunning Strike|Flurry of Blows)/.test(t)) seen.monk = 1;
+      if (/^Rogue → .*Sneak Attack/.test(t)) seen.sneak = 1;
+    }
+    if (reckless > 1) seen.recklessTurns = 1;     // applied turn by turn, not once for the fight
+  }
+  check(seen.rage && seen.surge && seen.monk && seen.sneak && seen.recklessTurns, `v2 uses Rage, Reckless Attack turn by turn, Action Surge, the Monk's features and Sneak Attack (${Object.keys(seen).join(', ')})`);
+
+  // pacing: three easy fights then a hard one; the Barbarian still has a Rage for the boss
+  let boss = 0, bossDays = 0;
+  for (let i = 0; i < 8; i++) {
+    const res = run({ players: martials(), encounters: [0, 1, 2].map(() => ({ monsters: [srd('Goblin Warrior', 3)] })).concat([{ monsters: [srd('Troll'), srd('Ogre')] }]) }, { seed: 900 + i * 7919, ai: { party: 'v2' }, record: true });
+    if (res.length === 4) { bossDays++; if (res[3].events.some(e => /^Barbarian: Rage$/.test(e.text))) boss++; }
+  }
+  check(bossDays > 0 && boss === bossDays, `v2 paces Rage over the day: raged at the boss on ${boss} of ${bossDays} days`);
+
+  // a Goliath's Stone's Endurance (3 a day) waits for a hit worth it
+  const goliath = pc('Fighter');
+  goliath.actions.push({ id: 'g-stone', name: "Stone's Endurance", actionSlot: 4, freq: { reset: 'lr', uses: 3 }, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: '1d12 + 3' } });
+  let small = 0, uses = 0;
+  for (let i = 0; i < 6; i++) for (const r of run({ players: [cp(goliath), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 10)] }, { monsters: [srd('Ogre', 3)] }] }, { seed: 50 + i * 7919, ai: { party: 'v2' }, record: true }))
+    for (const e of r.events) { const m = e.kind === 'react' && /Stone's Endurance \((\d+) →/.exec(e.text); if (m) { uses++; if (+m[1] < 7) small++; } }
+  check(uses > 0 && small === 0, `Stone's Endurance is kept for real hits (${uses} uses, ${small} on hits under 7)`);
+
+  // no Dodge-crawling toward archers: the Monk dashes in instead
+  let crawl = 0;
+  for (let i = 0; i < 6; i++) for (const r of run({ players: [pc('Monk'), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 6)] }] }, { seed: 60 + i * 7919, ai: { party: 'v2' }, record: true, layouts: { 0: { gapFt: 60 } } }))
+    crawl += r.events.filter(e => e.kind === 'buff' && /^Monk .*Dodg/.test(e.text)).length;
+  check(crawl <= 1, `the Monk closes on archers without Dodge-crawling (${crawl} Dodge turns)`);
+
+  // profiles: plain data, merged over a preset; ext.aiProfile opts a monster in and Reckless 'always' holds
+  check(['balanced', 'aggressive', 'cautious', 'protector', 'assassin', 'berserker', 'skirmisher'].every(k => Tac.AI_PROFILES[k]) &&
+    JSON.stringify(JSON.parse(JSON.stringify(Tac.AI_PROFILES))) === JSON.stringify(Tac.AI_PROFILES), 'seven presets, all plain serializable data');
+  const mp = Tac.aiProfile({ base: 'cautious', w: { risk: 2 } });
+  check(mp.w.risk === 2 && mp.w.oa === Tac.AI_PROFILES.cautious.w.oa && Tac.AI_PROFILES.cautious.w.risk !== 2 && Tac.aiProfile('nonsense') === Tac.AI_PROFILES.balanced, 'a profile override merges over its preset without changing it');
+  const ogre = srd('Ogre');
+  const prof = run({ players: martials(), encounters: [{ monsters: [Object.assign(cp(ogre), { ext: Object.assign({}, ogre.ext, { aiProfile: 'berserker' }) }), cp(ogre)] }] }, { seed: 5, ai: 'v2', _keep: true });
+  const ogres = prof._sim ? prof._sim.units.filter(u => u.team === 'foes') : [];
+  check(ogres.length === 2 && ogres[0].v2 && ogres[0].v2P.reckless === 'always' && !ogres[1].v2, 'ext.aiProfile puts a regular monster on v2; the one without stays on its own AI');
+  const berserk = pc('Barbarian'); berserk.ext.aiProfile = 'berserker';
+  let swingTurns = 0, recklessTurns = 0;
+  for (let i = 0; i < 4; i++) for (const r of run({ players: [berserk, pc('Fighter')], encounters: [{ monsters: [srd('Ogre', 2)] }] }, { seed: 70 + i, ai: { party: 'v2' }, record: true })) {
+    let turn = false, swung = false, rk = false;
+    const flush = () => { if (turn && swung) { swingTurns++; if (rk) recklessTurns++; } };
+    for (const e of r.events) {
+      if (e.kind === 'turn') { flush(); turn = /^Barbarian's turn/.test(e.text); swung = rk = false; }
+      else if (turn && /^Barbarian → .*Greataxe/.test(e.text)) swung = true;
+      else if (turn && /^Barbarian: Reckless Attack$/.test(e.text)) rk = true;
+    }
+    flush();
+  }
+  check(swingTurns > 0 && recklessTurns === swingTurns, `a berserker profile is Reckless on every melee turn (${recklessTurns}/${swingTurns})`);
+
+  // knowledge modes: v2 reads the other side only through the k* estimates and runs blind and learning
+  for (const mode of ['blind', 'learn']) for (let i = 0; i < 3; i++) run({ players: cp(ctx.PP).concat(martials()), encounters: cp(hard.encounters) }, { seed: 400 + i, ai: 'v2', know: { party: mode, foes: mode }, morale: 'on' });
+  check(err === 0, `${err} v2 days threw`);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

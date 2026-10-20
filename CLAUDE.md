@@ -6,7 +6,7 @@
   add it to `tests/statblocks/`, check it with `node tests/parse-dump.js <name>`, and add an expectation in `tests/run.js`.
 - `js/engine/tactical-engine.js` must stay DOM-free: it also runs under Node in `tests/run.js`.
 - AI knowledge modes (`opts.know = { party, foes }`: open / blind / learn): the AI reads other-side facts only through
-  the `k*` accessors (`kHp`, `kMax`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kReach`, `leftFor`). New AI
+  the `k*` accessors (`kHp`, `kMax`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kReach`, `kCaster`, `leftFor`). New AI
   code that looks at an enemy's hp, AC, saves, resistances, actions or the day's length should go through them too;
   dice and rules keep using the real numbers.
 - After changing engine rules or AI, run `npm test` (checks wall/LoS violations, actors that are dead,
@@ -35,14 +35,15 @@ Files are huge: `grep -n "function name"` (or `Sim.prototype.name`) and read jus
 - `tactical-engine.js` rules: `Sim.prototype.usable`/`spend` (uses, pools, recharge), `saveRoll`/`saveBonusFor`, `attackRoll`, `damage`, `moveAlong`, `settleAltitude` (flyers), `doAction` (resolves one action).
 - `tactical-engine.js` areas: `areaSpec` → `areaCells` → `inArea` (top of file, plus `TEMPLATES`).
 - `tactical-engine.js` turn flow: `turn` → `tacticalTurnInner` (movement + action plan) → `choose` (pick an action per slot) → `plan`/`planInner` (target + position scoring); `surge` is the action-surge style extra action; `runDay` is the whole-day loop.
-- `tactical-engine.js` knowledge: `kMax`, `kHp`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kReach`, `leftFor`, `learnSave` (the "WHAT EACH SIDE KNOWS" block).
+- `tactical-engine.js` AI v2 (`opts.ai = 'v2'` or `{ party: 'v2' }`, non-casters only; design in `docs/ai-v2.md`): the "AI v2" block — `AI_BASE`/`AI_PROFILES` (every weight and threshold; `ext.aiProfile` picks one), `v2Setup`/`v2Eligible` (who uses it, per fight), `v2Posture`, `v2Value`/`v2SelfValue`, `v2TurnInner` (squares × modes), `v2Bonus`, `v2Reckless`, `v2Surge`, `v2Pace` (pacing), `v2ReactOk`, `v2Words` (intent lines). `turn` branches on `u.v2`; with the flag off the old AI plays exactly as before. New v2 behaviour = a weight in `AI_BASE` + a term, not a veto. Compare with `node tests/ai-compare.js [runs] [filter]` (old vs v2 tables, not part of `npm test`).
+- `tactical-engine.js` knowledge: `kMax`, `kHp`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kReach`, `kCaster`, `leftFor`, `learnSave` (the "WHAT EACH SIDE KNOWS" block).
 - `forge.js` validation/format: `validateMonster`, `checkRealSchema`, `buildDayObject` (export), `exportCreature`, `applyWorkspace`/`loadWorkspace`.
 - `forge.js` UI: `renderSide` (sidebar), `sheetHtml` (creature sheet), `actionEditor` + `freqFields` (action editor), `handleFieldChange` (all field edits), `resourcesPanel`/`onResourceField` (pools).
 - `forge.js` imports: `onSheetFile` → `readSheet` (character sheets; `readSheetWithClaude` for the PDF/AI path); `forgeOne` (Claude API statblock converter).
 - `statblock-parser.js`: `parseOne` (one block → creature; the `rank` const inside it orders actions), `readMultiattack`/`comboAction`, `readSaveEffect`, `areaInfo`.
 - `sheet-reader.js`: `fromDDB`/`fromFoundry`/`fromText` → facts → `build`; `classFeatures` adds per-class actions; `CUSTOM` holds spells the spell data lacks.
 - `war-table.js`: `simOptsFor` (sim settings per encounter), `renderSetup`, `renderInspect`, odds (`runOdds`/`renderOdds`/`drawHist`), replay (`startReplay`/`showFrame`/`play`/`animateEvent`).
-- `tests/run.js` is one script of `section('…')` blocks (area templates, terrain, flying, parser, class roster, knowledge modes, SRD monsters, character sheets). Fixtures: `tests/statblocks`, `tests/sheets`, `tests/fixtures` (day files).
+- `tests/run.js` is one script of `section('…')` blocks (the rule checks per AI incl. v2, area templates, terrain, flying, parser, class roster, knowledge modes, SRD monsters, character sheets, AI v2). Fixtures: `tests/statblocks`, `tests/sheets`, `tests/fixtures` (day files).
 
 How to:
 - Add a spell the spell data lacks: add an entry to `CUSTOM` in `sheet-reader.js` (same action shape as `misty step`); `build` uses it when `SD` has no entry.
