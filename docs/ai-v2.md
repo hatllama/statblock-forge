@@ -156,17 +156,26 @@ The caster path is the same `v2TurnInner` square × option search; casters only 
   no per-round damage rule). v2 values them as the bursts they are; since they hold nothing afterwards, they never
   block another concentration spell. "Persistent zone vs burst" therefore only exists for held effects (control,
   buffs, fog, conjured weapons), and is handled by the holding/rounds terms above.
+- Also an engine fact: Spiritual Weapon's conjured strike isn't tied to concentration here (its buff has its own id),
+  so it keeps striking after the cleric concentrates on something else; v2 counts its follow-up strikes, not a holding.
 
 ### Slot pacing (layer 3, extended)
 
 Slots are one pool counted in slot levels. Its budget is the levels left at the start of the fight, plus Arcane
 Recovery's levels while a short rest is still ahead and it hasn't been used. A cast at level L costs
-`base = pacing.slot × L × F/(F+1)` points (F = fights still to come; for short-rest slots, warlocks, only the fights
-before the next short rest), and once this fight has spent its share (`budget / (F+1)`) also `overTax` of its value.
-Easy fight, losing and last fight adjust both exactly as in step 1. So a high slot is cheap against a crowd (its value
-grows with what it catches, the cost doesn't) and expensive on one target: a swarm fight empties the area spells, a
-boss fight keeps them unless they beat a cantrip there too. Monsters have no day ahead (F = 0) and spend freely.
-"Holds its slots" is logged when a slot option was the best before pacing and a free option won after.
+`base = pacing.slot × L × (1 + pacing.slotUp × (L − 1)) × F/(F+1)` points (8, 0.35: higher slots are scarcer, so each
+level costs more; F = fights still to come, and for short-rest slots — warlocks — only the fights before the next short
+rest). Once this fight has spent its share (`budget / (F+1)`) it also gives up `overTax` of its value. Losing: both
+× `losing`. Fight in hand: base × `easyFight` and at least `slotEasyTax` (0.7) of its value — a slot rarely beats a
+cantrip in a fight that's already won. No fight ahead (the last fight, or any monster): a slot still costs its best use
+later in this fight, `base × clamp(rounds left × 3 / slot levels left, lastFight, 0.5)`, so a caster with many slots
+spends freely and one with a few keeps them for the target that matters.
+
+So a high slot is cheap against a crowd (its value grows with what it catches, the cost doesn't) and expensive on one
+target: a swarm fight empties the area spells, a boss fight keeps them unless they beat a cantrip there too.
+"Holds its spell slots" is logged when a slot option was worth more before pacing and a free option won after.
+Calibration: in the harness's ogre fights a 3rd-level slot buys a Hypnotic Pattern or Fireball worth 50–75 points
+against a cantrip's 5–20, which is why a slot level is priced well above step 1's per-use cost.
 
 ### Positioning
 
@@ -174,7 +183,10 @@ Casters are back-liners for risk (`riskRanged` × `w.casterRisk`) even when they
 pays `meleeShoot` like any ranged attack. A caster with heals left adds `w.healReach` per hurt ally a square leaves out
 of its heal range. **Bonus-action teleports** (Misty Step, `ext.teleport`) are a mode (`jump`): from where it stands to
 any free square in range with line of sight, no opportunity attacks, then the action from there (only non-slot options
-when the teleport took this turn's slot). It is offered when a foe threatens the creature where it stands.
+when the teleport took this turn's slot). It is offered when a foe threatens the creature where it stands. It wins less often than v1's rule fired: Disengage escapes
+for free, and Misty Step takes the turn's spell slot, so walking off (taking a weak opportunity attack) and casting a
+levelled spell, or teleporting out of the reach of slow foes that hit hard, are what the numbers pick. Statblocks read
+by the parser don't get Misty Step (it isn't in `js/spell-data.js`), so caster monsters can't use it yet.
 
 ### Bonus actions
 

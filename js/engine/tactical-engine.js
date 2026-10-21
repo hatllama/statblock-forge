@@ -314,6 +314,18 @@ function spellbookOf(tpl) {
   const sb = tpl && tpl.ext && tpl.ext.spellbook;
   return sb && Array.isArray(sb.spells) && sb.spells.length ? sb : null;
 }
+/* who AI v2 drives as a caster (docs/ai-v2.md "Casters"): 'full' (wizard, sorcerer, warlock, cleric, druid, bard;
+   any monster with a spellbook), 'half' (paladin, ranger, artificer), 'third' (any other class with a spellbook),
+   'none' (no spellbook). ext.casterKind overrides the guess. */
+const FULL_CASTERS = ['wizard', 'sorcerer', 'warlock', 'cleric', 'druid', 'bard'], HALF_CASTERS = ['paladin', 'ranger', 'artificer'];
+function casterKind(tpl) {
+  const ex = (tpl && tpl.ext) || {};
+  if (['full', 'half', 'third', 'none'].includes(ex.casterKind)) return ex.casterKind;
+  if (!spellbookOf(tpl)) return 'none';
+  const cls = String((tpl.class && tpl.class.type) || '').toLowerCase();
+  if (!cls || FULL_CASTERS.includes(cls)) return 'full';
+  return HALF_CASTERS.includes(cls) ? 'half' : 'third';
+}
 function spellActions(sb) {
   return sb.spells.filter(sp => sp && sp.type).map(sp => {
     const lvl = Math.max(0, Math.min(9, parseInt(sp.level, 10) || 0));
@@ -395,7 +407,8 @@ function makeUnit(tpl, team, idx, count, isPC) {
     u.slotReset = sb.slotReset === 'sr' ? 'sr' : 'lr';
     u.conSave = typeof sb.conSave === 'number' ? sb.conSave : (u.saves && typeof u.saves.con === 'number' ? u.saves.con : u.saveBonus);
     u.hasSpells = true;
-    u.recovery = sb.recovery && sb.recovery.levels ? sb.recovery : null;   // e.g. Arcane Recovery { levels: 2, maxSlot: 5, restores: [actionId] }
+    u.casterKind = casterKind(tpl);
+    u.recovery =sb.recovery && sb.recovery.levels ? sb.recovery : null;   // e.g. Arcane Recovery { levels: 2, maxSlot: 5, restores: [actionId] }
   }
   u.baseFly = u.fly;
   // "takes one additional action" (Action Surge) sits outside the normal action lists: it's used at the end of a turn
@@ -432,7 +445,7 @@ function resetFightState(u) {
   u.focus = null; u.lastAttacker = null; u.lastIntent = ''; u.notedPacing = false;
   u.dmgDealt = 0; u.dmgTaken = 0; u.healed = 0;
   u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
-  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false; u.seenCancel = false;
+  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false; u.seenCancel = false; u.legSeen = 0;
   u.onBoard = true;
   // Relentless & co.: rolling initiative with an empty pool gives one back
   if (u.resMax) for (const k in u.resMax) if (u.resMax[k].regainOnInit && !(u.uses.get('res:' + k) > 0)) u.uses.set('res:' + k, +u.resMax[k].regainOnInit);
@@ -964,7 +977,9 @@ Sim.prototype.spend = function (u, a) {
   if (a._spell) {
     u.castLevel = a._spell.level;
     if (a._spell.level) {
-      const l = this.slotFor(u, a._spell.level);
+      // AI v2 may pick a higher slot on purpose (u.castAt, set just before this); otherwise the lowest free one
+      const want = u.castAt; u.castAt = 0;
+      const l = want && want >= a._spell.level && u.slots[want - 1] > 0 ? want : this.slotFor(u, a._spell.level);
       if (l > 0) { u.slots[l - 1]--; u.castLevel = l; }
       if (this.current === u) u.slotTurn = u.turnNo;
     }
@@ -1298,6 +1313,12 @@ Sim.prototype.kAreas = function (u, t) {
 Sim.prototype.kCaster = function (u, t) {
   const m = this.kOf(u, t); if (!m) return !!t.hasSpells;
   return !!t.seenCaster || (m === 'learn' && this.kind(u.team, t).caster);
+};
+/* Legendary Resistance uses t has left, as u's side reckons it: seen ones count down from the usual 3 */
+Sim.prototype.kLegRes = function (u, t) {
+  const m = this.kOf(u, t); if (!m) return t.legResMax ? (t.uses.get('__legres') || 0) : 0;
+  const known = m === 'learn' ? (this.kind(u.team, t).legRes || 0) : 0, seen = t.legSeen || 0;
+  return seen || known ? Math.max(0, Math.max(3, known) - seen) : 0;
 };
 Sim.prototype.kReach = function (u, t) {
   const m = this.kOf(u, t); if (!m) return null;
@@ -2214,6 +2235,8 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   const dangerous = (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
   if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
+    t.legSeen = (t.legSeen || 0) + 1;
+    if (this.learning(otherTeam(t.team))) { const k = this.kind(otherTeam(t.team), t); k.legRes = Math.max(k.legRes || 0, t.legSeen); }
     this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
   }
@@ -2966,8 +2989,16 @@ const AI_BASE = {
     oa: 1, spacing: 1.2, move: 0.15, dodge: 0.45, meleeShoot: 0.6, hide: 0.3,
     progress: 0.5,                                               // a full move closer is worth this share of its best hit
     recover: 6, recklessRisk: 0.8, recklessDrop: 3,              // self-heal when hurt; Reckless: extra hits taken, × recklessDrop if they could drop it
+    // casters (step 2) and anything that heals, buffs or controls
+    area: 1, ffValue: 1,                                         // the others an area catches (bare value each); friendly fire, × the ally's DPR weight
+    ctlRound: 0.5, lull: 0.6, legRes: 0.2, concKeep: 0.75,       // control: one round's worth × rounds; damage ends it; a save bought off; holding it that long
+    heal: 1, healLow: 1.4, healDanger: 0.8, revive: 15, reviveRounds: 0.6,   // HP back (more under half), a heal that keeps it standing; a downed ally back up
+    buff: 1, zone: 2,                                            // buffs on allies (per round × rounds); difficult ground
+    concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
+    casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
-  pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75 },
+  pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
+            slot: 8, slotUp: 0.35, slotEasyTax: 0.7 },           // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
@@ -2979,6 +3010,10 @@ const AI_PRESETS = {
   assassin: { posture: { squishyHp: 0.9 }, w: { caster: 10, healer: 8, wounded: 6, pick: 8, kill: 1.5 } },
   berserker: { posture: { retreatHp: 0, recoverHp: 0.25 }, w: { risk: 0.1, riskRanged: 0.3, hurt: 0, oa: 0.3, progress: 0.8 }, pacing: { costPerUse: 0.02, overTax: 0.2, easyFight: 1, easyTax: 0.1 }, reckless: 'always' },
   skirmisher: { w: { risk: 0.7, riskRanged: 1.2, meleeShoot: 0.5, oa: 1.5, hide: 0.5, progress: 0.35 } },
+  // casters
+  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6 } },
+  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4 }, pacing: { slot: 6 } },
+  support: { w: { heal: 1.3, healLow: 1.6, healDanger: 1.2, revive: 22, buff: 1.3, healReach: 3 } },
 };
 function mergeProfile(base, over) {
   const out = JSON.parse(JSON.stringify(base));
@@ -3000,12 +3035,13 @@ function aiProfile(spec) {
 }
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
-/* which creatures v2 drives: no spellbook, plays tactically (or names a profile), and nothing it can't score yet */
+/* which creatures v2 drives: plays tactically (or names a profile), no spellbook or a full caster's (casterKind),
+   and nothing it can't score yet (swallowing, dice pools) */
 Sim.prototype.v2Eligible = function (u) {
   const prof = u.tpl.ext && u.tpl.ext.aiProfile;
-  if (!this.aiV2 || !this.aiV2[u.team] || u.hasSpells || (u.ai !== 'tactical' && !prof)) return false;
-  return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && ((a.ext && (a.ext.teleport || a.ext.zone || a.ext.swallow || a.ext.pool)) ||
-    ((a.type === 'heal' || a.type === 'buff') && a.target !== 'self' && a._range !== 0)));
+  if (!this.aiV2 || !this.aiV2[u.team] || (u.ai !== 'tactical' && !prof)) return false;
+  if (u.hasSpells && u.casterKind !== 'full') return false;            // half and third casters: step 3
+  return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.ext && (a.ext.swallow || a.ext.pool));
 };
 Sim.prototype.v2Setup = function (u) {
   u.v2 = this.v2Eligible(u);
@@ -3014,10 +3050,43 @@ Sim.prototype.v2Setup = function (u) {
   u.ai = 'tactical';
   u.v2P = aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
   u.v2Start = new Map(u.uses);      // what it had when the fight started, for pacing
+  u.v2Slots0 = slotLevels(u);
+};
+
+/* ---- casters: a spell at a chosen slot level ---- */
+const slotLevels = u => u.slots ? u.slots.reduce((t, n, i) => t + n * (i + 1), 0) : 0;
+// what the spell does cast at slot level L (upcast dice and targets folded in, as doAction will roll it)
+function castCopy(a, L) {
+  if (!(a._spell && a._spell.level) || !(L > a._spell.level)) return a;
+  const k = L - a._spell.level, o = Object.assign({}, a);
+  if (a._spell.upcast) {
+    const extra = Array(k).fill(a._spell.upcast).join(' + ');
+    if (a.type === 'heal') o.amount = a.amount + ' + ' + extra;
+    else if (a.type === 'atk') { o.dpr = a.dpr + ' + ' + extra; if (a.ext && a.ext.wtDpr) o.ext = Object.assign({}, a.ext, { wtDpr: a.ext.wtDpr + ' + ' + extra }); }
+  }
+  if (a._spell.upcastTargets) o.targets = (a.targets || 1) + a._spell.upcastTargets * k;
+  return o;
+}
+/* the slot levels worth weighing for a spell: its lowest free slot, and up to two higher ones when upcasting adds something.
+   [0] for anything that takes no slot, [] when it can't be cast */
+Sim.prototype.v2CastLevels = function (u, a) {
+  if (!(a._spell && a._spell.level)) return [0];
+  const L0 = this.slotFor(u, a._spell.level);
+  if (L0 < 0) return [];
+  const out = [L0];
+  if (a._spell.upcast || a._spell.upcastTargets) for (let l = L0 + 1; l <= 9 && out.length < 3; l++) if (u.slots[l - 1] > 0) out.push(l);
+  return out;
+};
+/* Arcane Recovery & co.: the levels it will win back on a short rest still ahead today */
+Sim.prototype.v2Recovery = function (u) {
+  if (!u.recovery || u.recoveryUsed || u.slotReset === 'sr' || !this.leftFor(u)) return 0;
+  const restAhead = u.recovery.anyBreak || (typeof this.fightsBeforeRest === 'number' && this.fightsBeforeRest < (this.encountersLeft || 0));
+  return restAhead ? u.recovery.levels || 0 : 0;
 };
 
 /* ---- layer 3: pacing. What one use of a limited ability costs, in points of damage ---- */
-Sim.prototype.v2Pool = function (u, a) {
+Sim.prototype.v2Pool = function (u, a, L) {
+  if (a._spell) return a._spell.level ? { key: 'slots', reset: u.slotReset === 'sr' ? 'sr' : 'lr', n: L || this.slotFor(u, a._spell.level), slots: true } : null;
   const ex = a.ext || {};
   if (ex.resource && u.resMax && u.resMax[ex.resource]) { const r = u.resMax[ex.resource]; return { key: 'res:' + ex.resource, reset: r.reset === 'sr' ? 'sr' : 'lr', n: ex.resourceCost || 1 }; }
   const k = freqKind(a.freq);
@@ -3026,23 +3095,26 @@ Sim.prototype.v2Pool = function (u, a) {
 };
 /* { base, tax }: a use costs base points, and gives up `tax` of what it's worth once this fight has had its share of
    the pool (so it has to be clearly better than the free option to be spent) */
-Sim.prototype.v2Pace = function (u, a) {
-  const pl = this.v2Pool(u, a);
-  if (!pl) return { base: 0, tax: 0 };
+Sim.prototype.v2Pace = function (u, a, L) {
+  const pl = this.v2Pool(u, a, L);
+  if (!pl || pl.n < 0) return { base: 0, tax: 0 };
   const P = u.v2P.pacing;
   let F = u.team === 'party' ? this.leftFor(u) : 0;                      // a monster's day is this fight
   if (pl.reset === 'sr') F = Math.min(F, typeof this.fightsBeforeRest === 'number' ? this.fightsBeforeRest : P.srFights);
-  const base = Math.max(4, u.dpr) * P.costPerUse * pl.n;
-  if (!F) return { base: base * P.lastFight, tax: 0 };
-  const left = u.uses.get(pl.key) || 0;
-  const start = u.v2Start && u.v2Start.has(pl.key) ? u.v2Start.get(pl.key) : left;
+  // spell slots are one pool counted in slot levels (plus what Arcane Recovery will win back); anything else, in uses
+  const base = pl.slots ? P.slot * pl.n * (1 + P.slotUp * (pl.n - 1)) : Math.max(4, u.dpr) * P.costPerUse * pl.n;
+  // no fight ahead: a slot is still worth its best use later in this one, when the fight should outlast them
+  if (!F) return { base: base * (pl.slots ? Math.min(0.5, Math.max(P.lastFight, (u._v2c ? u._v2c.rounds : 3) * 3 / Math.max(1, slotLevels(u)))) : P.lastFight), tax: 0 };
+  let left, start;
+  if (pl.slots) { const rec = this.v2Recovery(u); left = slotLevels(u) + rec; start = (u.v2Slots0 !== undefined ? u.v2Slots0 : slotLevels(u)) + rec; }
+  else { left = u.uses.get(pl.key) || 0; start = u.v2Start && u.v2Start.has(pl.key) ? u.v2Start.get(pl.key) : left; }
   let c = base * F / (F + 1), tax = start - left + pl.n > start / (F + 1) + 1e-9 ? P.overTax : 0;   // this fight has had its share
   if (this.losing(u)) { c *= P.losing; tax *= P.losing; }
-  else if (this.fightInHand(u)) { c *= P.easyFight; tax = Math.max(tax, P.easyTax); }
+  else if (this.fightInHand(u)) { c *= P.easyFight; tax = Math.max(tax, pl.slots ? P.slotEasyTax : P.easyTax); }
   return { base: c, tax };
 };
-Sim.prototype.v2PaceCost = function (u, a, val) {
-  const p = this.v2Pace(u, a);
+Sim.prototype.v2PaceCost = function (u, a, val, L) {
+  const p = this.v2Pace(u, a, L);
   return p.base + p.tax * Math.max(0, val || 0);
 };
 /* a limited damage-cutting reaction (Stone's Endurance): only on a hit that uses most of it, or that would drop it,
@@ -3172,7 +3244,8 @@ Sim.prototype.v2Ctx = function (u, speed) {
     const e = this.expected(u, a, near);
     if (!main || e > main.e) main = { a, e, p: this.hitChance(u, near, a), n: a.targets || 1, melee: (a._range || 5) <= 10 };
   }
-  const ctx = { key, speed, foes, pool: foes.concat(downed), myTeam, danger, rounds, incoming: Math.max(danger.at(u.x, u.y), proj), main };
+  const ctx = { key, speed, foes, pool: foes.concat(downed), myTeam, danger, rounds, incoming: Math.max(danger.at(u.x, u.y), proj), main,
+                focusDpr: Math.max(4, myDpr * 1.5 / Math.max(1, foes.length)), press: new Map() };
   ctx.posture = this.v2Posture(u, ctx, speed);
   u._v2c = ctx;
   return ctx;
@@ -3193,8 +3266,8 @@ Sim.prototype.v2Posture = function (u, ctx, speed) {
   const inReach = t => atks.filter(a => this.dist(u, t) - Math.max(5, a._range || 5) <= speed);
   const near = ctx.foes.filter(t => inReach(t).length);
   if (!near.length) return { kind: 'advance' };
-  // someone in the face of our back line
-  if (this.hasMelee(u)) {
+  // someone in the face of our back line (a caster's dagger doesn't make it a bodyguard)
+  if (this.hasMelee(u) && !u.hasSpells) {
     let best = null, bv = 0, ally = null;
     for (const o of ctx.myTeam) {
       if (o === u || (this.hasMelee(o) && !o.hasSpells && o.hp >= o.maxHp * P.protectAllyHp)) continue;
@@ -3221,6 +3294,9 @@ Sim.prototype.v2Posture = function (u, ctx, speed) {
 /* ---- layer 2: what one use of an action on one target is worth (where it stands is scored separately) ---- */
 Sim.prototype.v2PoolFor = function (u, a, ctx) {
   if (a.target === 'self' || a._range === 0) return (this.alreadyHas(a, u) || !this.healNeeded(u, a, u)) ? [] : [u];
+  // heals and buffs on its own side: who could use it (never a full-HP ally; a downed one for a heal)
+  if (a.type === 'heal') return this.alliesOf(u).filter(o => o.onBoard && !o.dead && ((a.ext && a.ext.aid) || o.hp < o.maxHp) && (a.condition !== 'ally at 0 HP' || o.hp <= 0) && this.healNeeded(u, a, o));
+  if (a.type === 'buff') return this.alliesOf(u).filter(o => o.onBoard && this.alive(o) && !this.alreadyHas(a, o) && !o.buffs.some(b => b.id === a.id && b.src === u.uid));
   if (a.type !== 'atk' && a.type !== 'debuff') return [];
   let p = (a.type === 'atk' ? ctx.pool : ctx.foes).filter(e => !this.alreadyHas(a, e));
   if (a.ext && a.ext.swallow) { const mx = sizeIdx(a.ext.swallow.maxSize, 2); p = p.filter(t => t.grappledBy === u.uid && sizeIdx(t.size, 2) <= mx); }
@@ -3243,7 +3319,11 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
   if (a.type === 'heal') {
     if (!this.healNeeded(u, a, u)) return -Infinity;
     const amt = avgDice(a.amount);
-    if (a.tempHP) return Math.max(0, amt - (u.temp || 0)) * 0.7;
+    if (a.tempHP) {
+      // Armor of Agathys: cold damage back at whoever hits it while the temporary HP last
+      const back = a.ext && a.ext.retaliate ? a.ext.retaliate.dmg * 0.6 * ctx.foes.filter(e => this.meleeReach(e) > 0 && this.dist(e, u) <= 15).length : 0;
+      return Math.max(0, amt - (u.temp || 0)) * 0.7 + back;
+    }
     let v = Math.min(amt, u.maxHp - Math.max(0, u.hp)) * (u.hp < u.maxHp * 0.5 ? 1.1 : 0.4);
     if (ctx.posture.kind === 'recover' || ctx.posture.kind === 'retreat') v += W.recover;
     return v;
@@ -3265,9 +3345,10 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
   if (!v && !b.condition && !b.damage && !b.toHit) v = this.effectValue(b, u, false, u);
   return v;
 };
-Sim.prototype.v2Value = function (u, a, t, ctx) {
+/* bare: only what it does to t (damage, kill, control), for the extra creatures an area catches */
+Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
   const W = u.v2P.w;
-  if (t === u || a.type === 'heal' || a.type === 'buff') return { val: this.v2SelfValue(u, a, ctx), why: '', pKill: 0 };
+  if (t === u || a.type === 'heal' || a.type === 'buff') return { val: t === u ? this.v2SelfValue(u, a, ctx) : this.v2AllyValue(u, a, t, ctx), why: '', pKill: 0 };
   if (t.hp <= 0) {
     // a downed PC: each hit is a failed death save (two up close)
     const hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
@@ -3277,7 +3358,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx) {
   }
   const exp = this.expected(u, a, t), tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
   let val, why = '', pKill = 0;
-  if (a.type === 'debuff') val = exp * W.control;
+  if (a.type === 'debuff') { val = this.v2Control(u, a, t, ctx); if (bare) return { val, why: '', pKill: 0 }; }
   else {
     val = Math.min(exp, tHp + W.overkill) * (1 + tDpr / W.dprScale) * W.damage;
     pKill = 1 / (1 + Math.exp(-5 * (exp - tHp) / Math.max(4, exp)));
@@ -3308,6 +3389,17 @@ Sim.prototype.v2Value = function (u, a, t, ctx) {
         why = why || 'concentration';
       }
     }
+    // Spiritual Weapon, Starry Form: the strike it conjures keeps coming each round
+    const gb = a.ext && a.ext.grantsBuff;
+    if (gb && !u.buffs.some(b => b.id === gb.id)) {
+      const f = u.actions.find(o => o.ext && o.ext.requiresBuff === gb.id && o.type === 'atk');
+      if (f) val += Math.min(this.expected(u, f, t), tHp + W.overkill) * Math.max(0, ctx.rounds - 1) * W.concKeep;
+    }
+    if (bare) {
+      // what an area adds on a creature besides its target: no targeting bonuses, but don't wake what we put to sleep
+      if (t.buffs.some(b => b.endsOnDamage) && this.incap(t) && pKill < 0.5) val -= 6 + tDpr * 1.5;
+      return { val, why: '', pKill };
+    }
   }
   const allyOn = ctx.myTeam.filter(o => o !== u && this.dist(o, t) <= 5).length;
   val += allyOn * W.focus + (1 - this.kFrac(u, t)) * W.wounded;
@@ -3330,6 +3422,101 @@ Sim.prototype.v2Value = function (u, a, t, ctx) {
   return { val, why, pKill };
 };
 
+/* a heal or buff on an ally (its own side: real numbers) */
+Sim.prototype.v2AllyValue = function (u, a, t, ctx) {
+  const W = u.v2P.w;
+  if (a.type === 'heal') {
+    const amt = avgDice(a.amount), hx = a.ext || {};
+    // a downed ally back up: its damage for the rest of the fight, and no more death saves to fail
+    if (t.hp <= 0) return W.revive + (t.dpr || 0) * Math.min(ctx.rounds, 4) * W.reviveRounds + (t.deathF || 0) * 4 + amt * 0.2;
+    if (hx.aid) return amt * 0.6 * W.heal;
+    if (a.tempHP) return Math.max(0, amt - (t.temp || 0)) * 0.7 * W.heal;
+    const got = Math.min(amt, Math.max(0, t.maxHp - t.hp));
+    let v = got * W.heal * (t.hp < t.maxHp / 2 ? W.healLow : 0.5);
+    const inc = this.v2Pressure(u, t, ctx);
+    if (inc >= t.hp && inc < t.hp + got) v += W.healDanger * (6 + (t.dpr || 0));          // it keeps it standing
+    return v;
+  }
+  if (a.type === 'buff') {
+    const b = a.buff || {}, conc = a._spell && a._spell.conc;
+    const R = b.duration === 'entire encounter' ? ctx.rounds * (conc ? W.concKeep : 1) : (DUR_WEIGHT[b.duration] || 1);
+    return this.effectValue(Object.assign({}, b, { duration: '1 round' }), t, false, u) * R * W.buff;
+  }
+  return 0;
+};
+/* damage heading for ally o next round, as u's side reckons it */
+Sim.prototype.v2Pressure = function (u, o, ctx) {
+  let p = ctx.press.get(o.uid);
+  if (p !== undefined) return p;
+  p = 0;
+  for (const e of ctx.foes) {
+    if (this.incap(e)) continue;
+    let reach = this.kReach(u, e);
+    if (reach === null) reach = e.actions.reduce((m, x) => x.actionSlot === 0 && (x.type === 'atk' || x.type === 'debuff') ? Math.max(m, x._range || 5) : m, 5);
+    const r = this.speedOf(e) + reach;
+    if (this.dist(e, o) > r) continue;
+    const near = ctx.myTeam.filter(m => this.dist(e, m) <= r).length;
+    p += this.kDpr(u, e) * 0.6 / Math.max(1, near);
+  }
+  ctx.press.set(o.uid, p);
+  return p;
+};
+/* a debuff or control spell on foe t: one round's worth × the chance it lands × the rounds it should last */
+Sim.prototype.v2Control = function (u, a, t, ctx) {
+  const W = u.v2P.w, b = a.buff || {};
+  let per = this.expected(u, Object.assign({}, a, { buff: Object.assign({}, b, { duration: '1 round' }) }), t) * W.ctlRound;
+  // it already has that condition (another caster's Hold Person, a pattern): nothing new
+  if (b.condition && (t.buffs.some(x => x.data && x.data.condition === b.condition) || (INCAP.includes(b.condition) && this.incap(t)))) per *= 0.1;
+  // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use
+  if (DANGER_CONDS.includes(b.condition) && this.kLegRes(u, t) > 0) per *= W.legRes;
+  const R = ctx.rounds;
+  let r = 1;
+  if (b.duration === 'repeat the save each round') {
+    const dc = avgDice(a.saveDC), s = dc >= 99 ? 0 : Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - dc) / 20));
+    r = s > 0.001 ? (1 - Math.pow(1 - s, R)) / s : R;
+  } else if (b.duration === 'entire encounter') r = R * (a.ext && a.ext.endsOnDamage ? W.lull : 1);
+  r = Math.min(r, this.kHp(u, t) / ctx.focusDpr + 0.5);                    // it may well drop before then
+  if (a._spell && a._spell.conc) r *= W.concKeep;
+  return per * Math.max(0.5, r);
+};
+/* what u's running concentration is still worth: the effects it holds on both sides × the rounds they have left, its fog */
+Sim.prototype.v2Holding = function (u, ctx) {
+  const id = u.concentrating;
+  if (!id) return 0;
+  if (ctx.holdId === id) return ctx.holding;
+  const W = u.v2P.w, R = ctx.rounds;
+  let v = 0;
+  for (const o of this.units) {
+    if (!o.onBoard || o.dead || o.hp <= 0) continue;
+    for (const b of o.buffs) {
+      if (b.src !== u.uid || b.id !== id) continue;
+      const one = Object.assign({}, b.data, { duration: '1 round' });
+      if (o.team === u.team) { v += this.effectValue(one, o, false, u) * W.buff * R; continue; }
+      let r = R;
+      if (b.expiry === 'repeat the save each round' && typeof b.dc === 'number' && b.dc < 99) {
+        const s = Math.min(1, Math.max(0, (21 + this.kSave(u, o, b.saveAbility) - b.dc) / 20));
+        r = s > 0.001 ? (1 - Math.pow(1 - s, R)) / s : R;
+      }
+      if (b.endsOnDamage) r *= W.lull;
+      v += this.effectValue(one, o, true, u) * W.ctlRound * Math.min(r, this.kHp(u, o) / ctx.focusDpr + 0.5);
+    }
+  }
+  for (const z of this.zones || []) {
+    if (z.src !== u.uid || z.id !== id) continue;
+    if (z.rough) v += W.zone;
+    if (z.fog) for (const e of ctx.foes) if (z.cells.has(e.x + e.y * this.W)) v += this.kDpr(u, e) * 0.5;
+  }
+  ctx.holdId = id; ctx.holding = v;
+  return v;
+};
+/* friendly fire: what catching these allies costs, more for the ones that matter */
+Sim.prototype.v2FF = function (u, a, friends) {
+  const W = u.v2P.w;
+  let p = 0;
+  for (const f of friends) p += this.friendPenalty(u, a, [f]) * (f === u ? 1 : 1 + (f.dpr || 0) / W.dprScale);
+  return p * W.ffValue;
+};
+
 /* ---- the turn: every square it could end on × every way to spend it ---- */
 Sim.prototype.v2Turn = function (u, speed, bonusSpent, onlyAct) {
   const prevF = this._flyer; this._flyer = u.fly && this.airborne(u) ? u : null;
@@ -3338,33 +3525,70 @@ Sim.prototype.v2Turn = function (u, speed, bonusSpent, onlyAct) {
 Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const ctx = this.v2Ctx(u, speed);
   if (!ctx.foes.length) return null;
-  const W = u.v2P.w, Wd = this.W, post = ctx.posture;
-  const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u);
-  let safety = (meleeSelf ? W.risk : W.riskRanged) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
+  const W = u.v2P.w, Wd = this.W, post = ctx.posture, caster = !!u.hasSpells;
+  const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u) && !caster;
+  let safety = (meleeSelf ? W.risk : W.riskRanged * (caster ? W.casterRisk : 1)) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
   if (post.kind === 'retreat') { safety *= W.retreatSafety; if (!post.kite) offMult = W.retreatOffense; }
   // it can't lose more than it has: past that, more incoming damage only means going down (a bit worse than its HP)
   const hpCap = Math.max(1, u.hp) * W.downCap;
   const threat = (x, y) => Math.min(ctx.danger.at(x, y), hpCap);
   const postBonus = t => post.t !== t ? 0 : W.pick * (post.kind === 'protect' ? 1 + W.protect * this.kDpr(u, t) / 5 : post.kind === 'finish' ? 1 + W.finishBoost : 1);
+  // what it's concentrating on: a new concentration spell gives it up, and every hit taken risks it
+  const holding = caster ? this.v2Holding(u, ctx) : 0;
 
-  const plans = u.actions.filter(a => a.actionSlot === 0 && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a)).map(a => {
-    const pool = this.v2PoolFor(u, a, ctx), sp = areaSpec(a);
-    const pl = { a, pool, range: Math.max(5, a._range || 5), self: a.target === 'self' || a._range === 0, area: !!sp, sphere: !!sp && sp.shape === 'sphere',
-                 pace: this.v2Pace(u, a), vals: new Map(), acCache: new Map(), multi: new Map() };
-    for (const t of pool) pl.vals.set(t.uid, this.v2Value(u, a, t, ctx));
-    // several targets with one save (no template): the others near the first
-    if (!sp && a.useSaves && (a.targets || 1) > 1) for (const t of pool) {
-      const ex = pool.filter(o => o !== t && o.hp > 0 && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10)).map(o => pl.vals.get(o.uid).val).sort((p, q) => q - p).slice(0, (a.targets || 1) - 1);
-      pl.multi.set(t.uid, ex.reduce((s, v) => s + Math.max(0, v), 0));
+  // every action-slot option, each spell at every slot level worth weighing
+  const plans = [];
+  for (const a of u.actions) {
+    if (a.actionSlot !== 0 || (a.ext && a.ext.teleport) || !this.usable(u, a) || !this.condOk(u, a)) continue;
+    const pool = this.v2PoolFor(u, a, ctx);
+    if (!pool.length) continue;
+    const sp = areaSpec(a), self = a.target === 'self' || a._range === 0;
+    for (const L of this.v2CastLevels(u, a)) {
+      const act = castCopy(a, L);
+      const pl = { a, act, castL: L, slot: L > 0, pool, range: Math.max(5, a._range || 5), self, ally: !self && (a.type === 'heal' || a.type === 'buff'), n: act.targets || 1,
+                   area: !!sp, sphere: !!sp && sp.shape === 'sphere', fog: !!(a.ext && a.ext.zone && a.ext.zone.fog), fogC: new Map(),
+                   pace: this.v2Pace(u, a, L), conc: a._spell && a._spell.conc && u.concentrating ? W.concSwap * holding : 0,
+                   vals: new Map(), bare: null, multi: new Map() };
+      for (const t of pool) pl.vals.set(t.uid, this.v2Value(u, act, t, ctx));
+      if (pl.self && !(pl.vals.get(u.uid).val > 0)) continue;
+      if (pl.area && !pl.fog) { pl.bare = new Map(); for (const t of pool) pl.bare.set(t.uid, this.v2Value(u, act, t, ctx, true).val); }
+      // several targets with one save (no template): the others near the first
+      if (!sp && !pl.ally && (act.useSaves || act.type === 'debuff') && pl.n > 1) for (const t of pool) {
+        const ex = pool.filter(o => o !== t && o.hp > 0 && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10)).map(o => pl.vals.get(o.uid).val).sort((p, q) => q - p).slice(0, pl.n - 1);
+        pl.multi.set(t.uid, ex.reduce((s, v) => s + Math.max(0, v), 0));
+      }
+      plans.push(pl);
     }
-    return pl;
-  }).filter(pl => pl.pool.length && !(pl.self && !(pl.vals.get(u.uid).val > 0)));
-  const atk = plans.filter(pl => !pl.self);
-  const net = (pl, v) => v - pl.pace.base - pl.pace.tax * Math.max(0, v);
-  // bonus attacks (Flurry, Martial Arts, a slot-1 Action Surge…): what it could add from a square
-  const bonusAtk = bonusSpent ? [] : u.actions.filter(a => a.actionSlot === 1 && (a.type === 'atk' || a.type === 'debuff') && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a)).map(a => {
-    return { a, range: Math.max(5, a._range || 5), vals: this.v2PoolFor(u, a, ctx).map(t => { const v = this.v2Value(u, a, t, ctx).val; return { t, v: v - this.v2PaceCost(u, a, v) }; }).filter(o => o.v > 0) };
-  }).filter(b => b.vals.length);
+  }
+  // plain options first: an area aim is skipped where even its best case can't beat what a square already offers
+  plans.sort((p, q) => (p.area && !p.fog ? 1 : 0) - (q.area && !q.fog ? 1 : 0));
+  const atk = plans.filter(pl => !pl.self && !pl.ally);
+  const boundOf = (pl, t) => {
+    if (!pl.bound) { const sp = areaSpec(pl.act); pl.bound = new Map(); pl.reach = sp ? sp.size * 2 : 0; }
+    let b = pl.bound.get(t.uid);
+    if (b === undefined) {
+      b = Math.max(0, pl.vals.get(t.uid).val) + W.zone;
+      for (const o of pl.pool) if (o !== t && o.hp > 0 && this.dist(o, t) <= pl.reach) b += Math.max(0, pl.bare.get(o.uid)) * W.area;
+      pl.bound.set(t.uid, b);
+    }
+    return b;
+  };
+  const net = (pl, v) => v - pl.pace.base - pl.pace.tax * Math.max(0, v) - pl.conc;
+  // bonus options (Flurry, Martial Arts, a slot-1 Action Surge; Healing Word, Spiritual Weapon, Hex…): what it could add
+  // from a square. One spell slot a turn: an action that takes a slot only pairs with a bonus option that doesn't.
+  const bonusOpts = [];
+  if (!bonusSpent) for (const a of u.actions) {
+    if (a.actionSlot !== 1 || (a.ext && a.ext.teleport) || isHideAction(a) || !this.usable(u, a) || !this.condOk(u, a)) continue;
+    const off = a.type === 'atk' || a.type === 'debuff', self = a.target === 'self' || a._range === 0;
+    const ally = !off && !self && (a.type === 'heal' || a.type === 'buff');
+    if (!off && !ally && !(self && a._spell)) continue;
+    const L = this.v2CastLevels(u, a)[0];
+    if (L === undefined) continue;
+    const act = castCopy(a, L), b = { a, slot: L > 0, range: Math.max(5, a._range || 5), n: ally ? act.targets || 1 : 1, pace: this.v2Pace(u, a, L), self };
+    if (self) { if (!this.v2PoolFor(u, act, ctx).length) continue; b.raw = this.v2SelfValue(u, act, ctx); if (!(b.raw > 0)) continue; }
+    else { b.vals = this.v2PoolFor(u, act, ctx).map(t => ({ t, v: ally ? this.v2AllyValue(u, act, t, ctx) : this.v2Value(u, act, t, ctx).val })).filter(o => o.v > 0); if (!b.vals.length) continue; }
+    bonusOpts.push(b);
+  }
 
   const taken = new Uint8Array(Wd * this.H);
   for (const o of this.units) if (o !== u && o.onBoard && !o.dead) taken[o.x + o.y * Wd] = 1;
@@ -3393,6 +3617,14 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   // a path can brush past a foe on the way: count the opportunity attacks whenever one could reach it
   const oaNear = meleeFoes.some(e => e.reaction && !e.noOA && this.dist(u, e) <= speed * 2 + this.meleeReach(e) + 5);
   const canAim = u.steadyAim && !bonusSpent && !u.movedThisTurn;
+  // a healer keeps within reach of the badly hurt
+  let healR = 0;
+  if (caster) for (const a of u.actions) if ((a.actionSlot === 0 || a.actionSlot === 1) && a.type === 'heal' && a.target !== 'self' && a._range !== 0 && this.usable(u, a)) healR = Math.max(healR, a._range || 5);
+  const hurt = healR ? this.alliesOf(u).filter(o => o !== u && o.onBoard && !o.dead && o.hp < o.maxHp * 0.5) : [];
+  const reachPen = (x, y) => { let n = 0; for (const o of hurt) if (this.distXY(x, y, o) > healR) n++; return n * W.healReach; };
+  // concentration: each hit is a Con save (DC 10 for most hits)
+  const pfConc = holding ? Math.min(0.95, Math.max(0.05, (10 - (u.conSave || 0) - 1 - u.buffs.reduce((t, b) => t + (b.concBonus || 0), 0)) / 20)) : 0;
+  const concR = th => holding && th > 0 ? holding * (1 - Math.pow(1 - pfConc, th / 8)) * W.concRisk : 0;
   // hiding: which squares nobody can see, and how far each square is from one
   const hideA = this.T.any && !bonusSpent && !bonusDis ? u.actions.find(a => isHideAction(a) && a.actionSlot === 1 && this.usable(u, a) && this.condOk(u, a)) : null;
   const spSteps = Math.floor(speed / 5);
@@ -3412,49 +3644,93 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     }
   }
 
-  const options = [];
-  let anyOffense = false;
-  consider(speed, (x, y, rm, steps) => {
+  // the best way to spend the action from (x, y); noSlot: the bonus action already took this turn's spell slot
+  const acShared = new Map();
+  let slotRaw = 0;
+  const offAt = (x, y, noSlot) => {
     const seen = new Map(), dC = new Map();
     const dOf = t => { let d = dC.get(t); if (d === undefined) { d = this.distXY(x, y, t); dC.set(t, d); } return d; };
     const sees = t => { let v = seen.get(t); if (v === undefined) { v = this.canSee(x, y, t); seen.set(t, v); } return v; };
     const engagedHere = meleeFoes.some(e => dOf(e) <= this.meleeReach(e));
     let best = null;
     for (const pl of plans) {
-      if (pl.self) { const v = net(pl, pl.vals.get(u.uid).val * offMult); if (!best || v > best.val) best = { pl, t: u, val: v, why: '' }; continue; }
+      if (noSlot && pl.slot) continue;
+      if (pl.self) { const raw = pl.vals.get(u.uid).val * offMult, v = net(pl, raw); if (!best || v > best.val) best = { pl, t: u, val: v, raw, why: '' }; continue; }
+      if (pl.ally) {
+        // heals and buffs: the best targets in reach from here (a multi-target spell sums them)
+        let tops = null;
+        for (const t of pl.pool) { if (dOf(t) > pl.range || !sees(t)) continue; const v = pl.vals.get(t.uid).val; if (v > 0) (tops = tops || []).push({ t, v }); }
+        if (!tops) continue;
+        tops.sort((p, q) => q.v - p.v);
+        const raw = tops.slice(0, pl.n).reduce((s, o) => s + o.v, 0), v = net(pl, raw);
+        if (pl.slot && raw > slotRaw) slotRaw = raw;
+        if (!best || v > best.val) best = { pl, t: tops[0].t, val: v, raw, why: '', count: Math.min(pl.n, tops.length) };
+        continue;
+      }
       for (const t of pl.pool) {
         if (dOf(t) > pl.range || !sees(t)) continue;
         const b = pl.vals.get(t.uid);
-        let v = b.val, why = b.why;
-        if (pl.area) {
-          let ac = pl.sphere ? pl.acCache.get(t.uid) : null;
+        let v = b.val, why = b.why, caught = 1, ff = 0;
+        if (pl.fog) {
+          // Fog Cloud: the damage it stops ranged foes from dealing (hardly depends on where it's cast from)
+          let fv = pl.fogC.get(t.uid);
+          if (fv === undefined) { fv = this.targetValue(u, pl.act, t, pl.pool, x, y).val; pl.fogC.set(t.uid, fv); }
+          if (!(fv > 0)) continue;
+          v = fv; why = 'fog';
+        } else if (pl.area) {
+          if (best && net(pl, boundOf(pl, t) * offMult + postBonus(t)) <= best.val) continue;
+          const key = pl.a.id + '|' + t.uid;
+          let ac = pl.sphere ? acShared.get(key) : null;
           if (ac && Math.max(Math.abs(ac.ax - x), Math.abs(ac.ay - y)) * 5 > pl.range) ac = null;
           if (!ac) {
-            ac = this.areaCatch(pl.a, t, x, y, pl.pool.filter(o => o.hp > 0), u);
+            ac = this.areaCatch(pl.act, t, x, y, pl.pool.filter(o => o.hp > 0), u);
             if (!ac) continue;
-            if (pl.sphere) { ac.cellSet = new Set(ac.cells.map(c => c[0] + ',' + c[1])); ac.others = ac.friends.filter(f => f !== u); pl.acCache.set(t.uid, ac); }
+            if (pl.sphere) { ac.cellSet = new Set(ac.cells.map(c => c[0] + ',' + c[1])); ac.others = ac.friends.filter(f => f !== u); acShared.set(key, ac); }
           }
-          if (pl.a.ext && pl.a.ext.minCatch && 1 + ac.extra.length < pl.a.ext.minCatch) continue;
-          for (const o of ac.extra) { const ov = pl.vals.get(o.uid); if (ov) v += Math.max(0, ov.val); }
+          // everyone else it catches adds what it would actually do to them (capped by what they have left)
+          for (const o of ac.extra) { const ov = pl.bare.get(o.uid); if (ov !== undefined) v += Math.max(0, ov) * W.area; }
+          caught += ac.extra.length;
           if (ac.extra.length) why = 'cluster';
           const friends = pl.sphere ? (ac.cellSet.has(x + ',' + y) ? ac.others.concat([u]) : ac.others) : ac.friends;
-          if (friends.length) v -= this.friendPenalty(u, pl.a, friends);
+          if (friends.length) { v -= this.v2FF(u, pl.act, friends); ff = friends.length; }
+          if (pl.act.ext && pl.act.ext.zone && pl.act.ext.zone.difficult) v += W.zone;
         } else if (pl.multi.has(t.uid)) v += pl.multi.get(t.uid);
         if (t.hp <= 0 && pl.a.type === 'atk' && !pl.a.useSaves && dOf(t) > 5) v *= 0.5;            // a downed foe is crit only up close
         if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere) v *= W.meleeShoot;  // shooting in melee
-        v = net(pl, v * offMult + postBonus(t));
-        if (!best || v > best.val) best = { pl, t, val: v, why };
+        const raw = v * offMult + postBonus(t);
+        v = net(pl, raw);
+        if (pl.slot && raw > slotRaw) slotRaw = raw;
+        if (!best || v > best.val) best = { pl, t, val: v, raw, why, caught, ff };
       }
     }
+    return { best, dOf, sees, engagedHere };
+  };
+  // the best bonus option from a square, given whether the action takes a slot
+  const bonusAt = (dOf, sees, slotTaken) => {
+    let bon = 0;
+    for (const b of bonusOpts) {
+      if (b.slot && slotTaken) continue;
+      let raw = 0;
+      if (b.self) raw = b.raw;
+      else if (b.n > 1) { const ok = b.vals.filter(o => dOf(o.t) <= b.range && sees(o.t)).map(o => o.v).sort((p, q) => q - p); raw = ok.slice(0, b.n).reduce((s, v) => s + v, 0); }
+      else for (const o of b.vals) if (o.v > raw && dOf(o.t) <= b.range && sees(o.t)) raw = o.v;
+      if (raw > 0) bon = Math.max(bon, raw - b.pace.base - b.pace.tax * raw);
+    }
+    return bon;
+  };
+
+  const options = [];
+  let anyOffense = false;
+  consider(speed, (x, y, rm, steps) => {
+    const { best, dOf, sees } = offAt(x, y, false);
     const th = threat(x, y), sp = ctx.danger.spacing(x, y) * W.spacing;
-    const risk = th * safety + sp, walk = steps * W.move;
+    const keep = (caster ? reachPen(x, y) : 0) + concR(th);
+    const risk = th * safety + sp + keep, walk = steps * W.move;
     const oa = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0;
     const prog = (need0 - need(x, y)) * progUnit;
     if (best) {
       anyOffense = true;
-      let bon = 0;
-      for (const b of bonusAtk) for (const o of b.vals) if (o.v > bon && dOf(o.t) <= b.range && sees(o.t)) bon = o.v;
-      bon *= W.bonus;
+      const bon = bonusAt(dOf, sees, best.pl.slot) * W.bonus;
       let aim = 0;
       if (canAim && steps === 0 && best.pl.a.type === 'atk' && !best.pl.a.useSaves && best.t !== u) aim = this.v2AdvGain(u, best.pl.a, best.t) * W.aim;
       const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - walk, aim: aim > bon && aim > 0 };
@@ -3468,9 +3744,21 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     }
     if (onlyAct) return;
     if (engaged && steps > 0) options.push({ mode: 'actionDis', x, y, rm, steps, score: -risk - walk + prog - 2 });
-    options.push({ mode: 'dodge', x, y, rm, steps, prog, score: -th * safety * (1 - W.dodge) - sp - oa - walk + prog });
-    if (distH && distH[x + y * Wd] === 0) options.push({ mode: 'hide', x, y, rm, steps, score: -th * safety * 0.3 - sp - oa - walk + prog });
+    options.push({ mode: 'dodge', x, y, rm, steps, prog, score: -th * safety * (1 - W.dodge) - sp - keep - oa - walk + prog });
+    if (distH && distH[x + y * Wd] === 0) options.push({ mode: 'hide', x, y, rm, steps, score: -th * safety * 0.3 - sp - keep - oa - walk + prog });
   });
+  // a bonus-action teleport (Misty Step): out of reach without provoking, then the action from there
+  const jumpA = !bonusSpent && !onlyAct ? u.actions.find(a => a.actionSlot === 1 && a.ext && a.ext.teleport && this.usable(u, a) && this.condOk(u, a)) : null;
+  if (jumpA && (engaged || threat(u.x, u.y) >= u.hp * 0.4)) {
+    const R = Math.round(jumpA.ext.teleport / 5), jp = this.v2Pace(u, jumpA), noSlot = !!(jumpA._spell && jumpA._spell.level);
+    for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(Wd - 1, u.x + R); x++) {
+      if ((x === u.x && y === u.y) || taken[x + y * Wd] || this.isWall(x, y) || !this.los(u.x, u.y, x, y)) continue;
+      const { best } = offAt(x, y, noSlot);
+      if (!best) continue;
+      const th = threat(x, y), risk = th * safety + ctx.danger.spacing(x, y) * W.spacing + (caster ? reachPen(x, y) : 0) + concR(th);
+      options.push({ mode: 'jump', jumpA, x, y, rm: null, off: best, steps: 0, score: best.val - risk - jp.base - jp.tax * Math.max(0, best.val) });
+    }
+  }
   // nothing to hit from anywhere it can walk: Dash is the other way to spend the action
   if (!onlyAct && !anyOffense && speed > 0) consider(speed * 2, (x, y, rm, steps) => {
     const oa = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0;
@@ -3479,8 +3767,10 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   if (!options.length) return null;
   options.sort((p, q) => q.score - p.score);
   const best = options[0];
-  best.path = this.pathTo(best.rm, best.x, best.y);
+  best.path = best.rm ? this.pathTo(best.rm, best.x, best.y) : [];
   best.note = '';
+  // a slot would have done more, but the day ahead needs it more
+  if (best.off && !best.off.pl.slot && slotRaw > best.off.raw + 2) best.hold = true;
   best.say = this.v2Words(u, best, ctx, engaged);
   return best;
 };
@@ -3493,7 +3783,20 @@ Sim.prototype.v2Words = function (u, o, ctx, engaged) {
   if (o.mode === 'hide') return { text: `${n} slips out of sight to hide`, key: 'hide' };
   if (o.mode === 'dodge') return { text: post.kind === 'retreat' ? `${n} is badly hurt and turns defensive, Dodging` : engaged ? `${n} goes on the defensive and Dodges` : o.prog > 0 ? `${n} closes in carefully, Dodging as it comes` : `${n} holds back and Dodges`, key: 'dodge' };
   if (o.mode === 'dash') return { text: `${n} has nothing in reach and dashes toward the fight`, key: 'dash' };
+  if (o.mode === 'jump') return { text: `${n} teleports out of reach with ${o.jumpA.name}`, key: 'jump' };
   if (!t) return null;
+  // casters: say what the spell is for
+  const a = o.off.pl.a, sp = a._spell ? a.name : '';
+  if (o.off.pl.ally) {
+    if (a.type === 'heal') return t.hp <= 0 ? { text: `${n} gets ${t.name} back up with ${a.name}`, key: 'revive', t } : { text: `${n} patches up ${t.name} with ${a.name}`, key: 'heal', t };
+    return { text: `${n} casts ${a.name} on ${o.off.count > 1 ? o.off.count + ' allies' : t.name}`, key: 'buff', t };
+  }
+  if (o.off.why === 'fog') return { text: `${n} drops ${a.name} on the shooters`, key: 'fog', t };
+  if (sp && o.off.caught > 1) return { text: `${n} casts ${a.name} to catch ${o.off.caught} of them${o.off.ff ? ` (and ${o.off.ff} of its own)` : ''}`, key: 'cluster', t };
+  if (a.type === 'debuff' && o.off.caught === 1) {
+    const ab = a.ext && a.ext.saveAbility, weak = ab && avgDice(a.saveDC) < 99 && this.kSave(u, t, ab) <= 1;
+    return { text: `${n} tries ${a.name} on ${t.name}${weak ? `, whose ${ab.toUpperCase()} save looks weak` : this.kDpr(u, t) >= Math.max(...ctx.foes.map(e => this.kDpr(u, e))) ? ', the biggest threat' : ''}`, key: 'control', t };
+  }
   if (post.kind === 'retreat' && o.path.length && foeNear(o.x, o.y) > foeNear(u.x, u.y)) return { text: `${n} is badly hurt and fights from further back`, key: 'retreat', t };
   if (post.t === t) {
     if (post.kind === 'finish') return { text: `${n} moves to finish off ${t.name}`, key: 'finish', t };
@@ -3517,51 +3820,73 @@ Sim.prototype.v2Say = function (u, tp) {
   u.lastIntent = key;
   this.ev('intent', s.text, s.t ? { uid: u.uid, target: s.t.uid } : { uid: u.uid });
 };
-/* aim action `a` from where it stands now (after moving, or a bonus action): the best target in reach */
-Sim.prototype.v2Aim = function (u, a, prefer) {
+/* aim action `a` from where it stands now (after moving, or a bonus action): the best target(s) in reach, at slot level L
+   (its lowest free slot when L isn't given or no longer free) */
+Sim.prototype.v2Aim = function (u, a, prefer, L) {
   if (!this.usable(u, a) || !this.condOk(u, a)) return null;
-  const ctx = this.v2Ctx(u, 0), W = u.v2P.w;
-  if (a.target === 'self' || a._range === 0) return this.v2PoolFor(u, a, ctx).length ? { dest: { x: u.x, y: u.y }, path: [], targets: [u] } : null;
-  const pool = this.v2PoolFor(u, a, ctx), range = Math.max(5, a._range || 5), live = pool.filter(o => o.hp > 0);
+  const lv = this.v2CastLevels(u, a);
+  if (!lv.length) return null;
+  if (!(L !== undefined && lv.indexOf(L) >= 0)) L = lv[0];
+  const act = castCopy(a, L), ctx = this.v2Ctx(u, 0), W = u.v2P.w;
+  if (a.target === 'self' || a._range === 0) return this.v2PoolFor(u, act, ctx).length ? { dest: { x: u.x, y: u.y }, path: [], targets: [u], castL: L } : null;
+  const pool = this.v2PoolFor(u, act, ctx), range = Math.max(5, a._range || 5), live = pool.filter(o => o.hp > 0);
+  if (a.type === 'heal' || a.type === 'buff') {
+    const ok = pool.filter(t => this.dist(u, t) <= range && this.canSee(u.x, u.y, t)).map(t => ({ t, v: this.v2AllyValue(u, act, t, ctx) + (t === prefer ? W.pick : 0) }))
+      .filter(o => o.v > 0).sort((p, q) => q.v - p.v);
+    return ok.length ? { dest: { x: u.x, y: u.y }, path: [], targets: ok.slice(0, act.targets || 1).map(o => o.t), why: '', castL: L } : null;
+  }
+  const fog = !!(a.ext && a.ext.zone && a.ext.zone.fog);
   let best = null;
   for (const t of pool) {
     if (this.dist(u, t) > range || !this.canSee(u.x, u.y, t)) continue;
-    let v = this.v2Value(u, a, t, ctx).val + (t === prefer ? W.pick : 0) + (ctx.posture.t === t ? W.pick : 0), ac = null;
-    if (areaSpec(a)) {
-      ac = this.areaCatch(a, t, u.x, u.y, live, u);
-      if (!ac || (a.ext && a.ext.minCatch && 1 + ac.extra.length < a.ext.minCatch)) continue;
-      for (const o of ac.extra) v += Math.max(0, this.v2Value(u, a, o, ctx).val);
-      if (ac.friends.length) v -= this.friendPenalty(u, a, ac.friends);
+    let v = (fog ? this.targetValue(u, act, t, pool, u.x, u.y).val : this.v2Value(u, act, t, ctx).val) + (t === prefer ? W.pick : 0) + (ctx.posture.t === t ? W.pick : 0), ac = null;
+    if (areaSpec(act)) {
+      ac = this.areaCatch(act, t, u.x, u.y, live, u);
+      if (!ac) continue;
+      if (!fog) {
+        for (const o of ac.extra) v += Math.max(0, this.v2Value(u, act, o, ctx, true).val) * W.area;
+        if (ac.friends.length) v -= this.v2FF(u, act, ac.friends);
+      }
     }
     if (!best || v > best.v) best = { t, v, ac };
   }
   if (!best || (best.ac && best.v <= 0)) return null;
   const t = best.t, ac = best.ac;
-  if (ac) return { friends: ac.friends, dest: { x: u.x, y: u.y }, path: [], targets: [t].concat(ac.extra), why: '',
+  if (ac) return { friends: ac.friends, dest: { x: u.x, y: u.y }, path: [], targets: [t].concat(ac.extra), why: '', castL: L,
                    area: { shape: ac.spec.shape, size: ac.spec.size, ox: u.x, oy: u.y, tx: ac.ax, ty: ac.ay, cells: ac.cells } };
-  const targets = [t], n = a.targets || 1;
-  if (n > 1 && (a.useSaves || a.type === 'debuff'))
+  const targets = [t], n = act.targets || 1;
+  if (n > 1 && (act.useSaves || act.type === 'debuff'))
     targets.push(...live.filter(o => o !== t && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10) && this.dist(u, o) <= range).sort((p, q) => this.dist(p, t) - this.dist(q, t)).slice(0, n - 1));
-  return { dest: { x: u.x, y: u.y }, path: [], targets, why: '' };
+  return { dest: { x: u.x, y: u.y }, path: [], targets, why: '', castL: L };
+};
+/* what an aimed action is worth, net of what it spends */
+Sim.prototype.v2AimValue = function (u, a, p, ctx) {
+  const act = castCopy(a, p.castL);
+  let v;
+  if (p.targets[0] === u && (a.target === 'self' || a._range === 0)) v = this.v2SelfValue(u, act, ctx);
+  else if (a.type === 'heal' || a.type === 'buff') v = p.targets.reduce((s, t) => s + this.v2AllyValue(u, act, t, ctx), 0);
+  else { v = this.v2Value(u, act, p.targets[0], ctx).val; if (p.area) for (const o of p.targets.slice(1)) v += Math.max(0, this.v2Value(u, act, o, ctx, true).val); }
+  return v - this.v2PaceCost(u, a, v, p.castL);
 };
 /* the bonus action: 'pre' = a self-buff worth taking before it moves (Rage), 'post' = the best one from where it ended up */
 Sim.prototype.v2Bonus = function (u, phase) {
   const speed = (this.has(u, ['Restrained']) || u.grappledBy) ? 0 : this.speedOf(u);
   const ctx = this.v2Ctx(u, phase === 'pre' ? speed : 0);
-  const list = u.actions.filter(a => a.actionSlot === 1 && !(a.ext && a.ext.teleport) && !isHideAction(a) && !a._spell && this.usable(u, a) && this.condOk(u, a));
+  const list = u.actions.filter(a => a.actionSlot === 1 && !(a.ext && a.ext.teleport) && !isHideAction(a) && !(phase === 'pre' && a._spell && a._spell.level) && this.usable(u, a) && this.condOk(u, a));
   let best = null;
   let held = null;
   const offer = (a, p, v) => { if (v > 0 && (!best || v > best.v)) best = { a, p, v }; };
   for (const a of list) {
     if (a.target === 'self' || a._range === 0) {
       if (phase === 'pre' && a.type !== 'buff') continue;
-      if (!this.v2PoolFor(u, a, ctx).length) continue;
+      const L = this.v2CastLevels(u, a)[0];
+      if (L === undefined || !this.v2PoolFor(u, a, ctx).length) continue;
       const v = this.v2SelfValue(u, a, ctx);
-      offer(a, { dest: { x: u.x, y: u.y }, path: [], targets: [u] }, v - this.v2PaceCost(u, a, v));
-      if (phase === 'pre' && v > 0 && v - this.v2PaceCost(u, a, v) <= 0) held = a;
-    } else if (phase === 'post' && (a.type === 'atk' || a.type === 'debuff')) {
+      offer(a, { dest: { x: u.x, y: u.y }, path: [], targets: [u], castL: L }, v - this.v2PaceCost(u, a, v, L));
+      if (phase === 'pre' && v > 0 && v - this.v2PaceCost(u, a, v, L) <= 0) held = a;
+    } else if (phase === 'post' && (a.type === 'atk' || a.type === 'debuff' || a.type === 'heal' || a.type === 'buff')) {
       const p = this.v2Aim(u, a);
-      if (p && p.targets[0]) { const v = this.v2Value(u, a, p.targets[0], ctx).val; offer(a, p, v - this.v2PaceCost(u, a, v)); }
+      if (p && p.targets[0]) offer(a, p, this.v2AimValue(u, a, p, ctx));
     }
   }
   if (phase === 'pre' && !best && held) this.v2NotePacing(u, held);
@@ -3614,11 +3939,11 @@ Sim.prototype.v2Surge = function (u) {
 Sim.prototype.v2NotePacing = function (u, a) {
   if (!this.record || u.notedPacing || u.team !== 'party' || !this.leftFor(u)) return;
   u.notedPacing = true;
-  this.ev('intent', `${u.name} holds ${a.name} back: it's worth more in a fight still to come`, { uid: u.uid });
+  this.ev('intent', a ? `${u.name} holds ${a.name} back: it's worth more in a fight still to come` : `${u.name} holds its spell slots for a fight still to come`, { uid: u.uid });
 };
 /* after it moved: aim the planned action again, or the best other one from here */
 Sim.prototype.v2Act = function (u, choice) {
-  let a = choice.a, p = this.v2Aim(u, a, choice.p.targets[0]);
+  let a = choice.a, p = this.v2Aim(u, a, choice.p.targets[0], choice.p.castL);
   if (!p) {
     const ctx = this.v2Ctx(u, 0);
     let best = null;
@@ -3626,7 +3951,7 @@ Sim.prototype.v2Act = function (u, choice) {
       if (b.actionSlot !== 0 || (b.ext && b.ext.teleport) || !this.usable(u, b) || !this.condOk(u, b)) continue;
       const q = this.v2Aim(u, b);
       if (!q || !q.targets[0]) continue;
-      const v0 = this.v2Value(u, b, q.targets[0], ctx).val, v = v0 - this.v2PaceCost(u, b, v0);
+      const v = this.v2AimValue(u, b, q, ctx);
       if (!best || v > best.v) best = { a: b, p: q, v };
     }
     if (!best) return null;
@@ -3701,7 +4026,7 @@ Sim.prototype.turn = function (u) {
 
   if (u.swallowedBy) { this.insideTurn(u); this.endTurn(u); return; }
 
-  this.rankSpells(u);
+  if (!u.v2) this.rankSpells(u);                // v2 weighs every spell itself
   let actionUsed = false;
   const lost = u.buffs.find(b => b.loseAction);
   if (lost) {
@@ -3753,7 +4078,7 @@ Sim.prototype.turn = function (u) {
   }
   if (!actionUsed && u.ai === 'tactical') {
     let tp = u.v2 ? this.v2Turn(u, speed, bonusSpent) : this.tacticalTurn(u, speed);
-    if (u.v2) { v2tp = tp; this.v2Say(u, tp); }
+    if (u.v2) { v2tp = tp; this.v2Say(u, tp); if (tp && tp.hold) this.v2NotePacing(u, null); }
     // if saving resources leaves nothing better than dashing or dodging, spend one instead of wasting the turn
     else if (tp && (tp.mode === 'dash' || tp.mode === 'dodge' || tp.mode === 'actionDis') && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
       u._noHold = true;
@@ -3765,6 +4090,7 @@ Sim.prototype.turn = function (u) {
     if (tp) {
       if (tp.mode === 'act' || tp.mode === 'bonusDis' || (tp.mode === 'jump' && tp.off)) {
         choice = { a: tp.off.pl.a, p: { targets: [tp.off.t], path: tp.path, why: u.v2 ? '' : tp.off.why } };
+        if (u.v2) choice.p.castL = tp.off.pl.castL;
         this.intent(u, choice.a, choice.p);
       }
       if (tp.mode === 'jump') {
@@ -3847,7 +4173,7 @@ Sim.prototype.turn = function (u) {
   const bonus = bonusSpent ? null : u.v2 ? this.v2Bonus(u, 'post') : this.choose(u, 1, 0);
   u.reserveSlot = false;
   const after = bonus && (bonus.a.type === 'atk' || (bonus.a.buff && bonus.a.buff.condition === 'Invisible'));
-  if (bonus && !after) { this.spend(u, bonus.a); this.doAction(u, bonus.a, bonus.p); }
+  if (bonus && !after) { if (u.v2) u.castAt = bonus.p.castL || 0; this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, bonus.p); }
   if (choice && !actionUsed) {
     // re-plan from where it ended up: it may have been stopped, or the target may have dropped
     let a = choice.a, p = null;
@@ -3864,7 +4190,8 @@ Sim.prototype.turn = function (u) {
     }
     if (p && p.targets.length) {
       if (u.v2) this.v2Reckless(u, a, p);
-      this.spend(u, a); this.doAction(u, a, p, { finishDowned: !!(p.targets[0] && p.targets[0].hp <= 0) });
+      if (u.v2) u.castAt = p.castL || 0;
+      this.spend(u, a); u.castAt = 0; this.doAction(u, a, p, { finishDowned: !!(p.targets[0] && p.targets[0].hp <= 0) });
       if ((a.type === 'atk' || a.type === 'debuff') && p.targets[0] && p.targets[0] !== u) u.focus = p.targets[0].uid;
     }
   }
@@ -3874,7 +4201,7 @@ Sim.prototype.turn = function (u) {
   }
   if (bonus && after && !bonusSpent && !u.dead && u.hp > 0) {
     const p = u.v2 ? this.v2Aim(u, bonus.a, bonus.p.targets[0]) : this.plan(u, bonus.a, 0);
-    if (p) { if (u.v2) this.v2Reckless(u, bonus.a, p); this.spend(u, bonus.a); this.doAction(u, bonus.a, p); }
+    if (p) { if (u.v2) { this.v2Reckless(u, bonus.a, p); u.castAt = p.castL || 0; } this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, p); }
   }
   if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) { if (u.v2) this.v2Surge(u); else this.surge(u); }
   // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
@@ -4366,5 +4693,5 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, AI_PROFILES, aiProfile, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, AI_PROFILES, aiProfile, casterKind, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

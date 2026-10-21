@@ -24,7 +24,7 @@ const Parser = (() => {
 const fixture = f => JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures', f), 'utf8'));
 
 let failures = 0, checks = 0;
-function check(ok, msg) { checks++; if (!ok) { failures++; console.log('  FAIL', msg); } }
+function check(ok, msg) { checks++; if (!ok) { failures++; console.log('  FAIL', msg); } else if (process.env.VERBOSE) console.log('  ok', msg); }
 function section(name) { console.log('\n' + name); }
 
 // a map with walls, high ground and difficult terrain
@@ -37,9 +37,46 @@ const walled = { gapFt: 30, positions: {}, terrain: { cells } };
 const isWall = (x, y) => cells[x + ',' + y] && cells[x + ',' + y].t === 'wall';
 const INCAP = ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious'];
 
+/* the rule checks one recorded fight must pass: no steps onto walls, no ranged attacks through them, nobody acting
+   while dead, nobody hiding in plain sight on an open field (counts are added to acc) */
+function scanRules(r, layout, acc) {
+  let { wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc;
+  let cur = {}, turnOf = null, inArea = false;
+  const pushed = new Set();     // a later beam of the same attack follows a creature the first one pushed
+  for (const e of r.events) {
+    events++;
+    const prev = cur; cur = Object.assign({}, cur);
+    for (const k in e.state) cur[k] = Object.assign({}, cur[k] || {}, e.state[k]);
+    if (e.kind === 'turn') { turnOf = e.uid; pushed.clear(); }
+    if (e.kind === 'move' && / is pushed /.test(e.text)) pushed.add(e.uid);
+    // saves inside an area are rolled from the area's centre, not the caster
+    if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal'].includes(e.kind)) inArea = false;
+    if (layout && e.kind === 'move' && e.path) for (const q of e.path) if (isWall(q.x, q.y)) wallSteps++;
+    if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text)) {
+      const a = prev[e.uid], b = prev[e.target];
+      if (a && b && a.onBoard !== false && b.onBoard !== false && !a.swallowedBy && !b.swallowedBy) {
+        if (process.env.VERBOSE) { const n0 = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4; for (let j = 1; j < n0; j++) { const f = j / n0; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { console.log('   wall?', e.kind, e.text.slice(0, 100), a.x, a.y, a.conds, '->', b.x, b.y); break; } } }
+        const n = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4;
+        for (let j = 1; j < n; j++) { const f = j / n; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { throughWalls++; break; } }
+      }
+    }
+    const me = prev[e.uid];
+    if (me && e.uid === turnOf && ['attack', 'save', 'heal'].includes(e.kind) && !/drains|bites back|leaps|reacts|shakes off|rerolls|lashes|Agathys/.test(e.text)) {
+      if (me.dead) deadActs++;
+      else if ((me.conds || []).some(c => INCAP.includes(c))) incapActs++;
+    }
+    const foeUp = Object.keys(prev).some(k => k.startsWith('foes') || !k.includes('-') ? false : false) || r.units.some(u => u.team !== 'party' && prev[u.uid] && !prev[u.uid].dead && prev[u.uid].hp > 0 && prev[u.uid].onBoard !== false && !(prev[u.uid].conds || []).some(c => INCAP.includes(c)));
+    if (!layout && foeUp && e.kind === 'buff' && /: Cunning Action: Hide/.test(e.text)) {
+      // on an open field with no fog nothing can hide; fog clouds are the exception
+      if (!r.events.some(x => x.kind === 'zone' && x.zkind === 'fog')) { badHide++; if (process.env.VERBOSE) console.log('   hide?', e.text, JSON.stringify(Object.fromEntries(Object.entries(prev).map(([k, v]) => [k.split(':').slice(-2).join(':'), [v.x, v.y, v.hp, (v.conds || []).join('/')]])))); }
+    }
+  }
+  Object.assign(acc, { wallSteps, throughWalls, deadActs, incapActs, badHide, events });
+}
+
 for (const file of ['worms-day.json', 'bandit-day.json']) {
   const day = fixture(file);
-  // 'v2': AI v2 for every non-caster on both sides (docs/ai-v2.md), the old tactical AI for the casters
+  // 'v2': AI v2 on both sides for non-casters and full casters (docs/ai-v2.md), the old tactical AI for half casters
   for (const ai of ['tactical', 'regular', 'v2']) for (const layout of [null, walled]) {
     section(`${file} · ${ai} AI · ${layout ? 'walled map' : 'open field'}`);
     const runs = [];
@@ -49,36 +86,9 @@ for (const file of ['worms-day.json', 'bandit-day.json']) {
       const seed = 1000 + i * 7919;
       const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, partyAI: ai === 'v2' ? 'tactical' : ai, ai: ai === 'v2' ? 'v2' : undefined, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
       runs.push({ seed, res });
-      for (const r of res) {
-        let cur = {}, turnOf = null, inArea = false;
-        for (const e of r.events) {
-          events++;
-          const prev = cur; cur = Object.assign({}, cur);
-          for (const k in e.state) cur[k] = Object.assign({}, cur[k] || {}, e.state[k]);
-          if (e.kind === 'turn') turnOf = e.uid;
-          // saves inside an area are rolled from the area's centre, not the caster
-          if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd'].includes(e.kind)) inArea = false;
-          if (layout && e.kind === 'move' && e.path) for (const q of e.path) if (isWall(q.x, q.y)) wallSteps++;
-          if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !/leap|bites back|drains/.test(e.text)) {
-            const a = prev[e.uid], b = prev[e.target];
-            if (a && b && a.onBoard !== false && b.onBoard !== false && !a.swallowedBy && !b.swallowedBy) {
-              if (process.env.VERBOSE) { const n0 = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4; for (let j = 1; j < n0; j++) { const f = j / n0; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { console.log('   wall?', e.kind, e.text.slice(0, 100), a.x, a.y, a.conds, '->', b.x, b.y); break; } } }
-              const n = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4;
-              for (let j = 1; j < n; j++) { const f = j / n; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { throughWalls++; break; } }
-            }
-          }
-          const me = prev[e.uid];
-          if (me && e.uid === turnOf && ['attack', 'save', 'heal'].includes(e.kind) && !/drains|bites back|leaps|reacts|shakes off|rerolls|lashes|Agathys/.test(e.text)) {
-            if (me.dead) deadActs++;
-            else if ((me.conds || []).some(c => INCAP.includes(c))) incapActs++;
-          }
-          const foeUp = Object.keys(prev).some(k => k.startsWith('foes') || !k.includes('-') ? false : false) || r.units.some(u => u.team !== 'party' && prev[u.uid] && !prev[u.uid].dead && prev[u.uid].hp > 0 && prev[u.uid].onBoard !== false && !(prev[u.uid].conds || []).some(c => INCAP.includes(c)));
-          if (!layout && foeUp && e.kind === 'buff' && /: Cunning Action: Hide/.test(e.text)) {
-            // on an open field with no fog nothing can hide; fog clouds are the exception
-            if (!r.events.some(x => x.kind === 'zone' && x.zkind === 'fog')) { badHide++; if (process.env.VERBOSE) console.log('   hide?', e.text, JSON.stringify(Object.fromEntries(Object.entries(prev).map(([k, v]) => [k.split(':').slice(-2).join(':'), [v.x, v.y, v.hp, (v.conds || []).join('/')]])))); }
-          }
-        }
-      }
+      const acc = { wallSteps, throughWalls, deadActs, incapActs, badHide, events };
+      for (const r of res) scanRules(r, layout, acc);
+      ({ wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc);
     }
     const S = Tac.summarize(day, runs, { partyAI: ai === 'v2' ? 'tactical' : ai });
     const ms = (Date.now() - t0) / runs.length;
@@ -432,8 +442,9 @@ section('Character sheets');
   check(err === 0, `characters read from sheets fight on the War Table (${err} errors)`);
 }
 
-// AI v2 (docs/ai-v2.md): non-casters on v2, casters on the old AI in the same fight; the martial features, pacing,
-// profiles and knowledge modes. The rule checks (walls, the dead, hiding, odds) run above as the "v2 AI" sections.
+// AI v2 (docs/ai-v2.md): non-casters and full casters on v2, half casters on the old AI in the same fight; the martial
+// features, pacing, profiles and knowledge modes; then the casters. The rule checks (walls, the dead, hiding, odds) run
+// above as the "v2 AI" sections, and again below for caster-heavy days.
 {
   section('AI v2 (non-casters)');
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
@@ -455,7 +466,7 @@ section('Character sheets');
   // one fight, both AIs: the default party's Fighter and Rogue on v2, its casters on the old AI
   const mixed = run({ players: cp(ctx.PP), encounters: cp(hard.encounters) }, { seed: 77, ai: 'v2', record: true, _keep: true });
   const S = mixed._sim, by = n => S && S.units.find(u => u.name === n);
-  check(S && by('Fighter').v2 && by('Rogue').v2 && ['Wizard', 'Cleric', 'Bard', 'Paladin'].every(n => !by(n).v2), 'v2 drives the Fighter and Rogue, the casters keep the old AI');
+  check(S && ['Fighter', 'Rogue', 'Wizard', 'Cleric', 'Bard'].every(n => by(n).v2) && !by('Paladin').v2, 'v2 drives the Fighter, Rogue and the full casters; the Paladin (a half caster) keeps the old AI');
   check(mixed.some(r => r.events.some(e => e.kind === 'attack' && /^Fighter →/.test(e.text))) && mixed.some(r => r.events.some(e => /^Wizard → .*(Fire Bolt|Magic Missile|Fireball|Ray of Frost|Scorching|Lightning|Burning|Shocking)/.test(e.text))), 'both act in the same fights');
   const plain = run({ players: cp(ctx.PP), encounters: cp(hard.encounters) }, { seed: 77, _keep: true });
   check(plain._sim && plain._sim.units.every(u => !u.v2), 'without the flag nobody uses v2');
@@ -523,6 +534,106 @@ section('Character sheets');
 
   // knowledge modes: v2 reads the other side only through the k* estimates and runs blind and learning
   for (const mode of ['blind', 'learn']) for (let i = 0; i < 3; i++) run({ players: cp(ctx.PP).concat(martials()), encounters: cp(hard.encounters) }, { seed: 400 + i, ai: 'v2', know: { party: mode, foes: mode }, morale: 'on' });
+  check(err === 0, `${err} v2 days threw`);
+
+  section('AI v2 (casters)');
+  // who counts as a caster
+  const kinds = Object.fromEntries(ctx.CB.map(c => [c.name, Tac.casterKind(c)]));
+  const ek = pc('Fighter'); ek.ext.spellbook = cp(pc('Wizard').ext.spellbook);
+  const mageTpl = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'mage-2014.txt'), 'utf8')).monsters[0];
+  mageTpl.id = 'mage'; mageTpl.mode = 'custom'; mageTpl.actions.forEach((a, i) => { a.id = 'mage' + i; }); mageTpl.ext.spellbook.spells.forEach((x, i) => { x.id = 'mages' + i; });
+  check(['Wizard', 'Sorcerer', 'Warlock', 'Cleric', 'Druid', 'Bard'].every(n => kinds[n] === 'full') && ['Paladin', 'Ranger', 'Artificer'].every(n => kinds[n] === 'half') &&
+    ['Fighter', 'Rogue', 'Monk', 'Barbarian'].every(n => kinds[n] === 'none') && Tac.casterKind(ek) === 'third' && Tac.casterKind(mageTpl) === 'full' &&
+    Tac.casterKind(Object.assign(cp(ek), { ext: Object.assign({}, ek.ext, { casterKind: 'full' }) })) === 'full', `caster kinds (${JSON.stringify(kinds)})`);
+  // full casters, half casters and martials in one fight; a spellbook monster on v2 too
+  const actedBy = new Set();
+  let MS = null;
+  for (let i = 0; i < 4; i++) {
+    const mix = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Paladin', 'Ranger'].map(pc), encounters: [{ monsters: [Object.assign(cp(mageTpl), { count: 2 }), srd('Guard', 3)] }] }, { seed: 3 + i, ai: 'v2', record: true, _keep: true });
+    MS = mix._sim;
+    for (const r of mix) for (const e of r.events) if (['attack', 'save', 'heal', 'buff', 'aoe'].includes(e.kind)) { const u = MS.units.find(x => x.uid === e.uid); if (u) actedBy.add(u.name.replace(/ \d+$/, '')); }
+  }
+  const unit = n => MS.units.find(u => u.name === n);
+  check(MS && ['Fighter', 'Wizard', 'Cleric'].every(n => unit(n).v2) && ['Paladin', 'Ranger'].every(n => !unit(n).v2) && unit('Mage 1').v2,
+    'full casters and a spellbook monster on v2, the Paladin and Ranger on the old AI, in one fight');
+  check(['Wizard', 'Cleric', 'Paladin', 'Ranger', 'Mage'].every(n => actedBy.has(n)), `they all act (${[...actedBy].join(', ')})`);
+
+  // spend honours the slot level v2 picked; without it, the lowest free slot (the old rule)
+  const wz = Tac.expandTeam([pc('Wizard')], 'party', true)[0], mm = wz.actions.find(a => /Magic Missile/.test(a.name));
+  const sim0 = new Tac.Sim({ seed: 1 });
+  wz.castAt = 3; sim0.spend(wz, mm);
+  const at3 = wz.slots.join(','), lvl3 = wz.castLevel;
+  sim0.spend(wz, mm);
+  check(at3 === '4,3,1,0,0,0,0,0,0' && lvl3 === 3 && wz.slots.join(',') === '3,3,1,0,0,0,0,0,0' && !wz.castAt, `a chosen slot level is spent, then the default again (${at3} → ${wz.slots.join(',')})`);
+  // Legendary Resistance as each side knows it
+  const gl = srd('Gladiator'); gl.ext.legendaryResistance = 3;
+  const kS = new Tac.Sim({ seed: 1, know: { party: 'blind' } });
+  const lrBoss = Tac.expandTeam([gl], 'foes', false)[0], hero = Tac.expandTeam([pc('Wizard')], 'party', true)[0];
+  const blind0 = kS.kLegRes(hero, lrBoss); lrBoss.legSeen = 1; lrBoss.uses.set('__legres', 2);
+  check(new Tac.Sim({ seed: 1 }).kLegRes(hero, lrBoss) === 2 && blind0 === 0 && kS.kLegRes(hero, lrBoss) === 2, 'kLegRes: the real count in open mode; unseen, then counted down once used, when blind');
+
+  // caster-heavy days on v2: the same rule checks as above, slots never below zero, little friendly fire, sane odds
+  const cday = () => ({ players: ['Fighter', 'Wizard', 'Cleric', 'Sorcerer', 'Bard', 'Druid', 'Warlock'].map(pc),
+    encounters: [{ monsters: [srd('Goblin Warrior', 8)] }, { monsters: [srd('Ogre', 2), srd('Bandit', 3)], shortRest: true }, { monsters: [Object.assign(cp(mageTpl), { count: 2 }), srd('Guard', 3)] }] });
+  for (const layout of [null, walled]) {
+    const acc = { wallSteps: 0, throughWalls: 0, deadActs: 0, incapActs: 0, badHide: 0, events: 0 }, runs = [];
+    let negSlots = 0, ff = 0, days = 0;
+    for (let i = 0; i < 12; i++) {
+      const res = run(cday(), { seed: 700 + i * 7919, ai: 'v2', record: true, layouts: layout ? { 0: layout, 1: layout, 2: layout } : undefined });
+      runs.push({ seed: 700 + i * 7919, res }); days++;
+      for (const r of res) {
+        scanRules(r, layout, acc);
+        for (const e of r.events) {
+          for (const k in e.state || {}) if (e.state[k].slots && /(^|\s)-/.test(e.state[k].slots)) negSlots++;
+          const m = e.kind === 'aoe' && r.units.some(u => u.uid === e.uid && u.team === 'party') && /\((\d+) of them on its own side\)/.exec(e.text);
+          if (m) ff += +m[1];
+        }
+      }
+    }
+    const Sx = Tac.summarize(cday(), runs, { partyAI: 'tactical' });
+    check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `casters on v2, ${layout ? 'walled map' : 'open field'}: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides`);
+    check(negSlots === 0, `${negSlots} negative slot counts`);
+    check(ff <= days * 0.5, `friendly fire from area spells stays rare (${ff} allies caught in ${days} days)`);
+    check(Sx.encounters.every(e => e.winRate >= 0 && e.winRate <= 1 && e.anyDeath >= 0 && e.anyDeath <= 1), 'caster odds are probabilities');
+  }
+
+  // what the caster terms are for (tests/ai-compare.js has the old-vs-v2 numbers)
+  let fodder = 0, lr = 0, stacked = 0, dropped = 0, fire = 0, hold = 0, misty = 0;
+  const walkR = (r, fn) => { let prev = {}; for (const e of r.events) { const cur = Object.assign({}, prev); for (const k in e.state || {}) cur[k] = Object.assign({}, prev[k] || {}, e.state[k]); fn(e, prev); prev = cur; } };
+  for (let i = 0; i < 8; i++) {
+    // an easy opener before ogres: the 2nd-level and higher slots wait, the cantrips do the work
+    const d1 = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Bard'].map(pc), encounters: [{ monsters: [srd('Goblin Warrior', 3)] }, { monsters: [srd('Ogre', 2)] }] }, { seed: 40 + i * 7919, ai: { party: 'v2' }, record: true });
+    if (d1[0]) fodder += d1[0].events.filter(e => e.kind !== 'intent' && /^(Wizard|Cleric|Bard) (→ [^:]*: [^,]*\(L[2-9]\)|unleashes [^,]*\(L[2-9]\))/.test(e.text || '')).length;
+    if (d1[0] && d1[0].events.some(e => e.kind === 'intent' && /holds its spell slots/.test(e.text))) hold++;
+    // a boss with Legendary Resistance and a good Wisdom save: no Hold Person into it
+    const g2 = srd('Gladiator'); g2.ext.legendaryResistance = 3;
+    const d2 = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Bard'].map(pc), encounters: [{ monsters: [g2, srd('Bandit', 2)] }] }, { seed: 50 + i * 7919, ai: { party: 'v2' }, record: true });
+    // (a control spell is a save with no damage: "— affected" / "— saved"; damage saves can burn a use too, and that's fine)
+    if (d2[0]) walkR(d2[0], (e, prev) => { if (e.kind === 'save' && /^(Wizard|Cleric|Bard) → Gladiator[^:]*: .*, DC \d+ \w+ — (auto-fails, )?(affected|saved)/.test(e.text) && !/damage/.test(e.text) && prev[e.target] && /^[1-9]/.test(prev[e.target].legRes || '')) lr++; });
+    // a Bard and a Cleric against four ogres: the pattern is kept, nothing is stacked on a disabled ogre
+    const d3 = run({ players: ['Cleric', 'Bard', 'Barbarian', 'Fighter'].map(pc), encounters: [{ monsters: [srd('Ogre', 4)] }] }, { seed: 60 + i * 7919, ai: { party: 'v2' }, record: true });
+    if (d3[0]) walkR(d3[0], (e, prev) => {
+      if (e.kind === 'save' && /^(Bard|Cleric) → Ogre[^:]*: [^,]*, DC \d+ \w+ — (affected|saved)/.test(e.text) && prev[e.target] && (prev[e.target].conds || []).some(c => INCAP.includes(c))) stacked++;
+      const held = e.uid && prev[e.uid] && prev[e.uid].conc, now = e.uid && e.state && e.state[e.uid] && e.state[e.uid].conc;
+      if (held === 'Hypnotic Pattern' && now && now !== held && Object.keys(prev).some(k => prev[k].hp > 0 && (prev[k].buffs || []).some(b => /Hypnotic Pattern/.test(b[0])))) dropped++;
+    });
+    // a Sorcerer with Fireball against a crowd says what it's doing
+    const d4 = run({ players: ['Fighter', 'Sorcerer'].map(pc), encounters: [{ monsters: [srd('Goblin Warrior', 8)] }] }, { seed: 70 + i * 7919, ai: { party: 'v2' }, record: true });
+    if (d4[0] && d4[0].events.some(e => e.kind === 'intent' && /^Sorcerer casts (Fireball|Lightning Bolt) to catch [2-9]/.test(e.text))) fire++;
+    // a Wizard with cantrips and Misty Step, between two slow Basilisks: walking off provokes, Disengage costs its action
+    const wm = pc('Wizard'); wm.ext.spellbook.spells = wm.ext.spellbook.spells.filter(x => !x.level || /Misty/.test(x.name));
+    const bas = srd('Basilisk', 2), mpos = { 'party|c5-wizard|0': { x: 10, y: 8 }, 'party|c5-fighter|0': { x: 3, y: 8 } };
+    mpos['foes|' + bas.id + '|0'] = { x: 11, y: 8 }; mpos['foes|' + bas.id + '|1'] = { x: 9, y: 8 };
+    const d5 = run({ players: [wm, pc('Fighter')], encounters: [{ monsters: [bas] }] }, { seed: 80 + i * 7919, ai: { party: 'v2' }, record: true, layouts: { 0: { positions: mpos } } });
+    if (d5[0] && d5[0].events.some(e => e.kind === 'move' && /^Wizard teleports/.test(e.text))) misty++;
+  }
+  check(fodder <= 1, `v2 keeps 2nd-level and higher slots off a trivial opener (${fodder} such casts in 8 days)`);
+  check(hold >= 4, `…and says it is holding them (${hold} of 8 days)`);
+  check(lr <= 1, `v2 doesn't throw save-or-suck into Legendary Resistance (${lr} control spells at the boss in 8 days)`);
+  check(stacked <= 1 && dropped <= 1, `v2 keeps a working Hypnotic Pattern and doesn't stack control on a disabled ogre (${dropped} dropped, ${stacked} stacked in 8 days)`);
+  check(fire >= 6, `a Sorcerer explains its Fireball against a crowd (${fire} of 8 days)`);
+  check(misty >= 5, `a Wizard caught in melee teleports out with Misty Step (${misty} of 8 days)`);
+  check(['controller', 'artillery', 'support'].every(k => Tac.AI_PROFILES[k]) && Tac.AI_PROFILES.berserker.w.risk === 0.1 && Tac.AI_PROFILES.balanced.pacing.slot > 0, 'caster presets, and the martial ones unchanged');
   check(err === 0, `${err} v2 days threw`);
 }
 
