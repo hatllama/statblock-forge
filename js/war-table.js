@@ -152,6 +152,7 @@ function drawZone(z){
   const g = el('g', { 'pointer-events': 'none' }, layers.areas);
   for(const [x,y] of z.cells || []){
     if(z.zkind === 'fog') el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'rgba(205,210,214,.55)' }, g);
+    else if(z.zkind === 'dmg') el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'rgba(230,150,60,.26)' }, g);
     else { el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'rgba(110,160,80,.22)' }, g); el('rect', { x: x*CELL, y: y*CELL, width: CELL, height: CELL, fill: 'url(#wt-rough)' }, g); }
   }
   return g;

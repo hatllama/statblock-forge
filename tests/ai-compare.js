@@ -257,6 +257,8 @@ const SCENARIOS = [
     metrics: Object.assign({ 'slot on fodder': DUMB_C['slot on fodder'] }, CASTER_METRICS) },
   { name: 'C-Long day: Fighter, Warlock (short-rest slots), Wizard (Arcane Recovery), Cleric: gnolls / ogres / rest / gnolls / Hill Giant + ogre', party: ['Fighter', 'Warlock', 'Wizard', 'Cleric'],
     encounters: () => [{ monsters: [mon('Gnoll Warrior', 6)] }, { monsters: [mon('Ogre', 2)] }, { monsters: [mon('Gnoll Warrior', 6)], shortRest: true }, { monsters: [mon('Hill Giant'), mon('Ogre')] }], record: true, metrics: CASTER_METRICS },
+  { name: 'C-Cleric (lingering damage): Fighter, Rogue, Cleric, Wizard vs Hill Giant + 2 Ogres', party: ['Fighter', 'Rogue', 'Cleric', 'Wizard'], day: 'Hill Giant,Ogre*2', record: true, spells: true, metrics: CASTER_METRICS },
+  { name: 'C-Druid (lingering damage): Fighter, Rogue, Druid, Wizard vs Hill Giant + 2 Ogres', party: ['Fighter', 'Rogue', 'Druid', 'Wizard'], day: 'Hill Giant,Ogre*2', record: true, spells: true, metrics: CASTER_METRICS },
   { name: 'C-Default party (Fighter, Paladin, Cleric, Wizard, Rogue, Bard; the Paladin stays v1) vs hard-day.json', players: () => clone(D.PP), encounters: () => clone(fixture('hard-day.json').encounters), record: true, metrics: CASTER_METRICS },
   { name: "C-Zaki's party (druid, two warlocks, wizard, monk, rogue: all on v2) vs hard-day.json", players: () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players), encounters: () => clone(fixture('hard-day.json').encounters) },
 

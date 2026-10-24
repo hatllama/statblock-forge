@@ -637,5 +637,87 @@ section('Character sheets');
   check(err === 0, `${err} v2 days threw`);
 }
 
+// Lingering damage (Spirit Guardians, Moonbeam…): a concentration area keeps hurting each round, on the old AI and v2
+section('Lingering damage zones');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const only = (cls, spell, slots, hold) => {
+    const c = cp(ctx.CB.find(b => b.name === cls)), sp = c.ext.spellbook.spells.find(s => s.name === spell);
+    if (hold) sp.ext.hold = hold;
+    c.actions = []; c.ext.spellbook.spells = [sp]; c.ext.spellbook.slots = slots; c.hp = c.maxHp = 300;
+    return c;
+  };
+  const dummy = (dmg, save) => ({ id: 'dm', name: 'Dummy', mode: 'custom', hp: 600, AC: 8, saveBonus: save, count: 2, speed: 30,
+    actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: dmg, toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const fight = (party, foe, seed, ai) => Tac.runDay({ players: party, encounters: [{ monsters: [foe] }] }, { seed, partyAI: 'tactical', ai, record: true, maxRounds: 6 })[0];
+  const ticks = (r, spell, who) => r.events.filter(e => e.kind === 'save' && new RegExp(`^${who || 'Cleric'} → Dummy [0-9]: ${spell}`).test(e.text));
+  const byRound = list => { const m = {}; for (const e of list) m[e.round] = (m[e.round] || 0) + 1; return m; };
+
+  // a foe that starts its turn in the emanation takes the damage every round, once a round, for as long as it holds
+  let steady = 0, once = 0;
+  for (const ai of [undefined, 'v2']) for (let s = 1; s <= 4; s++) {
+    const r = fight([only('Cleric', 'Spirit Guardians', [0, 0, 1])], dummy('0', 0), s, ai), m = byRound(ticks(r, 'Spirit Guardians'));
+    if ([2, 3, 4].every(k => m[k] === 2)) steady++;
+    if (Object.values(m).every(n => n <= 2)) once++;
+  }
+  check(steady >= 7, `Spirit Guardians hurts both foes standing in it in rounds 2, 3 and 4, not just when cast (${steady} of 8 fights)`);
+  check(once === 8, 'a foe is hit at most once a round by a zone');
+
+  // concentration breaks: the zone is gone and nothing ticks until it is cast again
+  let ends = 0, ghosts = 0;
+  for (let s = 1; s <= 10; s++) {
+    const r = fight([only('Cleric', 'Spirit Guardians', [0, 0, 1])], dummy('40', 0), s);
+    let up = false;
+    for (const e of r.events) {
+      if (e.kind === 'zone' && /Spirit Guardians/.test(e.text) && !/follows/.test(e.text)) up = true;
+      else if (e.kind === 'zoneEnd' && /Spirit Guardians fades/.test(e.text)) { up = false; ends++; }
+      else if (e.kind === 'save' && /Spirit Guardians/.test(e.text) && !up) ghosts++;
+    }
+  }
+  check(ends >= 3 && ghosts === 0, `when the Cleric loses concentration the zone ends and stops hurting (${ends} ends, ${ghosts} hits after)`);
+
+  // the save: a saved throw takes half, a failed one the full roll (3d8 at 3rd level: 24 at most, so halves are 12 or less)
+  let saved = 0, failed = 0, bigFail = 0, badHalf = 0;
+  for (let s = 1; s <= 6; s++) for (const e of ticks(fight([only('Cleric', 'Spirit Guardians', [0, 0, 1])], dummy('0', 2), s), 'Spirit Guardians')) {
+    const d = +(/, (\d+) damage/.exec(e.text) || [])[1];
+    if (/— saved/.test(e.text)) { saved++; if (d > 12) badHalf++; } else { failed++; if (d > 12) bigFail++; }
+  }
+  check(saved >= 5 && failed >= 5 && badHalf === 0 && bigFail >= 1, `a save halves the damage (${saved} saved, none over 12; ${failed} failed, ${bigFail} over 12)`);
+
+  // the creatures the Cleric spares aren't hurt, though they stand in the emanation
+  let spared = 0, hurtAlly = 0, foeHits = 0;
+  for (let s = 1; s <= 4; s++) {
+    const fighter = cp(ctx.CB.find(b => b.name === 'Fighter')); fighter.hp = fighter.maxHp = 300;
+    const r = fight([only('Cleric', 'Spirit Guardians', [0, 0, 1]), fighter], dummy('0', 0), s);
+    hurtAlly += r.events.filter(e => e.kind === 'save' && /^Cleric → Fighter/.test(e.text)).length;
+    foeHits += ticks(r, 'Spirit Guardians').length;
+    if (r.events.some(e => e.kind === 'aoe' && /Spirit Guardians/.test(e.text))) spared++;
+  }
+  check(spared === 4 && foeHits >= 12 && hurtAlly === 0, `Spirit Guardians spares the Fighter beside the Cleric (${hurtAlly} hits on it, ${foeHits} on foes)`);
+
+  // Moonbeam: the caster's action moves it, with no new slot (one 2nd-level slot, several casts), and it keeps hurting
+  let moved = 0, recasts = 0, hits = 0;
+  for (const ai of [undefined, 'v2']) for (let s = 1; s <= 4; s++) {
+    const r = fight([only('Druid', 'Moonbeam', [0, 1])], dummy('0', 0), s, ai);
+    recasts += r.events.filter(e => e.kind === 'aoe' && /Moonbeam/.test(e.text)).length;
+    moved += r.events.filter(e => e.kind === 'zoneEnd' && /Moonbeam.* moves/.test(e.text)).length;
+    hits += ticks(r, 'Moonbeam', 'Druid').length;
+  }
+  check(recasts >= 16 && moved >= 8, `Moonbeam is moved by a free action with no new slot (${recasts} casts and ${moved} moves in 8 fights with one slot)`);
+  check(hits > recasts, `…and it also hurts at the start of the foes' turns (${hits} hits)`);
+
+  // the zone ends at its duration
+  let gone = 0, late = 0;
+  for (let s = 1; s <= 4; s++) {
+    const r = fight([only('Cleric', 'Spirit Guardians', [0, 0, 1], 2)], dummy('0', 0), s);
+    const end = r.events.find(e => e.kind === 'zoneEnd' && /Spirit Guardians fades/.test(e.text));
+    if (end && end.round === 3) gone++;
+    late += ticks(r, 'Spirit Guardians').filter(e => e.round >= 3).length;
+  }
+  check(gone === 4 && late === 0, `a 2-round zone cast in round 1 fades at the start of round 3 and stops hurting (${gone} of 4 fades, ${late} late hits)`);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

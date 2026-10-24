@@ -959,6 +959,8 @@ Sim.prototype.slotFor = function (u, level) {
 Sim.prototype.usable = function (u, a) {
   if (a._spell) {
     if (!a._spell.level) return true;
+    if (this.sustaining(u, a)) return true;                                                  // moving Moonbeam, another Call Lightning bolt: no new slot
+    if (a._spell.conc && a.ext && a.ext.zone && a.ext.zone.dmg && u.concentrating === a.id && (this.zones || []).some(z => z.src === u.uid && z.id === a.id)) return false;   // it's already up
     if (a.actionSlot !== 4 && u.slotTurn === u.turnNo && this.current === u) return false;   // one spell slot per turn (2024 rules)
     if (a.actionSlot === 1 && u.reserveSlot) return false;                                  // the action is going to need it
     return this.slotFor(u, a._spell.level) > 0;
@@ -971,9 +973,14 @@ Sim.prototype.usable = function (u, a) {
   if (k === 'recharge') return u.recharge.get(a.id) !== false;
   return (u.uses.get(a.id) || 0) > 0;
 };
+/* a concentration spell the caster is already holding that its action re-uses for free (ext.sustain), within its duration */
+Sim.prototype.sustaining = function (u, a) {
+  return !!(a._spell && a._spell.conc && a.ext && a.ext.sustain && u.concentrating === a.id && this.round <= (u.concUntil || 0));
+};
 Sim.prototype.spend = function (u, a) {
   u.usedThisFight.add(a.id);
   if (a.ext && a.ext.pool) return;       // dice are taken from the pool when the healing is rolled
+  if (a._spell && this.sustaining(u, a)) { u.castAt = 0; u.castLevel = u.concLevel || a._spell.level; return; }
   if (a._spell) {
     u.castLevel = a._spell.level;
     if (a._spell.level) {
@@ -983,7 +990,7 @@ Sim.prototype.spend = function (u, a) {
       if (l > 0) { u.slots[l - 1]--; u.castLevel = l; }
       if (this.current === u) u.slotTurn = u.turnNo;
     }
-    if (a._spell.conc) { this.endConcentration(u, 'casts ' + a.name); u.concentrating = a.id; }
+    if (a._spell.conc) { this.endConcentration(u, 'casts ' + a.name); u.concentrating = a.id; u.concLevel = u.castLevel; u.concUntil = this.round + ((a.ext && a.ext.hold) || 100) - 1; }
     return;
   }
   if (a.ext && a.ext.resource) u.uses.set('res:' + a.ext.resource, Math.max(0, (u.uses.get('res:' + a.ext.resource) || 0) - (a.ext.resourceCost || 1)));
@@ -1461,7 +1468,7 @@ Sim.prototype.concValue = function (u, t) {
     for (const b of o.buffs) if (b.src === t.uid && b.id === id) v += o.team === u.team ? this.effectValue(b.data, o, true) : this.effectValue(b.data, o, false, u) * 0.6;
   }
   if (t.buffs.some(b => b.id === id && b.src === t.uid)) v += 5;
-  for (const z of this.zones || []) if (z.src === t.uid && z.conc) for (const o of this.alliesOf(u)) if (o.onBoard && this.alive(o) && z.cells.has(o.x + o.y * this.W)) v += 3;
+  for (const z of this.zones || []) if (z.src === t.uid && z.conc) for (const o of this.alliesOf(u)) if (o.onBoard && this.alive(o) && this.zoneCells(z).has(o.x + o.y * this.W)) v += 3;
   return v;
 };
 /* the value of putting buff/debuff `b` on `t` (tactical) */
@@ -2174,6 +2181,7 @@ Sim.prototype.moveAlong = function (u, path) {
     u._steps = (u._steps || 0) + (rough ? 2 : 1) + (u.fly || (u.climb && Math.abs(rise) >= 2) ? 0 : (Math.abs(rise) >= 2 ? Math.abs(rise) : Math.max(0, rise)));
   }
   flush();
+  this.zoneEnter(u);
   for (const o of this.units) if (o.team !== u.team && o.onBoard && this.isHidden(o) && this.dist(u, o) <= 5 && !this.incap(u)) {
     this.dropBuffs(o, b => b.expiry === 'hide');
     this.ev('effect', `${u.name} finds ${o.name}`, { uid: u.uid, target: o.uid });
@@ -2412,11 +2420,67 @@ Sim.prototype.applyZones = function () {
   T.any = T.any || (this.zones || []).length > 0;
   this.boardChanged();
 };
+/* ----- damage zones (ext.zone.dmg): Spirit Guardians, Moonbeam, Wall of Fire… hurt whoever is in them as the rounds go by.
+   A creature takes the spell's save-for-damage when it starts its turn in the zone or moves into it (or the zone moves onto it),
+   at most once a round per zone; the cast itself counts as that round's hit. A zone with ext.zone.follow moves with its caster;
+   it ends when concentration does, or after ext.hold rounds ----- */
+Sim.prototype.zoneCells = function (z) {
+  if (!z.follow) return z.cells;
+  const s = this.byId[z.src];
+  if (!s || s.x === undefined) return z.cells;
+  const key = s.x + ',' + s.y;
+  if (z._at !== key) { z._at = key; z._cells = new Set(areaCells(z.spec, s.x, s.y, s.x, s.y, this.W, this.H).map(c => c[0] + c[1] * this.W)); }
+  return z._cells;
+};
+Sim.prototype.zoneHit = function (z, t) {
+  const s = this.byId[z.src];
+  if (!s || t.dead || !t.onBoard || z.hit[t.uid] === this.round) return;
+  if (z.spare && t.team === s.team) return;            // the creatures the caster picked to spare
+  z.hit[t.uid] = this.round;
+  let act = z.act;
+  if (act.riderEffect && t.buffs.some(b => b.id === act.id && b.src === s.uid)) act = Object.assign({}, act, { riderEffect: null });   // already held
+  const at = this.mark(), keepC = this._coverFrom;
+  this._coverFrom = null;
+  try { this.resolveAttackAction(s, act, [t], { aura: true }); } finally { this._coverFrom = keepC; }
+  this.hoist(at);
+};
+/* start of u's turn */
+Sim.prototype.zoneTick = function (u) {
+  if (!this.zones || !this.zones.length || !u.onBoard) return;
+  for (const z of this.zones.slice()) if (z.dmg && !u.dead && this.zoneCells(z).has(u.x + u.y * this.W)) this.zoneHit(z, u);
+};
+/* after u has moved: it walked into a zone, or it is the caster and its zone has moved onto others */
+Sim.prototype.zoneEnter = function (u) {
+  if (!this.zones || !this.zones.length) return;
+  for (const z of this.zones.slice()) {
+    if (!z.dmg) continue;
+    if (z.follow && z.src === u.uid) {
+      this.zoneShift(z);
+      for (const o of this.units.slice()) if (o !== u && o.onBoard && !o.dead && this.zoneCells(z).has(o.x + o.y * this.W)) this.zoneHit(z, o);
+    } else if (!u.dead && u.onBoard && this.zoneCells(z).has(u.x + u.y * this.W)) this.zoneHit(z, u);
+  }
+};
+Sim.prototype.zoneShift = function (z) {
+  if (!this.record) return;
+  const cells = [...this.zoneCells(z)];
+  this.ev('zoneEnd', `${z.name} moves`, { uid: z.src, zid: z.zid });
+  z.zid = this.zoneSeq = (this.zoneSeq || 0) + 1;
+  this.ev('zone', `${z.name} follows its caster`, { uid: z.src, zid: z.zid, cells: cells.map(i => [i % this.W, (i / this.W) | 0]), zkind: 'dmg' });
+};
+/* a damage zone whose duration has run out */
+Sim.prototype.expireZones = function () {
+  for (const z of (this.zones || []).slice()) {
+    if (!z.dmg || this.round <= z.until) continue;
+    const s = this.byId[z.src];
+    if (s && s.concentrating === z.id) this.endConcentration(s, 'the spell runs out');
+    else if (this.zones.includes(z)) { this.zones = this.zones.filter(x => x !== z); this.ev('zoneEnd', `${z.name} fades`, { uid: z.src, zid: z.zid }); this.applyZones(); }
+  }
+};
 Sim.prototype.endConcentration = function (u, why) {
   if (!u.concentrating) return;
   const id = u.concentrating;
   if ((this.zones || []).some(z => z.src === u.uid && z.id === id)) {
-    this.zones.filter(z => z.src === u.uid && z.id === id).forEach(z => this.ev('zoneEnd', `the ${z.fog ? 'fog' : 'difficult ground'} fades`, { uid: u.uid, zid: z.zid }));
+    this.zones.filter(z => z.src === u.uid && z.id === id).forEach(z => this.ev('zoneEnd', z.dmg ? `${z.name} fades` : `the ${z.fog ? 'fog' : 'difficult ground'} fades`, { uid: u.uid, zid: z.zid }));
     this.zones = this.zones.filter(z => !(z.src === u.uid && z.id === id)); this.applyZones();
   }
   u.concentrating = null;
@@ -2785,9 +2849,17 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
     this.zones = this.zones.filter(z => !(z.src === u.uid && z.id === a.id));
     old.forEach(z => this.ev('zoneEnd', `${a.name} moves`, { uid: u.uid, zid: z.zid }));
     const zid = this.zoneSeq = (this.zoneSeq || 0) + 1;
-    this.zones.push({ zid, src: u.uid, id: a.id, cells, rough: !!a.ext.zone.difficult, fog: !!a.ext.zone.fog, conc: !!(a._spell && a._spell.conc) });
+    const zn = { zid, src: u.uid, id: a.id, cells, rough: !!a.ext.zone.difficult, fog: !!a.ext.zone.fog, conc: !!(a._spell && a._spell.conc) };
+    if (a.ext.zone.dmg && a.useSaves) {
+      const ar = plan.area;
+      Object.assign(zn, { dmg: true, follow: !!a.ext.zone.follow, spec: { shape: ar.shape, size: ar.size, explicit: true, square: !!ar.square }, act: a,
+        spare: !!(a.ext.area && a.ext.area.selective), name: a.name.replace(/ \(L\d\)$/, ''), hit: {},
+        until: a._spell && a._spell.conc && u.concentrating === a.id && u.concUntil ? u.concUntil : this.round + ((a.ext.hold) || 10) - 1 });
+      for (const t of targets) zn.hit[t.uid] = this.round;
+    }
+    this.zones.push(zn);
     this.applyZones();
-    this._pendingZone = { zid, cells: [...cells].map(i => [i % this.W, (i / this.W) | 0]), zkind: a.ext.zone.fog ? 'fog' : 'rough', name: a.name, uid: u.uid };
+    this._pendingZone = { zid, cells: [...cells].map(i => [i % this.W, (i / this.W) | 0]), zkind: a.ext.zone.fog ? 'fog' : zn.dmg ? 'dmg' : 'rough', name: a.name, uid: u.uid };
   }
   if (plan.area && this.record) {
     const ar = plan.area;
@@ -2797,7 +2869,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   }
   if (this._pendingZone) {
     const z = this._pendingZone; this._pendingZone = null;
-    this.ev('zone', z.zkind === 'fog' ? `${z.name} fills the area: nobody sees into or out of it` : `${z.name} turns the ground into difficult terrain`, { uid: z.uid, zid: z.zid, cells: z.cells, zkind: z.zkind });
+    this.ev('zone', z.zkind === 'fog' ? `${z.name} fills the area: nobody sees into or out of it` : z.zkind === 'dmg' ? `${z.name} lingers: it hurts whoever starts a turn in it or walks in` : `${z.name} turns the ground into difficult terrain`, { uid: z.uid, zid: z.zid, cells: z.cells, zkind: z.zkind });
   }
   if (a.ext && a.ext.zone && a.ext.zone.fog) return true;
   // cover against Dexterity saves is measured from where the effect comes from: a burst's point, else the caster
@@ -2995,6 +3067,7 @@ const AI_BASE = {
     heal: 1, healLow: 1.4, healDanger: 0.8, revive: 15, reviveRounds: 0.6,   // HP back (more under half), a heal that keeps it standing; a downed ally back up
     buff: 1, zone: 2,                                            // buffs on allies (per round × rounds); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
+    zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
@@ -3070,7 +3143,7 @@ function castCopy(a, L) {
 /* the slot levels worth weighing for a spell: its lowest free slot, and up to two higher ones when upcasting adds something.
    [0] for anything that takes no slot, [] when it can't be cast */
 Sim.prototype.v2CastLevels = function (u, a) {
-  if (!(a._spell && a._spell.level)) return [0];
+  if (!(a._spell && a._spell.level) || this.sustaining(u, a)) return [0];
   const L0 = this.slotFor(u, a._spell.level);
   if (L0 < 0) return [];
   const out = [L0];
@@ -3395,6 +3468,12 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
       const f = u.actions.find(o => o.ext && o.ext.requiresBuff === gb.id && o.type === 'atk');
       if (f) val += Math.min(this.expected(u, f, t), tHp + W.overkill) * Math.max(0, ctx.rounds - 1) * W.concKeep;
     }
+    // a damage zone (Spirit Guardians, Moonbeam…) hurts again each round the foe stays in it
+    const zd = a.useSaves && a.ext && a.ext.zone && a.ext.zone.dmg;
+    if (zd && exp < tHp + W.overkill) {
+      const n = Math.max(0, Math.min(a.ext.hold || 10, ctx.rounds) - 1) * Math.min(1, W.zoneStay + (a.ext.zone.follow ? W.zoneFollow : 0)) * W.concKeep;
+      val += Math.min(exp * n, Math.max(0, tHp - exp) + W.overkill) * (1 + tDpr / W.dprScale) * W.damage;
+    }
     if (bare) {
       // what an area adds on a creature besides its target: no targeting bonuses, but don't wake what we put to sleep
       if (t.buffs.some(b => b.endsOnDamage) && this.incap(t) && pKill < 0.5) val -= 6 + tDpr * 1.5;
@@ -3505,6 +3584,7 @@ Sim.prototype.v2Holding = function (u, ctx) {
     if (z.src !== u.uid || z.id !== id) continue;
     if (z.rough) v += W.zone;
     if (z.fog) for (const e of ctx.foes) if (z.cells.has(e.x + e.y * this.W)) v += this.kDpr(u, e) * 0.5;
+    if (z.dmg) for (const e of ctx.foes) if (this.zoneCells(z).has(e.x + e.y * this.W)) v += Math.min(this.expected(u, z.act, e), this.kHp(u, e)) * (1 + this.kDpr(u, e) / W.dprScale) * W.damage * Math.min(1, W.zoneStay + (z.follow ? W.zoneFollow : 0)) * R;
   }
   ctx.holdId = id; ctx.holding = v;
   return v;
@@ -3547,7 +3627,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       const act = castCopy(a, L);
       const pl = { a, act, castL: L, slot: L > 0, pool, range: Math.max(5, a._range || 5), self, ally: !self && (a.type === 'heal' || a.type === 'buff'), n: act.targets || 1,
                    area: !!sp, sphere: !!sp && sp.shape === 'sphere', fog: !!(a.ext && a.ext.zone && a.ext.zone.fog), fogC: new Map(),
-                   pace: this.v2Pace(u, a, L), conc: a._spell && a._spell.conc && u.concentrating ? W.concSwap * holding : 0,
+                   pace: this.v2Pace(u, a, L), conc: a._spell && a._spell.conc && u.concentrating && !this.sustaining(u, a) ? W.concSwap * holding : 0,
                    vals: new Map(), bare: null, multi: new Map() };
       for (const t of pool) pl.vals.set(t.uid, this.v2Value(u, act, t, ctx));
       if (pl.self && !(pl.vals.get(u.uid).val > 0)) continue;
@@ -3977,6 +4057,8 @@ Sim.prototype.turn = function (u) {
     this.ev('digest', `${u.name} takes ${d} damage from ${b.name}`, { uid: u.uid, target: u.uid, dmg: d });
     this.hoist(at);
   }
+  this.zoneTick(u);
+  if (u.dead) return;
   if (this.incap(u)) this.dropBuffs(u, b => b.endsOnIncap);
   u.mauling = u.ai === 'beast' && this.R() < 0.05;
   for (const x of this.units) this.dropBuffs(x, b => b.src === u.uid && b.expiry === '1 round');
@@ -4458,6 +4540,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   for (const u of this.order) if (this.alive(u)) this.trigger(u, -3, null);
   while (this.round <= this.maxRounds && !this.over()) {
     this.ev('round', `Round ${this.round}`, {});
+    this.expireZones();
     this.lair();
     for (const u of this.order) {
       if (this.over()) break;
