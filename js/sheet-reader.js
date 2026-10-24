@@ -44,7 +44,6 @@ const WEAPONS = {
 };
 // spells the spell data has no entry for but a party member often relies on (built the way tools/build-party.js builds them)
 const CUSTOM = {
-  'misty step': { level: 2, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: { teleport: 30, wtOnly: true } },
   'divine smite': { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0 } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
 };

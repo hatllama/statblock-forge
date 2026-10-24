@@ -79,6 +79,7 @@ const S = {
   'hold person':      { L: 2, k: 'debuff', sv: 'wis', c: true, r: 60, t: 1, ut: 1, types: ['humanoid'], b: { duration: 'repeat the save each round', condition: 'Paralyzed' } },
   "melf's acid arrow": { L: 2, k: 'atk', d: '4d4 + 2d4', r: 90, u: '1d4' },
   'acid arrow':       { L: 2, k: 'atk', d: '4d4 + 2d4', r: 90, u: '1d4' },
+  'misty step':       { L: 2, k: 'buff', bonus: true, tg: 'self', b: { duration: '1 round' }, e: { teleport: 30, wtOnly: true } },
   'mirror image':     { L: 2, k: 'buff', tg: 'self', b: { duration: 'entire encounter', damageTakenMultiplier: 0.29 }, e: { mirror: 3 } },
   'moonbeam':         { L: 2, k: 'save', d: '2d10', sv: 'con', h: true, c: true, a: ['sphere', 5], r: 120, t: 1, u: '1d10', e: { zone: { dmg: true }, hold: 10, sustain: true } },
   'phantasmal force': { L: 2, k: 'save', d: '4d8', sv: 'int', c: true, r: 60, t: 1, e: { wtDpr: '2d8', dot: { dice: '2d8' } } },
