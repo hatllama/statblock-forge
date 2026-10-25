@@ -209,6 +209,79 @@ exactly as before. Caster defaults live in `AI_BASE.w` (`ctlRound`, `lull`, `leg
 Healing Word", "tries to Hold the Ogre, the biggest threat", "keeps concentrating on Hypnotic Pattern", "teleports out
 of reach with Misty Step".
 
+### Legendary Resistance and the burn plan (step 2.6)
+
+**The strategy.** A boss with Legendary Resistance (LR, usually 3 a day) turns a failed save into a success. A party can
+spend its cheaper control effects on the save the boss is bad at, force the LR out, and land a strong follow-up (Hold
+Monster, Banishment, a big Hypnotic Pattern…) that would have been wasted. It is a judgment call between *burn* and
+*race its HP*. It fails when the boss's saves are high across the board, when the party has few cheap effects, when damage
+ends the fight first, and when the rounds spent burning cost too much incoming damage.
+
+**The monster side (a rule, unchanged).** `saveRoll` already decides LR as a DM would, from the incoming effect (which
+is public): it spends a use only when failing is *dangerous* — a disabling or crippling condition (`DANGER_CONDS`:
+incapacitated, paralysed, stunned, unconscious, petrified, restrained, blinded, frightened, disadvantage on attacks and
+saves), or damage that would drop it or take 10% of its maximum (25% of what it has left). It accepts everything else
+(Bane, a Vicious Mockery, a plain Fireball). Rolls use the real numbers. So an effect only burns LR if it would hurt;
+cheap harmless effects burn nothing. Step 2.6 changes no engine rule: logs with the flag off are identical, with or
+without LR. (One bookkeeping addition: a creature that fails a dangerous save with no LR to spend is marked as having
+none, `legNone`, which the other side's `kLegRes` reads.)
+
+**What the party knows (`kLegRes`).** Open: the real count left. Blind and learn: nothing is known until a use is
+seen; a **Huge or Gargantuan** creature is assumed to have the typical three (a boss-sized body) until it fails a
+dangerous save with nothing to spend (then it has none, and learn mode remembers that for the kind), and each use seen
+counts down from three (learn: or from the highest count seen on that kind earlier today). Smaller creatures are assumed to have none
+until one is seen. The weakest save comes from `kSave` per ability: open reads it, blind assumes +2 (average) for every
+ability, learn infers it from the saves seen (`learnSave`). So blind can only burn on a guess of three and an average
+save, and learn finds the weak ability by casting at it.
+
+**The plan** (`v2Burn`, once per turn per side, cached; the posture layer's fight-level decision). It looks at the
+boss with LR left (the one with most HP if several) and compares two estimates, in points of damage the party takes:
+
+- **Race.** `H / P` rounds: `kHp` over the party's damage per round `P` (each member's best `expected` attack against
+  the boss, so `kAc` and `kMult` apply; a slot spell counts 0.7, everything × `burn.eff` 0.75 for rounds lost to moving
+  and support), times the boss's damage per round `D`: `kDpr` × `burn.share`, × a spread for an area attack (`kAreas`),
+  and in open mode blended with what it has actually dealt this fight. Costs are squashed (`sat`) toward `burn.cap` × the
+  party's HP, so "everyone dies either way" does not look like a tie of two huge numbers.
+- **Burn.** The burners (below) cast instead of attacking; the others keep attacking and the boss keeps hitting.
+  Each burner forces out `pFail = 1 − (21 + kSave − DC)/20` uses a round, so `Rb ≈ LR / Σ pFail` rounds. Then one round for
+  the follow-up (the legal effect worth the most once LR is gone, by `v2Control` without the LR discount; ties go to the
+  dearer slot, since the cheap ones burn). It lands with its fail chance, and if it does the boss is out (or crippled) for
+  the rounds it should last (the save-each-round formula, × `concKeep`; `BURN_COND` says how much of its damage still comes and
+  how much harder we hit), after which it is a race for what is left; if not, a round was spent and it is a race. Slots are charged
+  at `burn.slotW` (0.5, because a race spends slots on damage too) × the pacing price (`v2Pace`).
+- It burns when `race × burn.bias > burn + slotW × slots + burn.margin`. Ties go to racing. Recomputed every turn, it flips to
+  racing as soon as the numbers flip (a streak of saves made, a burner downed or concentrating on something it holds
+  (`burn.hold`), the boss low) and when LR is empty there is nothing to plan and the follow-up is simply the best spell.
+- In learn mode, an ability whose save has not been seen on that kind yet is given `burn.probe` (3) of doubt in the cast's
+  favour, so the first cast finds out; once saves are seen `kSave` takes over. Blind never probes: average saves, three LR.
+
+**Roles are per creature, not a party switch.** A burner is a caster with a legal disabling effect that is not the follow-up
+and fails the save at least `burn.minFail` of the time, not holding a concentration worth more than `burn.hold`. Sorted by
+price (cantrip, then slot level, then `pFail`), they are taken until their `Σ pFail` covers the LR left. Martials and the
+caster holding the follow-up keep doing what they do. The follow-up is not cast while LR is left (it keeps the 0.2 discount).
+
+**Valuation.** In race mode, `v2Control` is unchanged: a disabling effect on a creature with LR left is worth `legRes`
+(0.2) × its normal value. In burn mode, for a burner and the effect the plan picked for it, the effect is worth what the
+burner gives up (the best other option it has, net of its price) plus its progress, `pFail × perLR × burn.value`, where
+`perLR` is what the whole burn saves (`race × bias − burn − margin`) shared out over the LR left. It is applied as a lift in
+`v2TurnInner`, so it competes with damage on equal terms and the burn spell then goes through the same pacing cost as any
+spell (cheapest first falls out of the burner order).
+
+Two valuation fixes came with it, because the follow-up has to rank right to be chosen: a control that damage can save
+the foe out of (Hideous Laughter, `ext.saveOnDamage`) is worth `shakeOff` (0.55) of its value, and Paralyzed/Unconscious is
+worth `critBoost` (1.3) × (hits up close crit). These apply to every v2 caster, with or without LR.
+
+**Profile.** `AI_BASE.burn = { bias, margin, minFail, hold, slotW, value, share, eff, cap, probe, minFollow }`, plain data.
+`controller` leans toward burning (`bias` 1.3), `artillery` toward racing (`bias` 0.75). `bias: 0` is the step 2.5 behaviour.
+
+**Intent lines.** "Cleric wants the party to burn the Adult Red Dragon's resistances first (3 left)" / "reckons the party
+should race the Adult Red Dragon's HP" (once per boss when first decided and again on a flip), and "Wizard burns the Adult Red
+Dragon's resistances with Tasha's Hideous Laughter" on each burn cast.
+
+**Not modelled** (so the plan is conservative): a martial's rider (Stunning Strike) also burns LR as it lands — it still
+does, it is just not counted; Counterspell-style cancels; the boss's allies. The harness (`tests/ai-compare.js`, scenarios B1–B6) has four
+arms on the same seeds, v1, v2 with `burn.bias` 0 (`v2-`), v2 (`v2+`), and v2 with the bias forced up (`v2!`, to show what burning would have cost or won).
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |

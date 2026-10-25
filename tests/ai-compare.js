@@ -262,6 +262,10 @@ const SCENARIOS = [
   { name: 'C-Default party (Fighter, Paladin, Cleric, Wizard, Rogue, Bard; the Paladin stays v1) vs hard-day.json', players: () => clone(D.PP), encounters: () => clone(fixture('hard-day.json').encounters), record: true, metrics: CASTER_METRICS },
   { name: "C-Zaki's party (druid, two warlocks, wizard, monk, rogue: all on v2) vs hard-day.json", players: () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players), encounters: () => clone(fixture('hard-day.json').encounters) },
 
+  // ---- step 2.5 check: lingering zones in long fights ----
+  { name: 'L-Long boss (400 HP Troll): Fighter, Rogue, Cleric, Druid', party: ['Fighter', 'Rogue', 'Cleric', 'Druid'], encounters: () => [{ monsters: [withHp(mon('Troll'), 400)] }], record: true, spells: true,
+    metrics: { 'SpiritG casts': r => casts(r).filter(c => c.spell === 'Spirit Guardians').length, 'Moonbeam casts': r => casts(r).filter(c => c.spell === 'Moonbeam').length } },
+
   // ---- caster dumb behaviors (seen with the old AI) ----
   { name: 'DUMB C1: slots spent on foes a cantrip drops, before the last fight (same day as C-Day)', party: ['Fighter', 'Wizard', 'Cleric', 'Bard'],
     encounters: () => [{ monsters: [mon('Goblin Warrior', 3)] }, { monsters: [mon('Ogre', 2)] }, { monsters: [mon('Bandit Captain'), mon('Bandit', 5)] }], record: true,
@@ -289,16 +293,74 @@ const SCENARIOS = [
   { name: 'A8: area control vs one big target: Bard + Fighter vs Bandit Captain + 4 Bandits', players: () => [pc('Bard'), pc('Fighter')], encounters: () => fights('Bandit Captain,Bandit*4/Ogre'), only0: true, record: true, spells: true, metrics: CASTER_METRICS },
 ];
 
+/* ---- step 2.6: burn the boss's Legendary Resistance, or race its HP (docs/ai-v2.md) ----
+   Three arms on the same seeds: the old AI (v1), v2 without the burn plan (burn.bias 0 = the step 2.5 behavior), v2 with it. */
+const lrBurned = r => r.events.filter(e => /uses Legendary Resistance/.test(e.text || '')).length;
+const saidIn = re => r => r.events.some(e => e.kind === 'intent' && re.test(e.text || '')) ? 1 : 0;
+const BURN_METRICS = {
+  'LR burned': lrBurned,
+  'burn plan': saidIn(/wants the party to burn/),
+  'race plan': saidIn(/reckons the party should race/),
+  'slot lvls': r => slotsSpent(r),
+  'boss down': r => r.units.filter(u => u.team === 'foes').every(u => { let last; for (const e of r.events) if (e.state && e.state[u.uid]) last = e.state[u.uid]; return last && (last.dead || last.hp <= 0); }) ? 1 : 0,
+};
+// an adult dragon: LR uses, and the save bonuses (one number for all of them, or wis alone). A level-5 party can't
+// survive the real CR 17 dragon (its breath alone is 60 damage on four targets), so its damage is scaled down to DRAGON_DMG
+const DRAGON_DMG = 0.35;
+const dragon = (lr, saves, hp, dmg) => {
+  const m = mon('Adult Red Dragon');
+  for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(avgOf(a.dpr) * (dmg || DRAGON_DMG)));
+  m.ext.legendaryResistance = lr;
+  m.ext.fly = 0; m.ext.hover = false;      // fights on the ground (a flyer out of the martials' reach is a different test)
+  m.ext.saves = Object.assign({}, m.ext.saves, saves);
+  if (hp) m.hp = hp;
+  m.name = 'Adult Red Dragon';
+  return m;
+};
+const avgOf = expr => Tac.avgDice(expr);
+const ALL = v => ({ str: v, dex: v, con: v, int: v, wis: v, cha: v });
+// the Cleric also has Command (1st level, Wisdom, a cheap effect to burn with); the Wizard has Hideous Laughter and Hold Person
+// the Wizard also has a scroll's worth of Hold Monster (a 5th-level slot): Hold Person for any creature, the strong follow-up
+const holdMonster = w => {
+  const hp = w.ext.spellbook.spells.find(s => s.name === 'Hold Person'), hm = clone(hp);
+  hm.name = 'Hold Monster'; hm.level = 5; hm.id = 'c5-wizard-holdmonster'; hm.ext.range = 90; delete hm.ext.targetTypes; delete hm.upcastTargets;
+  w.ext.spellbook.spells.push(hm); w.ext.spellbook.slots[4] = 1;
+  return w;
+};
+const clericCmd = () => { const c = pc('Cleric'), cmd = clone(D.CB.find(x => x.name === 'Paladin').ext.spellbook.spells.find(x => x.name === 'Command')); cmd.id = 'c5-cleric-command'; c.ext.spellbook.spells.push(cmd); return c; };
+const burnParty = () => [pc('Fighter'), pc('Barbarian'), holdMonster(pc('Wizard')), clericCmd()];
+const bigHitters = () => { const a = pc('Fighter'), b = pc('Barbarian'); for (const x of [a, b]) x.actions.forEach(k => { if (k.dpr) k.dpr = k.dpr + ' + 12'; }); return [a, b, holdMonster(pc('Wizard')), clericCmd()]; };
+const BURN_SCENARIOS = [
+  { name: 'B1: adult dragon, 3 LR, Wisdom -1 (the rest +7); Fighter, Barbarian, Wizard, Cleric', players: burnParty, encounters: () => [{ monsters: [dragon(3, { wis: -1 })] }] },
+  { name: 'B2: the same dragon with +14 saves across the board', players: burnParty, encounters: () => [{ monsters: [dragon(3, ALL(14))] }] },
+  { name: 'B3: the dragon with 1 LR (Wisdom -1)', players: burnParty, encounters: () => [{ monsters: [dragon(1, { wis: -1 })] }] },
+  { name: 'B4: 3 LR, Wisdom -1, but a damage-heavy party (+12 per attack) drops it in about two rounds', players: bigHitters, encounters: () => [{ monsters: [dragon(3, { wis: -1 })] }] },
+  { name: 'B5 open: as B1 with the dragon hitting at 0.25 (so a blind party has a fight); the party reads the truth', players: burnParty, know: { party: 'open' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'B5 blind: the same; it can only guess three LR and +2 saves', players: burnParty, know: { party: 'blind' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'B5 learn: the same; it probes the save, counts LR as they go', players: burnParty, know: { party: 'learn' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'B6: a day, the dragon last (goblins / ogres / dragon, Wisdom -1)', players: burnParty, encounters: () => [{ monsters: [mon('Goblin Warrior', 4)] }, { monsters: [mon('Ogre', 2)] }, { monsters: [dragon(3, { wis: -1 })] }] },
+];
+function playBurn(sc, N) {
+  const noBurn = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { bias: 0 } }; });
+  const forced = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { bias: 30 } }; });   // always burns when it can: shows what burning costs or wins
+  const arms = [['v1', undefined, null], ['v2-', { party: 'v2' }, noBurn], ['v2+', { party: 'v2' }, null], ['v2!', { party: 'v2' }, forced]];
+  const cs = Object.assign({ record: true, metrics: BURN_METRICS }, sc);
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('AI', 4), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BURN_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+  for (const [label, ai, tw] of arms) console.log(row(label, play(cs, ai, N, tw)));
+}
+
 /* ---- running ---- */
-function play(sc, ai, n) {
+function play(sc, ai, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
   const t0 = Date.now();
   for (let i = 0; i < n; i++) {
     const seed = (1000 + i * 7919) >>> 0;
     const encounters = sc.encounters ? sc.encounters() : fights(sc.day);
     const players = sc.players ? sc.players() : sc.party.map(pc);
+    if (tweak) tweak(players);
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts });
+    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);
@@ -331,6 +393,7 @@ const N = Math.max(1, parseInt(process.argv[2], 10) || 200);
 const only = process.argv[3] ? new RegExp(process.argv[3], 'i') : null;
 console.log(`Old AI (v1) vs AI v2 for the party, ${N} seeded runs per scenario. Per day: win = won every fight; rounds, PC deaths, damage dealt and taken by the party; ms per day.`);
 const spellLine = o => Array.from(o.spells).sort((p, q) => q[1] - p[1]).slice(0, 6).map(([k, v]) => `${k} ${(v / o.n).toFixed(2)}`).join(', ');
+for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };

@@ -571,6 +571,41 @@ section('Character sheets');
   const lrBoss = Tac.expandTeam([gl], 'foes', false)[0], hero = Tac.expandTeam([pc('Wizard')], 'party', true)[0];
   const blind0 = kS.kLegRes(hero, lrBoss); lrBoss.legSeen = 1; lrBoss.uses.set('__legres', 2);
   check(new Tac.Sim({ seed: 1 }).kLegRes(hero, lrBoss) === 2 && blind0 === 0 && kS.kLegRes(hero, lrBoss) === 2, 'kLegRes: the real count in open mode; unseen, then counted down once used, when blind');
+  // a boss-sized body is assumed to have the usual three until it fails a dangerous save with none to spend (learn remembers that per kind)
+  const dr = srd('Adult Red Dragon'); dr.ext.legendaryResistance = 0;
+  const bigFoe = Tac.expandTeam([dr], 'foes', false)[0];
+  const lS = new Tac.Sim({ seed: 1, know: { party: 'learn' } }), g0 = kS.kLegRes(hero, bigFoe), l0 = lS.kLegRes(hero, bigFoe);
+  bigFoe.legNone = true; lS.kind('party', bigFoe).legNone = true;
+  const bigFoe2 = Tac.expandTeam([dr], 'foes', false)[0];
+  check(g0 === 3 && l0 === 3 && kS.kLegRes(hero, bigFoe) === 0 && lS.kLegRes(hero, bigFoe2) === 0 && new Tac.Sim({ seed: 1 }).kLegRes(hero, bigFoe) === 0,
+    `kLegRes: a Huge unknown assumed to have 3 (${g0}, ${l0}); none once it failed a dangerous save without; the real 0 in open mode`);
+
+  // burn the dragon's Legendary Resistance or race its HP (docs/ai-v2.md): the plan follows the numbers
+  {
+    const dragon = (lr, wis) => { const d = srd('Adult Red Dragon'); d.ext.legendaryResistance = lr; d.ext.fly = 0; d.ext.saves = Object.assign({}, d.ext.saves, wis === 'all' ? { str: 14, dex: 14, con: 14, int: 14, wis: 14, cha: 14 } : { wis }); d.actions.forEach(a => { if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.35)); }); return d; };
+    const party = () => {
+      const w = pc('Wizard'), hm = cp(w.ext.spellbook.spells.find(s => s.name === 'Hold Person')), c = pc('Cleric'), cmd = cp(pc('Paladin').ext.spellbook.spells.find(s => s.name === 'Command'));
+      hm.name = 'Hold Monster'; hm.level = 5; hm.id = 'hm'; delete hm.ext.targetTypes; w.ext.spellbook.spells.push(hm); w.ext.spellbook.slots[4] = 1;
+      cmd.id = 'cmd'; c.ext.spellbook.spells.push(cmd);
+      return [pc('Fighter'), pc('Barbarian'), w, c];
+    };
+    const tally = (boss, bias) => {
+      const t = { burn: 0, race: 0, lr: 0, n: 6 };
+      for (let i = 0; i < t.n; i++) {
+        const pl = party(); if (bias !== undefined) pl.forEach(p => { p.ext.aiProfile = { burn: { bias } }; });
+        for (const r of run({ players: pl, encounters: [{ monsters: [boss()] }] }, { seed: 900 + i * 13, ai: { party: 'v2' }, record: true })) {
+          if (r.events.some(e => e.kind === 'intent' && /wants the party to burn/.test(e.text))) t.burn++;
+          if (r.events.some(e => e.kind === 'intent' && /reckons the party should race/.test(e.text))) t.race++;
+          t.lr += r.events.filter(e => /uses Legendary Resistance/.test(e.text || '')).length;
+        }
+      }
+      return t;
+    };
+    const weak = tally(() => dragon(3, -1)), tough = tally(() => dragon(3, 'all')), off = tally(() => dragon(3, -1), 0), forced = tally(() => dragon(3, -1), 30);
+    check(weak.burn >= 3 && weak.lr >= weak.n * 0.5, `a dragon with a poor Wisdom save: the party plans a burn (${weak.burn}/${weak.n} days) and burns Legendary Resistance (${weak.lr} uses)`);
+    check(tough.burn === 0 && tough.race === tough.n && tough.lr === 0, `high saves all round: it races, nothing is burned (${JSON.stringify(tough)})`);
+    check(off.burn === 0 && off.lr < forced.lr, `burn.bias 0 never plans a burn (${off.lr} uses against ${forced.lr} when forced)`);
+  }
 
   // caster-heavy days on v2: the same rule checks as above, slots never below zero, little friendly fire, sane odds
   const cday = () => ({ players: ['Fighter', 'Wizard', 'Cleric', 'Sorcerer', 'Bard', 'Druid', 'Warlock'].map(pc),

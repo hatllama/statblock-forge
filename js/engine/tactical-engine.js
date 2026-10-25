@@ -1321,11 +1321,15 @@ Sim.prototype.kCaster = function (u, t) {
   const m = this.kOf(u, t); if (!m) return !!t.hasSpells;
   return !!t.seenCaster || (m === 'learn' && this.kind(u.team, t).caster);
 };
-/* Legendary Resistance uses t has left, as u's side reckons it: seen ones count down from the usual 3 */
+/* Legendary Resistance uses t has left, as u's side reckons it: seen ones count down from the usual 3 (or the most seen on
+   that kind today, learn). Before any is seen, a Huge or Gargantuan creature is assumed to have the usual 3 (a boss-sized
+   body), until it fails a dangerous save with nothing to spend (legNone, remembered per kind in learn); smaller ones, none. */
 Sim.prototype.kLegRes = function (u, t) {
   const m = this.kOf(u, t); if (!m) return t.legResMax ? (t.uses.get('__legres') || 0) : 0;
-  const known = m === 'learn' ? (this.kind(u.team, t).legRes || 0) : 0, seen = t.legSeen || 0;
-  return seen || known ? Math.max(0, Math.max(3, known) - seen) : 0;
+  const k = m === 'learn' ? this.kind(u.team, t) : null, known = k ? (k.legRes || 0) : 0, seen = t.legSeen || 0;
+  if (seen || known) return Math.max(0, Math.max(3, known) - seen);
+  if (t.legNone || (k && k.legNone)) return 0;
+  return sizeIdx(t.size, 2) >= 4 ? 3 : 0;
 };
 Sim.prototype.kReach = function (u, t) {
   const m = this.kOf(u, t); if (!m) return null;
@@ -2248,6 +2252,11 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
     this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
   }
+  // failed a dangerous save with no Legendary Resistance to spend: the other side can see it has none
+  if (total < dc && dc < 99 && dangerous && !t.legResMax) {
+    t.legNone = true;
+    if (this.learning(otherTeam(t.team))) this.kind(otherTeam(t.team), t).legNone = true;
+  }
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };
 };
 
@@ -3063,13 +3072,16 @@ const AI_BASE = {
     recover: 6, recklessRisk: 0.8, recklessDrop: 3,              // self-heal when hurt; Reckless: extra hits taken, × recklessDrop if they could drop it
     // casters (step 2) and anything that heals, buffs or controls
     area: 1, ffValue: 1,                                         // the others an area catches (bare value each); friendly fire, × the ally's DPR weight
-    ctlRound: 0.5, lull: 0.6, legRes: 0.2, concKeep: 0.75,       // control: one round's worth × rounds; damage ends it; a save bought off; holding it that long
+    ctlRound: 0.5, lull: 0.6, legRes: 0.2, concKeep: 0.75, shakeOff: 0.55, critBoost: 1.3,
+    // control: one round's worth × rounds; damage ends it; a save bought off; holding it that long; a hold that damage can save it out of (Laughter); paralysed, so hits up close crit
     heal: 1, healLow: 1.4, healDanger: 0.8, revive: 15, reviveRounds: 0.6,   // HP back (more under half), a heal that keeps it standing; a downed ally back up
     buff: 1, zone: 2,                                            // buffs on allies (per round × rounds); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
+  // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
+  burn: { bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2 },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
             slot: 8, slotUp: 0.35, slotEasyTax: 0.7 },           // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
@@ -3084,8 +3096,8 @@ const AI_PRESETS = {
   berserker: { posture: { retreatHp: 0, recoverHp: 0.25 }, w: { risk: 0.1, riskRanged: 0.3, hurt: 0, oa: 0.3, progress: 0.8 }, pacing: { costPerUse: 0.02, overTax: 0.2, easyFight: 1, easyTax: 0.1 }, reckless: 'always' },
   skirmisher: { w: { risk: 0.7, riskRanged: 1.2, meleeShoot: 0.5, oa: 1.5, hide: 0.5, progress: 0.35 } },
   // casters
-  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6 } },
-  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4 }, pacing: { slot: 6 } },
+  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6 }, burn: { bias: 1.3 } },
+  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4 }, pacing: { slot: 6 }, burn: { bias: 0.75 } },
   support: { w: { heal: 1.3, healLow: 1.6, healDanger: 1.2, revive: 22, buff: 1.3, healReach: 3 } },
 };
 function mergeProfile(base, over) {
@@ -3541,13 +3553,24 @@ Sim.prototype.v2Pressure = function (u, o, ctx) {
   return p;
 };
 /* a debuff or control spell on foe t: one round's worth × the chance it lands × the rounds it should last */
-Sim.prototype.v2Control = function (u, a, t, ctx) {
+Sim.prototype.v2Control = function (u, a, t, ctx, noLR) {
   const W = u.v2P.w, b = a.buff || {};
   let per = this.expected(u, Object.assign({}, a, { buff: Object.assign({}, b, { duration: '1 round' }) }), t) * W.ctlRound;
   // it already has that condition (another caster's Hold Person, a pattern): nothing new
   if (b.condition && (t.buffs.some(x => x.data && x.data.condition === b.condition) || (INCAP.includes(b.condition) && this.incap(t)))) per *= 0.1;
-  // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use
-  if (DANGER_CONDS.includes(b.condition) && this.kLegRes(u, t) > 0) per *= W.legRes;
+  // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use: worth the
+  // progress toward emptying it when the plan says burn and this is the cheap effect it picked for u, else a little
+  if (!noLR && DANGER_CONDS.includes(b.condition) && this.kLegRes(u, t) > 0) {
+    const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
+    if (mine && mine.a.id === a.id) {
+      const ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
+      const pFail = dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20));
+      return pFail * bp.perLR * u.v2P.burn.value;
+    }
+    per *= W.legRes;
+  }
+  if (a.ext && a.ext.saveOnDamage) per *= W.shakeOff;
+  if (b.condition === 'Paralyzed' || b.condition === 'Unconscious') per *= W.critBoost;
   const R = ctx.rounds;
   let r = 1;
   if (b.duration === 'repeat the save each round') {
@@ -3557,6 +3580,127 @@ Sim.prototype.v2Control = function (u, a, t, ctx) {
   r = Math.min(r, this.kHp(u, t) / ctx.focusDpr + 0.5);                    // it may well drop before then
   if (a._spell && a._spell.conc) r *= W.concKeep;
   return per * Math.max(0.5, r);
+};
+/* ---- Legendary Resistance: burn it or race the boss's HP (docs/ai-v2.md) ---- */
+// how a condition changes the fight while the boss has it: the share of its damage that still comes, our damage × boost
+const BURN_COND = { Paralyzed: [0, 1.4], Unconscious: [0, 1.4], Stunned: [0, 1.2], Petrified: [0, 1.2], Incapacitated: [0, 1],
+  Restrained: [0.6, 1.2], Blinded: [0.6, 1.2], Frightened: [0.7, 1], 'Attacks and saves with Disadvantage': [0.7, 1] };
+/* the plan for u's side, once a turn: { on, t, burners: Map(uid → { a, pFail, price, alt }), perLR, … } or null when nobody has LR left */
+Sim.prototype.v2Burn = function (u, ctx) {
+  if (ctx.burn !== undefined) return ctx.burn;
+  const cache = this._burnC = this._burnC || {}, c = cache[u.team];
+  if (c && c.seq === this.turnSeq) return (ctx.burn = c.plan);
+  const plan = u.v2P.burn ? this.v2BurnPlan(u, ctx) : null;
+  cache[u.team] = { seq: this.turnSeq, plan };
+  if (plan) this.v2BurnSay(u, plan);
+  return (ctx.burn = plan);
+};
+Sim.prototype.v2BurnPlan = function (u, ctx) {
+  const B = u.v2P.burn, W = u.v2P.w;
+  let boss = null, L0 = 0;
+  for (const e of ctx.foes) { const l = this.kLegRes(u, e); if (l > 0 && (!boss || this.kHp(u, e) > this.kHp(u, boss))) { boss = e; L0 = l; } }
+  if (!boss) return null;
+  // what it deals the party a round: its damage (kDpr counts one target; an area attack catches more of us), and in open
+  // mode what it has actually dealt so far this fight
+  const spread = this.kAreas(u, boss).length ? 1 + 0.75 * Math.min(2, ctx.myTeam.length - 1) : 1, est = this.kDpr(u, boss) * B.share * spread;
+  const H = Math.max(1, this.kHp(u, boss)), R = Math.max(1, Math.min(8, ctx.rounds));
+  const D = this.kOf(u, boss) ? est : ((boss.dmgDealt || 0) + est * 1.5) / ((boss.fightTurns || 0) + 1.5);
+  // each ally's damage per round against it: its best at-will attack, or 0.7 × a slot spell
+  let total = 0;
+  const dmg = new Map();
+  for (const o of ctx.myTeam) {
+    let best = 0;
+    for (const a of o.actions) {
+      if (a.actionSlot !== 0 || a.type !== 'atk' || !this.usable(o, a) || !this.condOk(o, a)) continue;
+      const lv = this.v2CastLevels(o, a);
+      if (!lv.length) continue;
+      best = Math.max(best, this.expected(o, castCopy(a, lv[0]), boss) * (lv[0] > 0 ? 0.7 : 1));
+    }
+    dmg.set(o.uid, best * B.eff); total += best * B.eff;
+  }
+  const altOf = o => dmg.get(o.uid) * (1 + this.kDpr(u, boss) / W.dprScale) * W.damage;
+  // damage taken is bounded by what the party has: past a few times its HP it is a lost fight, however long it takes
+  const pool = Math.max(1, ctx.myTeam.reduce((t, o) => t + Math.max(0, o.hp), 0)) * B.cap, sat = x => pool * (1 - Math.exp(-x / pool));
+  const costRace = sat(H / Math.max(1, total) * D);
+  // every disabling save-effect a caster of ours could throw at it: its chance to fail the save, its price, its value once LR is gone
+  const cands = [], learnMode = this.kMode(u.team) === 'learn';
+  for (const o of ctx.myTeam) {
+    if (!o.v2 || this.incap(o) || !o.hasSpells) continue;
+    for (const a of o.actions) {
+      if (a.actionSlot !== 0 || a.type !== 'debuff' || !a.buff || !DANGER_CONDS.includes(a.buff.condition) || (a.ext && a.ext.teleport) || !this.usable(o, a) || !this.condOk(o, a)) continue;
+      const lv = this.v2CastLevels(o, a);
+      if (!lv.length) continue;
+      const act = castCopy(a, lv[0]), ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
+      if (!this.v2PoolFor(o, act, ctx).includes(boss)) continue;                // Hold Person on a dragon: not a legal target
+      // learn mode with no save of that ability seen yet: give the doubt to the cast (a probe), so the first one finds out
+      const guess = learnMode && !(this.kind(u.team, boss).saves[ab || 'any'] || []).length ? B.probe : 0;
+      const pass = dc >= 99 ? 0 : Math.min(1, Math.max(0, (21 + this.kSave(u, boss, ab) - guess - dc) / 20));
+      const alt = altOf(o), pFail = 1 - pass;
+      const pace = this.v2Pace(o, a, lv[0]);
+      cands.push({ o, a, pFail, pass, alt, price: pace.base + pace.tax * (alt + pFail * costRace / L0), L: lv[0], fv: this.v2Control(o, act, boss, ctx, true), conc: !!(a._spell && a._spell.conc) });
+    }
+  }
+  const plan = { on: false, t: boss, L0, burners: new Map(), perLR: 0, costRace, costBurn: 0, fu: null, rounds: 0 };
+  // the follow-up: the effect worth the most once LR is gone
+  let fu = null;
+  for (const c of cands) if (!fu || c.fv > fu.fv + 1e-6 || (Math.abs(c.fv - fu.fv) <= 1e-6 && c.price > fu.price)) fu = c;
+  if (!fu || fu.pFail < B.minFollow || !(fu.fv > 0)) return plan;
+  plan.fu = fu;
+  // burners: the cheapest effective effect of each caster not holding something worth more, cheapest caster first
+  const picks = [];
+  for (const o of ctx.myTeam) {
+    let best = null;
+    for (const c of cands) if (c.o === o && c !== fu && c.pFail >= B.minFail && (!best || c.price < best.price || (c.price === best.price && c.pFail > best.pFail))) best = c;
+    if (!best) continue;
+    if (o.concentrating && best.conc && this.v2Holding(o, this.v2Ctx(o, this.speedOf(o))) > B.hold) continue;
+    picks.push(best);
+  }
+  picks.sort((p, q) => p.price - q.price || q.pFail - p.pFail);
+  let sum = 0;
+  const chosen = [];
+  for (const c of picks) { if (sum >= L0) break; chosen.push(c); sum += c.pFail; }
+  if (!chosen.length) return plan;
+  // the burn: Rb rounds with the burners casting, one round for the follow-up, then the race
+  const Rb = Math.max(1, L0 / sum), lost = chosen.reduce((t, c) => t + dmg.get(c.o.uid), 0);
+  const M = Math.max(0.01, total - lost);
+  let taken, slots = 0;
+  const rem1 = H - M * Rb;
+  if (rem1 <= 0) taken = sat(H / M * D);                                      // it drops before the LR is gone
+  else {
+    const fuDmg = dmg.get(fu.o.uid), rem2 = rem1 - Math.max(0.01, total - fuDmg);
+    const b = fu.a.buff, cond = (BURN_COND[b.condition] || [0.7, 1]).slice();
+    let dur = R;
+    if (b.duration === 'repeat the save each round') dur = fu.pass > 0.001 ? (1 - Math.pow(1 - fu.pass, R)) / fu.pass : R;
+    if (fu.conc) dur *= W.concKeep;
+    if (fu.a.ext && fu.a.ext.endsOnDamage) { dur *= W.lull; cond[1] = 1; }
+    let land = 0, miss = 0;
+    if (rem2 <= 0) { land = miss = 0; }
+    else {
+      const d = Math.min(dur, rem2 / Math.max(1, total * cond[1])), rem3 = Math.max(0, rem2 - d * total * cond[1]);
+      land = d * D * cond[0] + rem3 / Math.max(1, total) * D;
+      miss = rem2 / Math.max(1, total) * D;
+    }
+    taken = sat(D * Rb + D + fu.pFail * land + (1 - fu.pFail) * miss);
+    plan.rounds = Rb + 1;
+    slots += fu.price;
+  }
+  for (const c of chosen) slots += c.price * Rb;
+  plan.costBurn = taken;
+  plan.on = costRace * B.bias > taken + B.slotW * slots + B.margin;
+  if (plan.on) {
+    plan.perLR = Math.max(0, costRace * B.bias - taken - B.margin) / L0;     // what each use burned is worth: what the whole burn saves, shared out
+    for (const c of chosen) plan.burners.set(c.o.uid, { a: c.a, pFail: c.pFail, price: c.price });
+  }
+  return plan;
+};
+// one intent line when the plan is first made for a boss, and again when it flips
+Sim.prototype.v2BurnSay = function (u, plan) {
+  if (!this.record) return;
+  const said = this._burnSaid = this._burnSaid || {}, key = u.team + '|' + plan.t.uid;
+  const now = plan.on ? 'burn' : 'race';
+  if (said[key] === now) return;
+  said[key] = now;
+  this.ev('intent', plan.on ? `${u.name} wants the party to burn ${plan.t.name}'s resistances first (${plan.L0} left)` : `${u.name} reckons the party should race ${plan.t.name}'s HP`, { uid: u.uid, target: plan.t.uid });
 };
 /* what u's running concentration is still worth: the effects it holds on both sides × the rounds they have left, its fog */
 Sim.prototype.v2Holding = function (u, ctx) {
@@ -3638,6 +3782,17 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
         pl.multi.set(t.uid, ex.reduce((s, v) => s + Math.max(0, v), 0));
       }
       plans.push(pl);
+    }
+  }
+  // a burner (docs/ai-v2.md, Legendary Resistance): the cheap effect the plan picked for it is worth what it gives up, the best
+  // other option, plus its progress toward emptying LR (the plan already weighed the cost of burning against racing)
+  const burn = u.hasSpells ? this.v2Burn(u, ctx) : null, mine = burn && burn.on ? burn.burners.get(u.uid) : null;
+  if (mine) {
+    let give = 0;
+    for (const pl of plans) if (pl.a.id !== mine.a.id) for (const t of pl.pool) { const v = pl.vals.get(t.uid).val; give = Math.max(give, v - pl.pace.base - pl.pace.tax * Math.max(0, v) - pl.conc); }
+    for (const pl of plans) {
+      const cell = pl.a.id === mine.a.id && pl.pool.includes(burn.t) ? pl.vals.get(burn.t.uid) : null;
+      if (cell) cell.val = Math.max(cell.val, (give + cell.val + pl.pace.base + pl.conc) / (1 - Math.min(0.9, pl.pace.tax)));
     }
   }
   // plain options first: an area aim is skipped where even its best case can't beat what a square already offers
@@ -3873,6 +4028,10 @@ Sim.prototype.v2Words = function (u, o, ctx, engaged) {
   }
   if (o.off.why === 'fog') return { text: `${n} drops ${a.name} on the shooters`, key: 'fog', t };
   if (sp && o.off.caught > 1) return { text: `${n} casts ${a.name} to catch ${o.off.caught} of them${o.off.ff ? ` (and ${o.off.ff} of its own)` : ''}`, key: 'cluster', t };
+  if (a.type === 'debuff' && DANGER_CONDS.includes(a.buff && a.buff.condition) && this.kLegRes(u, t) > 0) {
+    const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
+    if (mine && mine.a.id === a.id) return { text: `${n} burns ${t.name}'s resistances with ${a.name}`, key: 'burn', t };
+  }
   if (a.type === 'debuff' && o.off.caught === 1) {
     const ab = a.ext && a.ext.saveAbility, weak = ab && avgDice(a.saveDC) < 99 && this.kSave(u, t, ab) <= 1;
     return { text: `${n} tries ${a.name} on ${t.name}${weak ? `, whose ${ab.toUpperCase()} save looks weak` : this.kDpr(u, t) >= Math.max(...ctx.foes.map(e => this.kDpr(u, e))) ? ', the biggest threat' : ''}`, key: 'control', t };
