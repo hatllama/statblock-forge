@@ -301,6 +301,8 @@ const BURN_METRICS = {
   'LR burned': lrBurned,
   'burn plan': saidIn(/wants the party to burn/),
   'race plan': saidIn(/reckons the party should race/),
+  'probes': r => r.events.filter(e => e.kind === 'intent' && / probes .* save with /.test(e.text || '')).length,
+  'id rd': r => { let rd = 0; for (const e of r.events) { if (e.kind === 'round') rd = +(/[0-9]+/.exec(e.text) || [0])[0]; if (e.kind === 'intent' && /wants the party to burn/.test(e.text || '')) return rd; } return 0; },
   'slot lvls': r => slotsSpent(r),
   'boss down': r => r.units.filter(u => u.team === 'foes').every(u => { let last; for (const e of r.events) if (e.state && e.state[u.uid]) last = e.state[u.uid]; return last && (last.dead || last.hp <= 0); }) ? 1 : 0,
 };
@@ -340,12 +342,18 @@ const BURN_SCENARIOS = [
   { name: 'B5 blind: the same; it can only guess three LR and +2 saves', players: burnParty, know: { party: 'blind' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
   { name: 'B5 learn: the same; it probes the save, counts LR as they go', players: burnParty, know: { party: 'learn' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
   { name: 'B7: the dragon is immune to every condition the party inflicts (Wisdom -1, 3 LR): control is worth nothing, damage is all there is', players: burnParty, encounters: () => [{ monsters: [immune(dragon(3, { wis: -1 }))] }] },
+  { name: 'B2 learn: +14 saves, the party learns: it should probe a little, then race', players: burnParty, know: { party: 'learn' }, encounters: () => [{ monsters: [dragon(3, ALL(14))] }] },
+  { name: 'B4 learn: damage-heavy party, Wisdom -1: race', players: bigHitters, know: { party: 'learn' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 })] }] },
+  { name: 'B8 learn: weak Charisma (-1), the rest +14, but the party burns with Wisdom: race, few slots wasted', players: burnParty, know: { party: 'learn' }, encounters: () => [{ monsters: [dragon(3, Object.assign(ALL(14), { cha: -1 }))] }] },
+  { name: 'B9 learn: a day, goblins / ogres / the dragon last (Wisdom -1)', players: burnParty, know: { party: 'learn' }, encounters: () => [{ monsters: [mon('Goblin Warrior', 4)] }, { monsters: [mon('Ogre', 2)] }, { monsters: [dragon(3, { wis: -1 })] }] },
   { name: 'B6: a day, the dragon last (goblins / ogres / dragon, Wisdom -1)', players: burnParty, encounters: () => [{ monsters: [mon('Goblin Warrior', 4)] }, { monsters: [mon('Ogre', 2)] }, { monsters: [dragon(3, { wis: -1 })] }] },
 ];
 function playBurn(sc, N) {
   const noBurn = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { bias: 0 } }; });
   const forced = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { bias: 30 } }; });   // always burns when it can: shows what burning costs or wins
-  const arms = [['v1', undefined, null], ['v2-', { party: 'v2' }, noBurn], ['v2+', { party: 'v2' }, null], ['v2!', { party: 'v2' }, forced]];
+  const noProbe = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { probeBias: 0 } }; });   // learn mode as step 2.6 played it: a doubt in the plan, no probes
+  const learn = sc.know && sc.know.party === 'learn';
+  const arms = [['v1', undefined, null], ['v2-', { party: 'v2' }, noBurn]].concat(learn ? [['v2o', { party: 'v2' }, noProbe]] : [], [['v2+', { party: 'v2' }, null], ['v2!', { party: 'v2' }, forced]]);
   const cs = Object.assign({ record: true, metrics: BURN_METRICS }, sc);
   console.log('\n' + sc.name);
   console.log('  ' + [pad('AI', 4), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BURN_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));

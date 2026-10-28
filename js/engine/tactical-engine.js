@@ -1264,6 +1264,20 @@ Sim.prototype.kHp = function (u, t) {
   if (t.hp < t.maxHp / 2) est = Math.min(est, max * 0.45); else est = Math.max(est, max * 0.55);   // bloodied or not
   return Math.max(1, est);
 };
+/* hit points left on a boss-sized creature (one the party reckons has Legendary Resistance), for the burn plan. Learn mode
+   starts from a bigger prior than kHp's flat size prior (a Huge boss is rarely 140), and any bound the party has seen
+   (bloodied, down) replaces it. Blind keeps the flat prior. */
+const BOSS_HP = { Huge: 225, Gargantuan: 400 };
+Sim.prototype.kBossHp = function (u, t) {
+  if (this.kMode(u.team) !== 'learn' || !this.kOf(u, t) || t.dead || t.hp <= 0 || !BOSS_HP[t.size]) return this.kHp(u, t);
+  const k = this.kind(u.team, t), lost = t.visLost || 0;
+  let max;
+  if (k.hpHi < Infinity) max = this.kMax(u, t);                     // bloodied or down: seen, not guessed
+  else max = Math.max(BOSS_HP[t.size], k.hpLo * 1.15);
+  let est = max - lost;
+  if (t.hp < t.maxHp / 2) est = Math.min(est, max * 0.45); else est = Math.max(est, max * 0.55);
+  return Math.max(1, est);
+};
 Sim.prototype.kFrac = function (u, t) { return this.kOf(u, t) ? Math.max(0, Math.min(1, this.kHp(u, t) / this.kMax(u, t))) : Math.max(0, t.hp / t.maxHp); };
 Sim.prototype.kDpr = function (u, t) {
   const m = this.kOf(u, t); if (!m) return t.dpr;
@@ -3089,7 +3103,7 @@ const AI_BASE = {
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
-  burn: { bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2 },
+  burn: { bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
             slot: 8, slotUp: 0.35, slotEasyTax: 0.7 },           // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
@@ -3104,8 +3118,8 @@ const AI_PRESETS = {
   berserker: { posture: { retreatHp: 0, recoverHp: 0.25 }, w: { risk: 0.1, riskRanged: 0.3, hurt: 0, oa: 0.3, progress: 0.8 }, pacing: { costPerUse: 0.02, overTax: 0.2, easyFight: 1, easyTax: 0.1 }, reckless: 'always' },
   skirmisher: { w: { risk: 0.7, riskRanged: 1.2, meleeShoot: 0.5, oa: 1.5, hide: 0.5, progress: 0.35 } },
   // casters
-  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6 }, burn: { bias: 1.3 } },
-  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4 }, pacing: { slot: 6 }, burn: { bias: 0.75 } },
+  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6 }, burn: { bias: 1.3, probeBias: 1.4 } },
+  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4 }, pacing: { slot: 6 }, burn: { bias: 0.75, probeBias: 0.6 } },
   support: { w: { heal: 1.3, healLow: 1.6, healDanger: 1.2, revive: 22, buff: 1.3, healReach: 3 } },
 };
 function mergeProfile(base, over) {
@@ -3599,12 +3613,13 @@ Sim.prototype.v2Burn = function (u, ctx) {
   if (ctx.burn !== undefined) return ctx.burn;
   const cache = this._burnC = this._burnC || {}, c = cache[u.team];
   if (c && c.seq === this.turnSeq) return (ctx.burn = c.plan);
-  const plan = u.v2P.burn ? this.v2BurnPlan(u, ctx) : null;
+  const plan = u.v2P.burn ? this.v2BurnPlan(u, ctx, false) : null;
+  if (plan && !plan.on && u.v2P.burn.probeBias > 0 && this.kMode(u.team) === 'learn') this.v2Probe(u, ctx, plan);
   cache[u.team] = { seq: this.turnSeq, plan };
   if (plan) this.v2BurnSay(u, plan);
   return (ctx.burn = plan);
 };
-Sim.prototype.v2BurnPlan = function (u, ctx) {
+Sim.prototype.v2BurnPlan = function (u, ctx, doubt) {
   const B = u.v2P.burn, W = u.v2P.w;
   let boss = null, L0 = 0;
   for (const e of ctx.foes) { const l = this.kLegRes(u, e); if (l > 0 && (!boss || this.kHp(u, e) > this.kHp(u, boss))) { boss = e; L0 = l; } }
@@ -3612,8 +3627,12 @@ Sim.prototype.v2BurnPlan = function (u, ctx) {
   // what it deals the party a round: its damage (kDpr counts one target; an area attack catches more of us), and in open
   // mode what it has actually dealt so far this fight
   const spread = this.kAreas(u, boss).length ? 1 + 0.75 * Math.min(2, ctx.myTeam.length - 1) : 1, est = this.kDpr(u, boss) * B.share * spread;
-  const H = Math.max(1, this.kHp(u, boss)), R = Math.max(1, Math.min(8, ctx.rounds));
-  const D = this.kOf(u, boss) ? est : ((boss.dmgDealt || 0) + est * 1.5) / ((boss.fightTurns || 0) + 1.5);
+  const H = Math.max(1, this.kBossHp(u, boss)), R = Math.max(1, Math.min(8, ctx.rounds));
+  let D = est;
+  if (this.kMode(u.team) !== 'blind') {                                       // it has watched what the boss does to the party (learn: and this kind earlier today)
+    const k = this.kMode(u.team) === 'learn' ? this.kind(u.team, boss) : null;
+    D = ((boss.dmgDealt || 0) + (k ? k.dealt : 0) + est * 1.5) / ((boss.fightTurns || 0) + (k ? k.turns : 0) + 1.5);
+  }
   // each ally's damage per round against it: its best at-will attack, or 0.7 × a slot spell
   let total = 0;
   const dmg = new Map();
@@ -3642,11 +3661,11 @@ Sim.prototype.v2BurnPlan = function (u, ctx) {
       const act = castCopy(a, lv[0]), ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
       if (!this.v2PoolFor(o, act, ctx).includes(boss)) continue;                // Hold Person on a dragon: not a legal target
       // learn mode with no save of that ability seen yet: give the doubt to the cast (a probe), so the first one finds out
-      const guess = learnMode && !(this.kind(u.team, boss).saves[ab || 'any'] || []).length ? B.probe : 0;
+      const unseen = learnMode && !(this.kind(u.team, boss).saves[ab || 'any'] || []).length, guess = unseen && (doubt || !B.probeBias) ? B.probe : 0;
       const pass = dc >= 99 ? 0 : Math.min(1, Math.max(0, (21 + this.kSave(u, boss, ab) - guess - dc) / 20));
       const alt = altOf(o), pFail = 1 - pass;
       const pace = this.v2Pace(o, a, lv[0]);
-      cands.push({ o, a, pFail, pass, alt, price: pace.base + pace.tax * (alt + pFail * costRace / L0), L: lv[0], fv: this.v2Control(o, act, boss, ctx, true), conc: !!(a._spell && a._spell.conc) });
+      cands.push({ o, a, ab: ab || 'any', unseen, pFail, pass, alt, price: pace.base + pace.tax * (alt + pFail * costRace / L0), L: lv[0], fv: this.v2Control(o, act, boss, ctx, true), conc: !!(a._spell && a._spell.conc) });
     }
   }
   const plan = { on: false, t: boss, L0, burners: new Map(), perLR: 0, costRace, costBurn: 0, fu: null, rounds: 0 };
@@ -3695,12 +3714,39 @@ Sim.prototype.v2BurnPlan = function (u, ctx) {
   }
   for (const c of chosen) slots += c.price * Rb;
   plan.costBurn = taken;
+  plan.swing = costRace * B.bias - taken - B.slotW * slots - B.margin;
+  plan.chosen = chosen;
+  plan.cands = cands;
   plan.on = costRace * B.bias > taken + B.slotW * slots + B.margin;
   if (plan.on) {
     plan.perLR = Math.max(0, costRace * B.bias - taken - B.margin) / L0;     // what each use burned is worth: what the whole burn saves, shared out
     for (const c of chosen) plan.burners.set(c.o.uid, { a: c.a, pFail: c.pFail, price: c.price });
   }
   return plan;
+};
+/* learn mode, plan says race: would it say burn if the saves nobody has tried yet were weak? Then a cheap effect aimed at
+   each such save is worth its information: the chance it is weak × what burning would then save (docs/ai-v2.md) */
+Sim.prototype.v2Probe = function (u, ctx, plan) {
+  const B = u.v2P.burn, hyp = this.v2BurnPlan(u, ctx, true);
+  // the estimates of its HP and damage are priors: a burn that looks a little worse than racing may be better once seen
+  const swing = hyp && hyp.cands ? hyp.swing + B.probeSlack * hyp.costRace : 0;
+  if (!(swing > 0)) return;
+  const need = new Set(hyp.chosen.map(c => c.ab));
+  if (hyp.fu) need.add(hyp.fu.ab);
+  const cheapest = new Map();                                              // each untried save: its cheapest effect
+  for (const c of hyp.cands) {
+    if (!c.unseen || !need.has(c.ab) || !(c.pFail > 0)) continue;
+    if (c.o.concentrating && c.conc && this.v2Holding(c.o, this.v2Ctx(c.o, this.speedOf(c.o))) > B.hold) continue;
+    const b = cheapest.get(c.ab);
+    if (!b || c.price < b.price || (c.price === b.price && c.pFail > b.pFail)) cheapest.set(c.ab, c);
+  }
+  const voi = B.probeP * swing * B.probeBias, picks = Array.from(cheapest.values()).sort((p, q) => p.price - q.price || q.pFail - p.pFail);
+  const probers = new Map();
+  for (const c of picks) {
+    if (probers.size >= B.probeMax) break;
+    if (voi > c.price && !probers.has(c.o.uid)) probers.set(c.o.uid, { a: c.a, ab: c.ab, voi, price: c.price });
+  }
+  if (probers.size) { plan.probers = probers; plan.voi = voi; }
 };
 // one intent line when the plan is first made for a boss, and again when it flips
 Sim.prototype.v2BurnSay = function (u, plan) {
@@ -3795,7 +3841,15 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   }
   // a burner (docs/ai-v2.md, Legendary Resistance): the cheap effect the plan picked for it is worth what it gives up, the best
   // other option, plus its progress toward emptying LR (the plan already weighed the cost of burning against racing)
-  const burn = u.hasSpells ? this.v2Burn(u, ctx) : null, mine = burn && burn.on ? burn.burners.get(u.uid) : null;
+  const burn = u.hasSpells ? this.v2Burn(u, ctx) : null, mine = burn && burn.on ? burn.burners.get(u.uid) : null, probe = burn && !burn.on && burn.probers ? burn.probers.get(u.uid) : null;
+  if (probe) {
+    let give = 0;
+    for (const pl of plans) if (pl.a.id !== probe.a.id) for (const t of pl.pool) { const v = pl.vals.get(t.uid).val; give = Math.max(give, v - pl.pace.base - pl.pace.tax * Math.max(0, v) - pl.conc); }
+    for (const pl of plans) {
+      const cell = pl.a.id === probe.a.id && pl.pool.includes(burn.t) ? pl.vals.get(burn.t.uid) : null;
+      if (cell) cell.val = Math.max(cell.val, (give + probe.voi + pl.pace.base + pl.conc) / (1 - Math.min(0.9, pl.pace.tax)));
+    }
+  }
   if (mine) {
     let give = 0;
     for (const pl of plans) if (pl.a.id !== mine.a.id) for (const t of pl.pool) { const v = pl.vals.get(t.uid).val; give = Math.max(give, v - pl.pace.base - pl.pace.tax * Math.max(0, v) - pl.conc); }
@@ -4040,6 +4094,8 @@ Sim.prototype.v2Words = function (u, o, ctx, engaged) {
   if (a.type === 'debuff' && DANGER_CONDS.includes(a.buff && a.buff.condition) && this.kLegRes(u, t) > 0) {
     const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
     if (mine && mine.a.id === a.id) return { text: `${n} burns ${t.name}'s resistances with ${a.name}`, key: 'burn', t };
+    const pr = bp && !bp.on && bp.t === t && bp.probers ? bp.probers.get(u.uid) : null;
+    if (pr && pr.a.id === a.id) return { text: `${n} probes ${t.name}'s ${pr.ab.toUpperCase()} save with ${a.name}`, key: 'probe', t };
   }
   if (a.type === 'debuff' && o.off.caught === 1) {
     const ab = a.ext && a.ext.saveAbility, weak = ab && avgDice(a.saveDC) < 99 && this.kSave(u, t, ab) <= 1;

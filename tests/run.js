@@ -579,6 +579,19 @@ section('Character sheets');
   const bigFoe2 = Tac.expandTeam([dr], 'foes', false)[0];
   check(g0 === 3 && l0 === 3 && kS.kLegRes(hero, bigFoe) === 0 && lS.kLegRes(hero, bigFoe2) === 0 && new Tac.Sim({ seed: 1 }).kLegRes(hero, bigFoe) === 0,
     `kLegRes: a Huge unknown assumed to have 3 (${g0}, ${l0}); none once it failed a dangerous save without; the real 0 in open mode`);
+  // step 2.7: a boss's HP in learn mode starts from a boss prior and gives way to what was seen; immunities are known when open or once seen
+  {
+    const lS2 = new Tac.Sim({ seed: 1, know: { party: 'learn' } }), bS = new Tac.Sim({ seed: 1, know: { party: 'blind' } });
+    const dr2 = Tac.expandTeam([srd('Adult Red Dragon')], 'foes', false)[0];
+    const h0 = lS2.kBossHp(hero, dr2), flat = lS2.kHp(hero, dr2), blindHp = bS.kBossHp(hero, dr2), blindFlat = bS.kHp(hero, dr2);
+    dr2.visLost = 150; lS2.kind('party', dr2).hpLo = 151;
+    const h1 = lS2.kBossHp(hero, dr2);
+    check(h0 > flat && h0 === 225 && blindHp === blindFlat && h1 < h0 && h1 > 120, `kBossHp: learn starts from the boss prior (${h0} vs flat ${flat}), blind keeps the flat one, damage seen brings it down (${Math.round(h1)})`);
+    dr2.condImmune = ['paralyzed'];
+    const im = [new Tac.Sim({ seed: 1 }).kImmune(hero, dr2, 'Paralyzed'), bS.kImmune(hero, dr2, 'Paralyzed'), lS2.kImmune(hero, dr2, 'Paralyzed')];
+    dr2.seenImmune = ['paralyzed'];
+    check(im[0] === true && im[1] === false && im[2] === false && lS2.kImmune(hero, dr2, 'Paralyzed') === true, 'kImmune: the sheet when open, nothing when blind, learned once seen');
+  }
 
   // burn the dragon's Legendary Resistance or race its HP (docs/ai-v2.md): the plan follows the numbers
   {

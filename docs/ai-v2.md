@@ -289,6 +289,36 @@ Dragon's resistances with Tasha's Hideous Laughter" on each burn cast.
 does, it is just not counted; Counterspell-style cancels; the boss's allies. The harness (`tests/ai-compare.js`, scenarios B1–B6) has four
 arms on the same seeds, v1, v2 with `burn.bias` 0 (`v2-`), v2 (`v2+`), and v2 with the bias forced up (`v2!`, to show what burning would have cost or won).
 
+### Learn mode: boss HP, probing, Legendary Resistance (step 2.7)
+
+Learn is the party's default knowledge mode. It starts as ignorant as blind and reads what it sees; the burn plan needs
+three numbers it does not have at the start: the boss's HP, which save is weak, and how many LR it has. Blind stays on
+racing on purpose: it knows nothing and learns nothing, so its plan is always "average saves, three LR, race".
+
+**Boss HP (`kBossHp`).** The flat size prior (Huge 140) made a 256 HP dragon look like a short race. For the plan only, a
+creature the party takes for a boss (it has LR left in the party's reckoning) starts from a bigger prior (Huge 200,
+Gargantuan 320); once the party has seen something (bloodied, down: `hpLo`/`hpHi` from `learnHp`) the observed bounds take
+over, and "not bloodied after N damage" already raises the floor to 2N. So the race estimate grows as damage goes in.
+Nothing here is read from the creature's real HP.
+
+**Probing (`v2BurnPlan` → `plan.probers`).** Where the plan says *race* only because an ability's save is unknown, a cheap
+effect aimed at it is worth its information. For each ability the party has an effect for and has no save seen on, the
+plan is recomputed as if that save were weak (`burn.probe` points of doubt); `swing` is what burning would then save over
+racing. `voi = burn.probeP × swing × probeBias` (probeP: the chance an unseen save is weak, 0.35). The cheapest effect
+for each such ability (cantrip, then low slot, then the likelier failure) is a probe when `voi` beats its price; at most
+`probeMax` (2) a round, one per ability, so the party's Wisdom, Dexterity, … effects are spread. A prober is lifted in
+`v2TurnInner` like a burner: it is worth what it gives up plus `voi`. Once a save is seen the ability is no longer unseen,
+and `kSave` (via `learnSave`) takes over: weak → the normal plan burns; strong → the doubt is gone and it races. When
+every ability it has an effect for has been tried and none is weak it stops probing. Open and blind never probe.
+
+**Legendary Resistance.** Learn keeps the assumption of three on a Huge or larger unknown until a dangerous save lands
+with none to spend (`legNone`): a probe that lands is exactly that test, so the assumption costs one cheap cast against a
+Hill Giant, and scaling it down would only make the probe less informative about a real boss.
+
+**Profile.** `AI_BASE.burn.probeBias` (1), `probeP` (0.35), `probeMax` (2); `controller` 1.4, `artillery` 0.6. `probeBias: 0` turns probing off.
+
+**Intent lines.** "Wizard probes the Adult Red Dragon's Wisdom save with Hideous Laughter".
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
