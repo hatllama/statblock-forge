@@ -318,6 +318,7 @@ const dragon = (lr, saves, hp, dmg) => {
   return m;
 };
 const avgOf = expr => Tac.avgDice(expr);
+const immune = m => { m.ext.condImmune = ['paralyzed', 'incapacitated', 'stunned', 'unconscious', 'charmed', 'frightened', 'restrained', 'blinded', 'prone']; return m; };
 const ALL = v => ({ str: v, dex: v, con: v, int: v, wis: v, cha: v });
 // the Cleric also has Command (1st level, Wisdom, a cheap effect to burn with); the Wizard has Hideous Laughter and Hold Person
 // the Wizard also has a scroll's worth of Hold Monster (a 5th-level slot): Hold Person for any creature, the strong follow-up
@@ -338,6 +339,7 @@ const BURN_SCENARIOS = [
   { name: 'B5 open: as B1 with the dragon hitting at 0.25 (so a blind party has a fight); the party reads the truth', players: burnParty, know: { party: 'open' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
   { name: 'B5 blind: the same; it can only guess three LR and +2 saves', players: burnParty, know: { party: 'blind' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
   { name: 'B5 learn: the same; it probes the save, counts LR as they go', players: burnParty, know: { party: 'learn' }, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'B7: the dragon is immune to every condition the party inflicts (Wisdom -1, 3 LR): control is worth nothing, damage is all there is', players: burnParty, encounters: () => [{ monsters: [immune(dragon(3, { wis: -1 }))] }] },
   { name: 'B6: a day, the dragon last (goblins / ogres / dragon, Wisdom -1)', players: burnParty, encounters: () => [{ monsters: [mon('Goblin Warrior', 4)] }, { monsters: [mon('Ogre', 2)] }, { monsters: [dragon(3, { wis: -1 })] }] },
 ];
 function playBurn(sc, N) {

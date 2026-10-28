@@ -169,7 +169,10 @@ rest). Once this fight has spent its share (`budget / (F+1)`) it also gives up `
 × `losing`. Fight in hand: base × `easyFight` and at least `slotEasyTax` (0.7) of its value — a slot rarely beats a
 cantrip in a fight that's already won. No fight ahead (the last fight, or any monster): a slot still costs its best use
 later in this fight, `base × clamp(rounds left × 3 / slot levels left, lastFight, 0.5)`, so a caster with many slots
-spends freely and one with a few keeps them for the target that matters.
+spends freely and one with a few keeps them for the target that matters. **A lost fight spends its slots** (step 2.7):
+that last-fight price is also × `losing` when the side is losing. Before, only the "fights to come" path had the discount,
+so a party losing the *last* fight (B2: a dragon with +14 saves, a race the party loses) died with a third of its slot
+levels unspent, and kept a 3rd-level Lightning Bolt in the book to cast Magic Missile instead.
 
 So a high slot is cheap against a crowd (its value grows with what it catches, the cost doesn't) and expensive on one
 target: a swarm fight empties the area spells, a boss fight keeps them unless they beat a cantrip there too.
@@ -259,6 +262,10 @@ boss with LR left (the one with most HP if several) and compares two estimates, 
 and fails the save at least `burn.minFail` of the time, not holding a concentration worth more than `burn.hold`. Sorted by
 price (cantrip, then slot level, then `pFail`), they are taken until their `Σ pFail` covers the LR left. Martials and the
 caster holding the follow-up keep doing what they do. The follow-up is not cast while LR is left (it keeps the 0.2 discount).
+
+**Immune bosses (step 2.7).** `kImmune(u, t, cond)` (open: the sheet; learn: once an "is immune to being…" was seen;
+blind: never) makes `v2Control` value a condition the foe cannot take at 0, so a caster aims at damage instead of a spell
+that cannot work.
 
 **Valuation.** In race mode, `v2Control` is unchanged: a disabling effect on a creature with LR left is worth `legRes`
 (0.2) × its normal value. In burn mode, for a burner and the effect the plan picked for it, the effect is worth what the

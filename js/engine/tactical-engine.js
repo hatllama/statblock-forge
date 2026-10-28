@@ -921,6 +921,7 @@ Sim.prototype.multBuff = function (u, field) {
 Sim.prototype.ac = function (u) { return u.baseAC + this.sumBuff(u, 'ac', false); };
 Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   if (data && data.condition && holder !== src && holder.condImmune && holder.condImmune.indexOf(String(data.condition).toLowerCase()) >= 0) {
+    (holder.seenImmune = holder.seenImmune || []).push(String(data.condition).toLowerCase());
     if (this.record) this.ev('effect', `${holder.name} is immune to being ${String(data.condition).toLowerCase()}`, { uid: holder.uid });
     return { id: action.id, name: action.name, data: {}, immune: true };
   }
@@ -1330,6 +1331,13 @@ Sim.prototype.kLegRes = function (u, t) {
   if (seen || known) return Math.max(0, Math.max(3, known) - seen);
   if (t.legNone || (k && k.legNone)) return 0;
   return sizeIdx(t.size, 2) >= 4 ? 3 : 0;
+};
+/* does t shrug off condition `cond`? Open: the sheet. Blind: no idea. Learn: once seen ("is immune to being…") */
+Sim.prototype.kImmune = function (u, t, cond) {
+  const m = this.kOf(u, t), c = String(cond || '').toLowerCase();
+  if (!c) return false;
+  if (!m) return !!(t.condImmune && t.condImmune.indexOf(c) >= 0);
+  return m === 'learn' && !!(t.seenImmune && t.seenImmune.indexOf(c) >= 0);
 };
 Sim.prototype.kReach = function (u, t) {
   const m = this.kOf(u, t); if (!m) return null;
@@ -3189,7 +3197,7 @@ Sim.prototype.v2Pace = function (u, a, L) {
   // spell slots are one pool counted in slot levels (plus what Arcane Recovery will win back); anything else, in uses
   const base = pl.slots ? P.slot * pl.n * (1 + P.slotUp * (pl.n - 1)) : Math.max(4, u.dpr) * P.costPerUse * pl.n;
   // no fight ahead: a slot is still worth its best use later in this one, when the fight should outlast them
-  if (!F) return { base: base * (pl.slots ? Math.min(0.5, Math.max(P.lastFight, (u._v2c ? u._v2c.rounds : 3) * 3 / Math.max(1, slotLevels(u)))) : P.lastFight), tax: 0 };
+  if (!F) return { base: base * (pl.slots ? Math.min(0.5, Math.max(P.lastFight, (u._v2c ? u._v2c.rounds : 3) * 3 / Math.max(1, slotLevels(u)))) : P.lastFight) * (this.losing(u) ? P.losing : 1), tax: 0 };
   let left, start;
   if (pl.slots) { const rec = this.v2Recovery(u); left = slotLevels(u) + rec; start = (u.v2Slots0 !== undefined ? u.v2Slots0 : slotLevels(u)) + rec; }
   else { left = u.uses.get(pl.key) || 0; start = u.v2Start && u.v2Start.has(pl.key) ? u.v2Start.get(pl.key) : left; }
@@ -3560,6 +3568,7 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR) {
   if (b.condition && (t.buffs.some(x => x.data && x.data.condition === b.condition) || (INCAP.includes(b.condition) && this.incap(t)))) per *= 0.1;
   // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use: worth the
   // progress toward emptying it when the plan says burn and this is the cheap effect it picked for u, else a little
+  if (b.condition && this.kImmune(u, t, b.condition)) return 0;           // it can't be given that condition at all
   if (!noLR && DANGER_CONDS.includes(b.condition) && this.kLegRes(u, t) > 0) {
     const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
     if (mine && mine.a.id === a.id) {
