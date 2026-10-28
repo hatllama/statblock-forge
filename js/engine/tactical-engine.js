@@ -1336,15 +1336,14 @@ Sim.prototype.kCaster = function (u, t) {
   const m = this.kOf(u, t); if (!m) return !!t.hasSpells;
   return !!t.seenCaster || (m === 'learn' && this.kind(u.team, t).caster);
 };
-/* Legendary Resistance uses t has left, as u's side reckons it: seen ones count down from the usual 3 (or the most seen on
-   that kind today, learn). Before any is seen, a Huge or Gargantuan creature is assumed to have the usual 3 (a boss-sized
-   body), until it fails a dangerous save with nothing to spend (legNone, remembered per kind in learn); smaller ones, none. */
+/* Legendary Resistance uses t has left, as u's side reckons it. Open: the real count. Blind and learn: none until one is
+   seen (a use is a public event), then the usual 3 less the uses seen (learn: or the most seen on that kind today). No
+   guess from size: plenty of Huge creatures (Hill Giants) have none, and assuming three made the party shy away from
+   control that works. */
 Sim.prototype.kLegRes = function (u, t) {
   const m = this.kOf(u, t); if (!m) return t.legResMax ? (t.uses.get('__legres') || 0) : 0;
   const k = m === 'learn' ? this.kind(u.team, t) : null, known = k ? (k.legRes || 0) : 0, seen = t.legSeen || 0;
-  if (seen || known) return Math.max(0, Math.max(3, known) - seen);
-  if (t.legNone || (k && k.legNone)) return 0;
-  return sizeIdx(t.size, 2) >= 4 ? 3 : 0;
+  return seen || known ? Math.max(0, Math.max(3, known) - seen) : 0;
 };
 /* does t shrug off condition `cond`? Open: the sheet. Blind: no idea. Learn: once seen ("is immune to being…") */
 Sim.prototype.kImmune = function (u, t, cond) {
@@ -2273,11 +2272,6 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
     if (this.learning(otherTeam(t.team))) { const k = this.kind(otherTeam(t.team), t); k.legRes = Math.max(k.legRes || 0, t.legSeen); }
     this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
-  }
-  // failed a dangerous save with no Legendary Resistance to spend: the other side can see it has none
-  if (total < dc && dc < 99 && dangerous && !t.legResMax) {
-    t.legNone = true;
-    if (this.learning(otherTeam(t.team))) this.kind(otherTeam(t.team), t).legNone = true;
   }
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };
 };

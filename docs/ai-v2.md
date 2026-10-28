@@ -226,16 +226,23 @@ incapacitated, paralysed, stunned, unconscious, petrified, restrained, blinded, 
 saves), or damage that would drop it or take 10% of its maximum (25% of what it has left). It accepts everything else
 (Bane, a Vicious Mockery, a plain Fireball). Rolls use the real numbers. So an effect only burns LR if it would hurt;
 cheap harmless effects burn nothing. Step 2.6 changes no engine rule: logs with the flag off are identical, with or
-without LR. (One bookkeeping addition: a creature that fails a dangerous save with no LR to spend is marked as having
-none, `legNone`, which the other side's `kLegRes` reads.)
+without LR.
 
 **What the party knows (`kLegRes`).** Open: the real count left. Blind and learn: nothing is known until a use is
-seen; a **Huge or Gargantuan** creature is assumed to have the typical three (a boss-sized body) until it fails a
-dangerous save with nothing to spend (then it has none, and learn mode remembers that for the kind), and each use seen
-counts down from three (learn: or from the highest count seen on that kind earlier today). Smaller creatures are assumed to have none
-until one is seen. The weakest save comes from `kSave` per ability: open reads it, blind assumes +2 (average) for every
-ability, learn infers it from the saves seen (`learnSave`). So blind can only burn on a guess of three and an average
-save, and learn finds the weak ability by casting at it.
+seen, and then it is the typical three less each use seen (learn: or less the highest count seen on that kind earlier
+today). **No size guess** (step 2.9): until a use is seen every creature is taken to have none, a Hill Giant and an
+Adult Red Dragon alike. (Steps 2.6–2.8 assumed three on any Huge or Gargantuan unknown, which priced control on it at
+`w.legRes` (0.2): a Hold Monster on a Wisdom −1 dragon with no LR was worth 12 instead of 49.5, so the party took the
+damage spell; many Huge creatures have none.) The first control on a boss that does have LR is therefore cast at full
+value; the LR it forces is a public event (`legSeen`, kind memory `legRes`), and from then on the usual discount and
+the burn/race plan apply. Blind sees the same uses on the creature in front of it, so it also counts down once a use
+shows; it just never remembers across fights. The weakest save comes from `kSave` per ability: open reads it, blind
+assumes +2 (average) for every ability, learn infers it from the saves seen (`learnSave`). So blind can only burn on
+an average-save guess, and learn finds the weak ability by casting at it.
+
+**Martial control** (Stunning Strike, Sap, push riders) never went through this discount: `v2Value` prices a rider as
+`pLand × effectValue × (1 − pKill) × w.control` on its own path and does not read `kLegRes`, so it was and is the same in
+all three modes. Only spell-style `debuff` actions go through `v2Control`.
 
 **The plan** (`v2Burn`, once per turn per side, cached; the posture layer's fight-level decision). It looks at the
 boss with LR left (the one with most HP if several) and compares two estimates, in points of damage the party takes:
@@ -311,9 +318,10 @@ for each such ability (cantrip, then low slot, then the likelier failure) is a p
 and `kSave` (via `learnSave`) takes over: weak → the normal plan burns; strong → the doubt is gone and it races. When
 every ability it has an effect for has been tried and none is weak it stops probing. Open and blind never probe.
 
-**Legendary Resistance.** Learn keeps the assumption of three on a Huge or larger unknown until a dangerous save lands
-with none to spend (`legNone`): a probe that lands is exactly that test, so the assumption costs one cheap cast against a
-Hill Giant, and scaling it down would only make the probe less informative about a real boss.
+**Legendary Resistance.** Since step 2.9 there is no assumption of three on a Huge unknown (see "What the party knows"),
+so the burn plan, and with it the probes, only start once a use of LR has been seen: the party's first control on a
+boss is an ordinary cast at full value, and that cast is what shows the LR. Probes before that sighting no longer
+happen (there is no boss with LR left to plan against). Open mode is unchanged.
 
 **Profile.** `AI_BASE.burn.probeBias` (1), `probeP` (0.35), `probeMax` (2); `controller` 1.4, `artillery` 0.6. `probeBias: 0` turns probing off.
 

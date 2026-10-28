@@ -571,14 +571,14 @@ section('Character sheets');
   const lrBoss = Tac.expandTeam([gl], 'foes', false)[0], hero = Tac.expandTeam([pc('Wizard')], 'party', true)[0];
   const blind0 = kS.kLegRes(hero, lrBoss); lrBoss.legSeen = 1; lrBoss.uses.set('__legres', 2);
   check(new Tac.Sim({ seed: 1 }).kLegRes(hero, lrBoss) === 2 && blind0 === 0 && kS.kLegRes(hero, lrBoss) === 2, 'kLegRes: the real count in open mode; unseen, then counted down once used, when blind');
-  // a boss-sized body is assumed to have the usual three until it fails a dangerous save with none to spend (learn remembers that per kind)
-  const dr = srd('Adult Red Dragon'); dr.ext.legendaryResistance = 0;
-  const bigFoe = Tac.expandTeam([dr], 'foes', false)[0];
+  // step 2.9: no guess from size. A Huge unknown has none as far as blind and learn can tell; one use seen means the usual three less the uses seen
+  // (learn remembers it for the kind)
+  const dr = srd('Adult Red Dragon'); dr.ext.legendaryResistance = 3;
+  const bigFoe = Tac.expandTeam([dr], 'foes', false)[0], bigFoe2 = Tac.expandTeam([dr], 'foes', false)[0];
   const lS = new Tac.Sim({ seed: 1, know: { party: 'learn' } }), g0 = kS.kLegRes(hero, bigFoe), l0 = lS.kLegRes(hero, bigFoe);
-  bigFoe.legNone = true; lS.kind('party', bigFoe).legNone = true;
-  const bigFoe2 = Tac.expandTeam([dr], 'foes', false)[0];
-  check(g0 === 3 && l0 === 3 && kS.kLegRes(hero, bigFoe) === 0 && lS.kLegRes(hero, bigFoe2) === 0 && new Tac.Sim({ seed: 1 }).kLegRes(hero, bigFoe) === 0,
-    `kLegRes: a Huge unknown assumed to have 3 (${g0}, ${l0}); none once it failed a dangerous save without; the real 0 in open mode`);
+  bigFoe.legSeen = 1; lS.kind('party', bigFoe).legRes = 1;
+  check(g0 === 0 && l0 === 0 && kS.kLegRes(hero, bigFoe) === 2 && lS.kLegRes(hero, bigFoe) === 2 && lS.kLegRes(hero, bigFoe2) === 3 && new Tac.Sim({ seed: 1 }).kLegRes(hero, bigFoe) === 3,
+    `kLegRes: a Huge unknown is not assumed to have any (${g0}, ${l0}); after a use, 3 less the uses seen; open reads the real count`);
   // step 2.7: a boss's HP in learn mode starts from a boss prior and gives way to what was seen; immunities are known when open or once seen
   {
     const lS2 = new Tac.Sim({ seed: 1, know: { party: 'learn' } }), bS = new Tac.Sim({ seed: 1, know: { party: 'blind' } });

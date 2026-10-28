@@ -360,6 +360,34 @@ function playBurn(sc, N) {
   for (const [label, ai, tw] of arms) console.log(row(label, play(cs, ai, N, tw)));
 }
 
+/* ---- step 2.9: does the party cast its strong control when the save looks winnable? (docs/ai-v2.md, Legendary Resistance) ----
+   The same fight in open / learn / blind mode, v2 party; run with a filter: node tests/ai-compare.js 200 "^K[0-9]".
+   'ctl casts' = Hold Monster / Hold Person / Command / Hideous Laughter aimed at a foe, 'first rd' = round of the first
+   (0 = never), 'stuns' = the Monk's Stunning Strike attacks. */
+const CTL_RE = /: (Hold Monster|Hold Person|Command|Tasha's Hideous Laughter)(?: \(L\d\))?,/;
+const isCtl = (r, e) => e.kind === 'save' && CTL_RE.test(e.text || '') && teamOf(r, e.uid) === 'party';
+const CTL_METRICS = {
+  'ctl casts': r => r.events.filter(e => isCtl(r, e)).length,
+  'first rd': r => { let rd = 0; for (const e of r.events) { if (e.kind === 'round') rd = +(/[0-9]+/.exec(e.text) || [0])[0]; if (isCtl(r, e)) return rd; } return 0; },
+  'LR burned': lrBurned,
+  'stuns': r => r.events.filter(e => e.kind === 'attack' && /^Monk → [^:]+: Stunning Strike/.test(e.text || '')).length,
+};
+const martialParty = () => ['Monk', 'Fighter', 'Rogue', 'Barbarian'].map(pc);
+const CTL_SCENARIOS = [
+  { name: 'K1: 2 Hill Giants (Huge, no LR, Wisdom -1); Fighter, Barbarian, Wizard (Hold Monster), Cleric (Command)', players: burnParty, encounters: () => [{ monsters: [mon('Hill Giant', 2)] }] },
+  { name: 'K2: dragon with no LR, Wisdom -1 (hits at 0.25)', players: burnParty, encounters: () => [{ monsters: [dragon(0, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'K3: dragon with 3 LR, Wisdom -1', players: burnParty, encounters: () => [{ monsters: [dragon(3, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'K4: dragon with 3 LR and +14 saves everywhere (hopeless)', players: burnParty, encounters: () => [{ monsters: [dragon(3, ALL(14), 0, 0.25)] }] },
+  { name: 'K5: dragon immune to every condition (Wisdom -1, 3 LR)', players: burnParty, encounters: () => [{ monsters: [immune(dragon(3, { wis: -1 }, 0, 0.25))] }] },
+  { name: 'K6 martials: Monk, Fighter, Rogue, Barbarian vs 2 Hill Giants (Stunning Strike against Constitution +4)', players: martialParty, encounters: () => [{ monsters: [mon('Hill Giant', 2)] }] },
+  { name: 'K7 martials: the same party vs a dragon with 3 LR, Constitution -1', players: martialParty, encounters: () => [{ monsters: [dragon(3, { con: -1 }, 0, 0.25)] }] },
+];
+function playCtl(sc, N) {
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(CTL_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+  for (const mode of ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
+}
+
 /* ---- running ---- */
 function play(sc, ai, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
@@ -404,6 +432,7 @@ const only = process.argv[3] ? new RegExp(process.argv[3], 'i') : null;
 console.log(`Old AI (v1) vs AI v2 for the party, ${N} seeded runs per scenario. Per day: win = won every fight; rounds, PC deaths, damage dealt and taken by the party; ms per day.`);
 const spellLine = o => Array.from(o.spells).sort((p, q) => q[1] - p[1]).slice(0, 6).map(([k, v]) => `${k} ${(v / o.n).toFixed(2)}`).join(', ');
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
+for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };
