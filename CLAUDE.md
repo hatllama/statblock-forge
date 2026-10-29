@@ -50,3 +50,14 @@ How to:
 - Add a spell the spell data lacks: add an entry to `CUSTOM` in `sheet-reader.js` (same action shape as `misty step`); `build` uses it when `SD` has no entry.
 - Pooled resource: the creature declares pools in `ext.resources`; an action draws on one via `ext.resource` (pool name) and `ext.resourceCost` (default 1). The engine checks/spends it in `usable`/`spend` (`u.uses` key `res:<name>`); the Forge edits it in `resourcesPanel`.
 - Add a class feature to the sheet reader: add an `if (classLevel) { add({...}); ext.x = … }` branch in `classFeatures` (use `lv`/`sub`), then add a sample under `tests/sheets` and an expectation in the "Character sheets" section of `tests/run.js`.
+
+## AI worker rules
+Plan and phases: `docs/ai-roadmap.md`; what exists: `docs/ai-v2.md`. The rules engine is not AI; AI work does not change it.
+1. One currency: every option reduces to expected value in the same unit; a new term states what it measures.
+2. Terms, not vetoes: add a weighted term, never a special-case rule.
+3. Estimates, not lookahead: no rollouts or search.
+4. Other-side facts only through the `k*` accessors; dice and rules use real numbers.
+5. Weights and thresholds are plain data in `AI_PROFILES`/`AI_BASE`; no hardcoded numbers outside it.
+6. Calibrate by outcome: a behavior change needs a harness scenario with win rate ±SE (200+ runs, same seeds); nothing may get worse beyond noise.
+7. Flag-off logs stay identical (`node tests/flagoff-hash.js`) until the default switch.
+8. Update `docs/ai-v2.md` BEFORE writing code; keep `npm test` green; bump `?v=` on changed script tags; engine DOM-free; Safari-safe syntax; commit with attribution lines.
