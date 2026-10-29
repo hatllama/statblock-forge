@@ -5,6 +5,10 @@
   "description": "D&D encounter-prep workshop: statblock → simulator JSON and a tactical grid simulator.",
   "scripts": {
     "test": "node tests/run.js",
+    "compare": "node tests/ai-compare.js",
+    "flagoff": "node tests/flagoff-hash.js",
+    "build-party": "node tools/build-party.js",
+    "build-srd": "node tools/build-srd.js",
     "start": "python3 -m http.server 8000"
   },
   "engines": { "node": ">=18" }

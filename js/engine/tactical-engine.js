@@ -1356,7 +1356,8 @@ Sim.prototype.kReach = function (u, t) {
   const m = this.kOf(u, t); if (!m) return null;
   return Math.max(5, t.seenRange || 0, m === 'learn' ? this.kind(u.team, t).range : 0);
 };
-/* fights still to come today, as u's side reckons it: known in open mode, otherwise assume a three-fight day */
+/* fights still to come today, as u's side reckons it: the real count in open mode; otherwise it guesses a three-fight day
+   (2 left in the first fight, 1 after) and never believes the day is over, so it is never below 1 */
 Sim.prototype.leftFor = function (u) {
   if (this.kMode(u.team) === 'open') return this.encountersLeft || 0;
   return Math.max(1, 2 - (this.fightNo || 0));

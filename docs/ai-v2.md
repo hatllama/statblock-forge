@@ -1,4 +1,7 @@
-# AI v2 — design (steps 1–2 of 4: non-casters, full casters)
+# AI v2 — design (built so far: non-casters and full casters)
+
+Naming: "step 1", "step 2" and "step 2.x" are the finished work (they match the commit names). What is still to build
+uses the phases in `docs/ai-roadmap.md` (phase 2 = hybrids, phase 3 = reactions, and so on).
 
 The old tactical AI is a priority list (`choose`) wrapped in a square search with special cases
 (`tacticalTurnInner`) and per-action vetoes. v2 replaces the *decision* for one creature's turn with three
@@ -100,8 +103,8 @@ Shield/Silvery-Barbs-style reactions and Lucky (decided inside `attackRoll`), Di
 |------|-----|---------------------|
 | `none` | no spellbook (martials; monsters whose spells are plain X/day actions, like SRD 5.2 Mages and Priests) | v2 |
 | `full` | a spellbook and `class.type` wizard, sorcerer, warlock, cleric, druid or bard; any **monster** with a spellbook (2014-style "1st level (4 slots)" statblocks); a PC with a spellbook and no class | v2 (caster terms on) |
-| `half` | a spellbook and paladin, ranger or artificer | v1 (step 3) |
-| `third` | a spellbook and any other class (Eldritch Knight, Arcane Trickster, a multiclass whose main class is a martial) | v1 (step 3) |
+| `half` | a spellbook and paladin, ranger or artificer | v1 (roadmap phase 2) |
+| `third` | a spellbook and any other class (Eldritch Knight, Arcane Trickster, a multiclass whose main class is a martial) | v1 (roadmap phase 2) |
 
 `ext.casterKind` overrides the guess (`'full' | 'half' | 'third' | 'none'`). Multiclass sheets use the main class the
 sheet reader picked. `kCaster` is unchanged: it is what the *other* side knows, not who v2 drives.
@@ -347,7 +350,7 @@ happen (there is no boss with LR left to plan against). Open mode is unchanged.
 | Teleport away when hurt (regular, < 40%) | `turn` | v2: the `jump` mode, scored like any other |
 | TPK kills, surprise rules, climb DC | sim options | rules, not AI |
 
-## Not in this step
+## Not built yet
 
-Half/third casters and Divine Smite (step 3), the profile editor UI and a War Table switch (later), lookahead of any kind (never: odds runs
+Half/third casters and Divine Smite (roadmap phase 2), reactions (phase 3), the profile editor UI and a War Table switch (phase 5), lookahead of any kind (never: odds runs
 play thousands of fights in the browser). Harness: `node tests/ai-compare.js [runs] [filter]`.

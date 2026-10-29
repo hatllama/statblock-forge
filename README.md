@@ -20,7 +20,11 @@ Double-clicking `index.html` also works.
 Run the engine checks with Node 18 or newer:
 
 ```bash
-npm test
+npm test                # engine, parser, sheet reader and AI checks
+npm run compare         # old AI vs AI v2 tables (tests/ai-compare.js [runs] [filter])
+npm run flagoff         # hashes of classic-AI fight logs; must not change after an AI change
+npm run build-party     # regenerate data/party.js
+npm run build-srd       # regenerate data/srd-monsters.js
 ```
 
 ## Layout
@@ -35,17 +39,23 @@ tools/build-srd.js             builds data/srd-monsters.js from the 5e-database 
 parties/                       saved parties to load (Day file → Load just the party)
 js/spell-data.js               combat spells the parser knows (damage, saves, areas, conditions)
 js/statblock-parser.js         statblock text → Forge creatures, no AI (exposes StatblockParser)
+js/sheet-reader.js             character sheets (D&D Beyond, Foundry, text/PDF) → party members
 js/forge.js                    Forge view: workshop UI (sidebar, sheet, statblock, encounter page, quick odds, library), editor, validation, export, autosave, migrations
 js/engine/tactical-engine.js   War Table engine (pure JS, no DOM) — exposes TacEngine
 js/war-table.js                War Table UI: board, terrain painting, odds, replay
 tests/run.js                   engine and parser checks (wall/LoS violations, dead or hidden-in-plain-sight actors, odds sanity)
+tests/ai-compare.js            old AI vs v2 win-rate tables (not part of npm test)
+tests/flagoff-hash.js          flag-off regression hashes
+tests/sheets/                  character sheets the sheet reader is tested on
 tests/fixtures/                sample adventuring days used by the tests
 tests/statblocks/              statblocks in different formats the parser is tested on
 tests/parse-dump.js            `node tests/parse-dump.js [name]` shows what the parser makes of them
 ```
 
 The scripts are plain classic scripts that share globals, and the load order in `index.html` matters:
-party data → spell data → statblock parser → forge → tactical engine → war table.
+party data → SRD monsters → spell data → statblock parser → sheet reader → forge → tactical engine → war table.
+
+For contributors and AI work: [CLAUDE.md](CLAUDE.md) (working notes and where things live), [docs/ai-v2.md](docs/ai-v2.md) (how the v2 AI decides) and [docs/ai-roadmap.md](docs/ai-roadmap.md) (plan, phases, backlog).
 
 ## Where things live
 
