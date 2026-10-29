@@ -769,7 +769,7 @@ section('Lingering damage zones');
   check(gone === 4 && late === 0, `a 2-round zone cast in round 1 fades at the start of round 3 and stops hurting (${gone} of 4 fades, ${late} late hits)`);
 }
 
-section('Pre-fight buffs (Aid cast in the morning)');
+section('Pre-fight buffs (Aid cast in the morning; morningShare 1 = every slot may go to them)');
 {
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
@@ -780,7 +780,7 @@ section('Pre-fight buffs (Aid cast in the morning)');
     actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] };
   const day = slots => ({ players: [cleric(slots), build('Fighter'), build('Wizard'), build('Rogue'), build('Barbarian')], encounters: [{ monsters: [cp(foe)] }, { monsters: [cp(foe)] }] });
   const base = {}; day([0, 0]).players.forEach(p => { base[p.name] = p.hp; });
-  const run = (slots, o) => Tac.runDay(day(slots), Object.assign({ seed: 11, partyAI: 'tactical', record: true, maxRounds: 8, _keep: true }, o));
+  const run = (slots, o) => Tac.runDay(day(slots), Object.assign({ seed: 11, partyAI: 'tactical', record: true, maxRounds: 8, _keep: true, morningShare: 1 }, o));
   const morning = r => r.events.filter(e => /this morning/.test(e.text || ''));
   const aidHeals = r => r.events.filter(e => e.kind === 'heal' && /: Aid, max HP/.test(e.text));
   const grown = r => r.party.filter(p => p.maxHp > base[p.name]).map(p => p.name).sort();
@@ -806,6 +806,71 @@ section('Pre-fight buffs (Aid cast in the morning)');
   const off = run([0, 2], { prefightBuffs: false });
   check(morning(off[0]).length === 0, 'with the toggle off nothing is cast in the morning');
   check(slotsLeft(off) <= 2 && grown(off[0]).length <= aidHeals(off[0]).length, 'with the toggle off max HP only grows from in-fight casts');
+}
+
+
+section('Pre-fight buffs: Mage Armor, Death Ward, the table and morningShare');
+{
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  for (const f of ['data/party.js', 'js/spell-data.js', 'js/statblock-parser.js', 'js/sheet-reader.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8') + (f === 'data/party.js' ? ';globalThis.CB = CLASS_BUILDS;' : ''), ctx, { filename: f });
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  // the spells as the sheet reader builds them: a Foundry wizard with no armor on
+  const fj = JSON.parse(fs.readFileSync(path.join(__dirname, 'sheets/foundry.json'), 'utf8'));
+  fj.items.forEach(i => { if (i.type === 'equipment') i.system.equipped = false; });
+  ['Mage Armor', 'Aid'].forEach(n => fj.items.push({ name: n, type: 'spell', system: { level: n === 'Aid' ? 2 : 1, preparation: { prepared: true } } }));
+  const sheet = ctx.SheetReader.read(JSON.stringify(fj)).player;
+  const spellOf = n => (sheet.ext.spellbook.spells || []).find(x => x.name === n);
+  const MA = spellOf('Mage Armor');
+  check(sheet.ext.unarmored === true && typeof sheet.ext.dexMod === 'number', 'a sheet with no armor worn is marked ext.unarmored with its Dex modifier');
+  check(MA && MA.ext.prefight === 'mageArmor' && MA.level === 1 && MA.type === 'buff', 'Mage Armor comes in from a sheet as a pre-fight buff spell (level 1)');
+  const DW = { id: 'dw', name: 'Death Ward', level: 4, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'deathWard', wtOnly: true } };
+  const caster = (spells, slots) => { const c = build('Cleric'); c.ext.spellbook.spells = spells.map(cp); c.ext.spellbook.slots = slots; return c; };
+  const mark = (c, dex) => { c.ext = c.ext || {}; c.ext.unarmored = true; c.ext.dexMod = dex; return c; };
+  const foe = { id: 'dm', name: 'Dummy', mode: 'custom', hp: 30, AC: 8, saveBonus: 0, count: 1, speed: 30,
+    actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] };
+  const day = (spells, slots) => ({ players: [caster(spells, slots), build('Fighter'), mark(build('Wizard'), 3), mark(build('Rogue'), 4), build('Barbarian')], encounters: [{ monsters: [cp(foe)] }, { monsters: [cp(foe)] }] });
+  const run = (d, o) => Tac.runDay(d, Object.assign({ seed: 11, partyAI: 'tactical', record: true, maxRounds: 6, _keep: true }, o));
+  const morning = r => r.events.filter(e => /this morning/.test(e.text || ''));
+  const unit = (r, n) => r._sim.units.find(u => u.name === n);
+  const L = [4, 3, 2];
+
+  const ma = run(day([MA], L));
+  check(morning(ma[0]).length === 1 && /^Cleric cast Mage Armor this morning: Rogue AC 17$/.test(morning(ma[0])[0].text), 'Mage Armor goes on the unarmored target it helps most (Rogue, 13 + Dex 4 = 17 over AC 15): ' + (morning(ma[0])[0] || {}).text);
+  check(ma._sim.ac(unit(ma, 'Rogue')) === 17 && ma._sim.ac(unit(ma, 'Wizard')) === 15, 'the AC is still there after fight 2 (buffs reset between fights, the day buff is re-applied), and only the target has it');
+  check(morning(ma[1]).length === 0 && unit(ma, 'Cleric').slots[0] === 3, 'it is cast once (one level-1 slot), not recast in fight 2');
+  const ineligible = day([MA], L); ineligible.players.forEach(p => { if (p.ext) { delete p.ext.unarmored; } });
+  const none = run(ineligible);
+  check(morning(none[0]).length === 0 && unit(none, 'Cleric').slots[0] === 4, 'with nobody unarmored (or nobody it would help) Mage Armor is not cast and no slot is spent');
+  const armored = day([MA], L); armored.players[3].AC = 17;
+  check(morning(run(armored)[0]).every(e => !/Rogue/.test(e.text)), 'Mage Armor skips a target whose AC is already 13 + Dex or better');
+  check(morning(run(day([MA], L), { prefightBuffs: false })[0]).length === 0, 'toggle off: no pre-fight spell is cast');
+
+  // morningShare: a part of the caster's slot levels (here 4 + 3x2 + 2x3 = 16)
+  check(morning(run(day([MA], L), { morningShare: 0 })[0]).length === 0, 'morningShare 0 casts nothing');
+  check(morning(run(day([MA], L), { morningShare: 0.05 })[0]).length === 0, 'a share too small to pay for the spell (0.8 of a slot level) casts nothing');
+  check(morning(run(day([MA], L), { morningShare: 0.07 })[0]).length === 1, 'a share that pays for a level-1 slot casts it');
+  const aid = spellOf('Aid');
+  const both = run(day([aid, MA], L), { morningShare: 0.25 });
+  check(morning(both[0]).length === 2 && /Aid/.test(morning(both[0])[0].text) && /Mage Armor/.test(morning(both[0])[1].text), 'with room for both, the one worth more per slot level goes first (Aid, then Mage Armor): ' + morning(both[0]).map(e => e.text.split(' this')[0]).join(' / '));
+  check(unit(both, 'Cleric').slots[0] === 3 && unit(both, 'Cleric').slots[1] === 2, 'each takes the lowest slot that works');
+  const tight = run(day([aid, MA], L), { morningShare: 0.125 });
+  check(morning(tight[0]).length === 1 && /Aid/.test(morning(tight[0])[0].text), 'a share that pays for only one spell leaves the lesser one uncast (2 levels: Aid, no Mage Armor)');
+  const noRoom = run(day([aid, MA], [0, 0]));
+  check(morning(noRoom[0]).length === 0, 'no slots, no cast, whatever the share');
+
+  // Death Ward: one level-4 slot
+  const dw = run(day([DW], [4, 3, 3, 1]), { morningShare: 0.4 });
+  check(morning(dw[0]).length === 1 && /^Cleric cast Death Ward this morning: Barbarian warded/.test(morning(dw[0])[0].text), 'Death Ward goes on the target with the most to lose (highest max HP): ' + (morning(dw[0])[0] || {}).text);
+  check(morning(run(day([DW], [4, 3, 3, 0]), { morningShare: 1 })[0]).length === 0, 'Death Ward needs a slot of level 4 or more');
+  {
+    const sim = dw._sim, b = unit(dw, 'Barbarian'), foeU = sim.units.find(u => u.team === 'foes');
+    b.dead = false; b.hp = 20; b.deathWard = true; b.deathS = 0;
+    sim.damage(foeU, b, 500, {});
+    check(!b.dead && b.hp === 1 && b.deathWard === false, 'Death Ward: lethal damage leaves 1 HP, even a massive blow, and the ward is used up');
+    sim.damage(foeU, b, 500, {});
+    check(b.dead || b.hp === 0, 'the second drop is not caught');
+  }
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

@@ -974,6 +974,7 @@ Sim.prototype.slotFor = function (u, level) {
   return -1;
 };
 Sim.prototype.usable = function (u, a) {
+  if (a.ext && a.ext.prefight) return false;     // pre-fight buffs are cast in the morning only (morningCasts)
   if (a._spell) {
     if (!a._spell.level) return true;
     if (this.sustaining(u, a)) return true;                                                  // moving Moonbeam, another Call Lightning bolt: no new slot
@@ -2420,6 +2421,8 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   const overflow = dmg - tgt.hp;
   tgt.visLost = (tgt.visLost || 0) + Math.min(dmg, tgt.hp);
   tgt.hp = Math.max(0, tgt.hp - dmg);
+  // Death Ward (pre-fight): the first drop to 0 HP, or a killing blow, leaves it at 1 HP and the spell ends
+  if (tgt.hp <= 0 && tgt.deathWard) { tgt.deathWard = false; tgt.hp = 1; this.ev('react', `${tgt.name}'s Death Ward holds: 1 HP instead of 0`, { uid: tgt.uid }); }
   // Relentless Rage: dropped to 0 while raging, a Con save (DC 10, +5 each time) leaves it standing
   if (tgt.hp <= 0 && tgt.relentless && !(tgt.isPC && overflow >= tgt.maxHp) && tgt.buffs.some(b => b.name === 'Rage')) {
     const n = tgt.uses.get('__relentless') || 0, dc = 10 + 5 * n, roll = this.R.d(20) + this.saveBonusFor(tgt, 'con');
@@ -2471,7 +2474,7 @@ Sim.prototype.zoneCells = function (z) {
   const s = this.byId[z.src];
   if (!s || s.x === undefined) return z.cells;
   const key = s.x + ',' + s.y;
-  if (z._at !== key) { z._at = key; z._cells = new Set(areaCells(z.spec, s.x, s.y, s.x, s.y, this.W, this.H).map(c => c[0] + c[1] * this.W)); }
+  if (z._at !== key) { z._at = key; z._cells = new Set(this.cellsFor(z.spec, s.x, s.y, s.x, s.y, s.x, s.y).map(c => c[0] + c[1] * this.W)); }   // walls and sight lines cut it, as for an instant burst
   return z._cells;
 };
 Sim.prototype.zoneHit = function (z, t) {
@@ -4834,33 +4837,76 @@ function expandTeam(list, team, isPC) {
   return out;
 }
 
-/* Pre-fight buffs (opts.prefightBuffs, default on): hours-long buffs (Aid, 8 hours) are cast once, at the start of the
-   simulated day, before the first fight. Party only: monsters never do this (their statblock already assumes preparation).
-   Each caster casts at most once a day, spending one real slot of the lowest level that works (so pacing and later
-   fights see it spent). Aid gives up to three allies +amt max HP and +amt current HP; the targets are the allies with the
-   lowest max HP (the same +5 is worth most to them) who are not already aided. The buff lasts the day (`aided`, never
-   cleared: a short rest keeps it, units are rebuilt each day). With no slot left the caster does not cast, and the
-   in-fight Aid (healNeeded: `!t.aided`) never recasts on someone who has it. Returns log notes for runEncounter. */
-function morningCasts(party) {
+/* Pre-fight buffs (opts.prefightBuffs, default on; the one switch for all of them): hours-long, non-concentration buffs
+   (8 hours or more) are cast once, at the start of the simulated day, before the first fight. Concentration spells are out
+   (casting one pre-fight would block the caster's concentration in the fight) and so is anything shorter than 8 hours.
+   Party only: monsters never do this (their statblock already assumes preparation). A spell joins by carrying
+   ext.prefight (ext.aid for Aid) and an entry in PREFIGHT_SPELLS; the spell is inert in a fight (see usable).
+   Each caster ranks what it has by expected HP saved over the day per slot level spent, and spends at most
+   PREFIGHT.share (opts.morningShare) of its slot levels (levels x slots, summed) on the lot, each spell at most once, the lowest
+   slot that works, a real slot (pacing and later fights see it spent). With no slot or no eligible target it does not cast.
+   Effects that last the day sit on the unit: Aid is `aided` (never cleared), Death Ward is `deathWard` (cleared when it
+   fires, see damage), and buffs (Mage Armor) go in `dayBuffs`, re-applied by runDay through addBuff after each fight's
+   resetFightState. Returns log notes for runEncounter. */
+const PREFIGHT = {
+  share: 0.25,      // morningShare: part of a caster's slot levels that may go to pre-fight buffs
+  intake: 0.5,      // part of its max HP a creature takes in a fight, before armor and luck
+  hitP: 0.65,       // typical enemy chance to hit it; one point of AC removes 5% of the rolls, 0.05 / hitP of the damage
+  downP: 0.1,       // chance, per fight, it drops to 0 HP
+  downCost: 0.6     // an avoided drop to 0 is worth this part of its max HP (turns lost, risk of dying)
+};
+const unarmoredAC = o => { const x = (o.tpl && o.tpl.ext) || {}; return x.unarmored ? 13 + (+x.dexMod || 0) : 0; };
+const aidAmount = (a, k) => Math.round(avgDice(a.amount) + (k > 0 ? k * avgDice(a._spell.upcast) : 0));
+/* per spell: min slot level (rules) · ok(target) eligibility · gain(target, action, upcast steps, fights) in HP saved over the day · apply(sim, caster, action, target, upcast steps) -> log text */
+const PREFIGHT_SPELLS = {
+  aid:        { min: 2,    // +amt max HP and HP: amt HP, once
+                ok: o => !o.aided,
+                gain: (o, a, k) => aidAmount(a, k),
+                apply: (sim, c, a, o, k) => { const amt = aidAmount(a, k); o.aided = true; o.maxHp += amt; o.hp += amt; return '+' + amt + ' max HP'; } },
+  mageArmor:  { min: 1,    // AC 13 + Dex (unarmored only): (AC gained x 5% / hitP) of the HP it takes in the day, intake x max HP x fights
+                ok: o => unarmoredAC(o) > o.baseAC && !(o.dayBuffs || []).some(d => d.kind === 'mageArmor'),
+                gain: (o, a, k, f) => (unarmoredAC(o) - o.baseAC) * 0.05 / PREFIGHT.hitP * PREFIGHT.intake * o.maxHp * f,
+                apply: (sim, c, a, o) => {
+                  const ac = unarmoredAC(o), d = { kind: 'mageArmor', src: c.uid, action: { id: a.id, name: a.name, ext: {} }, data: { duration: 'entire encounter', ac: ac - o.baseAC } };
+                  (o.dayBuffs = o.dayBuffs || []).push(d); sim.addBuff(o, { uid: d.src }, d.action, d.data); return 'AC ' + ac; } },
+  deathWard:  { min: 4,    // the first drop to 0 HP leaves it at 1 HP: chance of dropping over the day (downP per fight) x downCost x max HP
+                ok: o => !o.deathWard && !o.wardSpent,
+                gain: (o, a, k, f) => Math.min(1, PREFIGHT.downP * f) * PREFIGHT.downCost * o.maxHp,
+                apply: (sim, c, a, o) => { o.deathWard = true; o.wardSpent = true; return 'warded (1 HP instead of 0, once)'; } }
+};
+function prefightKind(a) { return a.ext && (a.ext.aid ? 'aid' : a.ext.prefight); }
+function morningCasts(party, sim, opts) {
   const notes = [];
+  const share = opts && typeof opts.morningShare === 'number' ? opts.morningShare : PREFIGHT.share;
   for (const u of party) {
-    if (u.dead || u.morningCast) continue;
-    for (const a of u.actions) {
-      if (!(a.ext && a.ext.aid)) continue;
-      let L = 0;
-      if (a._spell && a._spell.level) {
-        for (let l = a._spell.level; l <= 9; l++) if (u.slots && u.slots[l - 1] > 0) { L = l; break; }
-        if (!L) continue;
+    if (u.dead) continue;
+    const done = {};
+    let budget = u.slots ? Math.floor(share * u.slotsMax.reduce((t, n, i) => t + n * (i + 1), 0) + 1e-9) : 0;
+    const fights = Math.max(1, sim.leftFor(u));
+    for (;;) {
+      let best = null;
+      for (const a of u.actions) {
+        const kind = prefightKind(a), spec = kind && PREFIGHT_SPELLS[kind];
+        if (!spec || done[a.id]) continue;
+        let L = 0;
+        if (a._spell && a._spell.level) {
+          for (let l = Math.max(a._spell.level, spec.min); l <= 9; l++) if (u.slots && u.slots[l - 1] > 0) { L = l; break; }
+          if (!L || L > budget) continue;
+        }
+        const k = L && a._spell.upcast ? L - a._spell.level : 0;
+        const n = (a.targets || 1) + (a._spell && a._spell.upcastTargets ? a._spell.upcastTargets * k : 0);
+        const ts = party.filter(o => !o.dead && spec.ok(o)).map(o => ({ o, g: spec.gain(o, a, k, fights) })).filter(x => x.g > 0)
+          .sort((x, y) => y.g - x.g || x.o.maxHp - y.o.maxHp).slice(0, n);
+        if (!ts.length) continue;
+        const v = ts.reduce((t, x) => t + x.g, 0) / Math.max(1, L);
+        if (!best || v > best.v) best = { a, spec, L, k, ts, v };
       }
-      const k = L && a._spell.upcast ? L - a._spell.level : 0;
-      const amt = Math.round(avgDice(a.amount) + (k > 0 ? k * avgDice(a._spell.upcast) : 0));
-      const ts = party.filter(o => !o.dead && !o.aided).sort((x, y) => x.maxHp - y.maxHp).slice(0, (a.targets || 1) + (a._spell && a._spell.upcastTargets ? a._spell.upcastTargets * k : 0));
-      if (!ts.length) continue;
-      ts.forEach(t => { t.aided = true; t.maxHp += amt; t.hp += amt; });
-      if (L) u.slots[L - 1]--;
-      u.morningCast = true;
-      notes.push({ uid: u.uid, text: `${u.name} cast ${a.name} this morning: ${ts.map(t => t.name).join(', ')} +${amt} max HP` });
-      break;
+      if (!best) break;
+      const text = best.ts.map(x => x.o.name).join(', ') + ' ' + best.spec.apply(sim, u, best.a, best.ts[0].o, best.k);
+      for (let i = 1; i < best.ts.length; i++) best.spec.apply(sim, u, best.a, best.ts[i].o, best.k);
+      if (best.L) { u.slots[best.L - 1]--; budget -= best.L; }
+      done[best.a.id] = true;
+      notes.push({ uid: u.uid, text: `${u.name} cast ${best.a.name} this morning: ${text}` });
     }
   }
   return notes;
@@ -4869,7 +4915,8 @@ function runDay(day, opts) {
   opts = opts || {};
   const sim = new Sim(opts);
   const party = expandTeam(day.players, 'party', true);
-  if (opts.prefightBuffs !== false) sim.morningNotes = morningCasts(party);
+  sim.encountersLeft = (opts.only !== undefined ? [day.encounters[opts.only]] : day.encounters).filter(e => e && e.monsters && e.monsters.length).length;   // the day's length, for leftFor
+  if (opts.prefightBuffs !== false) sim.morningNotes = morningCasts(party, sim, opts);
   const encs = (opts.only !== undefined) ? [day.encounters[opts.only]] : day.encounters;
   const results = [];
   let lostDay = false;     // a lost fight ends the day
@@ -4881,7 +4928,7 @@ function runDay(day, opts) {
     if (enc.shortRest && results.length) {
       party.forEach(u => { if (!u.dead) { u.hp = u.maxHp; u.temp = 0; u.actions.concat(u.surges || []).forEach(a => { if (freqKind(a.freq) === 'sr') u.uses.set(a.id, a.freq.uses || 1); }); if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'sr') u.uses.set('res:' + k, +u.resMax[k].uses || 0); if (u.slots && u.slotReset === 'sr') u.slots = u.slotsMax.slice(); else if (u.slots && u.recovery && !u.recovery.anyBreak && !u.recoveryUsed) recoverSlots(u); } });
     }
-    party.forEach(u => { if (!u.dead && u.hp <= 0) u.hp = 1; resetFightState(u); });
+    party.forEach(u => { if (!u.dead && u.hp <= 0) u.hp = 1; resetFightState(u); (u.dayBuffs || []).forEach(d => sim.addBuff(u, { uid: d.src }, d.action, d.data)); });
     const foes = expandTeam(enc.monsters, 'foes', false);
     party.forEach(u => { if (!u.aiSet) u.ai = AI_TYPES.includes(opts.partyAI) ? opts.partyAI : 'tactical'; });
     sim.events = [];

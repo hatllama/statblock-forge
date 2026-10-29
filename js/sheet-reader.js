@@ -53,6 +53,8 @@ const WEAPONS = {
 // spells the spell data has no entry for but a party member often relies on (built the way tools/build-party.js builds them)
 const CUSTOM = {
   'divine smite': { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0 } },
+  'mage armor': { level: 1, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'mageArmor', wtOnly: true } },
+  'death ward': { level: 4, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'deathWard', wtOnly: true } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
 };
 const weaponOf = name => { const n = String(name).toLowerCase(); let best = null; for (const k in WEAPONS) if (n.indexOf(k) >= 0 && (!best || k.length > best.length)) best = k; return best ? { key: best, w: WEAPONS[best] } : null; };
@@ -119,7 +121,7 @@ function fromDDB(d) {
   const size = d.race && d.race.sizeId === 2 ? 'Small' : /\b(goblin|halfling|gnome|kobold|fairy)\b/i.test(race) ? 'Small' : '';
   if (/fury of the small/i.test(traits.join('|'))) notes.push('Fury of the Small (extra damage a few times a day) isn\'t modelled.');
   if (/uncanny metabolism/i.test(traits.join('|'))) notes.push('Uncanny Metabolism (Focus Points back on initiative once a day) isn\'t modelled.');
-  return { name: d.name, classes, scores, hp, ac, speed, fly, init, saveProf, skills, size, attacks, spells, resist, traits, notes, src: 'D&D Beyond' };
+  return { name: d.name, classes, scores, hp, ac, unarmored: !armor, dexM, speed, fly, init, saveProf, skills, size, attacks, spells, resist, traits, notes, src: 'D&D Beyond' };
 }
 
 /* ---------- facts from a Foundry VTT dnd5e actor ---------- */
@@ -173,7 +175,7 @@ function fromFoundry(a) {
     return s.level === 0 || p.prepared || (p.mode && p.mode !== 'prepared') || s.prepared === 1 || s.prepared === 2 || (s.method && s.method !== 'spell');
   }).map(i => i.name);
   const resist = ((sys.traits && sys.traits.dr && sys.traits.dr.value) || []);
-  return { name: a.name, classes, scores, hp, ac, speed: mv.walk || 30, fly: mv.fly || 0, saveProf, attacks, spells, resist: Array.isArray(resist) ? resist : [], notes, src: 'Foundry VTT' };
+  return { name: a.name, classes, scores, hp, ac, unarmored: !armor, dexM, speed: mv.walk || 30, fly: mv.fly || 0, saveProf, attacks, spells, resist: Array.isArray(resist) ? resist : [], notes, src: 'Foundry VTT' };
 }
 
 /* ---------- facts from text (pasted sheets, PDF form fields) ---------- */
@@ -372,6 +374,7 @@ function build(f, opts) {
   const actions = [];
   const add = a => actions.push(Object.assign({ freq: 'at will', condition: 'default', targets: 1 }, a, { id: aid() }));
   const ext = { speed: f.speed || 30, initBonus: f.init !== null && f.init !== undefined ? f.init : M(1), saves };
+  if (f.unarmored) { ext.unarmored = true; ext.dexMod = f.dexM; }     // wears no armor: Mage Armor (13 + Dex) may be worth casting
   if (f.fly) ext.fly = f.fly;
   if (f.resist && f.resist.length) ext.resist = Array.from(new Set(f.resist));
   const athl = M(0) + (!f.skills || f.skills.includes('athletics') ? pb : 0), acro = M(1) + (f.skills && f.skills.includes('acrobatics') ? pb : 0);

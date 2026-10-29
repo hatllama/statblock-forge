@@ -350,6 +350,28 @@ happen (there is no boss with LR left to plan against). Open mode is unchanged.
 | Teleport away when hurt (regular, < 40%) | `turn` | v2: the `jump` mode, scored like any other |
 | TPK kills, surprise rules, climb DC | sim options | rules, not AI |
 
+## Pre-fight buffs (morning casts; not part of v2, runs for both AIs)
+
+`opts.prefightBuffs` (War Table: "Pre-fight buffs", default on) is the one switch. At the start of the day, before fight 1, each party caster spends some slots on
+spells that last the day. **In:** non-concentration buff spells that last 8 hours or more and help in combat (Aid, Mage Armor, Death Ward).
+**Out:** concentration buffs (a pre-fight cast would block the caster's concentration in the fight), anything under 8 hours, and Heroes' Feast
+(level 6, an hour to cast, mostly immunities the engine has no use for: the parties are level 4–5). Monsters never cast pre-fight (their statblock assumes prep).
+
+- **Policy.** Each caster ranks what it knows by *expected HP saved over the day per slot level spent*, casts the best, re-ranks (targets have changed),
+  and stops when the budget or the eligible targets run out. Each spell once per caster, the lowest slot that works, a real slot. The budget is
+  `PREFIGHT.share` (`opts.morningShare`) of the caster's slot levels (slots × level, summed). Plain data in the `PREFIGHT` block next to `morningCasts`.
+- **Day length** comes from `leftFor` (the open mode knows the real count; blind/learn assume 2).
+- **Value functions** (units: HP saved over the day; `f` = fights from `leftFor`, `PREFIGHT.*` the weights):
+  - Aid: the +amt max HP and HP, per target (amt = 5 + 5 per level above 2). Targets: lowest max HP first, up to 3 (+1 per level above 2).
+  - Mage Armor: (13 + Dex − current AC) × 5% ÷ `hitP` × `intake` × max HP × f. Only on a target marked `ext.unarmored` whose 13 + `ext.dexMod` beats its AC.
+  - Death Ward: min(1, `downP` × f) × `downCost` × max HP. Highest max HP goes first.
+- **Effects.** Aid sets `aided` and raises max HP and HP. Mage Armor is a buff (`data.ac` = the difference, duration `entire encounter`) kept in the unit's `dayBuffs` and
+  re-applied through `addBuff` after each fight's `resetFightState`. Death Ward sets `deathWard`; `damage` turns the first drop to 0 (a killing blow too) into 1 HP and clears it.
+- **Not cast in a fight:** a spell carrying `ext.prefight` is inert in `usable`. Aid keeps its in-fight cast (never on someone who has it).
+- **Data.** Mage Armor and Death Ward are in the sheet reader's `CUSTOM` table (same shape as Aid); the sheet reader marks `ext.unarmored` + `ext.dexMod` from
+  D&D Beyond and Foundry sheets (no armor worn). Typed/PDF sheets carry no marker, so Mage Armor is never cast for them. The built-in roster has no Mage Armor (its Wizard's AC 15 already counts it).
+- **Calibration.** Default share from a sweep over 0 / 0.15 / 0.25 / 0.4 (notes in the commit message and roadmap).
+
 ## Not built yet
 
 Half/third casters and Divine Smite (roadmap phase 2), reactions (phase 3), the profile editor UI and a War Table switch (phase 5), lookahead of any kind (never: odds runs

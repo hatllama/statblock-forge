@@ -114,6 +114,10 @@ report win ±SE, rounds, deaths, slots spent.**
 - A seeded run needs: (1) a setting (for example `S.settings.seed`, plus a "fixed seed" switch, default off or on as the user decides) that replaces `Date.now()` in `runOdds`; (2) persisting it in the saved settings (`store.set`); (3) showing the seed next to the odds so a number can be reproduced; (4) nothing in the engine. Per-run seeds come from the run index, so chunking does not matter.
 - Caveat: the same number requires the same day, layouts and `simOpts()`; any change to those or to the AI (by design) changes the result.
 
+## Done outside the phases: generic pre-fight buffs
+
+Aid, Mage Armor and Death Ward are cast in the morning from a table (`PREFIGHT_SPELLS`) under one toggle and one slot share (`morningShare`); see "Pre-fight buffs" in `docs/ai-v2.md`. Not built: concentration buffs (they would block the caster in the fight), spells under 8 hours, Heroes' Feast, and monsters casting pre-fight.
+
 ## Backlog (checked / to add later)
 
 One line each: what, why, which phase takes it. Phase 7 (summons and companions) is in the table above.
@@ -125,7 +129,7 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Relentless Rage DC counter** never resets on rests: small rules fix, bundle with the next engine job.
 - **Lingering-zone gaps**: Flaming Sphere's bonus-action move and ram, Wall of Fire's side damage, Cloudkill drift, foes avoiding a damage zone; the cast-time hit counts as a round's zone hit (a small over-credit): next engine job, foe avoidance with phase 4.
 - **Spell data gaps, zones**: Cloud of Daggers, Hunger of Hadar, Create Bonfire, Spike Growth, Sleet Storm: next spell-data job (phase 2 for the casters that use them).
-- **Spell data gaps, utility**: Invisibility, Fly, Dimension Door, Dispel Magic, Animate Dead, Plane Shift, Power Word Kill, Scrying, Detect Thoughts, Detect Magic, Light, Mage Hand, Prestidigitation, Thaumaturgy, Mage Armor: phase 2 (those with a combat effect), the rest are out of scope.
+- **Spell data gaps, utility**: Invisibility, Fly, Dimension Door, Dispel Magic, Animate Dead, Plane Shift, Power Word Kill, Scrying, Detect Thoughts, Detect Magic, Light, Mage Hand, Prestidigitation, Thaumaturgy: phase 2 (those with a combat effect), the rest are out of scope.
 - **Sheet reader gaps**: Elementalism and other cantrips, Uncanny Metabolism, Fury of the Small: next sheet-reader job.
 - **Reactions inside `attackRoll`** (Shield, Silvery Barbs, Lucky): phase 3.
 - **Dormant probing code** (learn mode burn was dropped): decide at phase 6 whether to delete it.
