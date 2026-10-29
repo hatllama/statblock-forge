@@ -42,17 +42,19 @@ const INCAP = ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconsciou
 function scanRules(r, layout, acc) {
   let { wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc;
   let cur = {}, turnOf = null, inArea = false;
+  const dmgZones = [];          // lingering zones hurt from the zone's cells, not along a line from the caster
   const pushed = new Set();     // a later beam of the same attack follows a creature the first one pushed
   for (const e of r.events) {
     events++;
     const prev = cur; cur = Object.assign({}, cur);
     for (const k in e.state) cur[k] = Object.assign({}, cur[k] || {}, e.state[k]);
     if (e.kind === 'turn') { turnOf = e.uid; pushed.clear(); }
+    if (e.kind === 'zone' && e.zkind === 'dmg') { const zn = /^(.*?) (lingers|follows)/.exec(e.text || ''); if (zn) dmgZones.push(zn[1]); }
     if (e.kind === 'move' && / is pushed /.test(e.text)) pushed.add(e.uid);
     // saves inside an area are rolled from the area's centre, not the caster
     if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal'].includes(e.kind)) inArea = false;
     if (layout && e.kind === 'move' && e.path) for (const q of e.path) if (isWall(q.x, q.y)) wallSteps++;
-    if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text)) {
+    if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text) && !dmgZones.some(n => (e.text || '').includes(': ' + n))) {
       const a = prev[e.uid], b = prev[e.target];
       if (a && b && a.onBoard !== false && b.onBoard !== false && !a.swallowedBy && !b.swallowedBy) {
         if (process.env.VERBOSE) { const n0 = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4; for (let j = 1; j < n0; j++) { const f = j / n0; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { console.log('   wall?', e.kind, e.text.slice(0, 100), a.x, a.y, a.conds, '->', b.x, b.y); break; } } }
@@ -765,6 +767,45 @@ section('Lingering damage zones');
     late += ticks(r, 'Spirit Guardians').filter(e => e.round >= 3).length;
   }
   check(gone === 4 && late === 0, `a 2-round zone cast in round 1 fades at the start of round 3 and stops hurting (${gone} of 4 fades, ${late} late hits)`);
+}
+
+section('Pre-fight buffs (Aid cast in the morning)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  const cleric = slots => { const c = build('Cleric'); c.ext.spellbook.spells = c.ext.spellbook.spells.filter(s => s.name === 'Aid'); c.ext.spellbook.slots = slots; return c; };
+  const foe = { id: 'dm', name: 'Dummy', mode: 'custom', hp: 30, AC: 8, saveBonus: 0, count: 1, speed: 30,
+    actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] };
+  const day = slots => ({ players: [cleric(slots), build('Fighter'), build('Wizard'), build('Rogue'), build('Barbarian')], encounters: [{ monsters: [cp(foe)] }, { monsters: [cp(foe)] }] });
+  const base = {}; day([0, 0]).players.forEach(p => { base[p.name] = p.hp; });
+  const run = (slots, o) => Tac.runDay(day(slots), Object.assign({ seed: 11, partyAI: 'tactical', record: true, maxRounds: 8, _keep: true }, o));
+  const morning = r => r.events.filter(e => /this morning/.test(e.text || ''));
+  const aidHeals = r => r.events.filter(e => e.kind === 'heal' && /: Aid, max HP/.test(e.text));
+  const grown = r => r.party.filter(p => p.maxHp > base[p.name]).map(p => p.name).sort();
+  const slotsLeft = r => r._sim.units.find(u => u.name === 'Cleric').slots[1];
+
+  const on = run([0, 2]), r1 = on[0];
+  check(morning(r1).length === 1 && /^Cleric cast Aid this morning/.test(morning(r1)[0].text), 'Aid is logged as cast in the morning, before fight 1');
+  const lowest = Object.keys(base).sort((a, b) => base[a] - base[b]).slice(0, 3).sort();
+  const firstThree = morning(r1)[0].text.split(': ')[1].split(' +')[0].split(', ').sort();
+  check(JSON.stringify(firstThree) === JSON.stringify(lowest), `the three allies with the lowest max HP are chosen (${firstThree} vs ${lowest})`);
+  check(lowest.every(n => r1.party.find(p => p.name === n).maxHp === base[n] + 5), 'each of the three gets exactly +5 max HP from the level-2 slot');
+  check(slotsLeft(on) < 2, `the morning cast spends a real slot (${slotsLeft(on)} of 2 left)`);
+  check(morning(on[1]).length === 0 && lowest.every(n => on[1].party.find(p => p.name === n).maxHp >= base[n] + 5), 'the buff lasts into fight 2 and is not announced again');
+  check([...on[0].events, ...on[1].events].filter(e => e.kind === 'heal' && /: Aid, max HP/.test(e.text) && lowest.some(n => (e.text.split('→ ')[1] || '').startsWith(n + ':'))).length === 0, 'Aid is never recast in a fight on someone who already has it');
+  const again = run([0, 2], { seed: 12 });
+  check(again[0].party.every(p => p.maxHp <= base[p.name] + 5), 'another day starts fresh: the buff does not stack across days');
+
+  const one = run([0, 1]);
+  check(slotsLeft(one) === 0 && aidHeals(one[0]).length === 0 && morning(one[0]).length === 1 && grown(one[0]).length === 3, 'with one slot the morning cast uses it and nothing is left for a recast');
+  const none = run([0, 0]);
+  check(morning(none[0]).length === 0 && grown(none[0]).length === 0, 'no slot, no morning cast');
+
+  const off = run([0, 2], { prefightBuffs: false });
+  check(morning(off[0]).length === 0, 'with the toggle off nothing is cast in the morning');
+  check(slotsLeft(off) <= 2 && grown(off[0]).length <= aidHeals(off[0]).length, 'with the toggle off max HP only grows from in-fight casts');
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

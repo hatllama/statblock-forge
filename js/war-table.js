@@ -53,7 +53,7 @@ const W = () => +S.settings.map.split('x')[0];
 const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
-const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills,
+const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills, prefightBuffs: S.settings.prefightBuffs !== false,
   know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, morale: S.settings.morale || 'off', ai: { party: S.settings.aiParty === 'v2' ? 'v2' : 'v1', foes: S.settings.aiFoes === 'v2' ? 'v2' : 'v1' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -768,6 +768,7 @@ document.getElementById('wt-surprise').onchange = ev=>{ S.settings.surprise = ev
 document.getElementById('wt-escape').onchange = ev=>{ S.settings.escape = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-climb').onchange = ev=>{ S.settings.climbDC = +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-tpk').onchange = ev=>{ S.settings.tpkKills = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-prefight').onchange = ev=>{ S.settings.prefightBuffs = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-partyAI').onchange = ev=>{ S.settings.partyAI = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-aiParty').onchange = ev=>{ S.settings.aiParty = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-aiFoes').onchange = ev=>{ S.settings.aiFoes = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
@@ -790,6 +791,7 @@ function renderAll(){
   knowNote();
   showPane(S.settings.sideTab || 'map');
   document.getElementById('wt-tpk').checked = !!S.settings.tpkKills;
+  document.getElementById('wt-prefight').checked = S.settings.prefightBuffs !== false;
   document.getElementById('wt-climb').value = String(S.settings.climbDC === undefined ? 10 : S.settings.climbDC);
   document.getElementById('wt-mapSize').value = S.settings.map;
   renderTabs();

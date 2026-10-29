@@ -106,6 +106,8 @@
           <div class="opt"><label for="wt-escape">When grappled</label><select id="wt-escape"><option value="smart">Escape if the grappler can swallow</option><option value="always">Always try to escape</option><option value="never">Never escape</option></select></div>
           <div class="opt"><label for="wt-climb">Climbing ledges of 10 ft or more</label><select id="wt-climb"><option value="10">Athletics DC 10 (handholds)</option><option value="15">Athletics DC 15 (sheer)</option><option value="20">Athletics DC 20 (slick)</option><option value="99">Only with a climb speed</option></select></div>
           <div class="opt"><label>Whole party down</label><label class="check" title="When every party member is at 0 HP and foes are still up, the downed characters die instead of being left dying, and it counts toward the odds of a PC dying."><input type="checkbox" id="wt-tpk"> They all die, with no one left to save them</label></div>
+          <div class="opt"><label>Pre-fight buffs</label><label class="check" title="The party casts long-lasting buffs (Aid lasts 8 hours) once before the first fight, which costs a spell slot. Turn off for an ambush."><input type="checkbox" id="wt-prefight"> Pre-fight buffs (Aid and similar)</label>
+            <p class="help">The party casts long-lasting buffs before the first fight, which costs a spell slot.</p></div>
         </div>
 
         <div class="pane" data-pane="ai" hidden>
@@ -211,7 +213,7 @@
 <script src="js/statblock-parser.js?v=20261029a"></script>
 <script src="js/sheet-reader.js?v=20261029a"></script>
 <script src="js/forge.js?v=20261029b"></script>
-<script src="js/engine/tactical-engine.js?v=20261029a"></script>
-<script src="js/war-table.js?v=20261029a"></script>
+<script src="js/engine/tactical-engine.js?v=20261029b"></script>
+<script src="js/war-table.js?v=20261029b"></script>
 </body>
 </html>

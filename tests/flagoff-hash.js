@@ -33,7 +33,7 @@ const DAYS = [
 const walled = (() => { const cells = {}; for (let y = 0; y < 16; y++) if (y < 6 || y > 9) cells['11,' + y] = { t: 'wall' }; for (let y = 2; y < 14; y++) for (let x = 3; x <= 5; x++) cells[x + ',' + y] = { h: 2 }; return { gapFt: 30, terrain: { cells } }; })();
 for (const [name, mk] of DAYS) for (const lay of [null, walled]) for (const partyAI of ['tactical', 'regular']) for (let i = 0; i < 4; i++) {
   const seed = 500 + i * 7919;
-  const res = Tac.runDay(mk(), { seed, partyAI, record: true, layout: lay || undefined });
+  const res = Tac.runDay(mk(), { seed, partyAI, record: true, layout: lay || undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined });
   const h = crypto.createHash('sha1').update(JSON.stringify(res.map(r => [r.won, r.rounds, r.events]))).digest('hex').slice(0, 12);
   console.log(`${name} | ${lay ? 'walled' : 'open'} | ${partyAI} | ${seed} | ${h}`);
 }

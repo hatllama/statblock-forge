@@ -4834,22 +4834,33 @@ function expandTeam(list, team, isPC) {
   return out;
 }
 
-/* hours-long buffs (Aid) are cast in the morning, before the first fight. A caster whose slots come
-   back on a short rest is assumed to rest after casting, so the slot isn't missing in the first fight. */
+/* Pre-fight buffs (opts.prefightBuffs, default on): hours-long buffs (Aid, 8 hours) are cast once, at the start of the
+   simulated day, before the first fight. Party only: monsters never do this (their statblock already assumes preparation).
+   Each caster casts at most once a day, spending one real slot of the lowest level that works (so pacing and later
+   fights see it spent). Aid gives up to three allies +amt max HP and +amt current HP; the targets are the allies with the
+   lowest max HP (the same +5 is worth most to them) who are not already aided. The buff lasts the day (`aided`, never
+   cleared: a short rest keeps it, units are rebuilt each day). With no slot left the caster does not cast, and the
+   in-fight Aid (healNeeded: `!t.aided`) never recasts on someone who has it. Returns log notes for runEncounter. */
 function morningCasts(party) {
   const notes = [];
   for (const u of party) {
+    if (u.dead || u.morningCast) continue;
     for (const a of u.actions) {
-      if (!(a.ext && a.ext.aid) || u.dead) continue;
-      if (a._spell && a._spell.level && !(u.slots && u.slots.some((n, i) => n > 0 && i + 1 >= a._spell.level))) continue;
-      const L = a._spell && a._spell.level ? (() => { for (let l = a._spell.level; l <= 9; l++) if (u.slots[l - 1] > 0) return l; return a._spell.level; })() : 0;
+      if (!(a.ext && a.ext.aid)) continue;
+      let L = 0;
+      if (a._spell && a._spell.level) {
+        for (let l = a._spell.level; l <= 9; l++) if (u.slots && u.slots[l - 1] > 0) { L = l; break; }
+        if (!L) continue;
+      }
       const k = L && a._spell.upcast ? L - a._spell.level : 0;
       const amt = Math.round(avgDice(a.amount) + (k > 0 ? k * avgDice(a._spell.upcast) : 0));
       const ts = party.filter(o => !o.dead && !o.aided).sort((x, y) => x.maxHp - y.maxHp).slice(0, (a.targets || 1) + (a._spell && a._spell.upcastTargets ? a._spell.upcastTargets * k : 0));
       if (!ts.length) continue;
       ts.forEach(t => { t.aided = true; t.maxHp += amt; t.hp += amt; });
-      if (L && u.slotReset !== 'sr') u.slots[L - 1]--;
+      if (L) u.slots[L - 1]--;
+      u.morningCast = true;
       notes.push({ uid: u.uid, text: `${u.name} cast ${a.name} this morning: ${ts.map(t => t.name).join(', ')} +${amt} max HP` });
+      break;
     }
   }
   return notes;
@@ -4858,6 +4869,7 @@ function runDay(day, opts) {
   opts = opts || {};
   const sim = new Sim(opts);
   const party = expandTeam(day.players, 'party', true);
+  if (opts.prefightBuffs !== false) sim.morningNotes = morningCasts(party);
   const encs = (opts.only !== undefined) ? [day.encounters[opts.only]] : day.encounters;
   const results = [];
   let lostDay = false;     // a lost fight ends the day
