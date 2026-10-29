@@ -112,3 +112,20 @@ report win ±SE, rounds, deaths, slots spent.**
 - The War Table's `runOdds` (`js/war-table.js`) does the same but takes `base = (Date.now() & 0xffffff) + 1`, so each click gives different numbers.
 - A seeded run needs: (1) a setting (for example `S.settings.seed`, plus a "fixed seed" switch, default off or on as the user decides) that replaces `Date.now()` in `runOdds`; (2) persisting it in the saved settings (`store.set`); (3) showing the seed next to the odds so a number can be reproduced; (4) nothing in the engine. Per-run seeds come from the run index, so chunking does not matter.
 - Caveat: the same number requires the same day, layouts and `simOpts()`; any change to those or to the AI (by design) changes the result.
+
+## Backlog (checked / to add later)
+
+One line each: what, why, which phase takes it. A new **Phase 7: summons and companions** (Opus) is added after phase 6.
+
+- **Summons and companions** (summon spells are skipped in `spell-data.js`; no companion code in the engine): new Phase 7; rangers and artificers touch it in phase 2.
+- **Flee and morale**: v1 has `moraleBreaks`, v2 has no `fleeHp`: phase 4.
+- **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
+- **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.
+- **Relentless Rage DC counter** never resets on rests: small rules fix, bundle with the next engine job.
+- **Lingering-zone gaps**: Flaming Sphere's bonus-action move and ram, Wall of Fire's side damage, Cloudkill drift, foes avoiding a damage zone; the cast-time hit counts as a round's zone hit (a small over-credit): next engine job, foe avoidance with phase 4.
+- **Spell data gaps, zones**: Cloud of Daggers, Hunger of Hadar, Create Bonfire, Spike Growth, Sleet Storm: next spell-data job (phase 2 for the casters that use them).
+- **Spell data gaps, utility**: Invisibility, Fly, Dimension Door, Dispel Magic, Animate Dead, Plane Shift, Power Word Kill, Scrying, Detect Thoughts, Detect Magic, Light, Mage Hand, Prestidigitation, Thaumaturgy, Mage Armor: phase 2 (those with a combat effect), the rest are out of scope.
+- **Sheet reader gaps**: Elementalism and other cantrips, Uncanny Metabolism, Fury of the Small: next sheet-reader job.
+- **Reactions inside `attackRoll`** (Shield, Silvery Barbs, Lucky): phase 3.
+- **Dormant probing code** (learn mode burn was dropped): decide at phase 6 whether to delete it.
+- **Stale items**: the comment above `leftFor` disagrees with the code, and `docs/ai-v2.md` step numbering should match these phases (both cleaned up in the repo-cleanup pass); the `v2Eligible` casterKind gate is touched by both phase 2 and phase 4.
