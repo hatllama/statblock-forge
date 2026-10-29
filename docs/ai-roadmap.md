@@ -67,6 +67,7 @@ The rules engine (dice, saves, damage, movement, zones) is not AI and is not cha
 | 4 | Sonnet | **Monster intelligence tiers**; non-tactical monsters on v2 with a simple profile; Enemy AI default decided here. | Tiers from Int/Wis, `ext.aiProfile` overrides; beast fights look like beasts |
 | 5 | Sonnet | **Seeded odds runs** (cheap, see below), then the preset and slider UI per B5, with workspace migration. | Same encounter, same number; old workspaces load |
 | 6 | Sonnet | **Default switch to v2**, then removal of the old AI. | Gate below |
+| 7 | Opus | **Summons and companions.** Summon spells (skipped in `spell-data.js`) and a companion/summoned-creature model in the engine and spell data; rangers and artificers use it. | Summon spells cast and fought with by v2; companions act on their own turns; scenarios no worse |
 
 **Gate for phase 6:** the harness table is no worse than the old AI in any scenario beyond noise; the user has
 watched about ten fights on New (a mix of martials, casters and different monsters) and signed off; `npm test` and
@@ -115,9 +116,9 @@ report win ±SE, rounds, deaths, slots spent.**
 
 ## Backlog (checked / to add later)
 
-One line each: what, why, which phase takes it. A new **Phase 7: summons and companions** (Opus) is added after phase 6.
+One line each: what, why, which phase takes it. Phase 7 (summons and companions) is in the table above.
 
-- **Summons and companions** (summon spells are skipped in `spell-data.js`; no companion code in the engine): new Phase 7; rangers and artificers touch it in phase 2.
+- **Summons and companions** (summon spells are skipped in `spell-data.js`; no companion code in the engine): Phase 7; rangers and artificers touch it in phase 2.
 - **Flee and morale**: v1 has `moraleBreaks`, v2 has no `fleeHp`: phase 4.
 - **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
 - **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.

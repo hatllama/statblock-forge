@@ -1267,10 +1267,6 @@ function warningsHtml(m, key){
    The save format only knows one average "saveBonus". The six real saves live in ext.saves; whenever all six
    are filled in, saveBonus is kept equal to their average so the exported maths stays right. */
 const SAVE_ABS = [['str','STR'],['dex','DEX'],['con','CON'],['int','INT'],['wis','WIS'],['cha','CHA']];
-function savesField(key, c){
-  const sv = (c.ext && c.ext.saves) || {};
-  return `<div class="field saves6-field"><label>Saving throws <span class="help" style="text-transform:none;letter-spacing:0;">blank = uses the average save bonus</span></label><div class="saves6">${SAVE_ABS.map(([k,l])=>`<label>${l}<input type="number" data-save="${k}" data-owner="${key}" value="${typeof sv[k] === 'number' ? sv[k] : ''}" placeholder="${c.saveBonus ?? 0}"></label>`).join('')}</div></div>`;
-}
 ['forgeDynamic'].forEach(gridId=>{
   document.getElementById(gridId).addEventListener('input', ev=>{
     const el = ev.target; if(el.dataset.save === undefined) return;
@@ -2470,20 +2466,6 @@ function escapeAttr(str){ return escapeHtml(str); }
    Real schema check — the Forge's own save-format validators
    in the engine script above, so "valid here" = "loads on the site".
 --------------------------------------------------------- */
-function describePath(day, path){
-  const parts = [];
-  let node = day;
-  for(let i=0;i<path.length;i++){
-    const k = path[i];
-    if(k === 'encounters' && typeof path[i+1] === 'number'){ parts.push(`Encounter ${path[i+1]+1}`); node = day.encounters[path[i+1]]; i++; continue; }
-    if(k === 'players' && typeof path[i+1] === 'number'){ node = day.players[path[i+1]]; parts.push(node?.name || `Player ${path[i+1]+1}`); i++; continue; }
-    if(k === 'monsters' && typeof path[i+1] === 'number'){ node = node?.monsters?.[path[i+1]]; parts.push(node?.name || `Monster ${path[i+1]+1}`); i++; continue; }
-    if(k === 'actions' && typeof path[i+1] === 'number'){ node = node?.actions?.[path[i+1]]; parts.push(`"${node?.name || node?.templateOptions?.templateName || 'action '+(path[i+1]+1)}"`); i++; continue; }
-    parts.push(String(k));
-  }
-  return parts.join(' › ');
-}
-
 /* Checks a day against the day save-file format using the Forge's own validators
    (the same rules the cards' warnings use: required fields, allowed values, number formats). */
 function checkRealSchema(day){
