@@ -2,6 +2,21 @@
    TACTICAL ENGINE — plays fights out with real dice on a grid.
    Reads the day JSON exported by the Statblock Forge.
    Pure JS, no DOM. Exposes global `TacEngine`.
+
+   Load order: after js/forge.js, before js/war-table.js. Must stay DOM-free: tests/run.js loads it under Node.
+   The whole file is one closure; Sim.prototype.* methods share its helpers and constants.
+   Contents (grep the banner text, in file order):
+     - RNG & dice, constants, range inference
+     - areas of effect (areaSpec, areaCells, inArea), damage types, unit construction, spellbooks
+     - the encounter simulator (Sim), terrain, buffs & conditions, uses, target selection, grid & movement
+     - expected outcomes: WHAT EACH SIDE KNOWS (k* accessors, learning), the estimates the AI uses
+     - SPELLCASTING: which spell is worth it right now
+     - TACTICAL TURN PLANNING (tacticalTurnInner, plan, moveAlong)
+     - rolling, damage/healing/death, damage zones, reactions on taking damage, triggers
+     - executing actions (resolveAttackAction, doAction), choosing an action (classic AI)
+     - AI v2 (AI_BASE/AI_PROFILES, casters, pacing, posture, value, Legendary Resistance burn, the v2 turn)
+     - a creature's turn (turn), flying height, legendary & lair, morale and running an encounter
+     - a whole adventuring day (runDay, monteCarlo, summarize), then the TacEngine export
    ===================================================================== */
 (function (root) {
 'use strict';
@@ -726,6 +741,7 @@ Sim.prototype.diffState = function () {
   return out;
 };
 
+/* ----- queries: who is alive, which side, which cells ----- */
 Sim.prototype.alive = function (u) { return !u.dead && u.hp > 0; };
 Sim.prototype.living = function (u) { return !u.dead; };
 Sim.prototype.enemiesOf = function (u) { return this.units.filter(x => x.team !== u.team); };
@@ -3020,6 +3036,7 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
 };
 
 /* first usable action of a slot that has a valid plan within `budget` ft of movement */
+/* ----- choosing an action (classic AI) ----- */
 Sim.prototype.choose = function (u, slot, budget) {
   const list = u.actions.filter(a => a.actionSlot === slot && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a) && !(slot === 0 && this.holdsResource(u, a)));
   for (let k = 0; k < list.length; k++) {
@@ -4701,6 +4718,7 @@ Sim.prototype.lair = function () {
 /* Morale (optional): a monster that's bloodied, sees half its side fall, or loses its leader makes a DC 10 Wisdom
    save at the start of its turn when its side is losing; on a failure it flees, or surrenders if it can't get away.
    Either way it's out of the fight and counts as defeated. Mindless creatures and legendary ones fight on. */
+/* ----- morale, ending an encounter, placing units ----- */
 const FEARLESS = ['undead', 'construct', 'ooze', 'plant'];
 Sim.prototype.moraleBreaks = function (u) {
   if (!this.morale || u.team !== 'foes' || u.isPC || u.legResMax || u.hasLegendary) return false;

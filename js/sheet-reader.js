@@ -5,6 +5,14 @@
    through one set of facts (name, classes, AC, HP, scores, saves, attacks, spells, slots), and one
    builder turns those into the creature, with spells built by the statblock reader's own spell builder.
    DOM-free: tested under Node (tests/run.js). Needs js/spell-data.js and js/statblock-parser.js first.
+
+   Load order: after js/statblock-parser.js, before js/forge.js. Must stay DOM-free.
+   Contents (grep the banner text, in file order):
+     - facts from a D&D Beyond character JSON (fromDDB)
+     - facts from a Foundry VTT dnd5e actor (fromFoundry)
+     - facts from text (pasted sheets, PDF form fields) (fromText)
+     - class features the War Table has rules for (classFeatures)
+     - the creature (build)
    ===================================================================== */
 (function (root) {
 'use strict';

@@ -7,6 +7,16 @@
 
    parse(text) → { monsters: [creature…], skipped: [string…] }
    Each creature carries `_notes`: what the parser assumed or couldn't model, shown on its card.
+
+   Load order: after js/spell-data.js, before js/sheet-reader.js. Must stay DOM-free: tested under Node.
+   Contents (grep the banner text, in file order):
+     - small helpers, text clean-up
+     - the header: name, size/type, AC, HP, speed, abilities, saves, CR
+     - body: traits and the action sections, each split into "Name. text" entries
+     - reading one entry's mechanics
+     - spellcasting, traits
+     - Multiattack: which attacks, how many of each
+     - one statblock (parseOne), then the parse() entry point
    ===================================================================== */
 (function (root) {
 'use strict';

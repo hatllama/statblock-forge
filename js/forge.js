@@ -1,3 +1,16 @@
+/* =====================================================================
+   FORGE — the workshop view: party and encounters, creature sheets, library, importers, validation, export, autosave.
+   Load order: after js/sheet-reader.js, before js/engine/tactical-engine.js. Uses the DOM; not loaded by the Node tests.
+   Contents (grep the banner text, in file order):
+     - System prompt for the AI conversion call
+     - Validation (mirrors the day save-file enums), Visual action editor, Spellcasting editor
+     - action audit, the six saving throws (ext.saves)
+     - State, THE WORKSHOP (sidebar, main panel, party bar, creature sheet, read-only statblock, encounter,
+       quick odds, library, class roster, resources, character sheets, statblock import, events)
+     - Parse statblocks via Claude API, Export, Utils
+     - Real schema check (checkRealSchema), View switching, Load a day file, Init, Persistence (autosave)
+   ===================================================================== */
+
 /* ---------------------------------------------------------
    System prompt for the AI conversion call
 --------------------------------------------------------- */
