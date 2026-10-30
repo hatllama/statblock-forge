@@ -711,24 +711,6 @@
       "wtOnly": true
      },
      "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a9"
-    },
-    {
-     "freq": "at will",
-     "condition": "default",
-     "targets": 1,
-     "name": "Pressurized Flame Squirter",
-     "actionSlot": 0,
-     "type": "atk",
-     "dpr": "2d8 + 4 + 3d6",
-     "toHit": 7,
-     "target": "enemy with least HP",
-     "ext": {
-      "range": 30,
-      "damageType": "fire",
-      "wtDpr": "2d8 + 4",
-      "sneak": true
-     },
-     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a6"
     }
    ],
    "_notes": [
@@ -738,6 +720,7 @@
     "Feats (no fight rules): Alert.",
     "Armor and shields (the stated AC is used as is): Leather Armor.",
     "Other gear: Pressurized Flame Squirter; Traveler's Clothes; Backpack; Crowbar ×2; Ball Bearings; Hooded Lantern; Wheel of Cheese ×2; Thieves' Tools ×2; Oil ×8; Rations ×3; Waterskin; Bell; Arrows ×46; Disguise Kit; +6 more; 10 gp 6 sp 30 cp.",
+    "Pressurized Flame Squirter: limited use, so it is not modeled as an attack (listed in gear).",
     "Not in its spell list (no rules for them yet): Druidcraft, Longstrider, Pass Without Trace."
    ]
   },
