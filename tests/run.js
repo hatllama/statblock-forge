@@ -637,6 +637,59 @@ section('Character sheets');
     dr2.seenImmune = ['paralyzed'];
     check(im[0] === true && im[1] === false && im[2] === false && lS2.kImmune(hero, dr2, 'Paralyzed') === true, 'kImmune: the sheet when open, nothing when blind, learned once seen');
   }
+  // bloodied is a disclosure, and the threat estimate reads strength from what it sees (docs/ai-v2.md)
+  {
+    const keen = (extra) => { const S = new Tac.Sim(Object.assign({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: true }, extra)); S.ev = (kind, text) => { S.events.push({ kind, text }); }; return S; };
+    const foeWith = (hp, count) => { const m = srd('Ogre'); m.hp = hp; m.count = count || 1; return Tac.expandTeam([m], 'foes', false); };
+    const pc1 = () => Tac.expandTeam([srd('Ogre')], 'party', true)[0];
+    const said = (S, re) => S.events.filter(e => re.test(e.text || '')).length;
+    {
+      const S = keen(), me = pc1(), [t] = foeWith(100); S.units = [me, t];
+      const k = S.kind('party', t);
+      S.damage(me, t, 30, { attack: true });
+      check(!t.bloodied && k.hpLo === 61 && k.hpHi === Infinity && t.netLost === 30, `not bloodied after 30 net damage: max > 60 (floor ${k.hpLo})`);
+      S.damage(me, t, 20, { attack: true });
+      check(t.hp === 50 && t.bloodied && k.hpHi === 100 && k.hpLo === 61 && said(S, /is bloodied/) === 1, `exactly half is bloodied and told: max <= 100, range ${k.hpLo}-${k.hpHi}`);
+      S.heal(t, t, 20);
+      check(!t.bloodied && t.netLost === 30 && said(S, /no longer bloodied/) === 1, 'healing above half removes the flag, the party is told, and net damage falls by the healing seen');
+      S.damage(me, t, 25, { attack: true });
+      check(t.bloodied && t.netLost === 55 && k.hpHi === 100 && k.hpLo === 61, `bloodied again after 55 net: the bounds stand (${k.hpLo}-${k.hpHi})`);
+    }
+    {
+      const S = keen(), me = pc1(), [t] = foeWith(97); S.units = [me, t];
+      const k = S.kind('party', t);
+      S.damage(me, t, 150, { attack: true });
+      const vals = Object.keys(k).filter(x => typeof k[x] === 'number').map(x => k[x]);
+      check(k.hpHi === 150 && t.dead && vals.indexOf(97) < 0 && JSON.stringify(k).indexOf('97') < 0, `an overkill bounds max by the hit as rolled (<= ${k.hpHi}); the record holds no true HP`);
+    }
+    {
+      const S = keen(), me = pc1(), [t] = foeWith(300); S.units = [me, t];
+      const low = S.kMax(me, t), ac0 = S.kAc(me, t), k = S.kind('party', t), c0 = S.threat('party', t).th;
+      S.damage(me, t, 140, { attack: true });
+      const kept = S.kMax(me, t), th1 = k.th;
+      S.damage(me, t, 20, { attack: true });
+      check(c0 > 0 && low < 281 && kept >= 281 && th1 > c0 && S.kAc(me, t) > ac0, `140 damage and not bloodied moves the score itself: CR ${c0.toFixed(1)} → ${th1.toFixed(1)}, HP ${Math.round(low)} → ${Math.round(kept)}, AC too`);
+      check(S.kBossHp(me, t) === S.kHp(me, t), 'the size-based boss prior is gone from learn on v2');
+      const est = S.kMax(me, t); check(t.bloodied && est > 280 && est <= 320 && S.kHp(me, t) <= est * 0.45, `the bloodied moment pins it: max ${Math.round(est)} (true 300), under half left`);
+    }
+    {
+      const lone = keen(), me = pc1(), one = foeWith(50), many = foeWith(50, 8), S8 = keen();
+      lone.units = [me].concat(one); S8.units = [me].concat(many);
+      const a = lone.threat('party', one[0]).thPrior, b = S8.threat('party', many[0]).thPrior;
+      check(a > b, `the prior shares the party's level out over the enemies (CR ${a.toFixed(1)} alone, ${b.toFixed(1)} of 8)`);
+      const v = keen(); const m2 = foeWith(100), u2 = pc1(); v.units = [u2].concat(m2);
+      v.learnAtk(m2[0], u2, 15, true, true); v.learnDc(m2[0], u2, 19); const ks = v.threat('party', m2[0]);
+      check(ks.dc === 19 && ks.atk.length === 1 && ks.th > ks.thPrior, 'an announced high save DC raises the score');
+    }
+    {
+      const lv = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' } }), cl = new Tac.Sim({ seed: 1, know: { party: 'learn' }, threat: true }), bl = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'blind' }, threat: true }), bd = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: 'bounds' });
+      check(!lv.keen('party') && !cl.keen('party') && !bl.keen('party') && !new Tac.Sim({ seed: 1, ai: { party: 'v2' }, threat: true }).keen('party') && bd.keen('party') && !bd.threatOn('party'), 'the keen reading is off unless asked for, and then learn on v2 only: not the classic AI, not blind, not open; threat: bounds is the bloodied reading alone');
+      const S = keen({ ai: 'v2', know: { party: 'open', foes: 'learn' } }), me = pc1(), [t] = foeWith(60); me.maxHp = 80; me.hp = 80; me.startFull = true; S.units = [me, t];
+      S.damage(t, me, 45, { attack: true });
+      const k = S.kind('foes', me);
+      check(me.bloodied && k.hpHi === 90 && k.hpLo === 46 && !S.threatOn('foes') && S.keen('foes'), 'the same flag and bounds for a foe side that learns; it keeps its size priors');
+    }
+  }
 
   // burn the dragon's Legendary Resistance or race its HP (docs/ai-v2.md): the plan follows the numbers
   {

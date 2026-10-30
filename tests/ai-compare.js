@@ -67,6 +67,7 @@ const DISABLED = ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'Petri
 // an Evoker without Sculpt Spells, so its Fireball can hurt its friends
 const evoker = () => { const w = pc('Wizard'); w.ext.spellbook.spells.forEach(s => { if (s.ext && s.ext.area) delete s.ext.area.selective; if (/sculpted/.test(s.name)) s.name = 'Fireball'; }); return w; };
 const withHp = (m, hp) => { m.hp = hp; m.id += '-hurt'; m.name = 'Hurt ' + m.name; m.actions.forEach(a => { a.id += '-h'; }); return m; };
+const scaled = (m, by) => { for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * by)); return m; };
 const withLR = (m, n) => { m.ext.legendaryResistance = n; m.name = m.name + ' (LR ' + n + ')'; return m; };
 const statblock = (file, count) => {
   const m = clone(Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', file), 'utf8')).monsters[0]);
@@ -353,7 +354,7 @@ function playBurn(sc, N) {
   const forced = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { bias: 30 } }; });   // always burns when it can: shows what burning costs or wins
   const noProbe = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { probeBias: 0 } }; });   // learn mode as step 2.6 played it: a doubt in the plan, no probes
   const learn = sc.know && sc.know.party === 'learn';
-  const arms = [['v1', undefined, null], ['v2-', { party: 'v2' }, noBurn]].concat(learn ? [['v2o', { party: 'v2' }, noProbe]] : [], [['v2+', { party: 'v2' }, null], ['v2!', { party: 'v2' }, forced]]);
+  const arms = V2ONLY ? [['v2+', { party: 'v2' }, null]] : [['v1', undefined, null], ['v2-', { party: 'v2' }, noBurn]].concat(learn ? [['v2o', { party: 'v2' }, noProbe]] : [], [['v2+', { party: 'v2' }, null], ['v2!', { party: 'v2' }, forced]]);
   const cs = Object.assign({ record: true, metrics: BURN_METRICS }, sc);
   console.log('\n' + sc.name);
   console.log('  ' + [pad('AI', 4), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BURN_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
@@ -383,11 +384,17 @@ const CTL_SCENARIOS = [
   { name: 'K6 martials: Monk, Fighter, Rogue, Barbarian vs 2 Hill Giants (Stunning Strike against Constitution +4)', players: martialParty, encounters: () => [{ monsters: [mon('Hill Giant', 2)] }] },
   { name: 'K7 martials: the same party vs a dragon with 3 LR, Constitution -1', players: martialParty, encounters: () => [{ monsters: [dragon(3, { con: -1 }, 0, 0.25)] }] },
   { name: 'K8: the K2 dragon (no LR, Wisdom -1) with a Bard (Hypnotic Pattern, Hideous Laughter) instead of the Cleric', players: bardParty, encounters: () => [{ monsters: [dragon(0, { wis: -1 }, 0, 0.25)] }] },
+  // the threat estimate: where reading strength from what a creature does should work, and where it can't
+  { name: 'T1 weak hitter, big HP: the dragon at a quarter damage, no LR', players: burnParty, encounters: () => [{ monsters: [dragon(0, { wis: -1 }, 0, 0.25)] }] },
+  { name: 'T2 glass cannon: 2 Gladiators at 1.5 damage, 30 HP', players: burnParty, encounters: () => [{ monsters: [withHp(scaled(mon('Gladiator', 2), 1.5), 30)] }] },
+  { name: 'T3 Medium brute: a Gladiator with 250 HP', players: burnParty, encounters: () => [{ monsters: [withHp(mon('Gladiator'), 250)] }] },
+  { name: 'T4 swarm: 16 Goblin Warriors', players: burnParty, encounters: () => [{ monsters: [mon('Goblin Warrior', 16)] }] },
+  { name: 'T5 boss with minions: a Hill Giant and 6 Goblin Warriors', players: burnParty, encounters: () => [{ monsters: [mon('Hill Giant'), mon('Goblin Warrior', 6)] }] },
 ];
 function playCtl(sc, N) {
   console.log('\n' + sc.name);
   console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(CTL_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  for (const mode of ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
 }
 
 /* ---- running ---- */
@@ -398,6 +405,9 @@ const aiOver = spec => {
   for (const k in AI_OVER) base[k] = Object.assign({}, base[k], AI_OVER[k]);
   return base;
 };
+if (process.env.AI_THREAT) Object.assign(Tac.AI_BASE.threat, JSON.parse(process.env.AI_THREAT));     // sweeps: AI_THREAT='{"useSave":0}'
+// KNOW=learn: the party's knowledge in every scenario that doesn't name its own. V2ONLY=1: skip the old-AI and no-burn arms. THREAT=1: learn with the threat estimate, THREAT=bounds: only its bloodied reading.
+const KNOW = process.env.KNOW ? { party: process.env.KNOW } : undefined, V2ONLY = process.env.V2ONLY === '1';
 function play(sc, ai, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
   const t0 = Date.now();
@@ -408,7 +418,7 @@ function play(sc, ai, n, tweak) {
     if (tweak) tweak(players);
     if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined });
+    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, threat: process.env.THREAT === '1' ? true : process.env.THREAT });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);
@@ -429,6 +439,41 @@ function play(sc, ai, n, tweak) {
 }
 const pad = (s, k) => String(s).padEnd(k);
 const lpad = (s, k) => String(s).padStart(k);
+/* ACCURACY=1: a learning v2 party's estimate of each enemy's maximum HP over its true value (1 = right), old reading vs
+   threat estimate: median [10th-90th percentile] at the start of rounds 1, 3 and 5, and just before and after the
+   enemy's first bloodied moment. Filter picks the scenarios, as usual. */
+function accuracy(sc, N) {
+  const proto = Tac.Sim.prototype, ev = proto.ev, learnHp = proto.learnHp;
+  const arm = threat => {
+    const got = { r1: [], r3: [], r5: [], pre: [], post: [] };
+    const obs = s => s.units.find(o => o.team === 'party' && !o.dead && o.hp > 0) || s.units.find(o => o.team === 'party');
+    proto.ev = function (kind, text, data) {
+      if (kind === 'round' && [1, 3, 5].includes(this.round)) {
+        const seen = new Set(), who = obs(this);
+        for (const t of this.units) if (t.team === 'foes' && t.hp > 0 && !seen.has(t.tplId)) { seen.add(t.tplId); got['r' + this.round].push(this.kMax(who, t) / t.maxHp); }
+      }
+      return ev.call(this, kind, text, data);
+    };
+    proto.learnHp = function (t) {
+      if (t.team !== 'foes') return learnHp.call(this, t);
+      const was = t.bloodied, who = obs(this), a = this.kMax(who, t);
+      learnHp.call(this, t);
+      const key = '_blood' + t.tplId;
+      if (!was && t.bloodied && !this[key]) { this[key] = true; got.pre.push(a / t.maxHp); got.post.push(this.kMax(who, t) / t.maxHp); }
+    };
+    for (let i = 0; i < N; i++) {
+      const encounters = sc.encounters ? sc.encounters() : fights(sc.day), players = sc.players ? sc.players() : sc.party.map(pc);
+      const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
+      Tac.runDay({ players, encounters }, { seed: (1000 + i * 7919) >>> 0, ai: { party: 'v2' }, partyAI: 'tactical', layouts, know: { party: 'learn' }, threat });
+    }
+    proto.ev = ev; proto.learnHp = learnHp;
+    return got;
+  };
+  const cell = l => { if (!l.length) return lpad('-', 18); const s = l.slice().sort((p, q) => p - q), q = f => s[Math.floor(f * (s.length - 1))].toFixed(2); return lpad(`${q(0.5)} [${q(0.1)}-${q(0.9)}]`, 18); };
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('', 7), lpad('round 1', 18), lpad('round 3', 18), lpad('round 5', 18), lpad('before bloodied', 18), lpad('after bloodied', 18)].join(' '));
+  for (const [label, th] of [['old', undefined], ['threat', true]]) { const g = arm(th); console.log('  ' + [pad(label, 7), cell(g.r1), cell(g.r3), cell(g.r5), cell(g.pre), cell(g.post)].join(' ')); }
+}
 function row(label, o) {
   const f = (x, d) => (x / o.n).toFixed(d === undefined ? 1 : d);
   const p = o.won / o.n, se = Math.sqrt(p * (1 - p) / o.n);
@@ -441,16 +486,20 @@ const N = Math.max(1, parseInt(process.argv[2], 10) || 200);
 const only = process.argv[3] ? new RegExp(process.argv[3], 'i') : null;
 console.log(`Old AI (v1) vs AI v2 for the party, ${N} seeded runs per scenario. Per day: win = won every fight; rounds, PC deaths, damage dealt and taken by the party; ms per day.`);
 const spellLine = o => Array.from(o.spells).sort((p, q) => q[1] - p[1]).slice(0, 6).map(([k, v]) => `${k} ${(v / o.n).toFixed(2)}`).join(', ');
+if (process.env.ACCURACY === '1') {
+  for (const sc of BURN_SCENARIOS.concat(CTL_SCENARIOS, SCENARIOS)) if (!only || only.test(sc.name)) accuracy(sc, N);
+  process.exit(0);
+}
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };
-  const a = play(sc, undefined, N), b = play(sc, v2, N);
+  const a = V2ONLY ? { n: N, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() } : play(sc, undefined, N), b = play(sc, v2, N);
   const extra = Object.keys(a.m).filter(k => k[0] !== '_');
   console.log('\n' + sc.name);
   console.log('  ' + [pad('AI', 4), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(extra.map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  console.log(row('v1', a));
+  if (!V2ONLY) console.log(row('v1', a));
   console.log(row('v2', b));
   if (sc.spells) { console.log('    v1 casts/day: ' + spellLine(a)); console.log('    v2 casts/day: ' + spellLine(b)); }
 }

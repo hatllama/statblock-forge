@@ -460,6 +460,7 @@ function resetFightState(u) {
   u.focus = null; u.lastAttacker = null; u.lastIntent = ''; u.notedPacing = false;
   u.dmgDealt = 0; u.dmgTaken = 0; u.healed = 0;
   u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
+  u.netLost = 0; u.bloodied = u.hp > 0 && u.hp * 2 <= u.maxHp;              // the damage that got through less the healing seen; at half HP or less, and the table is told
   u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false; u.seenCancel = false; u.legSeen = 0;
   u.onBoard = true;
   // Relentless & co.: rolling initiative with an empty pool gives one back
@@ -489,6 +490,7 @@ function Sim(opts) {
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
   this.expectFights = +opts.expectFights > 0 ? Math.round(+opts.expectFights) : 0;   // fights the party expects today (learn/blind; 0 = learn knows, blind assumes)
+  this.threatMode = opts.threat === true ? 2 : opts.threat === 'bounds' ? 1 : 0;   // learn on v2 (keen): 2 the threat estimate, 1 only the bloodied reading, 0 neither (not adopted, docs/ai-v2.md)
   this.setTerrain(null);
 }
 
@@ -942,6 +944,7 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
     if (this.record) this.ev('effect', `${holder.name} is immune to being ${String(data.condition).toLowerCase()}`, { uid: holder.uid });
     return { id: action.id, name: action.name, data: {}, immune: true };
   }
+  if (data && data.condition && src.team && holder !== src) this.learnCond(src, holder, data.condition);
   holder.buffs = holder.buffs.filter(b => !(b.id === action.id && b.src === src.uid));
   const b = { id: action.id, name: action.name || 'effect', src: src.uid, data: Object.assign({}, data), expiry: data.duration };
   const ax = action.ext || {};
@@ -1186,6 +1189,8 @@ Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
      learn — knows the day's length (opts.expectFights overrides it); for the rest starts like blind, then reads what it sees: hits and misses bound AC, saves made and failed give the
              save bonus, "it resists that" sticks, the damage that bloodied or dropped a creature gives its hit points.
              It remembers per kind of creature for the rest of the day.
+             With opts.threat (not adopted, off by default) a learning side on AI v2 is keen: it reads the bloodied flag and its own
+             net damage (learnBounds), and the party starts from a threat estimate instead of size (threat, docs/ai-v2.md).
    Only the AI's estimates use this; the dice always use the real numbers. */
 const KNOW_MODES = ['open', 'blind', 'learn'];
 const SIZE_PRIOR = { Tiny: { hp: 7, dpr: 3 }, Small: { hp: 15, dpr: 6 }, Medium: { hp: 32, dpr: 9 }, Large: { hp: 70, dpr: 16 }, Huge: { hp: 140, dpr: 28 }, Gargantuan: { hp: 260, dpr: 45 } };
@@ -1202,10 +1207,15 @@ Sim.prototype.kOf = function (u, t) {
 Sim.prototype.kind = function (team, t) {
   const K = this.mem[team];
   let k = K.get(t.tplId);
-  if (!k) { k = { acLo: -Infinity, acHi: Infinity, hpLo: 0, hpHi: Infinity, saves: {}, saveEst: {}, mods: null, heals: false, areas: [], range: 0, dealt: 0, turns: 0, caster: false }; K.set(t.tplId, k); }
+  if (!k) { k = { acLo: -Infinity, acHi: Infinity, hpLo: 0, hpHi: Infinity, saves: {}, saveEst: {}, mods: null, heals: false, areas: [], range: 0, dealt: 0, turns: 0, caster: false,
+                  seen: 0, atk: [], swings: 0, hits: 0, multi: 1, dc: 0, shown: [], conds: [], obsDmg: 0, obsTurns: 0, thAt: -1 }; K.set(t.tplId, k); }
   return k;
 };
 Sim.prototype.learning = function (team) { return this.kMode(team) === 'learn'; };
+/* a learning side on AI v2: reads the bloodied flag and its own net damage, not the classic reading */
+Sim.prototype.keen = function (team) { return this.threatMode > 0 && !!this.aiV2 && !!this.aiV2[team] && this.kMode(team) === 'learn'; };
+/* the party starts from the threat estimate; a keen foe side keeps its size priors */
+Sim.prototype.threatOn = function (team) { return this.threatMode === 2 && team === 'party' && this.keen(team); };
 Sim.prototype.learnAC = function (att, tgt, base, hit) {
   if (att.team === tgt.team || !this.learning(att.team)) return;
   const k = this.kind(att.team, tgt);
@@ -1231,10 +1241,27 @@ Sim.prototype.learnType = function (tgt, info, tm) {
   ['resist', 'immune', 'vulnerable'].forEach(f => { const i = m[f].indexOf(type); if (i >= 0) m[f].splice(i, 1); });
   if (tm === 0) m.immune.push(type); else if (tm < 1) m.resist.push(type); else if (tm > 1) m.vulnerable.push(type);
 };
+/* at half HP or less: public, both ways. A keen side hears it in the log. */
+Sim.prototype.seeBloodied = function (t) {
+  const b = t.hp > 0 && t.hp * 2 <= t.maxHp;
+  if (b === t.bloodied) return;
+  t.bloodied = b;
+  if (t.hp > 0 && this.keen(otherTeam(t.team))) this.ev('effect', `${t.name} is ${b ? 'bloodied' : 'no longer bloodied'}`, { uid: t.uid });
+};
+/* a keen side's bounds on maximum HP, from the flag and its own net damage only: not bloodied after N means max > 2N,
+   bloodied after D means D < max <= 2D, down after D means max <= D. Bounds that cross: something it couldn't see, keep the latest. */
+Sim.prototype.learnBounds = function (t, k) {
+  const n = t.netLost, lo = t.hp <= 0 ? 0 : t.bloodied ? n + 1 : n * 2 + 1, hi = t.hp <= 0 ? n : t.bloodied ? n * 2 : Infinity;
+  k.hpLo = Math.max(k.hpLo, lo); k.hpHi = Math.min(k.hpHi, hi);
+  if (k.hpLo > k.hpHi) { k.hpLo = lo; k.hpHi = hi; }
+  k.seen++;
+};
 Sim.prototype.learnHp = function (t) {
   const team = otherTeam(t.team);
+  this.seeBloodied(t);
   if (!this.learning(team) || !t.startFull) return;
   const k = this.kind(team, t), lost = t.visLost;
+  if (this.keen(team)) { this.learnBounds(t, k); return; }
   if (t.hp <= 0) k.hpHi = Math.min(k.hpHi, lost);
   else { k.hpLo = Math.max(k.hpLo, lost + 1); if (t.hp < t.maxHp / 2) k.hpHi = Math.min(k.hpHi, lost * 2); else k.hpLo = Math.max(k.hpLo, lost * 2); }
   if (k.hpLo > k.hpHi) { k.hpLo = lost; k.hpHi = Infinity; }
@@ -1255,6 +1282,38 @@ Sim.prototype.learnAction = function (u, a) {
   if (a._spell) k.caster = true;
   if (a.type === 'atk' || a.type === 'debuff') k.range = Math.max(k.range, a._range || 5);
   if (area && !k.areas.some(x => x.id === a.id)) k.areas.push(area);
+  if ((a.type === 'atk' || a.type === 'debuff') && this.threatOn(team) && k.shown.indexOf(a.id) < 0) { k.shown.push(a.id); k.seen++; }
+};
+/* what the party sees an enemy do, for the threat estimate */
+Sim.prototype.learnActive = function (u, k) {            // a turn it did something to us (walking up doesn't count against its damage)
+  if (u.obsTurn !== u.fightTurns) { u.obsTurn = u.fightTurns; u.obsSwings = 0; k.obsTurns++; }
+};
+Sim.prototype.learnAtk = function (att, tgt, ac, plain, hit) {
+  if (att.team === tgt.team || !this.threatOn(tgt.team)) return;
+  const k = this.kind(tgt.team, att);
+  this.learnActive(att, k);
+  k.multi = Math.max(k.multi, ++att.obsSwings); k.swings++; if (hit) k.hits++;
+  if (plain) { k.atk.push([ac, hit ? 1 : 0]); if (k.atk.length > 40) k.atk.shift(); }
+  k.seen++;
+};
+Sim.prototype.learnDc = function (src, t, dc) {
+  if (!src || !src.team || src.team === t.team || dc >= 99 || !this.threatOn(t.team)) return;
+  const k = this.kind(t.team, src);
+  this.learnActive(src, k);
+  if (dc > k.dc) { k.dc = dc; k.seen++; }
+};
+/* damage per turn is read against a table of one target: an area counts its first victim only */
+Sim.prototype.learnDmg = function (src, tgt, dmg, info) {
+  if (src.team === tgt.team || !this.threatOn(tgt.team)) return;
+  const a = info && info.a, k = this.kind(tgt.team, src);
+  if (a && (a.useSaves || areaSpec(a))) { const key = a.id + ':' + src.fightTurns; if (src.obsArea === key) return; src.obsArea = key; }
+  this.learnActive(src, k);
+  k.obsDmg += dmg; k.seen++;
+};
+Sim.prototype.learnCond = function (src, t, cond) {
+  if (src.team === t.team || !this.threatOn(t.team) || !AI_BASE.threat.cond[cond]) return;
+  const k = this.kind(t.team, src);
+  if (k.conds.indexOf(cond) < 0) { k.conds.push(cond); k.seen++; }
 };
 /* end of a fight: fold what each creature did into its kind's record */
 Sim.prototype.learnFight = function () {
@@ -1265,9 +1324,78 @@ Sim.prototype.learnFight = function () {
     k.dealt += u.dmgDealt; k.turns += u.fightTurns;
   }
 };
+/* ---- the threat estimate (docs/ai-v2.md): how strong a kind of creature seems, on the CR scale ---- */
+/* the column f of the threat table at score c */
+function threatAt(f, c) {
+  const r = AI_BASE.threat.table;
+  if (c <= r[0].cr) return r[0][f];
+  for (let i = 1; i < r.length; i++) if (c <= r[i].cr) return r[i - 1][f] + (r[i][f] - r[i - 1][f]) * (c - r[i - 1].cr) / (r[i].cr - r[i - 1].cr);
+  return r[r.length - 1][f];
+}
+/* the score at which column f reads v; a flat stretch reads as its middle */
+function threatCr(f, v) {
+  const r = AI_BASE.threat.table;
+  let i = 0;
+  while (i < r.length && r[i][f] < v) i++;
+  if (i === r.length) return r[i - 1].cr;
+  if (r[i][f] > v) return i ? r[i - 1].cr + (r[i].cr - r[i - 1].cr) * (v - r[i - 1][f]) / (r[i][f] - r[i - 1][f]) : r[0].cr;
+  let j = i;
+  while (j + 1 < r.length && r[j + 1][f] === v) j++;
+  return (r[i].cr + r[j].cr) / 2;
+}
+/* before anything is seen: a typical creature for the party's level, shared out over the enemies in view */
+Sim.prototype.threatPrior = function (team) {
+  const T = AI_BASE.threat, mine = this.units.filter(o => o.team === team), n = Math.max(1, this.units.length - mine.length);
+  const level = mine.reduce((s, o) => s + (+(o.tpl && o.tpl.class && o.tpl.class.level) || T.level), 0) / Math.max(1, mine.length);
+  return threatCr('xp', threatAt('xp', level * T.crPerLevel) * mine.length / T.partySize / n);
+};
+/* the most likely attack bonus given its plain rolls against our ACs */
+function threatAtk(obs) {
+  const T = AI_BASE.threat;
+  let best = 0, bestL = -Infinity;
+  for (let b = T.atkMin; b <= T.atkMax; b++) {
+    let L = 0;
+    for (const o of obs) { const p = Math.min(0.95, Math.max(0.05, (21 + b - o[0]) / 20)); L += Math.log(o[1] ? p : 1 - p); }
+    if (L > bestL) { bestL = L; best = b; }
+  }
+  return best;
+}
+/* the score of t's kind as `team` reckons it, and what it reads as; recomputed when something new was seen */
+Sim.prototype.threat = function (team, t) {
+  const k = this.kind(team, t);
+  if (k.thAt === k.seen) return k;
+  const T = AI_BASE.threat;
+  if (k.thPrior === undefined) k.thPrior = this.threatPrior(team);
+  let W = T.prior, S = T.prior * k.thPrior;
+  const add = (cr, w) => { S += cr * w; W += w; };
+  if (k.atk.length) add(threatCr('atk', threatAtk(k.atk)), T.atk * k.atk.length / (k.atk.length + T.atkHalf));
+  if (k.dc) add(threatCr('dc', k.dc), T.dc);
+  if (k.legRes) add(T.legCr, T.legRes);
+  if (k.obsTurns) {
+    const hit = Math.max(T.hitFloor, (k.hits + T.hitPrior * T.hitHalf) / (k.swings + T.hitHalf));
+    add(threatCr('dpr', k.obsDmg / k.obsTurns / hit), T.dmg * k.obsTurns / (k.obsTurns + T.dmgHalf));
+  }
+  let c = S / W;
+  const floor = f => { if (f > c) c += (f - c) * T.floor; };
+  if (k.multi > 1) floor(threatCr('attacks', k.multi));
+  if (k.shown.length > 1) floor(threatCr('shown', k.shown.length));
+  for (const x of k.conds) floor(T.cond[x]);
+  if (k.hpHi < Infinity) c = Math.min(c, threatCr('hp', k.hpHi));   // the bounds win, and move the score with them
+  if (k.hpLo > 0) c = Math.max(c, threatCr('hp', k.hpLo));
+  k.th = c; k.thAt = k.seen;
+  k.thHp = threatAt('hp', c); k.thAc = threatAt('ac', c);
+  const sv = threatAt('save', c);
+  if (sv !== k.thSave) { k.thSave = sv; k.saveEst = {}; }
+  return k;
+};
 // ---- the estimates the AI uses ----
 Sim.prototype.kMax = function (u, t) {
   const m = this.kOf(u, t); if (!m) return t.maxHp;
+  if (this.threatOn(u.team)) {
+    const k = this.threat(u.team, t);
+    if (k.hpHi < Infinity && k.hpLo > 0) return Math.max(1, (k.hpLo + k.hpHi) / 2);
+    return Math.max(1, k.hpLo, Math.min(k.hpHi, k.thHp));
+  }
   const pr = priorOf(t).hp;
   if (m === 'blind') return pr;
   const k = this.kind(u.team, t);
@@ -1276,26 +1404,28 @@ Sim.prototype.kMax = function (u, t) {
   if (k.hpLo > 0) return Math.max(pr, k.hpLo * 1.15);
   return pr;
 };
-Sim.prototype.kHp = function (u, t) {
-  if (!this.kOf(u, t) || t.dead || t.hp <= 0) return t.hp;        // down and dead are plain to see
-  const max = this.kMax(u, t);
-  let est = max - (t.visLost || 0);
-  if (t.hp < t.maxHp / 2) est = Math.min(est, max * 0.45); else est = Math.max(est, max * 0.55);   // bloodied or not
+/* hit points left out of an estimated max, from the damage seen and bloodied or not */
+Sim.prototype.kLeft = function (u, t, max) {
+  const keen = this.keen(u.team);
+  let est = max - ((keen ? t.netLost : t.visLost) || 0);
+  if (keen ? t.bloodied : t.hp < t.maxHp / 2) est = Math.min(est, max * 0.45); else est = Math.max(est, max * 0.55);
   return Math.max(1, est);
 };
+Sim.prototype.kHp = function (u, t) {
+  if (!this.kOf(u, t) || t.dead || t.hp <= 0) return t.hp;        // down and dead are plain to see
+  return this.kLeft(u, t, this.kMax(u, t));
+};
 /* hit points left on a boss-sized creature (one the party reckons has Legendary Resistance), for the burn plan. Learn mode
-   starts from a bigger prior than kHp's flat size prior (a Huge boss is rarely 140), and any bound the party has seen
-   (bloodied, down) replaces it. Blind keeps the flat prior. */
+   without the threat estimate starts from a bigger prior than kHp's flat size prior (a Huge boss is rarely 140), and any
+   bound the party has seen (bloodied, down) replaces it. Blind keeps the flat prior; the threat estimate needs neither. */
 const BOSS_HP = { Huge: 225, Gargantuan: 400 };
 Sim.prototype.kBossHp = function (u, t) {
-  if (this.kMode(u.team) !== 'learn' || !this.kOf(u, t) || t.dead || t.hp <= 0 || !BOSS_HP[t.size]) return this.kHp(u, t);
-  const k = this.kind(u.team, t), lost = t.visLost || 0;
+  if (this.kMode(u.team) !== 'learn' || this.threatOn(u.team) || !this.kOf(u, t) || t.dead || t.hp <= 0 || !BOSS_HP[t.size]) return this.kHp(u, t);
+  const k = this.kind(u.team, t);
   let max;
   if (k.hpHi < Infinity) max = this.kMax(u, t);                     // bloodied or down: seen, not guessed
   else max = Math.max(BOSS_HP[t.size], k.hpLo * 1.15);
-  let est = max - lost;
-  if (t.hp < t.maxHp / 2) est = Math.min(est, max * 0.45); else est = Math.max(est, max * 0.55);
-  return Math.max(1, est);
+  return this.kLeft(u, t, max);
 };
 Sim.prototype.kFrac = function (u, t) { return this.kOf(u, t) ? Math.max(0, Math.min(1, this.kHp(u, t) / this.kMax(u, t))) : Math.max(0, t.hp / t.maxHp); };
 Sim.prototype.kDpr = function (u, t) {
@@ -1307,9 +1437,9 @@ Sim.prototype.kDpr = function (u, t) {
 };
 Sim.prototype.kAc = function (u, t) {
   const m = this.kOf(u, t); if (!m) return this.ac(t);
-  const vis = this.sumBuff(t, 'ac', false), pr = 14;
-  if (m === 'blind') return pr + vis;
-  const k = this.kind(u.team, t);
+  const vis = this.sumBuff(t, 'ac', false);
+  if (m === 'blind') return 14 + vis;
+  const k = this.kind(u.team, t), pr = this.threatOn(u.team) && AI_BASE.threat.useAc ? this.threat(u.team, t).thAc : 14;
   let e = pr;
   if (k.acLo > -Infinity && k.acHi < Infinity) e = (k.acLo + k.acHi) / 2;
   else if (k.acLo > -Infinity) e = Math.max(pr, k.acLo + 0.5);
@@ -1319,14 +1449,14 @@ Sim.prototype.kAc = function (u, t) {
 Sim.prototype.kSave = function (u, t, ab) {
   const m = this.kOf(u, t); if (!m) return this.saveBonusFor(t, ab);
   if (m === 'blind') return 2;
-  const k = this.kind(u.team, t), key = ab || 'any';
+  const k = this.threatOn(u.team) && AI_BASE.threat.useSave ? this.threat(u.team, t) : this.kind(u.team, t), key = ab || 'any', pr = k.thSave !== undefined && AI_BASE.threat.useSave ? k.thSave : 2;
   if (k.saveEst[key] !== undefined) return k.saveEst[key];
-  // most likely bonus given the saves seen (this ability counts fully, the others a little), pulled toward +2
+  // most likely bonus given the saves seen (this ability counts fully, the others a little), pulled toward +2 (the threat estimate's save, when it has one)
   const obs = [];
   for (const kk in k.saves) for (const o of k.saves[kk]) obs.push([o[0], o[1], kk === key ? 1 : 0.3]);
   let best = 2, bestL = -Infinity;
   for (let b = -2; b <= 14; b++) {
-    let L = -((b - 2) * (b - 2)) / 18;
+    let L = -((b - pr) * (b - pr)) / 18;
     for (const o of obs) { const p = Math.min(0.95, Math.max(0.05, (21 + b - o[0]) / 20)); L += o[2] * Math.log(o[1] ? p : 1 - p); }
     if (L > bestL) { bestL = L; best = b; }
   }
@@ -2278,6 +2408,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   // Legendary Resistance: only when failing would be dangerous — a disabling condition (paralysed, stunned,
   // restrained, frightened, blinded…), or damage that would drop it or take a big bite out of what it has left
   this.learnSave(t, dc, ab, total >= dc);
+  this.learnDc(src, t, dc);
   const failDmg = this._saveDmg || 0;
   // Indomitable: reroll a failed save with a bonus (saved for ones that matter)
   if (total < dc && t.indomitable && (t.uses.get('__indom') || 0) > 0 && dc < 99 &&
@@ -2292,7 +2423,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
     t.legSeen = (t.legSeen || 0) + 1;
-    if (this.learning(otherTeam(t.team))) { const k = this.kind(otherTeam(t.team), t); k.legRes = Math.max(k.legRes || 0, t.legSeen); }
+    if (this.learning(otherTeam(t.team))) { const k = this.kind(otherTeam(t.team), t); k.legRes = Math.max(k.legRes || 0, t.legSeen); k.seen++; }
     this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
   }
@@ -2326,6 +2457,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   let hit = r === 20 || (r !== 1 && total >= ac);
   let crit = r === 20 || (hit && !a._spell && r >= (att.critOn || 20));
   if (r !== 20 && r !== 1 && !opt.inside) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
+  this.learnAtk(att, tgt, ac, r !== 20 && r !== 1 && !adv && !dis, hit);
   // Silvery-Barbs-style reactions from the target's side: reroll, take the lower
   if (hit && !opt.noReact) {
     const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
@@ -2409,6 +2541,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
     }
   }
   src.dmgDealt += dmg; tgt.dmgTaken += dmg;
+  this.learnDmg(src, tgt, dmg, info);
   if (info.attack && src.team !== tgt.team) tgt.lastAttacker = src.uid;
   if (src.swallowedBy === tgt.uid) tgt.insideDamage.set(src.uid, (tgt.insideDamage.get(src.uid) || 0) + dmg);
   if (tgt.temp) { const a = Math.min(tgt.temp, dmg); tgt.temp -= a; dmg -= a; if (tgt.temp <= 0) this.dropBuffs(tgt, b => b.whileTemp); }
@@ -2425,6 +2558,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   }
   const overflow = dmg - tgt.hp;
   tgt.visLost = (tgt.visLost || 0) + Math.min(dmg, tgt.hp);
+  tgt.netLost = (tgt.netLost || 0) + dmg;                 // the hit as the table saw it, not cut to the HP it had left
   tgt.hp = Math.max(0, tgt.hp - dmg);
   // Death Ward (pre-fight): the first drop to 0 HP, or a killing blow, leaves it at 1 HP and the spell ends
   if (tgt.hp <= 0 && tgt.deathWard) { tgt.deathWard = false; tgt.hp = 1; this.ev('react', `${tgt.name}'s Death Ward holds: 1 HP instead of 0`, { uid: tgt.uid }); }
@@ -2574,6 +2708,9 @@ Sim.prototype.heal = function (src, tgt, amt, temp) {
   if (was <= 0) this.boardChanged();
   src.healed += tgt.hp - was;
   tgt.visLost = Math.max(0, (tgt.visLost || 0) - (tgt.hp - was));
+  tgt.netLost = Math.max(0, (tgt.netLost || 0) - (tgt.hp - was));
+  this.seeBloodied(tgt);
+  if (tgt.hp > was && tgt.startFull && this.keen(otherTeam(tgt.team))) this.learnBounds(tgt, this.kind(otherTeam(tgt.team), tgt));
   if (src !== tgt && tgt.hp > was) this.learnHeal(src);
   if (was <= 0 && tgt.hp > 0) { tgt.deathS = 0; tgt.deathF = 0; tgt.stable = false; this.revives[tgt.team] = (this.revives[tgt.team] || 0) + 1; }
 };
@@ -3127,6 +3264,32 @@ const AI_BASE = {
   burn: { bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
             slot: 8, slotUp: 0.35, slotEasyTax: 0.7 },           // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
+  // the threat estimate (docs/ai-v2.md): learn on v2, the party's side. prior + each signal's weight (× n / (n + half)), then the table
+  threat: {
+    useAc: 1, useSave: 0,                                        // AC, save bonus read from the score too (saves: off, one number hides a weak save, see the docs)
+    crPerLevel: 1.4, partySize: 4, level: 5,                     // a typical lone creature for a level; the party that goes with it; a creature with no class level
+    prior: 2,
+    atk: 3, atkHalf: 4, atkMin: -2, atkMax: 18,                  // attack bonus from plain rolls
+    dc: 3,                                                       // the best save DC it has forced: announced, so at full weight at once
+    dmg: 2, dmgHalf: 2, hitPrior: 0.65, hitHalf: 4, hitFloor: 0.3,   // damage per active turn ÷ its hit rate
+    legRes: 6,                                                   // Legendary Resistance seen: only the strongest have it, the table's legCr at this weight
+    floor: 0.25,                                                 // attacks, actions and conditions shown: this share of the way up to what they suggest
+    /* threat-table:start (generated by tools/build-threat.js from data/srd-monsters.js) */
+    table: [
+      { cr: 0.125, hp: 9, ac: 13, dpr: 4.5, atk: 3, dc: 0, save: 0.5, attacks: 1, shown: 1, xp: 25 },   // 5 monsters
+      { cr: 0.25, hp: 12, ac: 13, dpr: 5.5, atk: 4, dc: 5, save: 1, attacks: 1, shown: 1.5, xp: 50 },   // 4 monsters
+      { cr: 1, hp: 26, ac: 14, dpr: 9.5, atk: 4, dc: 12, save: 1, attacks: 1, shown: 2, xp: 200 },   // 7 monsters
+      { cr: 2, hp: 48, ac: 14, dpr: 15.3, atk: 5, dc: 12.5, save: 1, attacks: 1.5, shown: 2.5, xp: 450 },   // 4 monsters
+      { cr: 3, hp: 62, ac: 14.5, dpr: 22.3, atk: 5, dc: 12.5, save: 1.5, attacks: 2, shown: 2.5, xp: 700 },   // 10 monsters
+      { cr: 5, hp: 92, ac: 15, dpr: 30.5, atk: 7, dc: 14, save: 2.5, attacks: 2, shown: 2.5, xp: 1800 },   // 6 monsters
+      { cr: 6, hp: 120.5, ac: 15, dpr: 44, atk: 7, dc: 14, save: 2.5, attacks: 3, shown: 2.5, xp: 2300 },   // 4 monsters
+      { cr: 8, hp: 178, ac: 18, dpr: 52.5, atk: 8, dc: 17, save: 2.5, attacks: 3, shown: 2.5, xp: 3900 },   // 5 monsters
+      { cr: 19, hp: 285.5, ac: 19.5, dpr: 74.3, atk: 13, dc: 20.5, save: 8, attacks: 3, shown: 8, xp: 25500 },   // 2 monsters
+    ],
+    cond: {Restrained: 4, Poisoned: 6, Prone: 5},
+    legCr: 19,
+    /* threat-table:end */
+  },
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
@@ -5116,5 +5279,5 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, AI_PROFILES, aiProfile, casterKind, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, AI_BASE, AI_PROFILES, aiProfile, casterKind, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);
