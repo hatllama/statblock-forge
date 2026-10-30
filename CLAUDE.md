@@ -12,7 +12,7 @@
   blind assumes `BLIND_FIGHTS`; `opts.expectFights` (War Table "Fights the party expects today") overrides learn and blind.
 - After changing engine rules or AI, run `npm test` (checks wall/LoS violations, actors that are dead,
   hidden in plain sight, odds sanity) and play a fight on the War Table to eyeball the replay.
-- npm scripts: `test`, `compare` (tests/ai-compare.js), `flagoff` (tests/flagoff-hash.js), `build-party`, `build-srd`.
+- npm scripts: `test`, `compare` (tests/ai-compare.js), `flagoff` (tests/flagoff-hash.js), `build-party`, `build-srd`, `serve` (tools/serve.js, static server on http://localhost:8080).
 - Exports follow the day save-file format checked by `checkRealSchema` and `validateMonster` in `js/forge.js`;
   keep those checks in step with any format change.
 - Creature/action extras live under `ext`; plain exports ignore them. Anything War-Table-only that would

@@ -25,6 +25,7 @@ npm run compare         # old AI vs AI v2 tables (tests/ai-compare.js [runs] [fi
 npm run flagoff         # hashes of classic-AI fight logs; must not change after an AI change
 npm run build-party     # regenerate data/party.js
 npm run build-srd       # regenerate data/srd-monsters.js
+npm run serve           # static server for the app at http://localhost:8080
 ```
 
 ## Layout
