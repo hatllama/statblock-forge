@@ -43,6 +43,7 @@ function scanRules(r, layout, acc) {
   let { wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc;
   let cur = {}, turnOf = null, inArea = false;
   const dmgZones = [];          // lingering zones hurt from the zone's cells, not along a line from the caster
+  const zones = new Map();      // lingering damage zones now up: zid -> { name, cells }. Their damage comes from the zone's cells (already cut by walls), not a line from the caster
   const pushed = new Set();     // a later beam of the same attack follows a creature the first one pushed
   for (const e of r.events) {
     events++;
@@ -50,11 +51,18 @@ function scanRules(r, layout, acc) {
     for (const k in e.state) cur[k] = Object.assign({}, cur[k] || {}, e.state[k]);
     if (e.kind === 'turn') { turnOf = e.uid; pushed.clear(); }
     if (e.kind === 'zone' && e.zkind === 'dmg') { const zn = /^(.*?) (lingers|follows)/.exec(e.text || ''); if (zn) dmgZones.push(zn[1]); }
+    if (e.kind === 'zone' && e.zkind === 'dmg') { const zn = /^(.*?) (lingers|follows)/.exec(e.text || ''); if (zn) zones.set(e.zid, { name: zn[1], cells: new Set(e.cells.map(c => c[0] + ',' + c[1])) }); }
+    if (e.kind === 'zoneEnd') zones.delete(e.zid);
+    const zoneName = [...zones.values()].map(z => z.name).find(n => (e.text || '').includes(': ' + n));
+    if (layout && zoneName && (e.kind === 'attack' || e.kind === 'save') && prev[e.target] && prev[e.target].onBoard !== false) {
+      const t = prev[e.target];
+      if (![...zones.values()].some(z => z.name === zoneName && z.cells.has(Math.floor(t.x + .5) + ',' + Math.floor(t.y + .5)))) throughWalls++;
+    }
     if (e.kind === 'move' && / is pushed /.test(e.text)) pushed.add(e.uid);
     // saves inside an area are rolled from the area's centre, not the caster
     if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal'].includes(e.kind)) inArea = false;
     if (layout && e.kind === 'move' && e.path) for (const q of e.path) if (isWall(q.x, q.y)) wallSteps++;
-    if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text) && !dmgZones.some(n => (e.text || '').includes(': ' + n))) {
+    if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !zoneName && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text) && !dmgZones.some(n => (e.text || '').includes(': ' + n))) {
       const a = prev[e.uid], b = prev[e.target];
       if (a && b && a.onBoard !== false && b.onBoard !== false && !a.swallowedBy && !b.swallowedBy) {
         if (process.env.VERBOSE) { const n0 = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4; for (let j = 1; j < n0; j++) { const f = j / n0; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { console.log('   wall?', e.kind, e.text.slice(0, 100), a.x, a.y, a.conds, '->', b.x, b.y); break; } } }
@@ -714,6 +722,17 @@ section('Lingering damage zones');
   }
   check(steady >= 7, `Spirit Guardians hurts both foes standing in it in rounds 2, 3 and 4, not just when cast (${steady} of 8 fights)`);
   check(once === 8, 'a foe is hit at most once a round by a zone');
+
+  // a zone that follows its caster hurts nobody on the far side of a wall (the cells are cut by walls, as for a burst)
+  let wallHits = 0, openHits = 0;
+  for (const ai of [undefined, 'v2']) for (let sd = 1; sd <= 4; sd++) {
+    const foe = dummy('0', 0); foe.ext = { speed: 0 };
+    const pos = { 'party|c5-cleric|0': { x: 10, y: 2 }, ['foes|dm|0']: { x: 9, y: 2 }, ['foes|dm|1']: { x: 12, y: 2 } };
+    const r = Tac.runDay({ players: [only('Cleric', 'Spirit Guardians', [0, 0, 1])], encounters: [{ monsters: [foe] }] }, { seed: sd, partyAI: 'tactical', ai, record: true, maxRounds: 6, layouts: { 0: { gapFt: 30, positions: pos, terrain: { cells } } } })[0];
+    const hits = n => ticks(r, 'Spirit Guardians').filter(e => e.text.includes('Dummy ' + n + ':')).length;
+    openHits += hits(1) ? 1 : 0; wallHits += hits(2);
+  }
+  check(openHits >= 6 && wallHits === 0, `Spirit Guardians reaches the foe beside the Cleric (${openHits} of 8 fights) and never the one behind the wall (${wallHits} hits)`);
 
   // concentration breaks: the zone is gone and nothing ticks until it is cast again
   let ends = 0, ghosts = 0;
