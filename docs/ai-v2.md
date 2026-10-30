@@ -134,7 +134,8 @@ The caster path is the same `v2TurnInner` square × option search; casters only 
 - **Control** (Hold Person, Hypnotic Pattern, Entangle, Faerie Fire): per-round value of the condition (`effectValue`
   for one round × `w.ctlRound`) × the chance the save fails (`kSave`) × the rounds it should last: repeat-save effects
   `(1 − (1−s)^R) / s`, whole-fight effects `R` (× `w.lull` when damage ends it), capped by how long the target is
-  likely to stay up. `R` is the fight's expected remaining length. A disabling condition on a creature with Legendary
+  likely to stay up. `R` is the fight's expected remaining length. A condition that makes the foe easier to hit
+  (Paralyzed, Stunned…) also counts our side's extra damage against it (`v2Expose`, step 2.10 below). A disabling condition on a creature with Legendary
   Resistance left (`kLegRes`, new accessor) is worth only `w.legRes` of that: the save gets bought off. Area control
   sums over everyone caught, single-target control does not; the target values decide which wins.
 - **Healing** an ally: missing hit points restored × `w.heal` (× `w.healLow` under half), plus `w.healDanger` × the
@@ -286,7 +287,7 @@ spell (cheapest first falls out of the burner order).
 
 Two valuation fixes came with it, because the follow-up has to rank right to be chosen: a control that damage can save
 the foe out of (Hideous Laughter, `ext.saveOnDamage`) is worth `shakeOff` (0.55) of its value, and Paralyzed/Unconscious is
-worth `critBoost` (1.3) × (hits up close crit). These apply to every v2 caster, with or without LR.
+worth `critBoost` (1.3) × (hits up close crit; replaced in step 2.10 by the allies' actual extra damage, `v2Expose`). These apply to every v2 caster, with or without LR.
 
 **Profile.** `AI_BASE.burn = { bias, margin, minFail, hold, slotW, value, share, eff, cap, probe, minFollow }`, plain data.
 `controller` leans toward burning (`bias` 1.3), `artillery` toward racing (`bias` 0.75). `bias: 0` is the step 2.5 behaviour.
@@ -329,6 +330,66 @@ happen (there is no boss with LR left to plan against). Open mode is unchanged.
 **Profile.** `AI_BASE.burn.probeBias` (1), `probeP` (0.35), `probeMax` (2); `controller` 1.4, `artillery` 0.6. `probeBias: 0` turns probing off.
 
 **Intent lines.** "Wizard probes the Adult Red Dragon's Wisdom save with Hideous Laughter".
+
+### Control value: the party's turns against a held foe (step 2.10, part A)
+
+**What was wrong.** On the no-LR, Wisdom −1 dragon (K2) the Wizard's Hold Monster scored 49.5 against a 5th-level slot priced
+48, so it was cast about 1.6 times a day, usually late. Broken down by term at the round-1 decision (open mode):
+denial `effectValue(Paralyzed) = 2 × kDpr + 8 = 38` × `ctlRound` 0.5 × pFail 0.8 = 15.2 a round, × `critBoost` 1.3, × 3.4
+expected rounds (save at the end of each of its turns) × `concKeep` 0.75. The duration, the cap at the target's
+expected life, the single concentration charge and the denied actions (kDpr × rounds) were all counted. The **allies'
+side was not**: "attacks against it have advantage, and hits from within 5 ft crit" was the flat `+8` inside
+`effectValue` (× 0.5 × 1.3, about 5 points a round), while the Fighter's and Barbarian's extra damage against a
+paralysed dragon is about 30 a round. That is the term that made control lose to damage. The slot price (48 for a 5th
+level in the last fight, `base × 0.5`) is the other half of the gap; it stays as it is (see the sweep below).
+
+**The term (`v2Expose`).** For a condition that changes how hard our side hits (`EXPOSE`: Paralyzed, Unconscious =
+advantage and crits from within 5 ft; Stunned, Petrified, Restrained, Blinded = advantage), the value of one round is
+the extra damage the creature's side deals it: for each ally that can reach it next round (speed + range), its best
+action attack's expected damage with the condition minus without (advantage on the hit chance unless it already has
+it; × `w.critDmg` 1.6 for melee when hits crit), summed. It is capped at the condition's share of what the foe has
+left, `kHp × gain / (gain + plain damage)`: when the party's plain hits drop it anyway (a goblin), hitting harder adds
+little; on a 200 HP boss the cap does not bind. It is scored in damage units: × (1 + kDpr/`dprScale`) × `w.damage` ×
+`w.expose`. Other-side facts come through `kAc` (via `hitChance`), `kHp`, `kDpr`.
+- Counted once per cast: each ally attacks one target a round, so an area (Entangle) or a multi-target hold counts the
+  exposure on its main target only (the others caught add their denial), and `v2Holding` counts the largest one.
+  Without these two rules the first version had the Zaki party's Druid casting Entangle on Goblin Warriors in the
+  day's opener: hard-day fell from 87% to 79% (paired seeds: 21 days lost, 5 won).
+- `v2Control`: one round = denial (`effectValue` × `ctlRound`, as before) + pFail × exposure; then LR, `shakeOff`, the
+  duration and the life cap as before. `critBoost` is gone (the crit is now counted where it happens).
+- `v2Holding`: a held effect counts its exposure too (the effect is on; no pFail), so a caster keeps Hold Monster.
+- Riders (Stunning Strike): `pLand × (effectValue × ctlRound + exposure) × (1 − pKill)`. Before, a rider counted
+  denial at `effectValue` × 1 while spells counted it × `ctlRound` 0.5: one stunned round was worth twice as much from
+  a Monk as from a Wizard. Now both are on one scale.
+- `w.control` multiplies all of it (riders, pushes and spell control), plain data, swept by outcome below.
+
+**Calibration.** `w.control` swept over 0.8 / 1 / 1.25 / 1.5 / 2 on K1–K8 (K8: the K2 dragon with a Bard, for
+Hypnotic Pattern), B1–B9, A1–A8 and the step 1 / step 2 scenarios, 200 runs, same seeds. `controller` and
+`artillery` scale it (1.25 / 0.8, both inside the range that held everywhere); no harness scenario uses those
+presets, so they are not calibrated by outcome. Win % ± SE (v2 party; K rows per knowledge mode; B rows the v2+ arm),
+"before" = the step 2.9 commit; only rows that moved are shown, every other scenario stayed within 1 SE:
+
+| scenario | before | 0.8 | **1.0** | 1.25 | 1.5 | 2.0 |
+|---|---|---|---|---|---|---|
+| K2 open (no-LR dragon) | 71.5±3.2 | 79.5±2.9 | **80.0±2.8** | 81.0±2.8 | 82.0±2.7 | 82.5±2.7 |
+| K2 learn | 49.5±3.5 | 67.5±3.3 | **73.5±3.1** | 78.0±2.9 | 77.0±3.0 | 80.5±2.8 |
+| K2 blind | 0.5±0.5 | 17.0±2.7 | **25.5±3.1** | 32.0±3.3 | 30.5±3.3 | 29.5±3.2 |
+| K8 open (with a Bard) | 60.5±3.5 | 69.5±3.3 | **67.0±3.3** | 69.0±3.3 | 68.0±3.3 | 67.5±3.3 |
+| K8 learn | 20.0±2.8 | 46.0±3.5 | **48.0±3.5** | 49.0±3.5 | 48.5±3.5 | 46.5±3.5 |
+| K8 blind | 2.5±1.1 | 25.0±3.1 | **27.0±3.1** | 35.5±3.4 | 34.0±3.3 | 32.5±3.3 |
+| K3 / K5 learn (3 LR) | 44.5±3.5 | 48.5±3.5 | **42.0±3.5** | 40.5±3.5 | 38.0±3.4 | 37.5±3.4 |
+| B3 (1 LR) | 54.0±3.5 | 57.5±3.5 | **59.0±3.5** | 59.5±3.5 | 61.0±3.4 | 63.0±3.4 |
+| B4 open (damage-heavy party) | 78.5±2.9 | 78.0±2.9 | **78.5±2.9** | 78.0±2.9 | 69.0±3.3 | 68.0±3.3 |
+| B4 learn | 72.0±3.2 | 73.0±3.1 | **67.0±3.3** | 63.0±3.4 | 63.5±3.4 | 64.0±3.4 |
+| B2 / B8 learn (+14 saves) | 13.0±2.4 | 13.0±2.4 | **15.0±2.5** | 10.5±2.2 | 10.5±2.2 | 7.5±1.9 |
+| A6 (boss and minions) | 78.5±2.9 | 81.0±2.8 | **80.0±2.8** | 79.0±2.9 | 77.0±3.0 | 68.0±3.3 |
+| Zaki's party vs hard-day | 87.0±2.4 | 87.0±2.4 | **86.5±2.4** | 86.0±2.5 | 86.0±2.5 | 85.0±2.5 |
+| worse / better beyond 2 SE | | 0 / 4 | **0 / 4** | 0 / 5 | 1 / 5 | 2 / 5 |
+
+**Chosen: `w.control` 1.0.** The corrected term does the work; the multiplier stays neutral. 1.25 still passes the
+2 SE test but leans on its edge (B4 learn −9, 1.9 SE); 1.5 and 2 lose B4 open and A6 (racing parties that hold instead
+of hitting). Hold Monster on the no-LR dragon (K2 open): cast in 51% of days, first in round 1.65 → every day, round
+1.0; on the Hill Giants (K1): never → 99% of days, round 1. Stunning Strike counts are unchanged (K6 4.0, K7 6.7 a day).
 
 ## Existing user-facing AI options → v2 knobs
 

@@ -60,7 +60,7 @@ function scanRules(r, layout, acc) {
     }
     if (e.kind === 'move' && / is pushed /.test(e.text)) pushed.add(e.uid);
     // saves inside an area are rolled from the area's centre, not the caster
-    if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal'].includes(e.kind)) inArea = false;
+    if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal', 'expel'].includes(e.kind)) inArea = false;
     if (layout && e.kind === 'move' && e.path) for (const q of e.path) if (isWall(q.x, q.y)) wallSteps++;
     if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !zoneName && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text) && !dmgZones.some(n => (e.text || '').includes(': ' + n))) {
       const a = prev[e.uid], b = prev[e.target];

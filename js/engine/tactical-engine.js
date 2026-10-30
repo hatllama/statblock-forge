@@ -3097,7 +3097,7 @@ const AI_BASE = {
   w: {
     damage: 1, dprScale: 20, overkill: 4, spill: 0.4,           // expected damage (capped near what it has left), × how dangerous the target is
     kill: 1, killRounds: 1.5,                                    // dropping it: its damage for this many rounds, + 5
-    control: 1,                                                  // riders and debuffs (Stunning Strike, Sap, push)
+    control: 1,                                                  // all control: riders (Stunning Strike, Sap, push) and debuff spells (Hold Monster…)
     focus: 1.5, wounded: 4, healer: 4, caster: 4, conc: 1,       // focus fire: per ally on it, how hurt it looks, healers, casters, concentration
     pick: 5, protect: 0.6, finishBoost: 0,                       // the posture's own target
     guard: 4,                                                    // a foe in the face of our casters / back line / badly hurt
@@ -3109,8 +3109,9 @@ const AI_BASE = {
     recover: 6, recklessRisk: 0.8, recklessDrop: 3,              // self-heal when hurt; Reckless: extra hits taken, × recklessDrop if they could drop it
     // casters (step 2) and anything that heals, buffs or controls
     area: 1, ffValue: 1,                                         // the others an area catches (bare value each); friendly fire, × the ally's DPR weight
-    ctlRound: 0.5, lull: 0.6, legRes: 0.2, concKeep: 0.75, shakeOff: 0.55, critBoost: 1.3,
-    // control: one round's worth × rounds; damage ends it; a save bought off; holding it that long; a hold that damage can save it out of (Laughter); paralysed, so hits up close crit
+    ctlRound: 0.5, lull: 0.6, legRes: 0.2, concKeep: 0.75, shakeOff: 0.55, expose: 1, critDmg: 1.6,
+    // control: one round's worth × rounds; damage ends it; a save bought off; holding it that long; a hold that damage can save it out of (Laughter);
+    // our side's extra damage on a foe easier to hit (advantage, crits up close: v2Expose); a crit's damage over a plain hit
     heal: 1, healLow: 1.4, healDanger: 0.8, revive: 15, reviveRounds: 0.6,   // HP back (more under half), a heal that keeps it standing; a downed ally back up
     buff: 1, zone: 2,                                            // buffs on allies (per round × rounds); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
@@ -3133,8 +3134,8 @@ const AI_PRESETS = {
   berserker: { posture: { retreatHp: 0, recoverHp: 0.25 }, w: { risk: 0.1, riskRanged: 0.3, hurt: 0, oa: 0.3, progress: 0.8 }, pacing: { costPerUse: 0.02, overTax: 0.2, easyFight: 1, easyTax: 0.1 }, reckless: 'always' },
   skirmisher: { w: { risk: 0.7, riskRanged: 1.2, meleeShoot: 0.5, oa: 1.5, hide: 0.5, progress: 0.35 } },
   // casters
-  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6 }, burn: { bias: 1.3, probeBias: 1.4 } },
-  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4 }, pacing: { slot: 6 }, burn: { bias: 0.75, probeBias: 0.6 } },
+  controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6, control: 1.25 }, burn: { bias: 1.3, probeBias: 1.4 } },
+  artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4, control: 0.8 }, pacing: { slot: 6 }, burn: { bias: 0.75, probeBias: 0.6 } },
   support: { w: { heal: 1.3, healLow: 1.6, healDanger: 1.2, revive: 22, buff: 1.3, healReach: 3 } },
 };
 function mergeProfile(base, over) {
@@ -3480,7 +3481,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
   }
   const exp = this.expected(u, a, t), tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
   let val, why = '', pKill = 0;
-  if (a.type === 'debuff') { val = this.v2Control(u, a, t, ctx); if (bare) return { val, why: '', pKill: 0 }; }
+  if (a.type === 'debuff') { val = this.v2Control(u, a, t, ctx, false, bare); if (bare) return { val, why: '', pKill: 0 }; }
   else {
     val = Math.min(exp, tHp + W.overkill) * (1 + tDpr / W.dprScale) * W.damage;
     pKill = 1 / (1 + Math.exp(-5 * (exp - tHp) / Math.max(4, exp)));
@@ -3495,7 +3496,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
       const pFail = re.dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, rab) - re.dc) / 20));
       const pLand = a.useSaves ? 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - avgDice(a.toHit)) / 20))
                                : 1 - Math.pow(1 - this.hitChance(u, t, a) * pFail, a.targets || 1);
-      val += pLand * this.effectValue(re.buff, t, true, u) * (1 - pKill) * W.control;
+      val += pLand * (this.effectValue(re.buff, t, true, u) * W.ctlRound + this.v2Expose(u, t, re.buff.condition, ctx)) * (1 - pKill) * W.control;
     }
     const oh = a.ext && a.ext.onHit;
     if (oh && oh.push && this.meleeReach(t) > 0 && this.meleeReach(t) < oh.push + 5 && ctx.myTeam.some(o => o !== u && this.dist(o, t) <= this.meleeReach(t)))
@@ -3589,10 +3590,46 @@ Sim.prototype.v2Pressure = function (u, o, ctx) {
   ctx.press.set(o.uid, p);
   return p;
 };
-/* a debuff or control spell on foe t: one round's worth × the chance it lands × the rounds it should last */
-Sim.prototype.v2Control = function (u, a, t, ctx, noLR) {
+/* what one round of condition c on foe t adds to our side's damage, in damage points: for each ally that can reach it next
+   round, its best action attack with the condition minus without (advantage unless it already has it; melee hits crit when
+   EXPOSE says so), summed, × t's threat like any damage. Capped at the condition's share of what t has left (gain over
+   gain + the plain damage): when our plain hits drop it anyway, hitting harder adds little. 0 for conditions that change nothing */
+const EXPOSE = { Paralyzed: 2, Unconscious: 2, Stunned: 1, Petrified: 1, Restrained: 1, Blinded: 1 };   // 1: attacks against it have advantage; 2: and hits from within 5 ft crit
+Sim.prototype.v2Expose = function (u, t, c, ctx) {
+  const kind = EXPOSE[c];
+  if (!kind || !ctx) return 0;
+  const key = t.uid + ':' + kind, ce = ctx.expose = ctx.expose || new Map();
+  if (ce.has(key)) return ce.get(key);
+  const W = u.v2P.w, tc = this.conds(t), hasAdv = ADV_TARGET.some(x => tc.has(x));
+  let g = 0, plain = 0;
+  for (const o of ctx.myTeam) {
+    if (this.incap(o)) continue;
+    let best = 0, e0 = 0;
+    for (const a of o.actions) {
+      if (a.actionSlot !== 0 || a.type !== 'atk' || a.useSaves || areaSpec(a) || !this.usable(o, a)) continue;
+      const rng = Math.max(5, a._range || 5);
+      if (this.dist(o, t) > this.speedOf(o) + rng) continue;
+      const e = this.expected(o, a, t), p = this.hitChance(o, t, a);
+      if (!(e > 0) || !(p > 0)) continue;
+      const pa = hasAdv || ADV_SELF.some(x => this.conds(o).has(x)) || this.featureAdv(o, t) ? p : Math.max(p, 1 - (1 - p) * (1 - p));
+      const crit = kind === 2 && rng <= 10 ? W.critDmg : 1;
+      const gain = e * (pa * crit / p - 1);
+      if (gain > best) { best = gain; e0 = e; }
+    }
+    g += best; plain += e0;
+  }
+  const tHp = this.kHp(u, t), v = (g > 0 ? Math.min(g, tHp * g / (g + plain)) : 0) * (1 + this.kDpr(u, t) / W.dprScale) * W.damage * W.expose;
+  ce.set(key, v);
+  return v;
+};
+/* a debuff or control spell on foe t: one round's worth × the chance it lands × the rounds it should last. bare: t is one
+   of several it catches, so our side's extra damage (v2Expose, one target per attack) is already counted on the first */
+Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
   const W = u.v2P.w, b = a.buff || {};
   let per = this.expected(u, Object.assign({}, a, { buff: Object.assign({}, b, { duration: '1 round' }) }), t) * W.ctlRound;
+  // and our side hits it harder while it lasts (advantage, crits up close), if it fails the save
+  const ex = bare ? 0 : this.v2Expose(u, t, b.condition, ctx);
+  if (ex > 0) { const dc = avgDice(a.saveDC); per += ex * (areaSpec(a) ? 1 : this.throughChance(u, t)) * (dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - dc) / 20))); }
   // it already has that condition (another caster's Hold Person, a pattern): nothing new
   if (b.condition && (t.buffs.some(x => x.data && x.data.condition === b.condition) || (INCAP.includes(b.condition) && this.incap(t)))) per *= 0.1;
   // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use: worth the
@@ -3608,7 +3645,6 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR) {
     per *= W.legRes;
   }
   if (a.ext && a.ext.saveOnDamage) per *= W.shakeOff;
-  if (b.condition === 'Paralyzed' || b.condition === 'Unconscious') per *= W.critBoost;
   const R = ctx.rounds;
   let r = 1;
   if (b.duration === 'repeat the save each round') {
@@ -3617,7 +3653,7 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR) {
   } else if (b.duration === 'entire encounter') r = R * (a.ext && a.ext.endsOnDamage ? W.lull : 1);
   r = Math.min(r, this.kHp(u, t) / ctx.focusDpr + 0.5);                    // it may well drop before then
   if (a._spell && a._spell.conc) r *= W.concKeep;
-  return per * Math.max(0.5, r);
+  return per * Math.max(0.5, r) * W.control;
 };
 /* ---- Legendary Resistance: burn it or race the boss's HP (docs/ai-v2.md) ---- */
 // how a condition changes the fight while the boss has it: the share of its damage that still comes, our damage × boost
@@ -3778,7 +3814,7 @@ Sim.prototype.v2Holding = function (u, ctx) {
   if (!id) return 0;
   if (ctx.holdId === id) return ctx.holding;
   const W = u.v2P.w, R = ctx.rounds;
-  let v = 0;
+  let v = 0, exp = 0;                 // our side's extra damage counts once, on the held foe where it is worth most
   for (const o of this.units) {
     if (!o.onBoard || o.dead || o.hp <= 0) continue;
     for (const b of o.buffs) {
@@ -3791,7 +3827,9 @@ Sim.prototype.v2Holding = function (u, ctx) {
         r = s > 0.001 ? (1 - Math.pow(1 - s, R)) / s : R;
       }
       if (b.endsOnDamage) r *= W.lull;
-      v += this.effectValue(one, o, true, u) * W.ctlRound * Math.min(r, this.kHp(u, o) / ctx.focusDpr + 0.5);
+      const rr = Math.min(r, this.kHp(u, o) / ctx.focusDpr + 0.5) * W.control;
+      v += this.effectValue(one, o, true, u) * W.ctlRound * rr;
+      exp = Math.max(exp, this.v2Expose(u, o, b.data && b.data.condition, ctx) * rr);
     }
   }
   for (const z of this.zones || []) {
@@ -3800,6 +3838,7 @@ Sim.prototype.v2Holding = function (u, ctx) {
     if (z.fog) for (const e of ctx.foes) if (z.cells.has(e.x + e.y * this.W)) v += this.kDpr(u, e) * 0.5;
     if (z.dmg) for (const e of ctx.foes) if (this.zoneCells(z).has(e.x + e.y * this.W)) v += Math.min(this.expected(u, z.act, e), this.kHp(u, e)) * (1 + this.kDpr(u, e) / W.dprScale) * W.damage * Math.min(1, W.zoneStay + (z.follow ? W.zoneFollow : 0)) * R;
   }
+  v += exp;
   ctx.holdId = id; ctx.holding = v;
   return v;
 };
@@ -3848,7 +3887,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       if (pl.area && !pl.fog) { pl.bare = new Map(); for (const t of pool) pl.bare.set(t.uid, this.v2Value(u, act, t, ctx, true).val); }
       // several targets with one save (no template): the others near the first
       if (!sp && !pl.ally && (act.useSaves || act.type === 'debuff') && pl.n > 1) for (const t of pool) {
-        const ex = pool.filter(o => o !== t && o.hp > 0 && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10)).map(o => pl.vals.get(o.uid).val).sort((p, q) => q - p).slice(0, pl.n - 1);
+        const ex = pool.filter(o => o !== t && o.hp > 0 && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10)).map(o => act.type === 'debuff' ? this.v2Control(u, act, o, ctx, false, true) : pl.vals.get(o.uid).val).sort((p, q) => q - p).slice(0, pl.n - 1);
         pl.multi.set(t.uid, ex.reduce((s, v) => s + Math.max(0, v), 0));
       }
       plans.push(pl);

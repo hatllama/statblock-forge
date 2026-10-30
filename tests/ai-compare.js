@@ -362,9 +362,9 @@ function playBurn(sc, N) {
 
 /* ---- step 2.9: does the party cast its strong control when the save looks winnable? (docs/ai-v2.md, Legendary Resistance) ----
    The same fight in open / learn / blind mode, v2 party; run with a filter: node tests/ai-compare.js 200 "^K[0-9]".
-   'ctl casts' = Hold Monster / Hold Person / Command / Hideous Laughter aimed at a foe, 'first rd' = round of the first
+   'ctl casts' = Hold Monster / Hold Person / Command / Hideous Laughter / Hypnotic Pattern aimed at a foe, 'first rd' = round of the first
    (0 = never), 'stuns' = the Monk's Stunning Strike attacks. */
-const CTL_RE = /: (Hold Monster|Hold Person|Command|Tasha's Hideous Laughter)(?: \(L\d\))?,/;
+const CTL_RE = /: (Hold Monster|Hold Person|Command|Tasha's Hideous Laughter|Hypnotic Pattern)(?: \(L\d\))?,/;
 const isCtl = (r, e) => e.kind === 'save' && CTL_RE.test(e.text || '') && teamOf(r, e.uid) === 'party';
 const CTL_METRICS = {
   'ctl casts': r => r.events.filter(e => isCtl(r, e)).length,
@@ -373,6 +373,7 @@ const CTL_METRICS = {
   'stuns': r => r.events.filter(e => e.kind === 'attack' && /^Monk → [^:]+: Stunning Strike/.test(e.text || '')).length,
 };
 const martialParty = () => ['Monk', 'Fighter', 'Rogue', 'Barbarian'].map(pc);
+const bardParty = () => [pc('Fighter'), pc('Barbarian'), holdMonster(pc('Wizard')), pc('Bard')];
 const CTL_SCENARIOS = [
   { name: 'K1: 2 Hill Giants (Huge, no LR, Wisdom -1); Fighter, Barbarian, Wizard (Hold Monster), Cleric (Command)', players: burnParty, encounters: () => [{ monsters: [mon('Hill Giant', 2)] }] },
   { name: 'K2: dragon with no LR, Wisdom -1 (hits at 0.25)', players: burnParty, encounters: () => [{ monsters: [dragon(0, { wis: -1 }, 0, 0.25)] }] },
@@ -381,6 +382,7 @@ const CTL_SCENARIOS = [
   { name: 'K5: dragon immune to every condition (Wisdom -1, 3 LR)', players: burnParty, encounters: () => [{ monsters: [immune(dragon(3, { wis: -1 }, 0, 0.25))] }] },
   { name: 'K6 martials: Monk, Fighter, Rogue, Barbarian vs 2 Hill Giants (Stunning Strike against Constitution +4)', players: martialParty, encounters: () => [{ monsters: [mon('Hill Giant', 2)] }] },
   { name: 'K7 martials: the same party vs a dragon with 3 LR, Constitution -1', players: martialParty, encounters: () => [{ monsters: [dragon(3, { con: -1 }, 0, 0.25)] }] },
+  { name: 'K8: the K2 dragon (no LR, Wisdom -1) with a Bard (Hypnotic Pattern, Hideous Laughter) instead of the Cleric', players: bardParty, encounters: () => [{ monsters: [dragon(0, { wis: -1 }, 0, 0.25)] }] },
 ];
 function playCtl(sc, N) {
   console.log('\n' + sc.name);
@@ -389,6 +391,13 @@ function playCtl(sc, N) {
 }
 
 /* ---- running ---- */
+// sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
+const AI_OVER = ['w', 'pacing', 'burn'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
+const aiOver = spec => {
+  const base = typeof spec === 'string' ? { base: spec } : Object.assign({}, spec);
+  for (const k in AI_OVER) base[k] = Object.assign({}, base[k], AI_OVER[k]);
+  return base;
+};
 function play(sc, ai, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
   const t0 = Date.now();
@@ -397,6 +406,7 @@ function play(sc, ai, n, tweak) {
     const encounters = sc.encounters ? sc.encounters() : fights(sc.day);
     const players = sc.players ? sc.players() : sc.party.map(pc);
     if (tweak) tweak(players);
+    if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
     let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
