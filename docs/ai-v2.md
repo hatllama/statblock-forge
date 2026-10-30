@@ -460,9 +460,11 @@ above is fixed. Left for a decision with a larger sample (the full SRD 5.2 list,
 
 ### The threat estimate: learn mode reads strength, not size
 
-**Status: built, measured, not adopted; off by default** (results at the end of this section). `opts.threat: true`
-(harness `THREAT=1`) turns it on, `opts.threat: 'bounds'` (`THREAT=bounds`) turns on only the bloodied reading below; with
-neither, every log matches the code before it.
+**Status: the bloodied reading below is the default for learn on v2 (step 2.11, the user's decision); the threat score is
+built and measured, not adopted** (results at the end of this section). `opts.threat: true` (harness `THREAT=1`) adds the
+score; `opts.threat: false` (`THREAT=off`) puts back the classic reading, for comparing. The classic AI's logs, open and
+blind do not move; the v2 learn logs move on purpose (every fight with a bloodied line), baseline
+`tests/fixtures/hashes-v2-learn.txt` (`AI=v2 KNOW=learn node tests/flagoff-hash.js`).
 
 Decisions (the user's): blind keeps its size priors and may play badly; open is unchanged; learn stops guessing HP from
 size. It judges how strong an enemy *seems* and reads HP from that. Applies when the side plays learn **and** runs AI v2
@@ -504,7 +506,8 @@ less the healing it saw. Bounds on maximum HP (`learnBounds`; `hpLo`/`hpHi` on t
 - healing is seen too: still bloodied after a heal tightens the top, out of bloodied raises the floor;
 - bounds that contradict each other mean something unseen happened (healing it could not see): keep the latest.
 The classic path (`visLost`, cut to the HP left) wrote the exact maximum into `hpHi` on a kill and used `<` for half;
-it stays for the classic AI so its logs do not move, and a keen side never reads it.
+it stays for the classic AI so its logs do not move, and a keen side never reads it. So a kill bounds a kind's HP by the
+hit as rolled, unless the last hit happened to be exact, which is a fair reading.
 
 **The foes' side.** Where a foe side plays learn on v2, the same flag, `netLost` and bounds apply to what it sees of the
 party; its starting numbers stay the size priors. Nothing else was added for it.

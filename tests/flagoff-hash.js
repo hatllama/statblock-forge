@@ -1,5 +1,7 @@
 /* Flag-off check: hashes of recorded fight logs with the old AI only (no opts.ai). Run before and after an AI change;
-   the hashes must match. `node tests/flagoff-hash.js > before.txt` … `node tests/flagoff-hash.js | diff before.txt -` */
+   the hashes must match. `node tests/flagoff-hash.js > before.txt` … `node tests/flagoff-hash.js | diff before.txt -`
+   AI=v2 and KNOW=learn|blind|open hash the same days with the party on v2 or in that knowledge mode. The v2 learn logs change
+   on purpose when a default changes; tests/fixtures/hashes-v2-learn.txt is their baseline: regenerate it then and say what moved. */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
@@ -33,7 +35,7 @@ const DAYS = [
 const walled = (() => { const cells = {}; for (let y = 0; y < 16; y++) if (y < 6 || y > 9) cells['11,' + y] = { t: 'wall' }; for (let y = 2; y < 14; y++) for (let x = 3; x <= 5; x++) cells[x + ',' + y] = { h: 2 }; return { gapFt: 30, terrain: { cells } }; })();
 for (const [name, mk] of DAYS) for (const lay of [null, walled]) for (const partyAI of ['tactical', 'regular']) for (let i = 0; i < 4; i++) {
   const seed = 500 + i * 7919;
-  const res = Tac.runDay(mk(), { seed, partyAI, record: true, layout: lay || undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined });
+  const res = Tac.runDay(mk(), { seed, partyAI, record: true, layout: lay || undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, ai: process.env.AI ? { party: process.env.AI } : undefined, know: process.env.KNOW ? { party: process.env.KNOW } : undefined });
   const h = crypto.createHash('sha1').update(JSON.stringify(res.map(r => [r.won, r.rounds, r.events]))).digest('hex').slice(0, 12);
   console.log(`${name} | ${lay ? 'walled' : 'open'} | ${partyAI} | ${seed} | ${h}`);
 }

@@ -490,7 +490,7 @@ function Sim(opts) {
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
   this.expectFights = +opts.expectFights > 0 ? Math.round(+opts.expectFights) : 0;   // fights the party expects today (learn/blind; 0 = learn knows, blind assumes)
-  this.threatMode = opts.threat === true ? 2 : opts.threat === 'bounds' ? 1 : 0;   // learn on v2 (keen): 2 the threat estimate, 1 only the bloodied reading, 0 neither (not adopted, docs/ai-v2.md)
+  this.threatMode = opts.threat === true ? 2 : opts.threat === false ? 0 : 1;   // learn on v2 (keen): 1 the bloodied reading (default), 2 plus the threat estimate (not adopted, docs/ai-v2.md), 0 the classic reading
   this.setTerrain(null);
 }
 
@@ -1189,8 +1189,8 @@ Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
      learn — knows the day's length (opts.expectFights overrides it); for the rest starts like blind, then reads what it sees: hits and misses bound AC, saves made and failed give the
              save bonus, "it resists that" sticks, the damage that bloodied or dropped a creature gives its hit points.
              It remembers per kind of creature for the rest of the day.
-             With opts.threat (not adopted, off by default) a learning side on AI v2 is keen: it reads the bloodied flag and its own
-             net damage (learnBounds), and the party starts from a threat estimate instead of size (threat, docs/ai-v2.md).
+             A learning side on AI v2 is keen: it reads the bloodied flag and its own net damage (learnBounds; opts.threat false
+             for the classic reading). With opts.threat true (not adopted) the party also starts from a threat estimate instead of size (threat, docs/ai-v2.md).
    Only the AI's estimates use this; the dice always use the real numbers. */
 const KNOW_MODES = ['open', 'blind', 'learn'];
 const SIZE_PRIOR = { Tiny: { hp: 7, dpr: 3 }, Small: { hp: 15, dpr: 6 }, Medium: { hp: 32, dpr: 9 }, Large: { hp: 70, dpr: 16 }, Huge: { hp: 140, dpr: 28 }, Gargantuan: { hp: 260, dpr: 45 } };
