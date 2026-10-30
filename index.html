@@ -118,7 +118,9 @@
           <div class="opt"><label for="wt-knowParty">The party knows</label><select id="wt-knowParty"><option value="open">Every number (open info)</option><option value="blind">Only what's seen at the table (black box)</option><option value="learn">What it works out as it goes (learning)</option></select></div>
           <div class="opt"><label for="wt-knowFoes">The monsters know</label><select id="wt-knowFoes"><option value="open">Every number (open info)</option><option value="blind">Only what's seen at the table (black box)</option><option value="learn">What it works out as it goes (learning)</option></select>
             <p class="help warn-note" id="wt-learnWarn" style="display:none;">Learning keeps notes on every roll, so running the odds takes a little longer.</p>
-            <details class="help" id="wt-knowHelp"><summary>How the knowledge settings work</summary>Only creatures on the tactical AI use them. Black box guesses hit points, AC and saves from size, and doesn't know resistances or how many fights are left. Learning starts the same, then narrows AC from hits and misses, saves from what's made and failed, and hit points from what bloodies and drops a creature. It notes resistances, healers and area attacks, and remembers each kind of creature for the rest of the day.</details></div>
+            <details class="help" id="wt-knowHelp"><summary>How the knowledge settings work</summary>Only creatures on the tactical AI use them. Black box guesses hit points, AC and saves from size, and doesn't know resistances or how many fights are left. Learning knows how many fights the day has, and starts the same for the rest, then narrows AC from hits and misses, saves from what's made and failed, and hit points from what bloodies and drops a creature. It notes resistances, healers and area attacks, and remembers each kind of creature for the rest of the day.</details></div>
+          <div class="opt"><label for="wt-expectFights">Fights the party expects today</label><select id="wt-expectFights"><option value="exact">Exact (learning knows the day; black box guesses)</option><option value="1">1</option><option value="2">2</option><option value="3">3</option><option value="4">4</option><option value="5">5</option><option value="6">6</option></select>
+            <p class="help">How many fights the party paces its spell slots and other limited uses for, counting every fight of the day. Used when the party learns or plays black box; open info always knows the day.</p></div>
           <div class="opt"><label for="wt-morale">Monster morale</label><select id="wt-morale"><option value="off">Fight to the death</option><option value="on">May flee or surrender when it goes badly</option></select></div>
         </div>
       </div>
@@ -213,7 +215,7 @@
 <script src="js/statblock-parser.js?v=20261029a"></script>
 <script src="js/sheet-reader.js?v=20261030a"></script>
 <script src="js/forge.js?v=20261030a"></script>
-<script src="js/engine/tactical-engine.js?v=20261030a"></script>
-<script src="js/war-table.js?v=20261029b"></script>
+<script src="js/engine/tactical-engine.js?v=20261030b"></script>
+<script src="js/war-table.js?v=20261030a"></script>
 </body>
 </html>

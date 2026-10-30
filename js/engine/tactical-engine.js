@@ -488,6 +488,7 @@ function Sim(opts) {
   const kn = opts.know || {};
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
+  this.expectFights = +opts.expectFights > 0 ? Math.round(+opts.expectFights) : 0;   // fights the party expects today (learn/blind; 0 = learn knows, blind assumes)
   this.setTerrain(null);
 }
 
@@ -1180,8 +1181,9 @@ Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
      open  — reads the real numbers (hit points, AC, saves, resistances, everyone's actions, how many fights are left)
      blind — black box: only what's visible at the table. Size, position, conditions, bloodied or not, the damage it
              has taken and dealt this fight, who it's seen healing or throwing areas around. Hit points, AC, saves and
-             damage output come from rough priors by size; resistances are unknown; the day's length is a guess.
-     learn — starts like blind, then reads what it sees: hits and misses bound AC, saves made and failed give the
+             damage output come from rough priors by size; resistances are unknown; the day's length is assumed
+             (BLIND_FIGHTS, or opts.expectFights).
+     learn — knows the day's length (opts.expectFights overrides it); for the rest starts like blind, then reads what it sees: hits and misses bound AC, saves made and failed give the
              save bonus, "it resists that" sticks, the damage that bloodied or dropped a creature gives its hit points.
              It remembers per kind of creature for the rest of the day.
    Only the AI's estimates use this; the dice always use the real numbers. */
@@ -1373,11 +1375,14 @@ Sim.prototype.kReach = function (u, t) {
   const m = this.kOf(u, t); if (!m) return null;
   return Math.max(5, t.seenRange || 0, m === 'learn' ? this.kind(u.team, t).range : 0);
 };
-/* fights still to come today, as u's side reckons it: the real count in open mode; otherwise it guesses a three-fight day
-   (2 left in the first fight, 1 after) and never believes the day is over, so it is never below 1 */
+/* fights still to come today, as u's side reckons it. Open and learn: the real count (learn knows the day's length).
+   opts.expectFights (the day's length the party expects, all fights counted) overrides learn and blind; blind otherwise
+   assumes BLIND_FIGHTS. Before fight 1 (fightNo unset: the morning) it is the whole day. */
+const BLIND_FIGHTS = 2;
 Sim.prototype.leftFor = function (u) {
-  if (this.kMode(u.team) === 'open') return this.encountersLeft || 0;
-  return Math.max(1, 2 - (this.fightNo || 0));
+  const m = this.kMode(u.team), N = this.expectFights || (m === 'blind' ? BLIND_FIGHTS : 0);
+  if (m === 'open' || !N) return this.encountersLeft || 0;
+  return this.fightNo === undefined ? N : Math.max(0, N - 1 - this.fightNo);
 };
 
 Sim.prototype.hitChance = function (u, t, a) {

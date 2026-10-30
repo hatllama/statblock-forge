@@ -8,7 +8,8 @@
 - AI knowledge modes (`opts.know = { party, foes }`: open / blind / learn): the AI reads other-side facts only through
   the `k*` accessors (`kHp`, `kMax`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kReach`, `kCaster`, `kLegRes`, `kImmune`, `kBossHp`, `leftFor`). New AI
   code that looks at an enemy's hp, AC, saves, resistances, actions or the day's length should go through them too;
-  dice and rules keep using the real numbers.
+  dice and rules keep using the real numbers. `leftFor` (fights still to come): open and learn read the real count,
+  blind assumes `BLIND_FIGHTS`; `opts.expectFights` (War Table "Fights the party expects today") overrides learn and blind.
 - After changing engine rules or AI, run `npm test` (checks wall/LoS violations, actors that are dead,
   hidden in plain sight, odds sanity) and play a fight on the War Table to eyeball the replay.
 - npm scripts: `test`, `compare` (tests/ai-compare.js), `flagoff` (tests/flagoff-hash.js), `build-party`, `build-srd`.

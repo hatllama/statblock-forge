@@ -391,6 +391,73 @@ presets, so they are not calibrated by outcome. Win % ± SE (v2 party; K rows pe
 of hitting). Hold Monster on the no-LR dragon (K2 open): cast in 51% of days, first in round 1.65 → every day, round
 1.0; on the Hill Giants (K1): never → 99% of days, round 1. Stunning Strike counts are unchanged (K6 4.0, K7 6.7 a day).
 
+### What the party knows, and the day's length (step 2.10, part B)
+
+**Ablation.** From learn and from blind, the party is given the true value of exactly one thing (boss HP, AC, save
+bonuses, damage per round, resistances and condition immunities, the day's length) by swapping that one `k*` accessor
+for the real number, in a harness script (no engine change). The table, ranked by win points recovered, is at the end
+of this section.
+
+**Day length (`leftFor`).** Fights still to come today, as the party reckons it:
+- open: the real count (as before).
+- learn: the real count too: the party knows the day's true length, total and remaining (a DM tells the table, or the
+  party planned its day). `opts.expectFights` (a number: the fights the party expects today, counting this one and
+  those already fought) overrides it: fight k (0-based) then has `max(0, expectFights − 1 − k)` to come.
+- blind: an assumed length, `opts.expectFights` or `BLIND_FIGHTS` (the default, chosen from the numbers below), same
+  formula. No floor: a blind party that has reached the end of the day it assumed spends what it has (the old guess,
+  `max(1, 2 − fightNo)`, never believed the day was over, so it hoarded slots even in a one-fight day).
+- before fight 1 (pre-fight buffs, `morningCasts`), "fights to come" is the whole day: the real total (open, learn) or
+  the expected / assumed total.
+Monsters still see their day as the fight in front of them (`v2Pace` uses 0 for them; `slotCost` prices them flat).
+
+**War Table.** "Fights the party expects today": *exact* (default: learn uses the real count, blind its assumption) or
+1–6. Saved with the other sim settings (`S.settings.expectFights`), passed through `simOpts()` to odds, single fights and
+the replay; changing it clears the cached odds. Open mode ignores it.
+
+**Ablation results** (after part A; v2 party, 200 runs, same seeds; win % change from the plain mode, then damage
+dealt and slot levels spent; K2 = the no-LR Wisdom −1 dragon, K8 = the same with a Bard). Ranked by points recovered
+(the mean of K2 and K8):
+
+| truth given | blind K2 | blind K8 | blind mean | learn K2 | learn K8 | learn mean |
+|---|---|---|---|---|---|---|
+| (none) | 25.5±3.1, 190 dealt, 15.8 slots | 27.0±3.1, 184, 13.7 | | 73.5±3.1, 242, 18.1 | 48.0±3.5, 215, 14.7 | |
+| boss HP | **+27.0** (211, 18.2) | +9.0 (193, 16.2) | **+18.0** | −3.5 (234, 16.4) | +4.5 (222, 15.7) | +0.5 |
+| resistances / immunities | +8.5 (217, 13.4) | +17.5 (218, 11.8) | +13.0 | +0.5 (245, 18.0) | +6.0 (222, 13.9) | +3.3 |
+| day length | +9.5 (198, 19.6) | +8.5 (194, 15.8) | +9.0 | −1.0 (242, 23.6) | +6.0 (221, 19.5) | +2.5 |
+| save bonuses | +3.5 (199, 15.1) | +14.0 (200, 12.0) | +8.8 | +5.5 (247, 16.4) | +4.5 (224, 14.6) | **+5.0** |
+| AC | +2.0 (204, 14.8) | +7.0 (198, 13.2) | +4.5 | +4.5 (246, 17.9) | +2.5 (221, 15.2) | +3.5 |
+| damage per round | −10.5 (184, 15.2) | −14.5 (162, 13.2) | −12.5 | +0.5 (245, 18.7) | −17.0 (195, 14.7) | −8.3 |
+
+Control casts per day (Hold Monster, Hypnotic Pattern, Laughter, Command): blind 0.77 / 1.10, learn 1.07 / 1.39
+(K2 / K8); true saves raise learn to 1.96 / 2.31, true damage per round drops them to 0.35–0.89.
+
+Reading it: blind's big gap is the boss's HP (the Huge prior is 140, the dragon has 256), then resistances and the day's
+length. Learn already reads HP, AC and resistances well enough; its remaining gap is saves (it has to cast to learn
+them). **The true damage per round loses points**: the harness dragon hits at a quarter of its real damage (15 a round)
+while keeping its full HP, and the Huge prior (28) overstates it. Told the truth, the party values control (denial is
+`kDpr` × rounds) and the boss's threat less and plays a long fight too cheaply. That is an AI weakness (the value of
+ending a long fight sooner barely depends on the foe's damage), not a reason to keep a wrong prior.
+
+**Day length, the change.** Learn knowing the day (the default): no win change beyond noise on a one-fight day (K2
+73.5 → 72.5, K8 48 → 54) or on the harness's multi-fight days (all won or all lost either way), but it stops hoarding:
+slot levels spent go up where the old guess of two more fights held them back (K2 18.1 → 23.6, K8 14.7 → 19.5, C-Day
+11.1 → 16.3, C-Brute 7.0 → 9.9) and the party takes less damage (K2 182 → 150). With the change in the engine, K and B
+learn/blind rows against part A alone: K8 learn 48 → 54, K4 learn 29 → 35.5, K2 blind 25.5 → 31.5, K8 blind 27 → 32,
+B9 learn 6.5 → 4.5; nothing worse beyond 2 SE.
+
+**Blind's default (`BLIND_FIGHTS` = 2).** Assumed totals tried in blind (win, slot levels): K2 old guess 25.5 / 15.8,
+1 fight 35.0 / 19.6, 2 fights 31.5 / 16.3, 3 25.5 / 15.8 (= the old guess on one fight), 4 28.5 / 14.3; K8 27.0, 35.5,
+32.0, 27.0, 30.0. On the multi-fight days (C-Day, C-Long, C-Brute, three-fight martial day, B9) every value gives the
+same win rate (100% or 0%), so the cost of spending everything early is not measured there. 2 ("one more fight after
+this one") takes most of the one-fight gain and keeps a reserve for a long day; 1 scored 3.5 points higher on the
+one-fight days (within noise) but leaves a blind party nothing for fight 2.
+
+**Priors (not changed).** The size priors are low: the Library's 47 SRD monsters average 61 HP for Medium (prior 32),
+97 Large (70), 182 Huge (140, from only three: Hill Giant 105, Hydra 184, Adult Red Dragon 256). Raising them is a
+one-line change, but three Huge monsters do not justify a number, it moves every blind and learn fight (and the old AI
+in those modes), and the damage-per-round row shows that a more honest prior can make play worse until the AI weakness
+above is fixed. Left for a decision with a larger sample (the full SRD 5.2 list, by size and CR).
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
@@ -421,7 +488,7 @@ spells that last the day. **In:** non-concentration buff spells that last 8 hour
 - **Policy.** Each caster ranks what it knows by *expected HP saved over the day per slot level spent*, casts the best, re-ranks (targets have changed),
   and stops when the budget or the eligible targets run out. Each spell once per caster, the lowest slot that works, a real slot. The budget is
   `PREFIGHT.share` (`opts.morningShare`) of the caster's slot levels (slots × level, summed). Plain data in the `PREFIGHT` block next to `morningCasts`.
-- **Day length** comes from `leftFor` (the open mode knows the real count; blind/learn assume 2).
+- **Day length** comes from `leftFor` (open and learn know the real count; blind assumes `BLIND_FIGHTS`; "Fights the party expects today" overrides learn and blind).
 - **Value functions** (units: HP saved over the day; `f` = fights from `leftFor`, `PREFIGHT.*` the weights):
   - Aid: the +amt max HP and HP, per target (amt = 5 + 5 per level above 2). Targets: lowest max HP first, up to 3 (+1 per level above 2).
   - Mage Armor: (13 + Dex − current AC) × 5% ÷ `hitP` × `intake` × max HP × f. Only on a target marked `ext.unarmored` whose 13 + `ext.dexMod` beats its AC.

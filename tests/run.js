@@ -381,6 +381,15 @@ section('Statblock parser (no AI)');
   check(acN > 0 && acOk === acN, `learned AC ranges hold the real AC (${acOk}/${acN})`);
   check(hpN > 0 && hpOk === hpN, `learned hit point ranges hold the real hit points (${hpOk}/${hpN})`);
   check(fled > 0 && actAfterFlee === 0, `with morale on, monsters flee (${fled}) and don't act after leaving`);
+  // the day's length (leftFor): open and learn know it, blind assumes one, "Fights the party expects today" overrides both
+  const left = (mode, expectFights, fightNo, encountersLeft) => {
+    const s = new Tac.Sim({ know: { party: mode }, expectFights });
+    s.fightNo = fightNo; s.encountersLeft = encountersLeft;
+    return s.leftFor({ team: 'party' });
+  };
+  check(left('learn', undefined, 0, 0) === 0 && left('learn', undefined, 1, 2) === 2 && left('learn', undefined, undefined, 4) === 4, 'learn knows the fights still to come (and the whole day in the morning)');
+  check(left('learn', 3, 0, 0) === 2 && left('learn', 3, 2, 0) === 0 && left('learn', 3, 4, 0) === 0 && left('learn', 3, undefined, 1) === 3, 'expected fights override learn');
+  check(left('blind', 1, 0, 3) === 0 && left('blind', 4, 1, 0) === 2 && left('open', 1, 0, 3) === 3, 'expected fights set blind; open always knows');
 }
 
 // the official SRD 5.2 monsters in the Library: every one parses with its real header and can fight
