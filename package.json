@@ -9,6 +9,7 @@
     "flagoff": "node tests/flagoff-hash.js",
     "build-party": "node tools/build-party.js",
     "build-srd": "node tools/build-srd.js",
+    "build-threat": "node tools/build-threat.js",
     "start": "python3 -m http.server 8000",
     "serve": "node tools/serve.js"
   },
