@@ -1,5 +1,5 @@
 {
- "updated": 1791749401562,
+ "updated": 1793319817545,
  "name": "Zaki's party (level 4)",
  "players": [
   {
@@ -532,101 +532,45 @@
    "mode": "custom",
    "class": {
     "type": "rogue",
-    "level": 4,
+    "level": 5,
     "options": {}
    },
    "name": "Tacitus Sicarius",
    "count": 1,
-   "hp": 31,
+   "hp": 38,
    "AC": 15,
-   "saveBonus": 1.83,
+   "saveBonus": 2.17,
    "ext": {
     "speed": 35,
-    "initBonus": 6,
-    "initAdvantage": true,
-    "elvenAccuracy": true,
-    "escapeBonus": 6,
+    "initBonus": 7,
     "saves": {
      "str": -1,
-     "dex": 6,
+     "dex": 7,
      "con": 2,
-     "int": 2,
+     "int": 3,
      "wis": 1,
      "cha": 1
     },
+    "athletics": -1,
+    "escapeBonus": 7,
     "sneakAttack": {
-     "dice": "2d6",
-     "assassinate": 4
+     "dice": "3d6",
+     "assassinate": 5
     },
+    "steadyAim": true,
     "assassinate": true,
-    "steadyAim": true
+    "initAdvantage": true,
+    "elvenAccuracy": true,
+    "bonusDisengage": true,
+    "build": "Rogue 5 (Assassin) · read from a pasted sheet"
    },
    "actions": [
     {
-     "id": "ts-assassinate",
-     "name": "Assassinate (round 1)",
-     "actionSlot": -3,
      "freq": "at will",
      "condition": "default",
      "targets": 1,
-     "type": "buff",
-     "target": "self",
-     "buff": {
-      "duration": "1 round",
-      "condition": "Attacks with Advantage",
-      "damage": 4
-     },
-     "ext": {
-      "wtSkip": true
-     }
-    },
-    {
-     "id": "ts-rapier",
-     "name": "Rapier",
-     "actionSlot": 0,
-     "freq": "at will",
-     "condition": "default",
-     "targets": 1,
-     "type": "atk",
-     "dpr": "1d8 + 4 + 2d6",
-     "toHit": 6,
-     "target": "enemy with least HP",
-     "ext": {
-      "range": 5,
-      "wtDpr": "1d8 + 4",
-      "sneak": true,
-      "onHit": {
-       "vex": true
-      },
-      "damageType": "piercing"
-     }
-    },
-    {
-     "id": "ts-shortbow",
-     "name": "Shortbow",
-     "actionSlot": 0,
-     "freq": "at will",
-     "condition": "default",
-     "targets": 1,
-     "type": "atk",
-     "dpr": "1d6 + 4 + 2d6",
-     "toHit": 6,
-     "target": "enemy with least HP",
-     "ext": {
-      "range": 80,
-      "wtDpr": "1d6 + 4",
-      "sneak": true,
-      "wtOnly": true,
-      "damageType": "piercing"
-     }
-    },
-    {
-     "id": "ts-hide",
      "name": "Cunning Action: Hide",
      "actionSlot": 1,
-     "freq": "at will",
-     "condition": "default",
-     "targets": 1,
      "type": "buff",
      "target": "self",
      "buff": {
@@ -634,9 +578,167 @@
       "condition": "Invisible"
      },
      "ext": {
-      "successChance": 0.7
-     }
+      "successChance": 0.75
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a1"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Uncanny Dodge",
+     "actionSlot": 4,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "until next attack taken",
+      "damageTakenMultiplier": 0.5
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a2"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Assassinate (round 1)",
+     "actionSlot": -3,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "1 round",
+      "condition": "Attacks with Advantage",
+      "damage": 5
+     },
+     "ext": {
+      "wtSkip": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a3"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Rapier",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d8 + 4 + 3d6",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing",
+      "onHit": {
+       "vex": true
+      },
+      "wtDpr": "1d8 + 4",
+      "sneak": true,
+      "wtOnly": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a4"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Dagger (Finesse)",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d4 + 4 + 3d6",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing",
+      "wtDpr": "1d4 + 4",
+      "sneak": true,
+      "wtOnly": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a5"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Shortbow",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d6 + 4 + 3d6",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 80,
+      "damageType": "piercing",
+      "wtDpr": "1d6 + 4",
+      "sneak": true,
+      "wtOnly": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a7"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Dagger (Off-Hand)",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d4 + 3d6",
+     "toHit": 2,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 20,
+      "damageType": "piercing",
+      "wtDpr": "1d4",
+      "sneak": true,
+      "wtOnly": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a8"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Dagger (Thrown)",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d4 - 1 + 3d6",
+     "toHit": 2,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 20,
+      "damageType": "piercing",
+      "wtDpr": "1d4 - 1",
+      "sneak": true,
+      "wtOnly": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a9"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Pressurized Flame Squirter",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "2d8 + 4 + 3d6",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 30,
+      "damageType": "fire",
+      "wtDpr": "2d8 + 4",
+      "sneak": true
+     },
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a6"
     }
+   ],
+   "_notes": [
+    "Used in fights: Sneak Attack, Cunning Action, Steady Aim, Uncanny Dodge, Assassinate, Elven Accuracy.",
+    "Class features (no fight rules): Expertise, Thieves' Cant, Weapon Mastery, Cunning Strike, Ability Score Improvement, Cunning Strike Poison, Cunning Strike Trip, Cunning Strike Withdraw, Assassin's Tools.",
+    "Species traits (no fight rules): Darkvision, Elven Lineage, Fey Ancestry, Keen Senses, Medium Size, Trance, Wood Elf Lineage.",
+    "Feats (no fight rules): Alert.",
+    "Armor and shields (the stated AC is used as is): Leather Armor.",
+    "Other gear: Pressurized Flame Squirter; Traveler's Clothes; Backpack; Crowbar ×2; Ball Bearings; Hooded Lantern; Wheel of Cheese ×2; Thieves' Tools ×2; Oil ×8; Rations ×3; Waterskin; Bell; Arrows ×46; Disguise Kit; +6 more; 10 gp 6 sp 30 cp.",
+    "Not in its spell list (no rules for them yet): Druidcraft, Longstrider, Pass Without Trace."
    ]
   },
   {
@@ -644,31 +746,37 @@
    "mode": "custom",
    "class": {
     "type": "warlock",
-    "level": 4,
+    "level": 5,
     "options": {}
    },
    "name": "Niko Aris",
    "count": 1,
-   "hp": 31,
+   "hp": 38,
    "AC": 13,
-   "saveBonus": 2,
+   "saveBonus": 2.33,
    "ext": {
     "speed": 30,
     "initBonus": 2,
-    "luck": 2,
     "saves": {
      "str": -1,
      "dex": 2,
      "con": 2,
      "int": 0,
-     "wis": 3,
-     "cha": 6
+     "wis": 4,
+     "cha": 7
     },
+    "resist": [
+     "necrotic",
+     "radiant"
+    ],
+    "athletics": -1,
+    "escapeBonus": 2,
+    "luck": 3,
     "spellbook": {
      "slots": [
       0,
-      2,
       0,
+      2,
       0,
       0,
       0,
@@ -677,221 +785,40 @@
       0
      ],
      "slotReset": "sr",
-     "recovery": {
-      "levels": 2,
-      "maxSlot": 5,
-      "anyBreak": true
-     },
      "spells": [
       {
-       "id": "nk-eb",
-       "name": "Eldritch Blast",
-       "level": 0,
+       "name": "Sacred Flame",
        "actionSlot": 0,
        "targets": 1,
+       "ext": {
+        "range": 60,
+        "saveAbility": "dex",
+        "damageType": "radiant"
+       },
        "type": "atk",
-       "dpr": "1d10 + 4",
-       "toHit": 6,
-       "target": "enemy with least HP",
+       "dpr": "2d8",
+       "toHit": 15,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s1"
+      },
+      {
+       "name": "Eldritch Blast",
+       "actionSlot": 0,
+       "targets": 2,
        "ext": {
         "range": 120,
         "damageType": "force"
-       }
-      },
-      {
-       "id": "nk-sf",
-       "name": "Sacred Flame",
+       },
+       "type": "atk",
+       "dpr": "1d10 + 4",
+       "toHit": 7,
+       "target": "enemy with most HP",
        "level": 0,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "1d8",
-       "toHit": 14,
-       "useSaves": true,
-       "target": "enemy with least HP",
-       "ext": {
-        "range": 60,
-        "saveAbility": "dex",
-        "damageType": "radiant"
-       }
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s3"
       },
       {
-       "id": "nk-hex",
-       "name": "Hex",
-       "level": 1,
-       "concentration": true,
-       "actionSlot": 1,
-       "targets": 1,
-       "type": "buff",
-       "target": "self",
-       "buff": {
-        "duration": "entire encounter",
-        "damage": "1d6"
-       },
-       "ext": {
-        "range": 0
-       }
-      },
-      {
-       "id": "nk-gb",
-       "name": "Guiding Bolt",
-       "level": 1,
-       "upcast": "1d6",
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "4d6",
-       "toHit": 6,
-       "target": "enemy with highest DPR",
-       "riderEffect": {
-        "dc": 99,
-        "buff": {
-         "duration": "until next attack taken",
-         "condition": "Is attacked with Advantage"
-        }
-       },
-       "ext": {
-        "range": 120,
-        "damageType": "radiant"
-       }
-      },
-      {
-       "id": "nk-cw",
-       "name": "Cure Wounds",
-       "level": 1,
-       "upcast": "2d8",
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "heal",
-       "amount": "2d8 + 4",
-       "target": "ally with the least HP",
-       "ext": {
-        "range": 5
-       }
-      },
-      {
-       "id": "nk-hr",
-       "name": "Hellish Rebuke",
-       "level": 1,
-       "upcast": "1d10",
-       "actionSlot": 4,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "2d10",
-       "toHit": 14,
-       "useSaves": true,
-       "halfOnSave": true,
-       "target": "enemy with least HP",
-       "ext": {
-        "range": 60,
-        "saveAbility": "dex",
-        "damageType": "fire"
-       }
-      },
-      {
-       "id": "nk-aoa",
-       "name": "Armor of Agathys",
-       "level": 1,
-       "upcast": "5",
-       "actionSlot": 1,
-       "targets": 1,
-       "type": "heal",
-       "tempHP": true,
-       "amount": "5",
-       "target": "self",
-       "ext": {
-        "range": 0,
-        "retaliate": {
-         "dmg": 5,
-         "perLevel": true
-        }
-       }
-      },
-      {
-       "id": "nk-aid",
-       "name": "Aid",
-       "level": 2,
-       "upcast": "5",
-       "actionSlot": 0,
-       "targets": 3,
-       "type": "heal",
-       "amount": "5",
-       "target": "ally with the least HP",
-       "ext": {
-        "range": 30,
-        "aid": true
-       }
-      },
-      {
-       "id": "nk-sug",
-       "name": "Suggestion",
-       "level": 2,
-       "concentration": true,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "debuff",
-       "saveDC": 14,
-       "target": "enemy with highest DPR",
-       "buff": {
-        "duration": "entire encounter",
-        "condition": "Incapacitated"
-       },
-       "ext": {
-        "range": 30,
-        "saveAbility": "wis",
-        "endsOnDamage": true,
-        "targetTypes": [
-         "humanoid",
-         "fiend",
-         "celestial",
-         "fey",
-         "giant",
-         "dragon",
-         "undead",
-         "elemental",
-         "aberration"
-        ]
-       }
-      },
-      {
-       "id": "nk-mspike",
-       "name": "Mind Spike",
-       "level": 2,
-       "upcast": "1d8",
-       "concentration": true,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "3d8",
-       "toHit": 14,
-       "useSaves": true,
-       "halfOnSave": true,
-       "target": "enemy with highest DPR",
-       "ext": {
-        "range": 120,
-        "saveAbility": "wis",
-        "damageType": "psychic"
-       }
-      },
-      {
-       "id": "nk-misty",
-       "name": "Misty Step",
-       "level": 2,
-       "actionSlot": 1,
-       "targets": 1,
-       "type": "buff",
-       "target": "self",
-       "buff": {
-        "duration": "1 round"
-       },
-       "ext": {
-        "teleport": 30,
-        "wtOnly": true
-       }
-      },
-      {
-       "id": "nk-barbs",
-       "name": "Silvery Barbs",
        "level": 1,
        "actionSlot": 4,
        "targets": 1,
@@ -904,135 +831,281 @@
        },
        "ext": {
         "range": 60
-       }
+       },
+       "name": "Silvery Barbs",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s6"
+      },
+      {
+       "name": "Armor of Agathys",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "retaliate": {
+         "dmg": 5,
+         "perLevel": true
+        }
+       },
+       "type": "heal",
+       "amount": "5",
+       "target": "self",
+       "tempHP": true,
+       "level": 1,
+       "upcast": "5",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s7"
+      },
+      {
+       "name": "Guiding Bolt",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 120,
+        "damageType": "radiant"
+       },
+       "type": "atk",
+       "dpr": "4d6",
+       "toHit": 7,
+       "target": "enemy with most HP",
+       "riderEffect": {
+        "dc": 99,
+        "buff": {
+         "duration": "until next attack taken",
+         "condition": "Is attacked with Advantage"
+        }
+       },
+       "level": 1,
+       "upcast": "1d6",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s8"
+      },
+      {
+       "name": "Cure Wounds",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 5
+       },
+       "type": "heal",
+       "amount": "2d8 + 4",
+       "target": "ally with the least HP",
+       "level": 1,
+       "upcast": "2d8",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s9"
+      },
+      {
+       "name": "Hellish Rebuke",
+       "actionSlot": 4,
+       "targets": 1,
+       "ext": {
+        "range": 60,
+        "saveAbility": "dex",
+        "damageType": "fire"
+       },
+       "type": "atk",
+       "dpr": "2d10",
+       "toHit": 15,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "halfOnSave": true,
+       "level": 1,
+       "upcast": "1d10",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s11"
+      },
+      {
+       "name": "Hex",
+       "actionSlot": 1,
+       "targets": 1,
+       "ext": {},
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "entire encounter",
+        "damage": "1d6"
+       },
+       "level": 1,
+       "concentration": true,
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s12"
+      },
+      {
+       "name": "Misty Step",
+       "actionSlot": 1,
+       "targets": 1,
+       "ext": {
+        "teleport": 30,
+        "wtOnly": true
+       },
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "1 round"
+       },
+       "level": 2,
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s14"
+      },
+      {
+       "level": 2,
+       "actionSlot": 0,
+       "targets": 3,
+       "type": "heal",
+       "amount": "5",
+       "upcast": "5",
+       "target": "ally with the least HP",
+       "ext": {
+        "range": 30,
+        "aid": true
+       },
+       "name": "Aid",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s16"
+      },
+      {
+       "name": "Suggestion",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 30,
+        "saveAbility": "wis",
+        "endsOnDamage": true
+       },
+       "type": "debuff",
+       "saveDC": 15,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "entire encounter",
+        "condition": "Incapacitated"
+       },
+       "level": 2,
+       "concentration": true,
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s17"
+      },
+      {
+       "level": 2,
+       "upcast": "1d8",
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "3d8",
+       "toHit": 15,
+       "useSaves": true,
+       "halfOnSave": true,
+       "target": "enemy with highest DPR",
+       "ext": {
+        "range": 120,
+        "saveAbility": "wis",
+        "damageType": "psychic"
+       },
+       "name": "Mind Spike",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s18"
       }
-     ]
-    }
+     ],
+     "conSave": 2
+    },
+    "build": "Warlock 5 (Pact of the Celestial) · read from a pasted sheet"
    },
    "actions": [
     {
-     "id": "nk-hlight",
-     "name": "Healing Light",
-     "actionSlot": 1,
      "freq": {
       "reset": "lr",
-      "uses": 2
+      "uses": 6
      },
      "condition": "ally under half HP",
      "targets": 1,
+     "name": "Healing Light",
+     "actionSlot": 1,
      "type": "heal",
-     "amount": "2d6 + 1",
+     "amount": "4d6",
      "target": "ally with the least HP",
      "ext": {
       "range": 60,
       "pool": {
-       "dice": 5,
+       "dice": 6,
        "die": 6,
        "maxPer": 4
       }
-     }
+     },
+     "id": "7157d787-a405-41be-afb8-88bde61ef76f-a1"
     },
     {
-     "id": "nk-hhands",
-     "name": "Healing Hands",
-     "actionSlot": 0,
-     "freq": "1/day",
+     "freq": {
+      "reset": "lr",
+      "uses": 1
+     },
      "condition": "ally under half HP",
      "targets": 1,
+     "name": "Healing Hands",
+     "actionSlot": 0,
      "type": "heal",
-     "amount": "2d4",
+     "amount": "3d4",
      "target": "ally with the least HP",
      "ext": {
       "range": 5
-     }
+     },
+     "id": "7157d787-a405-41be-afb8-88bde61ef76f-a2"
     },
     {
-     "id": "nk-wings",
-     "name": "Celestial Revelation (Heavenly Wings)",
-     "actionSlot": 1,
-     "freq": "1/day",
+     "freq": {
+      "reset": "lr",
+      "uses": 1
+     },
      "condition": "not used yet",
      "targets": 1,
+     "name": "Celestial Revelation (Heavenly Wings)",
+     "actionSlot": 1,
      "type": "buff",
      "target": "self",
      "buff": {
       "duration": "entire encounter",
-      "damage": "2"
+      "damage": "3"
      },
      "ext": {
       "grantFly": 30,
       "endsOnIncap": true
-     }
-    },
-    {
-     "id": "nk-clothes",
-     "name": "Fancy Clothes",
-     "actionSlot": 1,
-     "freq": "1/day",
-     "condition": "has no THP",
-     "targets": 1,
-     "type": "heal",
-     "tempHP": true,
-     "amount": "10",
-     "target": "self",
-     "ext": {
-      "range": 0,
-      "tempBuff": {
-       "ac": 2
-      }
-     }
-    },
-    {
-     "id": "nk-misty-ft",
-     "name": "Misty Step (Fey Touched, free)",
-     "actionSlot": 1,
-     "freq": "1/day",
-     "condition": "default",
-     "targets": 1,
-     "type": "buff",
-     "target": "self",
-     "buff": {
-      "duration": "1 round"
      },
-     "ext": {
-      "teleport": 30,
-      "wtOnly": true
-     }
+     "id": "7157d787-a405-41be-afb8-88bde61ef76f-a3"
     },
     {
-     "id": "nk-barbs-ft",
-     "name": "Silvery Barbs (Fey Touched, free)",
-     "actionSlot": 4,
-     "freq": "1/day",
-     "condition": "default",
-     "targets": 1,
-     "type": "debuff",
-     "target": "enemy with highest DPR",
-     "saveDC": 99,
-     "buff": {
-      "duration": "until next attack made",
-      "condition": "Attacks with Disadvantage"
-     },
-     "ext": {
-      "range": 60
-     }
-    },
-    {
-     "id": "nk-dagger",
-     "name": "Dagger",
-     "actionSlot": 0,
      "freq": "at will",
      "condition": "default",
      "targets": 1,
+     "name": "Dagger Melee",
+     "actionSlot": 0,
      "type": "atk",
      "dpr": "1d4 + 2",
-     "toHit": 4,
+     "toHit": 5,
      "target": "enemy with least HP",
      "ext": {
       "range": 5,
-      "damageType": "piercing"
-     }
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "7157d787-a405-41be-afb8-88bde61ef76f-a4"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Dagger Thrown",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d4 + 2",
+     "toHit": 5,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "7157d787-a405-41be-afb8-88bde61ef76f-a5"
     }
+   ],
+   "_notes": [
+    "Used in fights: Pact Magic, Healing Light, Celestial Revelation, Healing Hands, Lucky.",
+    "Class features (no fight rules): Ability Score Improvement, Agonizing Blast, Gaze of Two Minds, Mask of Many Faces, Pact of the Chain, Repelling Blast, Eldritch Invocations, Magical Cunning.",
+    "Species traits (no fight rules): Celestial Resistance, Darkvision, Light Bearer, Size.",
+    "Feats (no fight rules): Fey Touched.",
+    "Other features (no fight rules): Custom Background Ability Score Increase, Skill Proficiencies, Tool Proficiency.",
+    "Weapons in the pack with no attack bonus or damage on the sheet: Sickle.",
+    "Armor and shields (the stated AC is used as is): Leather Armor.",
+    "Other gear: Herb ×2; Bag of Paper; Mandal wine; Fancy Clothes; Familiar incense ×3; Rations ×50; Scholar's Pack; Book of Occult Lore; Arcane Focus (Staff); Guy Fawkes Hat; Traveler's Clothes; Pouch; Bedroll; Pai Sho Set; +2 more; 70 gp 7 sp 4 cp.",
+    "Not in its spell list (no rules for them yet): Light, Prestidigitation, Minor Illusion, Disguise Self, Find Familiar, Lesser Restoration, Revivify, Daylight, Hunger Of Hadar."
    ]
   },
   {

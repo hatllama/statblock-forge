@@ -1928,12 +1928,13 @@ async function pdfText(buf){
       }catch(e){}
     }
   }
+  // the page text: "Label: value" lines for the captions and values it can pair by position, then the rows (SheetReader.layoutText)
+  const pages = [];
   for(let i = 1; i <= Math.min(doc.numPages, 12); i++){
     const pg = await doc.getPage(i), tc = await pg.getTextContent();
-    let line = '', lastY = null;
-    tc.items.forEach(it=>{ const y = Math.round(it.transform[5]); if(lastY !== null && Math.abs(y - lastY) > 3){ out.push(line.trim()); line = ''; } line += (line && !/\s$/.test(line) ? '  ' : '') + it.str; lastY = y; });
-    if(line.trim()) out.push(line.trim());
+    pages.push(tc.items.map(it=>({ str: it.str, x: it.transform[4], y: it.transform[5], w: it.width, h: it.height })));
   }
+  SheetReader.layoutText(pages).forEach(l=>out.push(l));
   return out.filter(Boolean).join('\n');
 }
 const b64Of = buf => { let s = ''; const b = new Uint8Array(buf); for(let i = 0; i < b.length; i += 0x8000) s += String.fromCharCode.apply(null, b.subarray(i, i + 0x8000)); return btoa(s); };

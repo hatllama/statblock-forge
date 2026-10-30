@@ -1,0 +1,749 @@
+Name: TACITUS SICARIUS
+Background: Criminal
+Class: Rogue 5
+Species: Elf
+Subclass: Assassin
+Level: 5
+Xp: 0/14000
+Armor Class: 15
+Hit Points Current: 38
+Hit Points Max: 38
+Hit Dice Max: 5D8
+Proficiency Bonus: +3
+Strength Modifier: -1
+Strength Score: 8
+Strength Saving Throw: -1
+Athletics: -1
+Dexterity Modifier: +4
+Dexterity Score: 18
+Dexterity Saving Throw: +7
+Acrobatics: +10
+Sleight Of Hand: +7
+Stealth: +10
+Constitution Modifier: +2
+Constitution Score: 15
+Constitution Saving Throw: +2
+Intelligence Modifier: +0
+Intelligence Score: 10
+Intelligence Saving Throw: +3
+Arcana: +0
+History: +0
+Investigation: +0
+Nature: +0
+Religion: +0
+Wisdom Modifier: +1
+Wisdom Score: 12
+Wisdom Saving Throw: +1
+Animal Handling: +1
+Insight: +4
+Medicine: +1
+Perception: +4
+Survival: +4
+Charisma Modifier: +1
+Charisma Score: 13
+Charisma Saving Throw: +1
+Deception: +4
+Intimidation: +1
+Performance: +1
+Persuasion: +1
+Initiative: +7
+Speed: 35 ft.
+Size: Medium
+Passive Perception: 14
+Feats: Alert ◆ Elven Accuracy
+Wis: +1
+Spell Save Dc: 12
+Spell Slots Cantrips & Prepared Spells: CONCENTRATION,
+Appearance Backstory & Personality: Criminal
+Pronouns: ALIGNMENT Neutral Good
+Languages: Common, Common Sign Language, Elvish,
+Equipment: Crowbar, Dagger, Ball Bearings, Crowbar,
+Defenses: VULNERABILITIES None
+Senses: DEFENSES, SENSES & PROFICIENCIES
+Passive: DARKVISION 60 ft
+Wis: +1
+Spell Save Dc: 12
+Class Features: Cunning Strike Poison (Rogue)
+Other Features: Elven Accuracy (Feat)
+TACITUS SICARIUS
+NAME
+Criminal
+BACKGROUND
+Rogue 5
+CLASS
+Elf
+SPECIES
+Assassin
+SUBCLASS
+5
+LEVEL
+0/14000
+XP
+ARMOR
+CLASS
+15
+SHIELD
+HIT POINTS
+TEMP
+38
+CURRENT
+38
+MAX
+HIT DICE
+SPENT
+5D8
+MAX
+DEATH SAVES
+SUCCESSES
+FAILURES
+PROFICIENCY BONUS
++3
+STRENGTH
+-1
+MODIFIER
+8
+SCORE
+Saving Throw
+Athletics
+-1
+-1
+DEXTERITY
++4
+MODIFIER
+18
+SCORE
+Saving Throw
+Acrobatics
+Sleight of Hand
+Stealth
++7
++10
++7
++10
+CONSTITUTION
++2
+MODIFIER
+15
+SCORE
++2 Saving Throw
+HEROIC INSPIRATION
+INTELLIGENCE
++0
+MODIFIER
+10
+SCORE
+Saving Throw
+Arcana
+History
+Investigation
+Nature
+Religion
++3
++0
++0
++0
++0
++0
+WISDOM
++1
+MODIFIER
+12
+SCORE
+Saving Throw
+Animal Handling
+Insight
+Medicine
+Perception
+Survival
++1
++1
++4
++1
++4
++4
+CHARISMA
++1
+MODIFIER
+13
+SCORE
+Saving Throw
+Deception
+Intimidation
+Performance
+Persuasion
++1
++4
++1
++1
++1
+EQUIPMENT TRAINING & PROFICIENCIES
+ARMOR
+TRAINING LIGHT  MEDIUM  HEAVY  SHIELDS
+WEAPONS Simple, Whip, Hand Crossbow, Shortsword, Rapier,
+Scimitar
+TOOLS  Thieves' Tools, Poisoner's Kit, Disguise Kit
+INITIATIVE
++7
+SPEED
+35 ft.
+SIZE
+Medium
+PASSIVE PERCEPTION
+14
+WEAPONS & DAMAGE CANTRIPS
+NAME  ATK/DC  DAMAGE  NOTES
+Dagger (Finesse)  +7  1d4+4 piercing
+Dagger (Finesse)  +7  1d4+4 piercing
+Dagger (Off-Hand)  +2  1d4 piercing
+Dagger (Off-Hand)  +2  1d4 piercing
+Dagger (Thrown)  +2  1d4-1 piercing
+Dagger (Thrown)  +2  1d4-1 piercing
+Oil (Creature or Object)  DEX 15  5 fire
+Pressurized Flame Squir +7  2d8+4 fire
+Pressurized Flame Squir +10  2d6+4 bludgeonin
+Rapier  +7  1d8+4 piercing
+CLASS FEATURES
+Expertise ◆ Sneak Attack ◆ Thieves' Cant ◆ Weapon
+Mastery ◆ Cunning Strike ◆ Ability Score
+Improvement ◆ Cunning Action ◆ Cunning Strike
+Poison ◆ Cunning Strike Trip ◆ Cunning Strike
+Withdraw ◆ Steady Aim ◆ Uncanny Dodge ◆
+Assassin's Tools ◆ Assassinate
+SPECIES TRAITS
+Darkvision ◆ Elven Lineage ◆ Fey Ancestry ◆ Keen
+Senses ◆ Medium Size ◆ Trance ◆ Wood Elf Lineage
+FEATS
+Alert ◆ Elven Accuracy
+WIS
+Spellcasting
+Ability
++1
+Spellcasting
+Modifier
+12  Spell Save DC
++4
+Spell Attack
+Bonus
+SPELL SLOTS
+Level  Total  Expended
+1
+2
+3
+Level  Total  Expended
+4
+5
+6
+Level  Total  Expended
+7
+8
+9
+CANTRIPS & PREPARED SPELLS
+LVL NAME  CASTING TIME RANGE
+CONCENTRATION,
+RITUAL, MATERIAL
+NOTES
+0 Druidcraft  Action  30 feet  C  R  M
+1 Longstrider  Action  Touch  C  R  M
+2 Pass without Trace  Action  Self  C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+APPEARANCE
+Size: Medium
+BACKSTORY & PERSONALITY
+Criminal
+You eked out a living in dark alleyways,
+cutting purses or burgling shops. Perhaps
+you were part of a small gang of like-minded
+wrongdoers who looked out for each other.
+Or maybe you were a lone wolf, fending for
+yourself against the local thieves' guild and
+more fearsome lawbreakers.
+ALIGNMENT Neutral Good
+PRONOUNS
+LANGUAGES
+Common, Common Sign Language, Elvish,
+Sylvan, Thieves' Cant
+EQUIPMENT
+Rapier, Pressurized Flame Squirter, Leather
+Armor, Traveler's Clothes, Dagger, Backpack,
+Crowbar, Dagger, Ball Bearings, Crowbar,
+Hooded Lantern, Shortbow
+MAGIC ITEM ATTUNEMENT
+COINS
+CP  SP  EP  GP  PP
+30  6  0  10  0
+COMBAT REFERENCE
+ATTACKS
+NAME  ATK/DC  DAMAGE  RANGE  NOTES
+Dagger (Finesse)  +7  1d4+4 piercing  5 ft.
+Dagger (Finesse)  +7  1d4+4 piercing  5 ft.
+Dagger (Off-Hand)  +2  1d4 piercing  20/60 ft.
+Dagger (Off-Hand)  +2  1d4 piercing  20/60 ft.
+Dagger (Thrown)  +2  1d4-1 piercing  20/60 ft.
+Dagger (Thrown)  +2  1d4-1 piercing  20/60 ft.
+Oil (Creature or Object)  DEX 15  5 fire  20 ft  When you take the Attack action, you can replace one of your attacks with
+throwing an Oil flask. Target one creature or object within 20 feet of yourself.
+The target must succeed on a Dexterity saving throw (DC 8 plus your
+Dexterity modifier and Proficiency Bonus) or be covered in oil. If the target
+takes Fire damage before the oil dries (after 1 minute), the target takes an
+extra 5 Fire damage from burning oil.
+Pressurized Flame Squirter  +7  2d8+4 fire  5 ft.
+Pressurized Flame Squirter
+(Attack 2)
++10  2d6+4 bludgeoning,
+2d6 fire
+—
+Rapier  +7  1d8+4 piercing  5 ft.
+Shortbow  +7  1d6+4 piercing  80/320 ft.
+Cunning Strike Poison  CON 15  —  —  You must have a Poisoner's Kit on your person
+Cunning Strike Trip  DEX 15  —  —  Target is Large or smaller.
+WEAPON MASTERIES
+NAME  APPLIES  DAMAGE  NOTES
+Rapier  On Hit  Vex  Rogue — If you hit a creature with this weapon and deal damage to the creature, you have
+Advantage on your next attack roll against that creature before the end of your next turn.
+Longbow  On Hit  Slow  Rogue — If you hit a creature with this weapon and deal damage to it, you can reduce its
+Speed by 10 feet until the start of your next turn. If the creature is hit more than once by
+weapons that have this property, the Speed reduction doesn't exceed 10 feet.
+ACTIONS
+NAME  NOTES
+Actions in Combat  Attack, Dash, Disengage, Dodge, Help, Hide, Influence, Magic, Ready, Search, Study, Utilize
+Douse Space with Oil  You can take the Utilize action to pour an Oil flask on level ground to cover a 5-foot square area within 5 feet of yourself. If lit, the
+oil burns until the end of the turn 2 rounds from when the oil was lit (or 12 seconds) and deals 5 Fire damage to any creature that
+enters the area or ends its turn there. A creature can take this damage only once per turn.
+Utilize Bell  When rung as a Utilize action, a Bell produces a sound that can be heard up to 60 feet away.
+BONUS ACTIONS
+NAME  NOTES
+Cunning Action  You can take one of the following actions as a Bonus Action: Dash, Disengage, or Hide.
+DEFENSES, SENSES & PROFICIENCIES
+DEFENSES
+RESISTANCES  None
+VULNERABILITIES None
+IMMUNITIES  None
+CONDITION
+IMMUNITIES
+Sleep
+SENSES
+PASSIVE
+PERCEPTION
+14
+DARKVISION 60 ft
+PROFICIENCIES
+WEAPONS Simple, Whip, Hand Crossbow, Shortsword, Rapier, Scimitar
+TOOLS  Thieves' Tools, Poisoner's Kit, Disguise Kit
+NAME  NOTES
+Steady Aim  As a Bonus Action, you give yourself Advantage on your next attack roll on the current turn. You can use this feature only if you
+haven't moved during this turn, and after you use it, your Speed is 0 until the end of the current turn.
+Tinderbox  Using the tinderbox to light a Candle, Lamp, Lantern, or Torch-or anything else with exposed fuel-takes a Bonus Action.
+REACTIONS
+NAME  NOTES
+Reactions in Combat  Opportunity Attack
+Uncanny Dodge  You can take a Reaction to halve the attack's damage against you (round down).
+FREE ACTIONS
+NAME  NOTES
+Elven Accuracy  Whenever you have advantage on an attack roll using Dexterity, Intelligence, Wisdom, or Charisma, you can reroll one of the dice
+once.
+SPELLS & SPELLCASTING
+CANTRIPS & SPELLS
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+0
+Druidcraft
+Action
+30 feet
+V  S  M
+R  C
+Whispering to the spirits of nature, you create one of the following effects within range.
+Weather Sensor. You create a Tiny, harmless sensory effect that predicts what the weather will be at your location for the
+next 24 hours. The effect might manifest as a golden orb for clear skies, a cloud for rain, falling snowflakes for snow, and
+so on. This effect persists for 1 round.
+Bloom. You instantly make a flower blossom, a seed pod open, or a leaf bud bloom.
+Sensory Effect. You create a harmless sensory effect, such as falling leaves, spectral dancing fairies, a gentle breeze, the
+sound of an animal, or the faint odor of skunk. The effect must fit in a 5-foot Cube.
+Fire Play. You light or snuff out a candle, a torch, or a campfire.
+1
+Longstrider
+Action
+Touch
+V  S  M
+R  C
+You touch a creature. The target's Speed increases by 10 feet until the spell ends.
+2
+Pass without Trace
+Action
+Self
+V  S  M
+R  C
+You radiate a concealing aura in a 30-foot Emanation for the duration. While in the aura, you and each creature you
+choose have a +10 bonus to Dexterity (Stealth) checks and leave no tracks.
+WIS
+Spellcasting
+Ability
++1
+Spellcasting
+Modifier
+12  Spell Save DC
++4
+Spell Attack
+Bonus
+WIS  Wood Elf  SPELL SLOTS
+Level  Total  Expended
+1
+2
+3
+Level  Total  Expended
+4
+5
+6
+Level  Total  Expended
+7
+8
+9
+INVENTORY
+EQUIPMENT
+Rapier  2 lbs  1
+Melee Weapon · Gear · Proficient · Melee · Rapier · Martial
+basic rapier
+Pressurized Flame Squirter  0 lbs  1
+Ranged Weapon · Gear · Proficient · Ranged · Light Crossbow · Simple
+Ranged Weapon Attack: +dex to hit, range 30 ft., one target. Hit: (2d8 + dex) fire damage.
+If the target is a creature or flammable object, it catches fire. Until a creature takes an
+action to douse the fire, the target takes 5 (1d10) fire damage at the start of each of its
+turns.
+Alchemical Fire Bomb. Ranged Weapon Attack: +7 to hit, range 30/60 ft., one target. Hit: 11
+(2d6 + 4) bludgeoning damage plus 7
+(2d6) fire damage. Each creature within 5 feet of the point of impact must succeed on a
+DC 14 Dexterity saving throw or take 7 (2d6)
+fire damage and catch fire.
+Uses oil as ammo
+Leather Armor  10 lbs  1
+Light · Gear · Proficient · Light · Leather
+Armor Class: 11 + Dex modifier
+Strength Requirement: -
+Stealth: -
+Weight: 10
+Traveler's Clothes  4 lbs  1
+Gear
+Traveler's Clothes are resilient garments designed for travel in various environments.
+Dagger  2 lbs  2
+Melee Weapon · Gear · Finesse · Light · Thrown (Range 20/60) · Proficient ·
+Melee · Dagger · Simple
+Finesse. When making an attack with a Finesse weapon, use your choice of your Strength
+or Dexterity modifier for the attack and damage rolls. You must use the same modifier for
+both rolls.
+Light. When you take the Attack action on your turn and attack with a Light weapon, you
+can make one extra attack as a Bonus Action later on the same turn. That extra attack
+must be made with a different Light weapon, and you don't add your ability modifier to the
+extra attack's damage unless that modifier is negative. For example, you can attack with a
+Shortsword in one hand and a Dagger in the other using the Attack action and a Bonus
+Action, but you don't add your Strength or Dexterity modifier to the damage roll of the
+Bonus Action unless that modifier is negative.
+Thrown. If a weapon has the Thrown property, you can throw the weapon to make a
+ranged attack, and you can draw that weapon as part of the attack. If the weapon is a
+Melee weapon, use the same ability modifier for the attack and damage rolls that you use
+for a melee attack with that weapon.
+Damage: 1d4
+Damage Type: Piercing
+Properties: Finesse, Light, Thrown (Range 20/60)
+Mastery: Nick
+Weight: 1
+Backpack  5 lbs  1
+Gear
+A Backpack holds up to 30 pounds within 1 cubic foot. It can also serve as a saddlebag.
+Crowbar  5 lbs  1
+Gear
+Using a Crowbar gives you Advantage on Strength checks where the Crowbar's leverage
+can be applied.
+Dagger  2 lbs  2
+Melee Weapon · Gear · Finesse · Light · Thrown (Range 20/60) · Proficient ·
+Melee · Dagger · Simple
+Finesse. When making an attack with a Finesse weapon, use your choice of your Strength
+or Dexterity modifier for the attack and damage rolls. You must use the same modifier for
+both rolls.
+Light. When you take the Attack action on your turn and attack with a Light weapon, you
+can make one extra attack as a Bonus Action later on the same turn. That extra attack
+must be made with a different Light weapon, and you don't add your ability modifier to the
+extra attack's damage unless that modifier is negative. For example, you can attack with a
+Shortsword in one hand and a Dagger in the other using the Attack action and a Bonus
+Action, but you don't add your Strength or Dexterity modifier to the damage roll of the
+Bonus Action unless that modifier is negative.
+Thrown. If a weapon has the Thrown property, you can throw the weapon to make a
+ranged attack, and you can draw that weapon as part of the attack. If the weapon is a
+Melee weapon, use the same ability modifier for the attack and damage rolls that you use
+for a melee attack with that weapon.
+Damage: 1d4
+Damage Type: Piercing
+Properties: Finesse, Light, Thrown (Range 20/60)
+Mastery: Nick
+Weight: 1
+Ball Bearings  2 lbs  1
+Gear
+As a Utilize action, you can spill Ball Bearings from their pouch. They spread to cover a
+level, 10-foot-square area within 10 feet of yourself. A creature that enters this area for the
+first time on a turn must succeed on a DC 10 Dexterity saving throw or have the Prone
+condition. It takes 10 minutes to recover the Ball Bearings.
+Crowbar  5 lbs  1
+Gear
+Using a Crowbar gives you Advantage on Strength checks where the Crowbar's leverage
+can be applied.
+Hooded Lantern  2 lbs  1
+Gear
+A Hooded Lantern burns Oil as fuel to cast Bright Light in a 30-foot radius and Dim Light
+for an additional 30 feet. As a Bonus Action, you can lower the hood, reducing the light to
+Dim Light in a 5-foot radius, or raise it again.
+Shortbow  2 lbs  1
+Ranged Weapon · Gear · Ammunition (Range 80/320; Arrow) · Two-Handed ·
+Proficient · Ranged · Shortbow · Simple
+Ammunition. You can use a weapon that has the Ammunition property to make a ranged
+attack only if you have ammunition to fire from it. The type of ammunition required is
+specified with the weapon's range. Each attack expends one piece of ammunition.
+Drawing the ammunition is part of the attack (you need a free hand to load a one-handed
+weapon). After a fight, you can spend 1 minute to recover half the ammunition (round
+down) you used in the fight; the rest is lost.
+Range. A Range weapon has a range in parentheses after the Ammunition or Thrown
+property. The range lists two numbers. The first is the weapon's normal range in feet, and
+the second is the weapon's long range. When attacking a target beyond normal range,
+you have Disadvantage on the attack roll. You can't attack a target beyond the long range.
+Two-Handed. A Two-Handed weapon requires two hands when you attack with it.
+Damage: 1d6
+Damage Type: Piercing
+Properties: Ammunition (Range 80/320; Arrow), Two-Handed
+Mastery: Vex
+Weight: 2
+25 GP
+EQ.  NAME  WT.  QTY  EQ.  NAME  WT.  QTY
+MAGIC ITEM ATTUNEMENT
+POSSESSIONS
+Wheel of Cheese  6 lbs  2
+Possession
+small wheel of goat cheese
+Thieves' Tools  1 lb  1
+Possession
+Ability: Dexterity
+Utilize: Pick a lock (DC 15), or disarm a trap (DC 15)
+Oil  8 lbs  8
+Possession
+You can douse a creature, object, or space with Oil or use it as fuel, as detailed below.
+Dousing a Creature or an Object. When you take the Attack action, you can replace one of
+your attacks with throwing an Oil flask. Target one creature or object within 20 feet of
+yourself. The target must succeed on a Dexterity saving throw (DC 8 plus your Dexterity
+modifier and Proficiency Bonus) or be covered in oil. If the target takes Fire damage before
+the oil dries (after 1 minute), the target takes an extra 5 Fire damage from burning oil.
+Dousing a Space. You can take the Utilize action to pour an Oil flask on level ground to
+cover a 5-foot-square area within 5 feet of yourself. If lit, the oil burns until the end of the
+turn 2 rounds from when the oil was lit (or 12 seconds) and deals 5 Fire damage to any
+creature that enters the area or ends its turn there. A creature can take this damage only
+once per turn.
+Fuel. Oil serves as fuel for Lamps and Lanterns. Once lit, a flask of Oil burns for 6 hours in a
+Lamp or Lantern. That duration doesn't need to be consecutive; you can extinguish the
+burning Oil (as a Utilize action) and rekindle it again until it has burned for a total of 6
+hours.
+Rations  6 lbs  3
+Possession
+Rations consist of travel-ready food, including jerky, dried fruit, hardtack, and nuts. See
+'Malnutrition' in the rules glossary for the risks of not eating.
+Waterskin  5 lbs  1
+Possession
+A Waterskin holds up to 4 pints. If you don't drink sufficient water, you risk dehydration (see
+the rules glossary).
+Bell  0 lbs  1
+Possession
+When rung as a Utilize action, a Bell produces a sound that can be heard up to 60 feet
+away.
+Arrows  2.3 lbs  46
+Possession
+Storage: Quiver
+Weight (20): 1
+Weight per Arrow: .05
+Cost (20): 1 GP
+Disguise Kit  3 lbs  1
+Possession
+Ability: Charisma
+Utilize: Apply makeup (DC 10)
+Craft: Costume
+Quiver  1 lb  1
+Possession
+A Quiver holds up to 20 Arrows.
+Rope  5 lbs  1
+Possession
+As a Utilize action, you can tie a knot with Rope if you succeed on a DC 10 Dexterity
+(Sleight of Hand) check. The Rope can be burst with a successful DC 20 Strength (Athletics)
+check.
+You can bind an unwilling creature with the Rope only if the creature has the Grappled,
+Incapacitated, or Restrained condition. If the creature's legs are bound, the creature has the
+Restrained condition until it escapes. Escaping the Rope requires the creature to make a
+successful DC 15 Dexterity (Acrobatics) check as an action.
+Tinderbox  1 lb  1
+Possession
+A Tinderbox is a small container holding flint, fire steel, and tinder (usually dry cloth soaked
+in light oil) used to kindle a fire. Using it to light a Candle, Lamp, Lantern, or Torch-or
+anything else with exposed fuel-takes a Bonus Action. Lighting any other fire takes 1
+minute.
+Thieves' Tools  1 lb  1
+Possession
+Ability: Dexterity
+Utilize: Pick a lock (DC 15), or disarm a trap (DC 15)
+Pouch  2 lbs  2
+Possession
+A Pouch holds up to 6 pounds within one-fifth of a cubic foot.
+Poisoner's Kit  2 lbs  1
+Possession
+Ability: Intelligence
+Utilize: Detect a poisoned object (DC 10)
+Craft: Basic Poison
+Burglar's Pack  0 lbs  1
+Possession
+A Burglar's Pack contains the following items: Backpack, Ball Bearings, Bell, 10 Candles,
+Crowbar, Hooded Lantern, 7 flasks of Oil, 5 days of Rations, Rope, Tinderbox, and
+Waterskin.
+WEIGHT
+Current Total Weight (Unencumbered): 84.3 lbs  Carrying Capacity: 120 lbs
+NAME  WT.  QTY NAME  WT.  QTY
+BACKSTORY, PERSONALITY & FEATURES
+BACKSTORY & PERSONALITY
+CRIMINAL
+You eked out a living in dark alleyways, cutting purses or burgling shops. Perhaps you were part of a small gang of like-minded wrongdoers who looked out for each other. Or maybe you
+were a lone wolf, fending for yourself against the local thieves' guild and more fearsome lawbreakers.
+Alignment Neutral Good  Pronouns
+CLASS FEATURES
+Expertise (Rogue)
+You gain Expertise in two of your skill proficiencies of your choice. Sleight of Hand and Stealth
+are recommended if you have proficiency in them.
+At Rogue level 6, you gain Expertise in two more of your skill proficiencies of your choice.
+Sneak Attack (Rogue)
+You know how to strike subtly and exploit a foe's distraction. Once per turn, you can deal an
+extra 1d6 damage to one creature you hit with an attack roll if you have Advantage on the roll
+and the attack uses a Finesse or a Ranged weapon. The extra damage's type is the same as
+the weapon's type.
+You don't need Advantage on the attack roll if at least one of your allies is within 5 feet of the
+target, the ally doesn't have the Incapacitated condition, and you don't have Disadvantage on
+the attack roll.
+The extra damage increases as you gain Rogue levels, as shown in the Sneak Attack column
+of the Rogue Features table.
+Thieves' Cant (Rogue)
+You picked up various languages in the communities where you plied your roguish talents. You
+know Thieves' Cant and one other language of your choice.
+Weapon Mastery (Rogue)
+Your training with weapons allows you to use the mastery properties of two kinds of weapons
+of your choice with which you have proficiency, such as Daggers and Shortbows.
+Whenever you finish a Long Rest, you can change the kinds of weapons you chose. For
+example, you could switch to using the mastery properties of Scimitars and Shortswords.
+Cunning Strike (Rogue)
+You've developed cunning ways to use your Sneak Attack. When you deal Sneak Attack
+damage, you can add one of the following Cunning Strike effects. Each effect has a die cost,
+which is the number of Sneak Attack damage dice you must forgo to add the effect. You
+remove the die before rolling, and the effect occurs immediately after the attack's damage is
+dealt. For example, if you add the Poison effect, remove 1d6 from the Sneak Attack's damage
+before rolling. If a Cunning Strike effect requires a saving throw, the DC equals 8 plus your
+Dexterity modifier and Proficiency Bonus. Poison (Cost: 1d6). You add a toxin to your strike,
+forcing the target to make a Constitution saving throw. On a failed save, the target has the
+Poisoned condition for 1 minute. At the end of each of its turns, the Poisoned target repeats
+the save, ending the effect on itself on a success. To use this effect, you must have a
+Poisoner's Kit on your person. Trip (Cost: 1d6). If the target is Large or smaller, it must succeed
+on a Dexterity saving throw or have the Prone condition. Withdraw (Cost: 1d6). Immediately
+after the attack, you move up to half your Speed without provoking Opportunity Attacks.
+Ability Score Improvement (Rogue)
+You gain the Ability Score Improvement feat or another feat of your choice for which you
+qualify. You gain this feature again at Rogue levels 8, 10, 12, and 16.
+Cunning Action (Rogue)
+Your quick thinking and agility allow you to move and act quickly. On your turn, you can take
+one of the following actions as a Bonus Action: Dash, Disengage, or Hide.
+Cunning Strike Poison (Rogue)
+(Cost: 1d6). You add a toxin to your strike, forcing the target to make a Constitution saving
+throw. On a failed save, the target has the Poisoned condition for 1 minute. At the end of each
+of its turns, the Poisoned target repeats the save, ending the effect on itself on a success. To
+use this effect, you must have a Poisoner's Kit on your person.
+Cunning Strike Trip (Rogue)
+(Cost: 1d6). If the target is Large or smaller, it must succeed on a Dexterity saving throw or have
+the Prone condition.
+Cunning Strike Withdraw (Rogue)
+(Cost: 1d6). Immediately after the attack, you move up to half your Speed without provoking
+Opportunity Attacks.
+Steady Aim (Rogue)
+As a Bonus Action, you give yourself Advantage on your next attack roll on the current turn.
+You can use this feature only if you haven't moved during this turn, and after you use it, your
+Speed is 0 until the end of the current turn.
+Uncanny Dodge (Rogue)
+When an attacker that you can see hits you with an attack roll, you can take a Reaction to
+halve the attack's damage against you (round down).
+Assassin's Tools (Assassin)
+You gain a Disguise Kit and a Poisoner's Kit, and you have proficiency with them.
+Assassinate (Assassin)
+You're adept at ambushing a target, granting you the following benefits.
+Initiative. You have Advantage on Initiative rolls.
+Surprising Strikes. During the first round of each combat, you have Advantage on attack rolls
+against any creature that hasn't taken a turn. If your Sneak Attack hits any target during that
+round, the target takes extra damage of the weapon's type equal to your Rogue level.
+SPECIES TRAITS
+Darkvision (Elf)
+You have Darkvision with a range of 60 feet.
+Elven Lineage (Elf)
+You are part of a lineage that grants you supernatural abilities. Choose a lineage from the
+Elven Lineages table. You gain the level 1 benefit of that lineage. When you reach character
+levels 3 and 5, you learn a higher-level spell, as shown on the table. You always have that spell
+prepared. You can cast it once without a spell slot, and you regain the ability to cast it in that
+way when you finish a Long Rest. You can also cast the spell using any spell slots you have of
+the appropriate level. Intelligence, Wisdom, or Charisma is your spellcasting ability for the
+spells you cast with this trait (choose the ability when you select the lineage).
+Longstrider
+Pass Without a Trace
+Fey Ancestry (Elf)
+You have Advantage on saving throws you make to avoid or end the Charmed condition.
+Keen Senses (Elf)
+You have proficiency in the Insight, Perception, or Survival skill.
+Medium Size (Elf)
+5 by 5 ft
+Trance (Elf)
+You don't need to sleep, and magic can't put you to sleep. You can finish a Long Rest in 4
+hours if you spend those hours in a trancelike meditation, during which you retain
+consciousness.
+Wood Elf Lineage (Elf)
+Wood elves carry the magic of primeval forests within themselves. They are known by many
+other names, including wild elves, green elves, and forest elves. Grugach are reclusive wood
+elves of the Greyhawk setting, while the Kagonesti and the Tairnadal are wood elves of the
+Dragonlance and Eberron settings, respectively. Level 1 - Your Speed increases to 35 feet. You
+also know the Druidcraft cantrip. Level 3 - Longstrider. Level 5 - Pass without Trace.
+Longstrider
+Pass Without a Trace
+OTHER FEATURES
+Alert (Feat)
+Origin Feat
+You gain the following benefits.
+Initiative Proficiency. When you roll Initiative, you can add your Proficiency Bonus to the roll.
+Initiative Swap. Immediately after you roll Initiative, you can swap your Initiative with the
+Initiative of one willing ally in the same combat. You can't make this swap if you or the ally has
+the Incapacitated condition.
+Elven Accuracy (Feat)
+The accuracy of elves is legendary, especially that of elf archers and spellcasters. You have
+uncanny aim with attacks that rely on precision rather than brute force. You gain the following
+benefits:
+Increase your Dexterity, Intelligence, Wisdom, or Charisma score by 1, to a maximum of 20.
+Whenever you have advantage on an attack roll using Dexterity, Intelligence, Wisdom, or
+Charisma, you can reroll one of the dice once.

@@ -434,6 +434,32 @@ section('Character sheets');
     check(k > 0 && k7 === 0, `Relentless Rage keeps a raging barbarian up sometimes (${k} times at level 11, ${k7} at level 7)`);
   }
   check(p['ddbcopy.txt'] &&p['ddbcopy.txt'].ext.sneakAttack.dice === '2d6' && p['ddbcopy.txt'].ext.spellbook.slotReset === 'sr' && /\+ 3/.test(p['ddbcopy.txt'].ext.spellbook.spells[0].dpr), 'a pasted rogue/warlock: sneak attack, pact slots, Agonizing Blast');
+  {
+    // page layout: a value printed above its caption, a title with its value under it, a bonus left of its label
+    const it = (str, x, y, w, h) => ({ str, x, y, w, h });
+    const page = [it('NIKO ARIS', 36, 759, 49, 10), it('NAME', 36, 744, 20, 7), it('Wayfarer', 27, 732, 32, 8), it('BACKGROUND', 27, 720, 48, 7),
+      it('SPEED', 300, 700, 28, 8), it('30 ft.', 300, 688, 22, 8), it('STRENGTH', 46, 559, 44, 8), it('-1', 45, 523, 13, 16), it('MODIFIER', 35, 501, 32, 7),
+      it('8', 80, 520, 9, 13), it('SCORE', 73, 504, 23, 7), it('Saving Throw', 44, 482, 48, 8), it('-1', 33, 483, 6, 8), it('Dagger Melee', 253, 563, 42, 7), it('+', 331, 563, 3, 7), it('5', 334, 563, 4, 7)];
+    const lt = ctx.SheetReader.layoutText([page]);
+    check(lt.slice(0, 4).join('|') === 'Name: NIKO ARIS|Background: Wayfarer|Speed: 30 ft.|Strength Modifier: -1' && lt.includes('Strength Score: 8') && lt.includes('Strength Saving Throw: -1') && lt.includes('Dagger Melee  +5'),
+      'PDF page layout pairs a value above its caption, a title with the value under it and a bonus beside its label, and joins "+" and "5" into "+5"');
+  }
+  const nk = p['niko-roll20.txt'], tc = p['tacitus-roll20.txt'];
+  check(nk && nk.name === 'Niko Aris' && nk.class.type === 'warlock' && nk.class.level === 5 && nk.AC === 13 && nk.hp === 38 && nk.ext.speed === 30 && nk.ext.saves.wis === 4 && nk.ext.saves.cha === 7 && nk.ext.saves.int === 0
+    && nk.ext.resist.join() === 'necrotic,radiant' && nk.ext.luck === 3 && !nk.ext.unarmored && /Pact of the Celestial/.test(nk.ext.build) && !/No score found|No hit points|No AC/.test(notesOf(nk)),
+    'a Roll20 2024 sheet (Niko, warlock 5): name, level, AC, HP, speed, saves, resistances, Lucky; nothing guessed');
+  check(nk && nk.ext.spellbook.slots.join() === '0,0,2,0,0,0,0,0,0' && nk.ext.spellbook.slotReset === 'sr' && ['Eldritch Blast', 'Hex', 'Misty Step', 'Silvery Barbs', 'Mind Spike', 'Armor of Agathys'].every(n => sp(nk).includes(n)) && !sp(nk).includes('Witch Bolt') && !sp(nk).includes('Shield')
+    && nk.ext.spellbook.spells.find(s => s.name === 'Eldritch Blast').dpr === '1d10 + 4' && nk.ext.spellbook.spells.find(s => s.name === 'Eldritch Blast').targets === 2 && nk.ext.spellbook.spells.find(s => s.name === 'Mind Spike').toHit === 15,
+    'Niko: two pact slots of level 3 that come back on a short rest, spells from the spell table only, two Agonizing Eldritch Blast beams');
+  check(nk && actOf(nk, /^Healing Light/).ext.pool.dice === 6 && actOf(nk, /^Healing Light/).ext.pool.maxPer === 4 && actOf(nk, /^Healing Hands/).amount === '3d4' && actOf(nk, /^Celestial Revelation/).buff.damage === '3' && actOf(nk, /^Dagger Melee/).toHit === 5
+    && /Class features \(no fight rules\): [^\n]*Magical Cunning/.test(notesOf(nk)) && /Armor and shields[^\n]*Leather Armor/.test(notesOf(nk)) && /Other gear: [^\n]*Rations ×50/.test(notesOf(nk)) && /70 gp/.test(notesOf(nk)),
+    'Niko: Healing Light as a pool of 6 d6 (4 per use), Healing Hands, Celestial Revelation, daggers; invocations, armor, gear and coins as notes');
+  check(tc && tc.name === 'Tacitus Sicarius' && tc.class.type === 'rogue' && tc.class.level === 5 && tc.AC === 15 && tc.hp === 38 && tc.ext.speed === 35 && tc.ext.initBonus === 7 && tc.ext.saves.dex === 7 && tc.ext.saves.int === 3 && !tc.ext.unarmored && /Assassin/.test(tc.ext.build)
+    && tc.ext.sneakAttack.dice === '3d6' && tc.ext.sneakAttack.assassinate === 5 && tc.ext.assassinate === true && tc.ext.initAdvantage === true && tc.ext.steadyAim === true && tc.ext.elvenAccuracy === true && tc.ext.bonusDisengage === true,
+    'a Roll20 2024 sheet (Tacitus, rogue 5): name, level, AC, HP, speed, initiative, saves, Sneak Attack, Assassinate, Steady Aim, Elven Accuracy');
+  check(tc && actOf(tc, /^Rapier/).toHit === 7 && actOf(tc, /^Rapier/).ext.onHit.vex === true && actOf(tc, /^Shortbow/).ext.range === 80 && actOf(tc, /^Dagger \(Thrown\)/).ext.range === 20 && actOf(tc, /^Pressurized Flame Squirter/).ext.range === 30 && actOf(tc, /^Pressurized Flame Squirter/).toHit === 7
+    && actOf(tc, /^Cunning Action: Hide/) && actOf(tc, /^Uncanny Dodge/) && actOf(tc, /^Assassinate/) && /Used in fights: [^\n]*Steady Aim/.test(notesOf(tc)) && /Armor and shields[^\n]*Leather Armor/.test(notesOf(tc)) && /Not in its spell list[^\n]*Longstrider/.test(notesOf(tc)),
+    'Tacitus: Rapier +7 with Vex, bow and thrown ranges, the Squirter as a 30-ft ranged weapon, Cunning Action, Uncanny Dodge; unmodeled spells and gear as notes');
   check(p['ddb.json'] && p['ddb.json'].AC === 18 && p['ddb.json'].hp === 46 && p['ddb.json'].ext.saves.cha === 6 && p['ddb.json'].ext.spellbook.slots.slice(0, 2).join() === '4,2' && !sp(p['ddb.json']).includes('Command'), 'a D&D Beyond JSON paladin: AC from armor, HP, saves, prepared spells only');
   check(p['foundry.json'] && p['foundry.json'].AC === 15 && p['foundry.json'].actions.some(a => /Longbow/.test(a.name) && a.ext.range === 150 && !a.ext.wtOnly), 'a Foundry VTT ranger: AC and the bow as the main attack');
   const kr = p['kraax-ddb.json'], ka = n => kr && kr.actions.find(a => n.test(a.name));

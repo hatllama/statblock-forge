@@ -1,7 +1,7 @@
 /* =====================================================================
    SHEET READER: turns a player character sheet into a War Table party member.
    Reads a D&D Beyond character JSON, a Foundry VTT (dnd5e) actor export, the form fields of a fillable
-   PDF sheet (passed in as "Field: value" lines), or plain text pasted from any sheet. Everything goes
+   PDF sheet (passed in as "Field: value" lines), or plain text pasted from any sheet (a PDF's page text comes through layoutText first). Everything goes
    through one set of facts (name, classes, AC, HP, scores, saves, attacks, spells, slots), and one
    builder turns those into the creature, with spells built by the statblock reader's own spell builder.
    DOM-free: tested under Node (tests/run.js). Needs js/spell-data.js and js/statblock-parser.js first.
@@ -11,6 +11,7 @@
      - facts from a D&D Beyond character JSON (fromDDB)
      - facts from a Foundry VTT dnd5e actor (fromFoundry)
      - facts from text (pasted sheets, PDF form fields) (fromText)
+     - page layout: PDF text items to rows and "Label: value" pairs (layoutText)
      - class features the War Table has rules for (classFeatures)
      - the creature (build)
    ===================================================================== */
@@ -55,6 +56,8 @@ const CUSTOM = {
   'divine smite': { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0 } },
   'mage armor': { level: 1, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'mageArmor', wtOnly: true } },
   'death ward': { level: 4, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'deathWard', wtOnly: true } },
+  'silvery barbs': { level: 1, actionSlot: 4, targets: 1, type: 'debuff', target: 'enemy with highest DPR', saveDC: 99, buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: 60 } },
+  'mind spike': { level: 2, upcast: '1d8', concentration: true, actionSlot: 0, targets: 1, type: 'atk', dpr: '3d8', toHit: 0, useSaves: true, halfOnSave: true, target: 'enemy with highest DPR', ext: { range: 120, saveAbility: 'wis', damageType: 'psychic' } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
 };
 const weaponOf = name => { const n = String(name).toLowerCase(); let best = null; for (const k in WEAPONS) if (n.indexOf(k) >= 0 && (!best || k.length > best.length)) best = k; return best ? { key: best, w: WEAPONS[best] } : null; };
@@ -201,7 +204,7 @@ function fromText(raw) {
     const c = t.match(new RegExp(`\\b(${cn})\\b`, 'i')), l = num(/\b(?:character\s*)?level\s*[:=]?\s*(\d{1,2})\b/i);
     if (c) { classes.push({ name: c[1].toLowerCase(), level: l || 1, sub: '' }); if (!l) notes.push('No level found; assumed level 1.'); }
   }
-  classes.forEach(c => { if (!c.sub) { const s = t.match(/\b(?:subclass|archetype|path|college|domain|circle|oath|patron|tradition|school)\s*[:=]?\s*(?:of\s+(?:the\s+)?)?([A-Z][A-Za-z' ]{2,30})/); if (s && classes.length === 1) c.sub = s[1].trim(); } });
+  classes.forEach(c => { if (!c.sub) { const s = t.match(/\b(?:[Ss]ubclass|archetype|path|college|domain|circle|oath|patron|tradition|school)\s*[:=]?\s*(?:of\s+(?:the\s+)?)?([A-Z][A-Za-z' ]{2,30})/); if (s && classes.length === 1) c.sub = s[1].trim(); } });
   // ability scores: "STR 16", "Strength: 16 (+3)", "STR\n+3\n16", or a "16 (+3)" pair after the label
   const scores = ABS.map((k, i) => {
     const re = new RegExp(`\\b(?:${k}|${ABN[k]})\\b(?!\\s*(?:sav|st\\b|mod))[^\\n\\d+-]{0,12}((?:[\\s:=|]*[+-]?\\d{1,2}\\b(?:\\s*\\([+-]?\\d+\\))?){1,2})`, 'i');
@@ -216,8 +219,15 @@ function fromText(raw) {
   const missing = ABS.filter((k, i) => scores[i] === null);
   if (missing.length) notes.push(`No score found for ${missing.map(k => k.toUpperCase()).join(', ')}; used 10.`);
   const sc = scores.map(s => s === null ? 10 : s);
+  // a printed modifier beats the score when they disagree (a bonus the score box leaves out)
+  ABS.forEach((k, i) => { const mm = t.match(new RegExp(`^\\s*${ABN[k]}\\s+modifier\\s*:\\s*([+-]?\\d+)`, 'im')); if (mm && mod(sc[i]) !== +mm[1]) sc[i] = 10 + 2 * +mm[1]; });
+  // skills the sheet gives a bonus for: proficient when the bonus is above the ability modifier
+  const skillBonus = nm => { const mm = t.match(new RegExp(`^\\s*${nm}\\s*:\\s*([+-]?\\d+)\\s*$`, 'im')); return mm ? +mm[1] : null; };
+  const skills = [];
+  [['athletics', 0], ['acrobatics', 1]].forEach(([nm, i]) => { const b = skillBonus(nm); if (b !== null && b > mod(sc[i])) skills.push(nm); });
+  const skillsKnown = skillBonus('athletics') !== null && skillBonus('acrobatics') !== null;
   const ac = num(/\b(?:armou?r\s*class|AC)\b\s*[:=]?\s*(\d{1,2})\b/i);
-  const hp = num(/\b(?:max(?:imum)?\s*(?:hit\s*points|hp)|hp\s*max|hit\s*point\s*maximum|hpmax)\b\s*[:=]?\s*(\d{1,3})\b/i) || num(/\b(?:hit\s*points|hp)\b\s*[:=]?\s*(?:\d{1,3}\s*\/\s*)?(\d{1,3})\b/i);
+  const hp = num(/\b(?:max(?:imum)?\s*(?:hit\s*points|hp)|hp\s*max|hit\s*points?\s*max(?:imum)?|hpmax)\b\s*[:=]?\s*(\d{1,3})\b/i) || num(/\b(?:hit\s*points|hp)\b\s*[:=]?\s*(?:\d{1,3}\s*\/\s*)?(\d{1,3})\b/i);
   const speed = num(/\b(?:walking\s*)?speed\b\s*[:=]?\s*(\d{2,3})/i) || num(/\bwalking\b\s*[:=]?\s*(\d{2,3})/i) || 30;
   const fly = num(/\bfly(?:ing)?(?:\s*speed)?\b\s*[:=]?\s*(\d{2,3})/i) || 0;
   const init = num(/\binit(?:iative)?\b\s*[:=]?\s*([+-]?\d{1,2})\b/i);
@@ -232,17 +242,27 @@ function fromText(raw) {
   // saving throw proficiency marks: "Saving Throw Proficiencies: Strength, Constitution"
   const spl = t.match(/saving throw proficienc\w*\s*[:=]?\s*([^\n]+)/i);
   if (spl) ABS.forEach(k => { if (new RegExp(`\\b(?:${k}|${ABN[k]})\\b`, 'i').test(spl[1])) saveProf.push(k); });
+  // a save bonus above the ability modifier means proficiency
+  if (!saveProf.length) ABS.forEach((k, i) => { if (saveVals[k] !== undefined && saveVals[k] > mod(sc[i])) saveProf.push(k); });
   // attacks: "Longsword +7 1d8+4 slashing", table rows, "Wpn1 AtkBonus: +7" fields
   const attacks = [];
   const seen = {};
   const push = (nm, hit, dmg, type, extra) => {
     nm = nm.replace(/^[-*•\s|:]+|[\s|:,-]+$/g, '').replace(/\s{2,}/g, ' ');
-    if (!nm || nm.length > 40 || /^(attacks?|name|atk|bonus|damage|hit|weapon)$/i.test(nm) || seen[nm.toLowerCase()]) return;
-    seen[nm.toLowerCase()] = 1;
+    if (!nm || nm.length > 40 || /^(attacks?|name|atk|bonus|damage|hit|weapon)$/i.test(nm)) return;
+    const key = nm.toLowerCase(), twin = Object.keys(seen).find(k => k === key || (Math.min(k.length, key.length) >= 12 && (k.indexOf(key) === 0 || key.indexOf(k) === 0)));
+    if (twin) {   // the same weapon again: its range, or its full name, completes the first listing
+      const a0 = seen[twin];
+      if (extra && extra.range && !a0.ranged) { a0.range = extra.range; a0.ranged = true; }
+      if (key.length > twin.length && key.indexOf(twin) === 0) { a0.name = titleCase(nm); delete seen[twin]; seen[key] = a0; }
+      return;
+    }
     const fb = weaponOf(nm);
     let range = extra && extra.range;
     if (!range) range = fb ? fb.w[2] : /\b(bow|crossbow|sling|dart|gun|pistol|musket|blast|bolt|ray)\b/i.test(nm) ? 60 : 5;
-    attacks.push({ name: titleCase(nm), toHit: +hit, dmg: dmg.replace(/\s+/g, '').replace(/([+-])/g, ' $1 ').trim(), type: (type || (fb ? fb.w[1] : '')).toLowerCase(), range });
+    const atk = { name: titleCase(nm), toHit: +hit, dmg: dmg.replace(/\s+/g, '').replace(/([+-])/g, ' $1 ').trim(), type: (type || (fb ? fb.w[1] : '')).toLowerCase(), range, ranged: !!(extra && extra.range) };
+    seen[key] = atk;
+    attacks.push(atk);
   };
   // fillable sheet fields first
   for (let i = 1; i <= 8; i++) {
@@ -254,20 +274,34 @@ function fromText(raw) {
   while ((m = atkRe.exec(t))) {
     const nm = m[2].trim();
     if (/^(dc|save|spell|str|dex|con|int|wis|cha|initiative|proficiency|bonus)\b/i.test(nm)) continue;
-    push(nm, m[4], m[5], DTYPES.test(m[6] || '') ? m[6] : '', m[3] ? { range: +m[3] } : null);
-    atkRe.lastIndex = m.index + m[0].length - (m[6] && !DTYPES.test(m[6]) ? m[6].length : 0);
+    const endAt = m.index + m[0].length - (m[6] && !DTYPES.test(m[6]) ? m[6].length : 0), after = t.slice(endAt).match(/^[ \t|,]*(\d{1,3})(?:\/\d{1,3})?[ \t]*(?:ft|feet)\b/);   // a range printed after the damage: "20/60 ft."
+    push(nm, m[4], m[5], DTYPES.test(m[6] || '') ? m[6] : '', m[3] ? { range: +m[3] } : after ? { range: +after[1] } : null);
+    atkRe.lastIndex = endAt;
   }
+  // a weapon whose own description names a ranged attack ("Ranged Weapon Attack: +7 to hit, range 30 ft.") is ranged whatever the table says
+  lines.forEach((l, i) => {
+    const row = l.match(/^(.{2,50}?)\s+\d+(?:\.\d+)?\s*lbs?\.?\s+\d+$/i), a = row && attacks.find(x => x.name.toLowerCase() === row[1].trim().toLowerCase());
+    const rg = a && a.range <= 10 && lines.slice(i + 1, i + 5).join(' ').match(/Ranged Weapon Attack[^.]*?range (\d+)(?:\/\d+)? ?ft/i);
+    if (rg) a.range = +rg[1];
+  });
+  // weapon masteries: "Rapier  On Hit  Vex  Rogue — …"
+  const masteries = {};
+  lines.forEach(l => { const mm = l.match(/^([A-Za-z' ]{3,30}?)\s{2}On Hit\s{2}(Vex|Slow|Push|Sap|Topple|Graze|Nick|Cleave)\b/); if (mm) masteries[mm[1].trim().toLowerCase()] = mm[2].toLowerCase(); });
+  attacks.forEach(a => { const w = weaponOf(a.name); if (w && masteries[w.key]) a.mastery = masteries[w.key]; });
   // spells: names from the spell list that stand alone on a line or in a comma list
   const SD = root.SpellData || {};
   const spells = [];
   const items = t.toLowerCase().split(/\n|,|;|•|\|/).map(s => s.replace(/\([^)]*\)|\[[^\]]*\]|^[\s*\-–o◯●○✓x]+|\s*(?:\d+(?:st|nd|rd|th)?\s*(?:level)?|cantrip|ritual|concentration|[cr]\b)\s*$/gi, '').replace(/^\s*(?:spell\s*name\s*\d*|spells?|cantrips?|prepared|known|\d+(?:st|nd|rd|th)\s*level|level\s*\d)\s*[:=]?\s*/i, '').trim());
   items.forEach(s => { if ((SD[s] || CUSTOM[s]) && !spells.includes(s)) spells.push(s); });
+  // a spell table ("0  Sacred Flame  Action  60 feet  C R M") is the character's list: only its rows count, unknown spells too (they become notes)
+  const rowsOf = lines.map(l => l.match(/^(\d)\s+([A-Za-z][A-Za-z'’\/ -]{1,40}?)\s{2,}(?:Action|Bonus Action|Reaction|Free Action|Special|\d+ (?:minutes?|hours?|rounds?|actions?))\b/)).filter(Boolean);
+  if (rowsOf.length) { spells.length = 0; rowsOf.forEach(r => { const s = r[2].trim().toLowerCase(); if (!spells.includes(s)) spells.push(s); }); }
   const slots = [];
   const slotRe = /\b(?:([1-9])(?:st|nd|rd|th)|level\s*([1-9]))(?:[-\s]level)?(?:\s*spell)?\s*(?:slots?)?\s*[:=]?\s*(?:\d+\s*(?:\/|of)\s*)?(\d)\s*(?:slots?|total|\/|$|\n|\s)/gi;
   while ((m = slotRe.exec(t))) { const lv = +(m[1] || m[2]); if (!slots[lv - 1] && /slot/i.test(t.slice(Math.max(0, m.index - 40), m.index + m[0].length + 10))) slots[lv - 1] = +m[3]; }
   const dc = num(/\bspell\s*save\s*dc\b\s*[:=]?\s*(\d{1,2})/i), satk = num(/\bspell\s*attack(?:\s*bonus)?\b\s*[:=]?\s*([+-]?\d{1,2})/i);
   const resist = [];
-  const rl = t.match(/\bresistances?\b\s*[:=]?\s*([^\n]+)/i);
+  const rl = t.match(/^[ \t]*resistances?\b[ \t]*[:=]?[ \t]*([^\n]+)/im) || t.match(/\bresistances?\b\s*[:=]?\s*([^\n]+)/i);
   if (rl) (rl[1].match(new RegExp(DTYPES.source, 'gi')) || []).forEach(x => resist.push(x.toLowerCase()));
   // features & traits: D&D Beyond PDF fields hold "* Name • PHB 48" entries under "=== SECTION ===" headings, split over FeaturesTraits1, 2, 3…
   const ftFields = lines.map(l => l.match(/^FeaturesTraits(\d*)\s*:\s*(.*)$/i)).filter(Boolean).sort((a, b) => (+a[1] || 0) - (+b[1] || 0));
@@ -295,8 +329,149 @@ function fromText(raw) {
     if (have) have.qty += q; else inventory.push({ name: eq[k].name, qty: q });
   });
   const coins = {};
-  lines.forEach(l => { const c = l.match(/^(CP|SP|EP|GP|PP)\s*:\s*(\d+)\s*$/); if (c && +c[2]) coins[c[1].toLowerCase()] = +c[2]; });
-  return { name: name.trim(), classes, scores: sc, hp, ac, speed, fly, init, saveVals, saveProf, attacks, spells, slots: slots.length ? slots : null, dc, spellAtk: satk, resist, notes, featList, inventory, coins, featuresText: ftText, src: 'text' };
+  lines.forEach((l, i) => {
+    const c = l.match(/^(CP|SP|EP|GP|PP)\s*:\s*(\d+)\s*$/);
+    if (c && +c[2]) coins[c[1].toLowerCase()] = +c[2];
+    const row = /^CP\s+SP\s+EP\s+GP\s+PP$/.test(l) && (lines[i + 1] || '').match(/^(\d+)\s+(\d+)\s+(\d+)\s+(\d+)\s+(\d+)$/);   // the coin boxes of a printed sheet: names, then amounts
+    if (row) ['cp', 'sp', 'ep', 'gp', 'pp'].forEach((k, j) => { if (+row[j + 1]) coins[k] = +row[j + 1]; });
+  });
+  // a printed inventory: "Dagger  2 lbs  2" (name, weight, count)
+  if (!inventory.length) lines.forEach(l => {
+    const r = l.match(/^(.{2,50}?)\s+(\d+(?:\.\d+)?)\s*lbs?\.?\s+(\d+)$/i);
+    if (!r || !+r[3]) return;
+    const nm = r[1].replace(/^["“]\s*|\s*["”]$/g, '').trim(), have = inventory.find(x => x.name.toLowerCase() === nm.toLowerCase());
+    if (have) have.qty += +r[3]; else inventory.push({ name: nm, qty: +r[3] });
+  });
+  // Roll20's 2024 sheet lists features twice: a "a ◆ b ◆ c" summary under each heading, then one "Name (Source)" entry with its text
+  const FHEAD = /^(CLASS FEATURES|SPECIES TRAITS|RACIAL TRAITS|BACKGROUND FEATURES|OTHER FEATURES|FEATS)$/, FENTRY = /^([A-Z][^()]{1,58}?)\s*\(([^()]{2,50})\)$/;
+  {
+    const addFeat = (nm, section, body) => {
+      nm = nm.replace(/\s+/g, ' ').trim().replace(/^Eldritch Invocation\s*-\s*/i, '');
+      if (!nm || nm.length > 60) return;
+      let f0 = featList.find(x => x.name.toLowerCase() === nm.toLowerCase());
+      if (!f0) featList.push(f0 = { name: nm, section, body: '', uses: 0, reset: '' });
+      if (body && !f0.body) {
+        f0.body = body;
+        const um = body.match(/can\s*['’]?\s*t\s+(?:use|do so|cast)[^.]{0,60}?until you finish a (Long|Short)/i);   // "you can't use it again until you finish a Long Rest"
+        if (um) { f0.uses = 1; f0.reset = /^s/i.test(um[1]) ? 'sr' : 'lr'; }
+      }
+    };
+    let sec = '', mode = '', bullets = [], entry = null;
+    const flush = () => { if (bullets.length) bullets.join(' ').split('◆').forEach(n => addFeat(n, sec, '')); bullets = []; if (entry) addFeat(entry.name, entry.section, entry.body.join(' ')); entry = null; };
+    lines.forEach(l => {
+      if (FHEAD.test(l)) { flush(); sec = l; mode = ''; return; }
+      if (/^[A-Z][A-Z &\/'-]{2,}$/.test(l)) { flush(); sec = ''; return; }
+      if (!sec) return;
+      if (!mode) mode = FENTRY.test(l) ? 'entries' : 'bullets';
+      if (mode === 'bullets') { bullets.push(l); return; }
+      const e = l.match(FENTRY);
+      if (e) { flush(); entry = { name: e[1], section: /\bfeat\b/i.test(e[2]) ? 'FEATS' : sec, body: [] }; } else if (entry) entry.body.push(l);
+    });
+    flush();
+  }
+  // armor worn: a printed inventory with no body armor in it means the character is unarmored (Mage Armor is worth casting on them)
+  const unarmored = inventory.length > 0 && !inventory.some(x => ARMOR.test(x.name) && !/shield/i.test(x.name)) && !/unarmored defense/i.test(t);
+  const sz = t.match(/^[ \t]*size[ \t]*[:=][ \t]*(tiny|small|large|huge|gargantuan)\b/im);
+  const feats = featList.length && !ftText ? featList.map(x => x.name + ' ' + x.body).join(' ') : ftText;
+  if (name && name === name.toUpperCase()) name = titleCase(name);
+  return { name: name.trim(), classes, scores: sc, hp, ac, speed, fly, init, saveVals, saveProf, attacks, spells, slots: slots.length ? slots : null, dc, spellAtk: satk, resist, notes, featList, inventory, coins, featuresText: feats, skills: skillsKnown ? skills : undefined, unarmored, dexM: mod(sc[1]), size: sz ? titleCase(sz[1]) : '', src: 'text' };
+}
+
+/* ---------- page layout: PDF text items -> lines ---------- */
+// Some sheets (Roll20's 2024 layout) print each value ABOVE or beside its caption, in boxes, so reading a page row by row loses which
+// value belongs to which label. layoutText joins the text items of a page into rows by their gaps, then puts "Label: value" lines in
+// front of the page text for every caption and value it can pair by position. pages: one array of { str, x, y, w, h } per page.
+const LAYOUT = {
+  gapSame: 0.15,        // gap (in text heights) under which two items are one word
+  gapColumn: 1,         // gap at which a new column starts (two spaces)
+  capSize: 1.15,        // a caption is no taller than this times the page's usual text
+  valueAbove: 14,       // a value this far above its caption (plus 0.6 of its own height) belongs to it
+  valueBelow: 18,       // a value this far under a caption belongs to it
+  titleBelow: 45,       // a lone title takes the value this far under it
+  headerSpan: 90,       // block title searched this far above a caption
+  beside: 14,           // a number this close left of a label belongs to it
+};
+const CAPTION = /^[A-Z][A-Z0-9&'\/.-]*(?: [A-Z0-9&'\/.-]+){0,3}$/;
+function pageRows(items) {
+  const rows = [];
+  let cur = null, ly = 0;
+  items.forEach(it => {
+    if (!String(it.str).trim()) return;
+    if (!cur || Math.abs(it.y - ly) > 3) { cur = []; rows.push(cur); }
+    cur.push(it); ly = it.y;
+  });
+  return rows.map(r => {
+    r.sort((a, b) => a.x - b.x);
+    const h = Math.max.apply(null, r.map(i => i.h || 0)) || 8;
+    let text = '', end = null, x1 = 0, ph = 0;
+    r.forEach(i => {
+      const g = end === null ? 0 : (i.x - end) / h, restyled = Math.abs((i.h || 0) - ph) > 0.3;     // a size change between two items is a word break
+      text += end === null || /\s$/.test(text) || /^\s/.test(i.str) ? i.str : (g < LAYOUT.gapSame && !restyled ? '' : g < LAYOUT.gapColumn ? ' ' : '  ') + i.str;
+      end = i.x + i.w; x1 = Math.max(x1, end); ph = i.h || 0;
+    });
+    return { text: text.trim(), x0: r[0].x, x1, y: r[0].y, h };
+  });
+}
+function pairLines(rows) {
+  const heights = rows.map(r => r.h).sort((a, b) => a - b), usual = heights.length ? heights[heights.length >> 1] : 8;
+  const isCap = c => CAPTION.test(c.text) && /[A-Z]{2}/.test(c.text) && c.h <= usual * LAYOUT.capSize;
+  const ov = (a, b) => Math.min(a.x1, b.x1) - Math.max(a.x0, b.x0) > -2;
+  const cells = rows.map((r, i) => Object.assign({ i }, r)), caps = cells.filter(isCap);
+  // a caption stacked over another ("ARMOR" over "CLASS") is one caption
+  caps.slice().sort((a, b) => b.y - a.y).forEach(a => {
+    if (a.gone) return;
+    const b = caps.find(c => c !== a && !c.gone && Math.abs(c.x0 - a.x0) <= 4 && a.y > c.y && a.y - c.y <= a.h * 1.6 && a.text.split(' ').length < 3 && c.text.split(' ').length < 3);
+    if (b) { a.text += ' ' + b.text; a.y = b.y; a.x1 = Math.max(a.x1, b.x1); b.gone = true; }
+  });
+  const live = caps.filter(c => !c.gone), used = new Set(), lines = [];
+  // a number just left of its label: "-1" beside "Athletics", or one cell "+2 Saving Throw" / "15 Spell Save DC"
+  const words = /^[A-Za-z][A-Za-z']*(?: [A-Za-z][A-Za-z']*){0,3}$/, unit = /^(ft|feet|lbs?|gp|sp|cp|ep|pp|hp|hours?|minutes?|rounds?|actions?)\b/i;
+  const beside = [];
+  cells.forEach(L => {
+    if (L.gone || isCap(L)) return;
+    const m = L.text.match(/^([+-]?\d{1,3}) {1,2}([A-Za-z][A-Za-z' ]*)$/);
+    if (m && words.test(m[2]) && !unit.test(m[2])) { beside.push({ at: L, label: m[2], value: m[1] }); used.add(L); return; }
+    if (!words.test(L.text)) return;
+    const n = cells.find(N => !used.has(N) && /^[+-]?\d{1,3}$/.test(N.text) && Math.abs(N.y - L.y) <= 2 && L.x0 - N.x1 <= LAYOUT.beside && L.x0 - N.x1 >= -2);
+    if (n) { used.add(n); used.add(L); beside.push({ at: L, label: L.text, value: n.text }); }
+  });
+  // a value above its caption (or under a lone title): each value takes its nearest caption, each caption its nearest value
+  const vals = cells.filter(c => !used.has(c) && !c.gone && !isCap(c) && c.text.length <= 40 && !/\s{2}/.test(c.text));
+  const paired = new Map(), claimed = new Set();
+  vals.forEach(v => {
+    let pick = null;
+    live.forEach(c => {
+      let d, under;
+      if (!ov(v, c) || c.y === v.y) return;
+      if (c.y < v.y) { d = v.y - c.y; under = true; if (d > LAYOUT.valueAbove + v.h * 0.6) return; }
+      else { d = c.y - v.y; under = false; if (d > LAYOUT.valueBelow) return; }
+      if (!pick || d < pick.d - 0.5 || (Math.abs(d - pick.d) <= 0.5 && under && !pick.under)) pick = { c, d, under };
+    });
+    if (pick) { const cur = paired.get(pick.c); if (!cur || pick.d < cur.d) paired.set(pick.c, { v, d: pick.d }); }
+  });
+  paired.forEach(p => claimed.add(p.v));
+  live.filter(c => !paired.has(c)).forEach(c => {
+    let pick = null;
+    vals.forEach(v => { if (claimed.has(v) || !ov(v, c) || v.y >= c.y) return; const d = c.y - v.y; if (d <= LAYOUT.titleBelow && (!pick || d < pick.d)) pick = { v, d }; });
+    if (pick) { pick.title = true; paired.set(c, pick); claimed.add(pick.v); }
+  });
+  // the title of a block ("STRENGTH" over its MODIFIER and SCORE) leads the label
+  const open = live.filter(c => !paired.has(c));
+  const head = at => { let t = null; open.forEach(o => { if (o !== at && o.y > at.y && o.y - at.y <= LAYOUT.headerSpan && ov(o, at) && (!t || o.y > t.y)) t = o; }); return t ? t.text + ' ' : ''; };
+  const out = [];
+  paired.forEach((p, c) => out.push({ i: c.i, line: titleCase((p.title ? '' : head(c)) + c.text) + ': ' + p.v.text }));
+  beside.forEach(b => out.push({ i: b.at.i, line: titleCase((/saving throw/i.test(b.label) ? head(b.at) : '') + b.label) + ': ' + b.value }));
+  out.sort((a, b) => a.i - b.i).forEach(o => lines.push(o.line));
+  return lines;
+}
+function layoutText(pages) {
+  const head = [], body = [];
+  pages.forEach(items => {
+    const rows = pageRows(items);
+    pairLines(rows).forEach(l => head.push(l));
+    rows.forEach(r => { if (r.text) body.push(r.text); });
+  });
+  return head.concat(body);
 }
 
 /* ---------- class features the War Table has rules for ---------- */
@@ -326,9 +501,31 @@ function classFeatures(f, pb, add, ext, used) {
   }
   if (ro) {
     ext.sneakAttack = { dice: `${Math.ceil(ro / 2)}d6` };
-    if (ro >= 2) add({ name: 'Cunning Action: Hide', actionSlot: 1, type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Invisible' }, ext: { successChance: 0.75 } });
-    if (ro >= 5) add({ name: 'Uncanny Dodge', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageTakenMultiplier: 0.5 } });
+    used.push('sneak attack');
+    if (has('cunning action', ro >= 2)) { add({ name: 'Cunning Action: Hide', actionSlot: 1, type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Invisible' }, ext: { successChance: 0.75 } }); used.push('cunning action'); }
+    if (has('uncanny dodge', ro >= 5)) { add({ name: 'Uncanny Dodge', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageTakenMultiplier: 0.5 } }); used.push('uncanny dodge'); }
+    if (ro >= 3 && ent('steady aim')) { ext.steadyAim = true; used.push('steady aim'); }
+    if (/assassin/i.test(sub('rogue')) && ro >= 3) {
+      // Assassinate: Advantage on Initiative and on attacks against anyone who has not acted in round 1, plus extra damage (the roster rogue's numbers)
+      ext.assassinate = true; ext.initAdvantage = true; ext.sneakAttack.assassinate = ro; used.push('assassinate');
+      add({ name: 'Assassinate (round 1)', actionSlot: -3, type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Attacks with Advantage', damage: ro }, ext: { wtSkip: true } });
+    }
   }
+  // Warlock: Pact of the Celestial's Healing Light is a pool of d6s (1 + level of them, up to the Charisma modifier per use)
+  const wlk = lv('warlock');
+  if (wlk) {
+    used.push('pact magic');
+    if (wlk >= 3 && (ent('healing light') || (!(f.featList && f.featList.length) && /celestial/i.test(sub('warlock'))))) {
+      const dice = 1 + wlk, per = Math.max(1, M(5));
+      add({ name: 'Healing Light', actionSlot: 1, freq: { reset: 'lr', uses: dice }, condition: 'ally under half HP', type: 'heal', amount: `${per}d6`, target: 'ally with the least HP', ext: { range: 60, pool: { dice, die: 6, maxPer: per } } });
+      used.push('healing light');
+    }
+  }
+  // species and feats the engine has a rule for (only when the sheet lists them)
+  if (ent('healing hands')) { add({ name: 'Healing Hands', actionSlot: 0, freq: { reset: 'lr', uses: 1 }, condition: 'ally under half HP', type: 'heal', amount: `${pb}d4`, target: 'ally with the least HP', ext: { range: 5 } }); used.push('healing hands'); }
+  if (ent('celestial revelation')) { add({ name: 'Celestial Revelation (Heavenly Wings)', actionSlot: 1, freq: { reset: 'lr', uses: 1 }, condition: 'not used yet', type: 'buff', target: 'self', buff: { duration: 'entire encounter', damage: String(pb) }, ext: { grantFly: f.speed || 30, endsOnIncap: true } }); used.push('celestial revelation'); }
+  if (ent('lucky')) { ext.luck = pb; used.push('lucky'); }
+  if (ent('elven accuracy')) { ext.elvenAccuracy = true; used.push('elven accuracy'); }
   if (mo) {
     const die = mo >= 17 ? 'd12' : mo >= 11 ? 'd10' : mo >= 5 ? 'd8' : 'd6', dm = Math.max(M(0), M(1));
     if (mo >= 2) ext.resources = Object.assign(ext.resources || {}, { 'Focus Points': { uses: mo, reset: 'sr' } });
@@ -398,6 +595,9 @@ function build(f, opts) {
     const w = { name: `${a.name}${extra > 1 ? ` ×${extra}${primary ? ' (Extra Attack)' : ''}` : ''}`, actionSlot: 0, type: 'atk', dpr: a.dmg, toHit: a.toHit, targets: extra, target: 'enemy with least HP',
       ext: { range: a.range, damageType: a.type || undefined } };
     if (!w.ext.damageType) delete w.ext.damageType;
+    if (a.mastery === 'vex') w.ext.onHit = { vex: true };               // weapon mastery, as the class roster models it
+    else if (a.mastery === 'slow') w.ext.onHit = { slow: 10 };
+    else if (a.mastery === 'push') w.ext.onHit = { push: 10 };
     if (cf.ro) { w.dpr = `${a.dmg} + ${ext.sneakAttack.dice}`; w.ext.wtDpr = a.dmg; w.ext.sneak = true; }
     if (!primary || (isCaster && f.spells && f.spells.length)) w.ext.wtOnly = true;
     add(w);
@@ -452,7 +652,10 @@ function build(f, opts) {
     const out = [], skipped = [];
     f.spells.forEach((nm0, i) => {
       const nm = String(nm0).toLowerCase().trim(), d = SD[nm];
-      if (!d && CUSTOM[nm]) { if (CUSTOM[nm].level <= top) out.push(Object.assign(JSON.parse(JSON.stringify(CUSTOM[nm])), { name: titleSmall(nm), id: `${id}-s${i + 1}` })); return; }
+      if (!d && CUSTOM[nm]) {
+        if (CUSTOM[nm].level <= top) { const cs = Object.assign(JSON.parse(JSON.stringify(CUSTOM[nm])), { name: titleSmall(nm), id: `${id}-s${i + 1}` }); if (cs.useSaves) cs.toHit = sctx.dc; out.push(cs); }
+        return;
+      }
       if (!d) { skipped.push(titleCase(nm0)); return; }
       if (d.L > top && d.L > 0) { skipped.push(titleCase(nm0) + ' (no slot that high)'); return; }
       const sp = spellAction(nm, d, sctx, { level: d.L });
@@ -493,7 +696,7 @@ function sheetNotes(f, used, actions) {
     line('Already in the stated speed and AC', list.filter(x => STATED.test(x.name)).map(x => x.name));
     const bySection = {};
     list.filter(x => used.indexOf(key(x.name)) < 0 && !STATED.test(x.name)).forEach(x => { const k = x.section || 'Other'; (bySection[k] = bySection[k] || []).push(x.name); });
-    Object.keys(bySection).forEach(k => line(titleCase(k.toLowerCase()).replace(/\bTraits\b/, 'traits').replace(/\bFeatures\b/, 'features').replace(/\bSpecies\b/, 'species') + ' (no fight rules)', bySection[k]));
+    Object.keys(bySection).forEach(k => line(titleCase(k.toLowerCase()).replace(/\bTraits\b/, 'traits').replace(/\bFeatures\b/, 'features').replace(/\bSpecies\b/, 'species').replace(/^./, c => c.toUpperCase()) + ' (no fight rules)', bySection[k]));
   }
   if (inv.length) {
     const atk = actions.map(a => a.name.toLowerCase()).join('|');
@@ -536,5 +739,5 @@ function read(input, opts) {
 /* the facts layout a reader (or Claude) can fill in, for the "convert with Claude" route */
 const FACTS_SCHEMA = '{"name":string,"classes":[{"name":"fighter|wizard|…(lowercase)","level":number,"sub":"subclass name"}],"scores":[STR,DEX,CON,INT,WIS,CHA],"hp":max hit points,"ac":number,"speed":walking ft,"fly":fly ft or 0,"init":initiative bonus,"saveVals":{"str":total save bonus,…all six},"attacks":[{"name":string,"toHit":number,"dmg":"1d8 + 4","type":"slashing","range":5 for melee/10 for reach/normal range in ft for ranged}],"spells":["spell names the character has prepared or knows, cantrips included"],"slots":[max slots for levels 1..9],"dc":spell save DC,"spellAtk":spell attack bonus,"resist":["damage types"],"features":["one line per class feature, feat or trait that matters in a fight"]}';
 
-root.SheetReader = { read, fromText, fromDDB, fromFoundry, build, FACTS_SCHEMA };
+root.SheetReader = { read, fromText, fromDDB, fromFoundry, build, layoutText, FACTS_SCHEMA };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

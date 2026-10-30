@@ -1,0 +1,911 @@
+Name: NIKO ARIS
+Background: Wayfarer
+Class: Warlock 5
+Species: Aasimar
+Subclass: Pact of the Celestial
+Level: 5
+Xp: 0/14000
+Armor Class: 13
+Hit Points Temp: 3
+Hit Points Current: 38
+Hit Points Max: 38
+Hit Dice Max: 5D8
+Proficiency Bonus: +3
+Strength Modifier: -1
+Strength Score: 8
+Strength Saving Throw: -1
+Athletics: -1
+Dexterity Modifier: +2
+Dexterity Score: 14
+Dexterity Saving Throw: +2
+Acrobatics: +2
+Sleight Of Hand: +2
+Stealth: +5
+Constitution Modifier: +2
+Constitution Score: 14
+Constitution Saving Throw: +2
+Intelligence Modifier: +0
+Intelligence Score: 10
+Intelligence Saving Throw: +0
+Arcana: +3
+History: +0
+Investigation: +0
+Nature: +0
+Religion: +0
+Wisdom Modifier: +1
+Wisdom Score: 12
+Wisdom Saving Throw: +4
+Animal Handling: +1
+Insight: +4
+Medicine: +1
+Perception: +1
+Survival: +1
+Charisma Modifier: +4
+Charisma Score: 17
+Charisma Saving Throw: +7
+Deception: +7
+Intimidation: +4
+Performance: +4
+Persuasion: +4
+Armor: WEAPONS Simple
+Initiative: +2.14
+Speed: 30 ft.
+Size: Medium
+Passive Perception: 11
+Cha: +4
+Spell Save Dc: 15
+Warlock Spells Cantrips & Prepared Spells: CONCENTRATION,
+Appearance Backstory & Personality: Wayfarer
+Languages: Celestial, Common, Common Sign Language
+Equipment: "Herb", Bag of Paper, Mandal wine, Fancy
+Defenses: VULNERABILITIES None
+Senses: DEFENSES, SENSES & PROFICIENCIES
+Passive: DARKVISION 60 ft
+Cha: +4
+Spell Save Dc: 15
+Daylight: 3
+Face Hair: they glow a bright green.
+Species Traits: Healing Hands (Aasimar)
+Other Features: Skill Proficiencies (Background)
+NIKO ARIS
+NAME
+Wayfarer
+BACKGROUND
+Warlock 5
+CLASS
+Aasimar
+SPECIES
+Pact of the Celestial
+SUBCLASS
+5
+LEVEL
+0/14000
+XP
+ARMOR
+CLASS
+13
+SHIELD
+HIT POINTS
+3
+TEMP
+38
+CURRENT
+38
+MAX
+HIT DICE
+SPENT
+5D8
+MAX
+DEATH SAVES
+SUCCESSES
+FAILURES
+PROFICIENCY BONUS
++3
+STRENGTH
+-1
+MODIFIER
+8
+SCORE
+Saving Throw
+Athletics
+-1
+-1
+DEXTERITY
++2
+MODIFIER
+14
+SCORE
+Saving Throw
+Acrobatics
+Sleight of Hand
+Stealth
++2
++2
++2
++5
+CONSTITUTION
++2
+MODIFIER
+14
+SCORE
++2 Saving Throw
+HEROIC INSPIRATION
+INTELLIGENCE
++0
+MODIFIER
+10
+SCORE
+Saving Throw
+Arcana
+History
+Investigation
+Nature
+Religion
++0
++3
++0
++0
++0
++0
+WISDOM
++1
+MODIFIER
+12
+SCORE
+Saving Throw
+Animal Handling
+Insight
+Medicine
+Perception
+Survival
++4
++1
++4
++1
++1
++1
+CHARISMA
++4
+MODIFIER
+17
+SCORE
+Saving Throw
+Deception
+Intimidation
+Performance
+Persuasion
++7
++7
++4
++4
++4
+EQUIPMENT TRAINING & PROFICIENCIES
+ARMOR
+TRAINING LIGHT  MEDIUM  HEAVY  SHIELDS
+WEAPONS Simple
+TOOLS  Thieves' Tools
+INITIATIVE
++2.14
+SPEED
+30 ft.
+SIZE
+Medium
+PASSIVE PERCEPTION
+11
+WEAPONS & DAMAGE CANTRIPS
+NAME  ATK/DC  DAMAGE  NOTES
+Dagger Melee  +5  1d4+2 piercing
+Dagger Thrown  +5  1d4+2 piercing
+Eldritch Blast  +7  1d10+4 force
+Sacred Flame  DEX 15  1d8 radiant
+CLASS FEATURES
+Ability Score Improvement ◆ Eldritch Invocation -
+Agonizing Blast ◆ Eldritch Invocation - Gaze of Two
+Minds ◆ Eldritch Invocation - Mask of Many Faces ◆
+Eldritch Invocation - Pact of the Chain ◆ Eldritch
+Invocation - Repelling Blast ◆ Eldritch Invocations ◆
+Magical Cunning ◆ Pact Magic ◆ Healing Light
+SPECIES TRAITS
+Celestial Resistance ◆ Celestial Revelation ◆
+Darkvision ◆ Healing Hands ◆ Light Bearer ◆ Size
+FEATS
+Lucky ◆ Fey Touched
+CHA
+Spellcasting
+Ability
++4
+Spellcasting
+Modifier
+15  Spell Save DC
++7
+Spell Attack
+Bonus
+SPELL SLOTS
+Level  Total  Expended
+1
+2
+3
+Level  Total  Expended
+4
+5
+6
+Level  Total  Expended
+7
+8
+9
+WARLOCK SPELLS
+Level  Total  Expended
+3  2
+CANTRIPS & PREPARED SPELLS
+LVL NAME  CASTING TIME RANGE
+CONCENTRATION,
+RITUAL, MATERIAL
+NOTES
+0 Sacred Flame  Action  60 feet  C  R  M
+0 Light  Action  Touch  C  R  M
+0 Eldritch Blast  Action  120 feet  C  R  M
+0 Prestidigitation  Action  10 feet  C  R  M
+0 Minor Illusion  Action  30 feet  C  R  M
+1 Silvery Barbs  Reaction  60 feet  C  R  M
+1 Armor of Agathys  Bonus Action  Self  C  R  M
+1 Guiding Bolt  Action  120 feet  C  R  M
+1 Cure Wounds  Action  Touch  C  R  M
+1 Disguise Self  Action  Self  C  R  M
+1 Hellish Rebuke  Reaction  60 feet  C  R  M
+1 Hex  Bonus Action  90 feet  C  R  M
+1 Find Familiar  1 hour or Ritual 10 feet  C  R  M
+2 Misty Step  Bonus Action  Self  C  R  M
+2 Lesser Restoration  Bonus Action  Touch  C  R  M
+2 Aid  Action  30 feet  C  R  M
+2 Suggestion  Action  30 feet  C  R  M
+2 Mind Spike  Action  120 feet  C  R  M
+3 Revivify  Action  Touch  C  R  M
+3 Daylight  Action  60 feet  C  R  M
+3 Hunger of Hadar  Action  150 feet  C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+APPEARANCE
+Age: 25, Eye color: Emerald Green, Gender:
+NonBinary, Hair color: Silver, Height: 6', Size:
+Medium, Skin color: Lightly tanned, Other:
+Very gender ambiguous features that see…
+BACKSTORY & PERSONALITY
+Wayfarer
+You grew up on the streets surrounded by
+similarly ill-fated castoffs, a few of them
+friends and a few of them rivals. You slept
+where you could and did odd jobs for food.
+At times, when the hunger became
+unbearable, you resorted to theft. Still, you
+never lost your pride and never abandoned
+hope. Fate is not yet finished with you.
+Cerritulus
+basically the CIA/FBI of Ters Ursel, working
+clandestinely to deal with issues the
+kingdom has to deal with. You would have
+been scouted (we can probably talk about
+how you woudl have been discovered) and
+brought into their division that works with
+the more supernatural elements that the
+kingdom has to deal with, otherwise know …
+ALIGNMENT Neutral Good
+PRONOUNS They/Them
+LANGUAGES
+Celestial, Common, Common Sign Language
+EQUIPMENT
+"Herb", Bag of Paper, Mandal wine, Fancy
+Clothes, Familiar incense, RATions, Rations,
+Scholar's Pack, Book of Occult Lore, Arcane
+Focus (Staff), Guy Fawkes Hat, Sickle,
+Leather Armor, Traveler's Clothes, Pouch,
+Bedroll, Pai Sho Set, Theives' Tools, Dagger
+MAGIC ITEM ATTUNEMENT
+COINS
+CP  SP  EP  GP  PP
+4  7  0  70  0
+COMBAT REFERENCE
+ATTACKS
+NAME  ATK/DC  DAMAGE  RANGE  NOTES
+Cure Wounds  —  2d8  Touch
+Dagger Melee  +5  1d4+2 piercing  5 ft.
+Dagger Thrown  +5  1d4+2 piercing  5 ft.
+Eldritch Blast  +7  1d10+4 force  120 feet  You hurl a beam of crackling energy.
+Guiding Bolt  +7  4d6 radiant  120 feet
+Hellish Rebuke  DEX 15  2d10 fire  60 feet  The creature that damaged you is momentarily surrounded by green flames.
+It makes a Dexterity saving throw.
+Mind Spike  WIS 15  3d8 psychic  120 feet  The target makes a Wisdom saving throw, taking 3d8 Psychic damage on a
+failed save or half as much damage on a successful one.
+Sacred Flame  DEX 15  1d8 radiant  60 feet
+Suggestion  WIS 15  —  30 feet  You suggest a course of activity - described in no more than 25 words - to
+one creature you can see within range that can hear and understand you.
+The suggestion must sound achievable and not involve anything that would
+obviously deal damage to the target or its allies. For example, you could say,
+'Fetch the key to the cult's treasure vault, and give the key to me.' Or you
+could say, 'Stop fighting, leave this library peacefully, and don't return.' The
+target must succeed on a Wisdom saving throw or have the Charmed
+condition for the duration or until you or your allies deal damage to the target.
+Unarmed Strike  +2  0 bludgeoning  5 ft.  Instead of using a weapon to make a melee weapon attack, you can use an
+unarmed strike: a punch, kick, head-butt, or similar forceful blow (none of
+which count as weapons). On a hit, an unarmed strike deals bludgeoning
+damage equal to 1 + your Strength modifier. You are proficient with your
+unarmed strikes.
+Hunger of Hadar  DEX 15  2d6 acid  150 feet
+ACTIONS
+NAME  NOTES
+Actions in Combat  Attack, Dash, Disengage, Dodge, Help, Hide, Influence, Magic, Ready, Search, Study, Utilize
+Familiar - Dismiss  You can temporarily dismiss the familiar to a pocket dimension. Alternatively, you can dismiss it forever.
+Familiar - Reappear  While it is temporarily dismissed, you can cause it to reappear in an unoccupied space within 30 feet of you.
+Healing Hands  As a Magic action, you touch a creature and roll a number of d4s equal to your Proficiency Bonus. The creature regains a number
+of Hit Points equal to the total rolled. Once you use this trait, you can't use it again until you finish a Long Rest.
+BONUS ACTIONS
+NAME  NOTES
+Curse Another  If the target drops to 0 Hit Points before this spell ends, you can take a Bonus Action on a later turn to curse a new creature.
+Familiar - Use Senses  You can see through the familiar's eyes and hear what it hears until the start of your next turn, gaining the benefits of any special
+senses it has.
+DEFENSES, SENSES & PROFICIENCIES
+DEFENSES
+RESISTANCES  Necrotic, Radiant
+VULNERABILITIES None
+IMMUNITIES  None
+CONDITION
+IMMUNITIES
+None
+SENSES
+PASSIVE
+PERCEPTION
+11
+DARKVISION 60 ft
+PROFICIENCIES
+WEAPONS Simple
+TOOLS  Thieves' Tools
+NAME  NOTES
+Healing Light  You have a pool of d6s to fuel this healing. The number of dice in the pool equals 1 plus your Warlock level.
+As a Bonus Action, you can heal yourself or one creature you can see within 60 feet of yourself, expending dice from the pool.
+The maximum number of dice you can expend at once equals your Charisma modifier (minimum of one die). Roll the dice you
+expend, and restore a number of Hit Points equal to the roll’s total. Your pool regains all expended dice when you finish a Long
+Rest.
+Heavenly Wings  Two spectral wings sprout from your back temporarily. Until the transformation ends, you have a Fly Speed equal to your Speed.
+Inner Radiance  Searing light temporarily radiates from your eyes and mouth. For the duration, you shed Bright Light in a 10-foot radius and Dim
+Light for an additional 10 feet, and at the end of each of your turns, each creature within 10 feet of you takes Radiant damage
+equal to your Proficiency Bonus.
+Necrotic Shroud  Your eyes briefly become pools of darkness, and flightless wings sprout from your back temporarily. Creatures other than your
+allies within 10 feet of you must succeed on a Charisma saving throw (DC 8 plus your Charisma modifier and Proficiency Bonus) or
+have the Frightened condition until the end of your next turn.
+Fancy Shirt  As a bonus action once per day, you may activate the shirt to gain 10 temp hp, while you have this temp hp you gain a +2 to your
+AC.
+Gaze of Two Minds  You can use a Bonus Action to touch a willing creature and perceive through its senses until the end of your next turn. As long as
+the creature is on the same plane of existence as you, you can take a Bonus Action on subsequent turns to maintain this
+connection, extending the duration until the end of your next turn. The connection ends if you don't maintain it in this way.
+While perceiving through the other creature's senses, you benefit from any special senses possessed by that creature, and you
+can cast spells as if you were in your space or the other creature's space if the two of you are within 60 feet of each other.
+REACTIONS
+NAME  NOTES
+Reactions in Combat  Opportunity Attack
+SPELLS & SPELLCASTING
+CANTRIPS & SPELLS
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+0
+Sacred Flame
+Action
+60 feet
+V  S  M
+R  C
+Flame-like radiance descends on a creature that you can see within range. The target must succeed on a Dexterity
+saving throw or take 1d8 Radiant damage. The target gains no benefit from Half Cover or Three-Quarters Cover for this
+save.
+Cantrip Upgrade. The damage increases by 1d8 when you reach levels 5 (2d8), 11 (3d8), and 17 (4d8).
+0
+Light
+Action
+Touch
+V  S  M
+R  C
+You touch one Large or smaller object that isn’t being worn or carried by someone else. Until the spell ends, the object
+sheds Bright Light in a 20-foot radius and Dim Light for an additional 20 feet. The light can be colored as you like.
+Covering the object with something opaque blocks the light. The spell ends if you cast it again.
+0
+Eldritch Blast
+Action
+120 feet
+V  S  M
+R  C
+You hurl a beam of crackling energy. Make a ranged spell attack against one creature or object in range. On a hit, the
+target takes 1d10 Force damage.
+0
+Prestidigitation
+Action
+10 feet
+V  S  M
+R  C
+You create a magical effect within range. Choose the effect from the options below. If you cast this spell multiple times,
+you can have up to three of its non-instantaneous effects active at a time.
+Sensory Effect. You create an instantaneous, harmless sensory effect, such as a shower of sparks, a puff of wind, faint
+musical notes, or an odd odor.
+Fire Play. You instantaneously light or snuff out a candle, a torch, or a small campfire.
+Clean or Soil. You instantaneously clean or soil an object no larger than 1 cubic foot.
+Minor Sensation. You chill, warm, or flavor up to 1 cubic foot of nonliving material for 1 hour.
+Magic Mark. You make a color, a small mark, or a symbol appear on an object or a surface for 1 hour.
+Minor Creation. You create a nonmagical trinket or an illusory image that can fit in your hand. It lasts until the end of your
+next turn. A trinket can deal no damage and has no monetary worth.
+0
+Minor Illusion
+Action
+30 feet
+V  S  M
+R  C
+You create a sound or an image of an object within range that lasts for the duration. See the descriptions below for the
+effects of each. The illusion ends if you cast this spell again.
+If a creature takes a Study action to examine the sound or image, the creature can determine that it is an illusion with a
+successful Intelligence (Investigation) check against your spell save DC. If a creature discerns the illusion for what it is,
+the illusion becomes faint to the creature.
+Sound. If you create a sound, its volume can range from a whisper to a scream. It can be your voice, someone else's
+voice, a lion's roar, a beating of drums, or any other sound you choose. The sound continues unabated throughout the
+duration, or you can make discrete sounds at different times before the spell ends.
+Image. If you create an image of an object - such as a chair, muddy footprints, or a small chest - it must be no larger than
+a 5-foot Cube. The image can't create sound, light, smell, or any other sensory effect. Physical interaction with the image
+reveals it to be an illusion, since things can pass through it.
+1
+Silvery Barbs
+Reaction
+60 feet
+V  S  M
+R  C
+Casting Time: 1 reaction, which you take when a creature you can see within 60 feet of yourself succeeds on an attack
+roll, an ability check, or a saving throw
+You magically distract the triggering creature and turn its momentary uncertainty into encouragement for another
+creature. The triggering creature must reroll the d20 and use the lower roll.
+You can then choose a different creature you can see within range (you can choose yourself). The chosen creature has
+advantage on the next attack roll, ability check, or saving throw it makes within 1 minute. A creature can be empowered
+by only one use of this spell at a time.
+1
+Armor of Agathys
+Bonus Action
+Self
+V  S  M
+R  C
+Protective magical frost surrounds you. You gain 5 Temporary Hit Points. If a creature hits you with a melee attack roll
+before the spell ends, the creature takes 5 Cold damage. The spell ends early if you have no Temporary Hit Points.
+1
+Guiding Bolt
+Action
+120 feet
+V  S  M
+R  C
+You hurl a bolt of light toward a creature within range. Make a ranged spell attack against the target. On a hit, it takes
+4d6 Radiant damage, and the next attack roll made against it before the end of your next turn has Advantage.
+1
+Cure Wounds
+Action
+Touch
+V  S  M
+R  C
+A creature you touch regains a number of Hit Points equal to 2d8 plus your spellcasting ability modifier.
+CHA
+Spellcasting
+Ability
++4
+Spellcasting
+Modifier
+15  Spell Save DC
++7
+Spell Attack
+Bonus
+CHA  Warlock  SPELL SLOTS
+Level  Total  Expended
+1
+2
+3
+Level  Total  Expended
+4
+5
+6
+Level  Total  Expended
+7
+8
+9
+WARLOCK SPELLS
+Level  Total  Expended
+3  2
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+1
+Disguise Self
+Action
+Self
+V  S  M
+R  C
+You make yourself-including your clothing, armor, weapons, and other belongings on your person-look different until the
+spell ends. You can seem 1 foot shorter or taller and can appear heavier or lighter. You must adopt a form that has the
+same basic arrangement of limbs as you have. Otherwise, the extent of the illusion is up to you.
+The changes wrought by this spell fail to hold up to physical inspection. For example, if you use this spell to add a hat to
+your outfit, objects pass through the hat, and anyone who touches it would feel nothing.
+To discern that you are disguised, a creature must take the Study action to inspect your appearance and succeed on an
+Intelligence (Investigation) check against your spell save DC.
+1
+Hellish Rebuke
+Reaction
+60 feet
+V  S  M
+R  C
+Reaction, which you take in response to taking damage from a creature that you can see within 60 feet of yourself. The
+creature that damaged you is momentarily surrounded by green flames. It makes a Dexterity saving throw, taking 2d10
+Fire damage on a failed save or half as much damage on a successful one.
+1
+Hex
+Bonus Action
+90 feet
+V  S  M
+R  C
+You place a curse on a creature that you can see within range. Until the spell ends, you deal an extra 1d6 Necrotic
+damage to the target whenever you hit it with an attack roll. Also, choose one ability when you cast the spell. The target
+has Disadvantage on ability checks made with the chosen ability.
+If the target drops to 0 Hit Points before this spell ends, you can take a Bonus Action on a later turn to curse a new
+creature.
+1
+Find Familiar
+1 hour or Ritual
+10 feet
+V  S  M
+R  C
+You gain the service of a familiar, a spirit that takes an animal form you choose: Bat, Cat, Frog, Hawk, Lizard, Octopus,
+Owl, Rat, Raven, Spider, Weasel, or another Beast that has a Challenge Rating of 0. Appearing in an unoccupied space
+within range, the familiar has the statistics of the chosen form (see appendix B), though it is a Celestial, Fey, or Fiend
+(your choice) instead of a Beast. Your familiar acts independently of you, but it obeys your commands.
+Roll20 Note: In the VTT, you can access the creature's stat block by navigating to the Compendium tab of the right-hand
+sidebar and searching for the appropriate creature in the Monster category. Ensure the source is 'Player's Handbook
+(2024)' and drag and drop the chip onto an empty spot on the VTT. The DM may need to assign the sheet to you. In
+Roll20 Characters, you can open a new Character and use the Compendium in the same way to drag and drop the sheet
+directly onto the character sheet. Be careful not to drag and drop onto the spellcaster's character sheet as it will
+overwrite.
+Telepathic Connection. While your familiar is within 100 feet of you, you can communicate with it telepathically.
+Additionally, as a Bonus Action, you can see through the familiar's eyes and hear what it hears until the start of your next
+turn, gaining the benefits of any special senses it has.
+Finally, when you cast a spell with a range of touch, your familiar can deliver the touch. Your familiar must be within 100
+feet of you, and it must take a Reaction to deliver the touch when you cast the spell.
+Combat. The familiar is an ally to you and your allies. It rolls its own Initiative and acts on its own turn. A familiar can't
+attack, but it can take other actions as normal.
+Disappearance of the Familiar. When the familiar drops to 0 Hit Points, it disappears. It reappears after you cast this spell
+again. As a Magic action, you can temporarily dismiss the familiar to a pocket dimension. Alternatively, you can dismiss it
+forever. As a Magic action while it is temporarily dismissed, you can cause it to reappear in an unoccupied space within
+30 feet of you. Whenever the familiar drops to 0 Hit Points or disappears into the pocket dimension, it leaves behind in
+its space anything it was wearing or carrying.
+One Familiar Only. You can't have more than one familiar at a time. If you cast this spell while you have a familiar, you
+instead cause it to adopt a new eligible form.When you cast the spell, you choose one of the normal forms for your
+familiar or one of the following special forms: Imp, Pseudodragon, Quasit, Skeleton, Slaad Tadpole, Sphinx of Wonder,
+Sprite, or Venomous Snake (see appendix B for the familiar's stat block).
+Additionally, when you take the Attack action, you can forgo one of your own attacks to allow your familiar to make one
+attack of its own with its Reaction.
+2
+Misty Step
+Bonus Action
+Self
+V  S  M
+R  C
+Briefly surrounded by silvery mist, you teleport up to 30 feet to an unoccupied space you can see.
+2
+Lesser Restoration
+Bonus Action
+Touch
+V  S  M
+R  C
+You touch a creature and end one condition on it: Blinded, Deafened, Paralyzed, or Poisoned.
+2
+Aid
+Action
+30 feet
+V  S  M
+R  C
+Choose up to three creatures within range. Each target’s Hit Point maximum and current Hit Points increase by 5 for the
+duration.
+2
+Suggestion
+Action
+30 feet
+V  S  M
+R  C
+You suggest a course of activity - described in no more than 25 words - to one creature you can see within range that
+can hear and understand you. The suggestion must sound achievable and not involve anything that would obviously
+deal damage to the target or its allies. For example, you could say, 'Fetch the key to the cult's treasure vault, and give the
+key to me.' Or you could say, 'Stop fighting, leave this library peacefully, and don't return.'
+The target must succeed on a Wisdom saving throw or have the Charmed condition for the duration or until you or your
+allies deal damage to the target. The Charmed target pursues the suggestion to the best of its ability. The suggested
+activity can continue for the entire duration, but if the suggested activity can be completed in a shorter time, the spell
+ends for the target upon completing it.
+2
+Mind Spike
+Action
+120 feet
+V  S  M
+R  C
+You drive a spike of psionic energy into the mind of one creature you can see within range. The target makes a Wisdom
+saving throw, taking 3d8 Psychic damage on a failed save or half as much damage on a successful one. On a failed
+save, you also always know the target's location until the spell ends, but only while the two of you are on the same plane
+of existence. While you have this knowledge, the target can't become hidden from you, and if it has the Invisible
+condition, it gains no benefit from that condition against you.
+3
+Revivify
+Action
+Touch
+V  S  M
+R  C
+You touch a creature that has died within the last minute. That creature revives with 1 Hit Point. This spell can’t revive a
+creature that has died of old age, nor does it restore any missing body parts.
+3  Daylight
+Action
+60 feet  V S M
+R  C
+For the duration, sunlight spreads from a point within range and fills a 60-foot-radius Sphere. The sunlight’s area is
+Bright Light and sheds Dim Light for an additional 60 feet.
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+Alternatively, you cast the spell on an object that isn’t being worn or carried, causing the sunlight to fill a 60-foot
+Emanation originating from that object. Covering that object with something opaque, such as a bowl or helm, blocks the
+sunlight.
+If any of this spell’s area overlaps with an area of Darkness created by a spell of level 3 or lower, that other spell is
+dispelled.
+3
+Hunger of Hadar
+Action
+150 feet
+V  S  M
+R  C
+You open a gateway to the Far Realm, a region infested with unspeakable horrors. A 20-foot-radius Sphere of Darkness
+appears, centered on a point with range and lasting for the duration. The Sphere is Difficult Terrain, and it is filled with
+strange whispers and slurping noises, which can be heard up to 30 feet away. No light, magical or otherwise, can
+illuminate the area, and creatures fully within it have the Blinded condition.
+Any creature that starts its turn in the area takes 2d6 Cold damage. Any creature that ends its turn there must succeed
+on a Dexterity saving throw or take 2d6 Acid damage from otherworldly tentacles.
+INVENTORY
+EQUIPMENT
+"Herb"  0 lbs  2
+Gear
+Weed - smoke
+3rd - place across skin to make place go numb
+Bag of Paper  0 lbs  1
+Gear
+Mandal wine  0 lbs  1
+Gear
+Fancy Clothes  0 lbs  1
+Gear
+As a bonus action once per day, you may activate the shirt to gain 10 temp hp, while you
+have this temp hp you gain a +2 to your AC.
+Familiar incense  0 lbs  3
+Gear
+RATions  0 lbs  0
+Gear
+Rations  0 lbs  50
+Gear
+Scholar's Pack  0 lbs  1
+Gear
+A Scholar’s Pack contains the following items: Backpack, Book, Ink, Ink Pen, Lamp, 9
+flasks of Oil, 10 sheets of Parchment, and Tinderbox.
+Book of Occult Lore  0 lbs  1
+Gear
+Arcane Focus (Staff)  0 lbs  1
+Gear
+Simple wooden staff with a small iridescent crystal on the end
+Guy Fawkes Hat  0 lbs  1
+Gear
+Hat needed for magic
+Sickle  2 lbs  1
+Weapon · Gear · Proficient · Weapon · Sickle · Simple
+Leather Armor  10 lbs  1
+Light · Gear · Proficient · Light · Leather
+Traveler's Clothes  0 lbs  1
+Gear
+Pouch  0 lbs  1
+Gear
+Bedroll  0 lbs  1
+Gear
+Pai Sho Set  0 lbs  1
+Gear · Gaming Set
+Theives' Tools  1 lb  1
+Gear · Artisan's Tools
+Pick a lock (DC 15), or disarm a trap (DC 15)
+Dagger  2 lbs  2
+Weapon · Gear · Proficient · Weapon · Dagger · Simple
+MAGIC ITEM ATTUNEMENT
+POSSESSIONS
+Trinket  0 lbs  1
+Possession
+An old divination card bearing your likeness
+WEIGHT
+Current Total Weight (Unencumbered): 16.62 lbs  Carrying Capacity: 120 lbs
+EQ.  NAME  WT.  QTY  EQ.  NAME  WT.  QTY
+NAME  WT.  QTY NAME  WT.  QTY
+BACKSTORY, PERSONALITY & FEATURES
+BACKSTORY & PERSONALITY
+WAYFARER
+You grew up on the streets surrounded by similarly ill-fated castoffs, a few of them friends and a few of them rivals. You slept where you could and did odd jobs for food. At times, when
+the hunger became unbearable, you resorted to theft. Still, you never lost your pride and never abandoned hope. Fate is not yet finished with you.
+OTHER
+Very gender ambiguous features that seem to shift subtly if you look for long enough.
+FACE
+Slender and impossibly well groomed. Pretty conventionally attractive but with something almost uncanny/surreal about their appearance that is impossible to describe.
+EYES
+Emerald Green with an iridescent quality to them. They have a slight glow that becomes more pronounced when casting spells. When feeling strong emotions or using Aasimar features
+they glow a bright green.
+HAIR
+Shoulder length and slightly wavy, shines like silver in the light. Looks tarnished/worn when dirty.
+CERRITULUS
+basically the CIA/FBI of Ters Ursel, working clandestinely to deal with issues the kingdom has to deal with. You would have been scouted (we can probably talk about how you woudl have
+been discovered) and brought into their division that works with the more supernatural elements that the kingdom has to deal with, otherwise known as the Cerritulus. They would have
+then provided you with the elements required for your ritual and helped train you afterwards. You would have trained with a small group of other warlocks (all being bound to other
+beings). This would have lasted a few years so this would be like your second proper assignment.
+NEPHNON
+A partial tiefling who acts as your immeadiate superior. They are direct and quite brash but highly values loyalty and you know has put his ass on the line for your team many times. Owes
+a debt of some kind to Hadrian Grandless which explains his seemingly nunbounded devotion for Ters Ursel. Seems like a good boss but you fear any who dare cross him.
+BEING FOLLOWED
+Guildmaster of adventurer's guild in lastlecross paid an adventurer with a bronze lantern pin to tail me. Gave me a distasteful look earlier, fell into a vat of molten glass when he was a kid.
+INQUISITOR
+You don't remember much about the man who hunted you. You remember a giant, broad-shouldered cat-man in white-gold armour robes. The main thing that stuck with you is the
+terrifying contrast of his face: one side is sleek, regal fur, and the other is a ruined, hairless mass of horrific burn scars twisting his mouth into a snarl.
+GALA
+30+ guards helping for the gala and more survieling the city during the gala
+Some guards going to the casino today to maybe catch the tiefling
+LASTLECROSS BOUNTY WALL
+Vesper bounty - Dark skinned tiefling missing an eye, wanted dead or alive, bounty 180
+Disaperances at sandpit, wanted someone discrete for a private matter, ask tilly at workshop in guildstead
+LASTLECROSS
+Split by a river, one side is housing area, casino on western side up north, guildstead district has all the guilds + hospital. Low lantern inn near south gate.
+Aldermarch - lord of the town, founded lastlecross, represent main balance of power
+Glassmakers guild holds lots of influence in parts of the city
+FORTUNE'S FURNACE
+In Lastlecross, likely inhabited by the archdemon of greed
+MISSION
+Head to laslecross to make sure vesper (red teifling) is safe and get her back to Ters. was investigating an archdemon of greed. Vesper possibly staying at room 282 in the casino.
+Alignment Neutral Good  Pronouns They/Them
+CLASS FEATURES
+Ability Score Improvement (Warlock)
+You gain the Ability Score Improvement feat or another feat of your choice for which you
+qualify. You gain this feature again at Warlock levels 8, 12, and 16.
+Eldritch Invocation - Agonizing Blast (Warlock)
+Prerequisite: eldritch blast cantrip
+When you cast eldritch blast, add your Charisma modifier to the damage it deals on a hit.
+Eldritch Invocation - Repelling Blast (Warlock)
+Prerequisite: Level 2+ Warlock, a Warlock Cantrip That Deals Damage via an Attack Roll
+Choose one of your known Warlock cantrips that requires an attack roll. When you hit a Large
+or smaller creature with that cantrip, you can push the creature up to 10 feet straight away from
+you.
+Repeatable. You can gain this invocation more than once. Each time you do so, choose a
+different eligible cantrip.
+Eldritch Invocation - Gaze of Two Minds (Warlock)
+Prerequisite: Level 5+ Warlock
+You can use a Bonus Action to touch a willing creature and perceive through its senses until
+the end of your next turn. As long as the creature is on the same plane of existence as you,
+you can take a Bonus Action on subsequent turns to maintain this connection, extending the
+duration until the end of your next turn. The connection ends if you don't maintain it in this
+way.
+While perceiving through the other creature's senses, you benefit from any special senses
+possessed by that creature, and you can cast spells as if you were in your space or the other
+creature's space if the two of you are within 60 feet of each other.
+Eldritch Invocation - Mask of Many Faces (Warlock)
+Prerequisite: Level 2+ Warlock
+You can cast Disguise Self without expending a spell slot.
+Eldritch Invocation - Pact of the Chain (Warlock)
+You learn the Find Familiar spell and can cast it as a Magic action without expending a spell
+slot.
+When you cast the spell, you choose one of the normal forms for your familiar or one of the
+following special forms: Imp, Pseudodragon, Quasit, Skeleton, Slaad Tadpole, Sphinx of
+Wonder, Sprite, or Venomous Snake (see appendix B for the familiar's stat block).
+Additionally, when you take the Attack action, you can forgo one of your own attacks to allow
+your familiar to make one attack of its own with its Reaction.
+Eldritch Invocations (Warlock)
+You have unearthed Eldritch Invocations, pieces of forbidden knowledge that imbue you with
+an abiding magical ability or other lessons. You gain one invocation of your choice, such as
+Pact of the Tome. Invocations are described in the 'Eldritch Invocation Options' section later in
+this class's description.
+Prerequisites. If an invocation has a prerequisite, you must meet it to learn that invocation. For
+example, if an invocation requires you to be a level 5+ Warlock, you can select the invocation
+once you reach Warlock level 5.
+Replacing and Gaining Invocations. Whenever you gain a Warlock level, you can replace one
+of your invocations with another one for which you qualify. You can't replace an invocation if
+it's a prerequisite for another invocation that you have.
+When you gain certain Warlock levels, you gain more invocations of your choice, as shown in
+the Invocations column of the Warlock Features table.
+You can't pick the same invocation more than once unless its description says otherwise.
+Magical Cunning (Warlock)
+You can perform an esoteric rite for 1 minute. At the end of it, you regain expended Pact Magic
+spell slots but no more than a number equal to half your maximum (round up). Once you use
+this feature, you can't do so again until you finish a Long Rest.
+Magical Cunning
+Pact Magic (Warlock)
+Through occult ceremony, you have formed a pact with a mysterious entity to gain magical
+powers. The entity is a voice in the shadows-its identity unclear-but its boon to you is concrete:
+the ability to cast spells. The information below details how you use those rules with Warlock
+spells, which appear in the Warlock spell list later in the class's description.
+Cantrips. You know two Warlock cantrips of your choice. Eldritch Blast and Prestidigitation are
+recommended. Whenever you gain a Warlock level, you can replace one of your cantrips from
+this feature with another Warlock cantrip of your choice.
+When you reach Warlock levels 4 and 10, you learn another Warlock cantrip of your choice, as
+shown in the Cantrips column of the Warlock Features table.
+Spell Slots. The Warlock Features table shows how many spell slots you have to cast your
+Warlock spells of levels 1-5. The table also shows the level of those slots, all of which are the
+same level. You regain all expended Pact Magic spell slots when you finish a Short or Long
+Rest.
+For example, when you're a level 5 Warlock, you have two level 3 spell slots. To cast the level 1
+spell Witch Bolt, you must spend one of those slots, and you cast it as a level 3 spell.
+Prepared Spells of Level 1+. You prepare the list of level 1+ spells that are available for you to
+cast with this feature. To start, choose two level 1 Warlock spells. Charm Person and Hex are
+recommended.
+The number of spells on your list increases as you gain Warlock levels, as shown in the
+Prepared Spells column of the Warlock Features table. Whenever that number increases,
+choose additional Warlock spells until the number of spells on your list matches the number in
+the table. The chosen spells must be of a level no higher than what's shown in the table's Slot
+Level column for your level. When you reach level 6, for example, you learn a new Warlock
+spell, which can be of levels 1-3.
+If another Warlock feature gives you spells that you always have prepared, those spells don't
+count against the number of spells you can prepare with this feature, but those spells
+otherwise count as Warlock spells for you.
+Changing Your Prepared Spells. Whenever you gain a Warlock level, you can replace one spell
+on your list with another Warlock spell of an eligible level.
+Spellcasting Ability. Charisma is the spellcasting ability for your Warlock spells.
+Spellcasting Focus. You can use an Arcane Focus as a Spellcasting Focus for your Warlock
+spells.
+Healing Light (Pact of the Celestial)
+You gain the ability to channel celestial energy to heal wounds. You have a pool of d6s to fuel
+this healing. The number of dice in the pool equals 1 plus your Warlock level.
+As a Bonus Action, you can heal yourself or one creature you can see within 60 feet of
+yourself, expending dice from the pool. The maximum number of dice you can expend at once
+equals your Charisma modifier (minimum of one die). Roll the dice you expend, and restore a
+number of Hit Points equal to the roll’s total. Your pool regains all expended dice when you
+finish a Long Rest.
+SPECIES TRAITS
+Celestial Resistance (Aasimar)
+You have Resistance to Necrotic damage and Radiant damage.
+Healing Hands (Aasimar)
+As a Magic action, you touch a creature and roll a number of d4s equal to your Proficiency
+Bonus. The creature regains a number of Hit Points equal to the total rolled. Once you use this
+trait, you can't use it again until you finish a Long Rest.
+Celestial Revelation (Aasimar)
+When you reach character level 3, you can transform as a Bonus Action using one of the
+options below (choose the option each time you transform). The transformation lasts for 1
+minute or until you end it (no action required). Once you transform, you can’t do so again until
+you finish a Long Rest.
+Once on each of your turns before the transformation ends, you can deal extra damage to one
+target when you deal damage to it with an attack or a spell. The extra damage equals your
+Proficiency Bonus, and the extra damage’s type is either Necrotic for Necrotic Shroud or
+Radiant for Heavenly Wings and Inner Radiance.
+Transformations
+Darkvision (Aasimar)
+You have Darkvision with a range of 60 feet
+Light Bearer (Aasimar)
+You know the Light cantrip. Charisma is your spellcasting ability for it.
+Size (Aasimar)
+5 by 5 ft
+OTHER FEATURES
+Lucky (Feat · Player's Handbook)
+You gain the following benefits.
+Luck Points. You have a number of Luck Points equal to your Proficiency Bonus and can spend
+the points on the benefits below. You regain your expended Luck Points when you finish a
+Long Rest.
+Advantage. When you roll a d20 for a D20 Test, you can spend 1 Luck Point to give yourself
+Advantage on the roll.
+Disadvantage. When a creature rolls a d20 for an attack roll against you, you can spend 1 Luck
+Point to impose Disadvantage on that roll.
+Fey Touched (Feat)
+Your exposure to the Feywild's magic grants you the following benefits.
+Ability Score Increase. Increase your Intelligence, Wisdom, or Charisma score by 1, to a
+maximum of 20.
+Fey Magic. Choose one level 1 spell from the Divination or Enchantment school of magic
+(Silvery Barbs). You always have that spell and the Misty Step spell prepared. You can cast
+each of these spells without expending a spell slot. Once you cast either spell in this way, you
+can't cast that spell in this way again until you finish a Long Rest. You can also cast these spells
+using spell slots you have of the appropriate level. The spells' spellcasting ability is the ability
+increased by this feat.
+Custom Background Ability Score Increase (Background)
+Skill Proficiencies (Background)
+Tool Proficiency (Background)
