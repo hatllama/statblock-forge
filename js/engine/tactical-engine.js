@@ -3251,17 +3251,17 @@ const AI_BASE = {
     recover: 6, recklessRisk: 0.8, recklessDrop: 3,              // self-heal when hurt; Reckless: extra hits taken, × recklessDrop if they could drop it
     // casters (step 2) and anything that heals, buffs or controls
     area: 1, ffValue: 1,                                         // the others an area catches (bare value each); friendly fire, × the ally's DPR weight
-    ctlRound: 0.5, lull: 0.6, legRes: 0.2, concKeep: 0.75, shakeOff: 0.55, expose: 1, critDmg: 1.6,
-    // control: one round's worth × rounds; damage ends it; a save bought off; holding it that long; a hold that damage can save it out of (Laughter);
+    ctlRound: 0.5, lull: 0.6, legRes: 0.4, concKeep: 0.75, shakeOff: 0.55, expose: 1, critDmg: 1.6,
+    // control: one round's worth × rounds; damage ends it; a save bought off (legRes / the uses it has left: docs/ai-v2.md); holding it that long; a hold that damage can save it out of (Laughter);
     // our side's extra damage on a foe easier to hit (advantage, crits up close: v2Expose); a crit's damage over a plain hit
     heal: 1, healLow: 1.4, healDanger: 0.8, revive: 15, reviveRounds: 0.6,   // HP back (more under half), a heal that keeps it standing; a downed ally back up
-    buff: 1, zone: 2,                                            // buffs on allies (per round × rounds); difficult ground
+    buff: 1, buffRounds: 2, zone: 2,                             // buffs on allies (per round × rounds, counted this many rounds ahead at most); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
-  burn: { bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
+  burn: { modes: ['open'], bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
             slot: 8, slotUp: 0.35, slotEasyTax: 0.7 },           // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
   // the threat estimate (docs/ai-v2.md): learn on v2, the party's side. prior + each signal's weight (× n / (n + half)), then the table
@@ -3736,7 +3736,7 @@ Sim.prototype.v2AllyValue = function (u, a, t, ctx) {
   }
   if (a.type === 'buff') {
     const b = a.buff || {}, conc = a._spell && a._spell.conc;
-    const R = b.duration === 'entire encounter' ? ctx.rounds * (conc ? W.concKeep : 1) : (DUR_WEIGHT[b.duration] || 1);
+    const R = b.duration === 'entire encounter' ? Math.min(ctx.rounds, W.buffRounds) * (conc ? W.concKeep : 1) : (DUR_WEIGHT[b.duration] || 1);
     return this.effectValue(Object.assign({}, b, { duration: '1 round' }), t, false, u) * R * W.buff;
   }
   return 0;
@@ -3803,14 +3803,17 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
   // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use: worth the
   // progress toward emptying it when the plan says burn and this is the cheap effect it picked for u, else a little
   if (b.condition && this.kImmune(u, t, b.condition)) return 0;           // it can't be given that condition at all
-  if (!noLR && DANGER_CONDS.includes(b.condition) && this.kLegRes(u, t) > 0) {
-    const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
-    if (mine && mine.a.id === a.id) {
-      const ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
-      const pFail = dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20));
-      return pFail * bp.perLR * u.v2P.burn.value;
+  if (!noLR && DANGER_CONDS.includes(b.condition)) {
+    const L = this.kLegRes(u, t);
+    if (L > 0) {
+      const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
+      if (mine && mine.a.id === a.id) {
+        const ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
+        const pFail = dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20));
+        return pFail * bp.perLR * u.v2P.burn.value;
+      }
+      per *= W.legRes / L;                                                // it lands nothing while uses remain: this cast strips one of the L
     }
-    per *= W.legRes;
   }
   if (a.ext && a.ext.saveOnDamage) per *= W.shakeOff;
   const R = ctx.rounds;
@@ -3832,7 +3835,7 @@ Sim.prototype.v2Burn = function (u, ctx) {
   if (ctx.burn !== undefined) return ctx.burn;
   const cache = this._burnC = this._burnC || {}, c = cache[u.team];
   if (c && c.seq === this.turnSeq) return (ctx.burn = c.plan);
-  const plan = u.v2P.burn ? this.v2BurnPlan(u, ctx, false) : null;
+  const plan = u.v2P.burn && u.v2P.burn.modes.indexOf(this.kMode(u.team)) >= 0 ? this.v2BurnPlan(u, ctx, false) : null;
   if (plan && !plan.on && u.v2P.burn.probeBias > 0 && this.kMode(u.team) === 'learn') this.v2Probe(u, ctx, plan);
   cache[u.team] = { seq: this.turnSeq, plan };
   if (plan) this.v2BurnSay(u, plan);

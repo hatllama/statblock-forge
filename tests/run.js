@@ -709,6 +709,19 @@ section('Character sheets');
     }
   }
 
+  // control into Legendary Resistance is priced by the uses left; the burn plan is open mode's alone (docs/ai-v2.md)
+  {
+    const holdWizard = () => { const u = Tac.expandTeam([pc('Wizard')], 'party', true)[0]; u.ai = 'tactical'; return u; };
+    const S = new Tac.Sim({ seed: 1, ai: { party: 'v2' } }), me = holdWizard(), m = srd('Ogre'); m.ext.legendaryResistance = 3;
+    const [t] = Tac.expandTeam([m], 'foes', false); S.units = [me, t]; me.onBoard = t.onBoard = true; S.v2Setup(me);
+    const a = me.actions.find(x => x.type === 'debuff' && x.buff && x.buff.condition === 'Paralyzed');
+    const ctx = S.v2Ctx(me, 30), full = S.v2Control(me, a, t, ctx, true), at = n => { t.uses.set('__legres', n); ctx.burn = null; return S.v2Control(me, a, t, ctx); };
+    const v3 = at(3), v2 = at(2), v1 = at(1), v0 = at(0);
+    check(v3 < v2 && v2 < v1 && v1 < full && Math.abs(v0 - full) < 1e-6, `control into LR is worth more as uses run out (3: ${v3.toFixed(1)}, 2: ${v2.toFixed(1)}, 1: ${v1.toFixed(1)}, none: ${v0.toFixed(1)})`);
+    const cast = know => { const L = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: know } }), w = holdWizard(), [b] = Tac.expandTeam([m], 'foes', false); L.units = [w, b]; w.onBoard = b.onBoard = true; L.v2Setup(w); b.legSeen = 1; L.kind('party', b).legRes = 1; return L.v2Burn(w, L.v2Ctx(w, 30)); };
+    check(cast('learn') === null && cast('blind') === null, 'no burn plan in learn or blind, even once Legendary Resistance has been seen');
+  }
+
   // burn the dragon's Legendary Resistance or race its HP (docs/ai-v2.md): the plan follows the numbers
   {
     const dragon = (lr, wis) => { const d = srd('Adult Red Dragon'); d.ext.legendaryResistance = lr; d.ext.fly = 0; d.ext.saves = Object.assign({}, d.ext.saves, wis === 'all' ? { str: 14, dex: 14, con: 14, int: 14, wis: 14, cha: 14 } : { wis }); d.actions.forEach(a => { if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.35)); }); return d; };

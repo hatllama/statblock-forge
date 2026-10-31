@@ -278,8 +278,7 @@ caster holding the follow-up keep doing what they do. The follow-up is not cast 
 blind: never) makes `v2Control` value a condition the foe cannot take at 0, so a caster aims at damage instead of a spell
 that cannot work.
 
-**Valuation.** In race mode, `v2Control` is unchanged: a disabling effect on a creature with LR left is worth `legRes`
-(0.2) × its normal value. In burn mode, for a burner and the effect the plan picked for it, the effect is worth what the
+**Valuation.** In race mode, a disabling effect on a creature with LR left is worth `legRes` / the uses left × its normal value (step 2.11; `legRes` 0.4; before that a flat 0.2). In burn mode, for a burner and the effect the plan picked for it, the effect is worth what the
 burner gives up (the best other option it has, net of its price) plus its progress, `pFail × perLR × burn.value`, where
 `perLR` is what the whole burn saves (`race × bias − burn − margin`) shared out over the LR left. It is applied as a lift in
 `v2TurnInner`, so it competes with damage on equal terms and the burn spell then goes through the same pacing cost as any
@@ -539,10 +538,82 @@ harness dragon at a quarter damage is not read low, as expected beforehand: its 
 so they carry the score. Hard-day's gain comes with worse accuracy, so part of it is overestimates making the party spend
 more, not better reading.
 
-**Why it was not adopted.** The LR dragons lose about 12 points whatever the estimate says: `crPerLevel` 1.4 / 2 / 3 and
-`legRes` 6 / 20 all leave K3 at 32–33.5, so a bigger number does not cure it. With a realistic HP the party casts more
-control into LR (K3: control casts 1.44 → 1.90, LR burned 1.01 → 1.26, damage dealt 216 → 196). The likely fix is in how
-v2 values control against LR, not here.
+**Why it was not adopted at first.** The LR dragons lost about 12 points whatever the estimate said: `crPerLevel` 1.4 / 2 / 3 and
+`legRes` 6 / 20 all left K3 at 32–33.5, and the party cast more control into LR (K3: control casts 1.44 → 1.90, LR burned 1.01 →
+1.26, damage dealt 216 → 196). Step 2.11 found the cause elsewhere: heals losing to buffs in a long fight, see "Control against
+Legendary Resistance".
+
+### Control against Legendary Resistance, and what the LR rows were really losing to (step 2.11)
+
+**The problem as reported.** With a realistic HP estimate the LR rows lost about 12 points (K3 45.5 → 32), and more
+control went into LR. The numbers below say control was not the cause.
+
+**Diagnosis** (K3 learn, bloodied reading, 200 runs; per caster decision with control available on the dragon; `full` is
+the best control's value with no LR, `disc` with it, `alt` the best other option net of its price):
+
+| state | decisions/day | control picked | full | disc | alt | plan on |
+|---|---|---|---|---|---|---|
+| no LR seen (3 left) | 4.00 | 26% | 44.0 | 46.7 | 53.1 | 0% |
+| 1 seen (2 left) | 6.88 | 3% | 21.2 | 8.1 | 50.2 | 6% |
+| 2 seen (1 left) | 0.46 | 26% | 19.5 | 9.8 | 55.7 | 62% |
+| 3 seen (0 left) | 0.50 | 10% | 24.0 | 27.6 | 43.2 | 0% |
+
+- Before the first sighting: 1.05 casts a day, nearly all round 1, nearly all Hold Monster at 5th level (0.94). LR ate 0.75,
+  0.30 passed, none landed.
+- After it: 0.37 casts a day (threat estimate: 0.85), almost all Command; 0.04 landed.
+- Pile-on: 0.01 casts a day shared a round with another after the sighting. Not a problem.
+- The burn plan was still running in learn, against the user's decision: on at 62% of the decisions with one use left
+  (68% with the threat estimate).
+
+**The fixes that were asked for.**
+- *Priced by uses left.* A failed dangerous save is bought off while uses remain, so a cast into a creature with L uses left
+  lands nothing and buys one use of the L: `per × w.legRes / L`, in place of a flat `× 0.2`. `w.legRes` swept 0 / 0.2 / 0.4 /
+  0.6 / 1 / 1.5 with the plan off: flat from 0 to 0.6 (K3 44 throughout); 1 costs B5 open a point or two, 1.5 costs it 9.5.
+  **0.4**, the middle of the flat range (2 uses left reads as the old 0.2).
+- *No burn plan in learn or blind.* `burn.modes`, default `['open']`. K3 44 with or without it at the bloodied reading (45.5
+  with it), so nothing was lost by honouring the decision. The probing code stays dormant behind it.
+- *The first, unavoidable cast.* Tried as a doubt on control at a creature that has shown neither LR nor a failed
+  dangerous save, scaled by its share of the HP left. Doubt 0.2 / 0.4 / 0.6: K3 43.5 / 41.5 / 46; K2 73 / 65 / 61; K8 53 / 51 / 43.
+  It costs the no-LR bosses far more than it saves, so it was dropped and the cast stays at full value (0.75 uses a day
+  for a 5th-level slot, the price of not assuming LR).
+- Together: no row moved beyond 2 SE in learn, open or blind. Safe, and not the cure.
+
+**The real cause.** B2 (+14 saves) lost the same 5 points with no LR used at all, so it had to be something else. Actions a day,
+K3, bloodied reading against the threat estimate: Cure Wounds 0.86 → 0.36, Healing Word 0.99 → 0.63, Mass Healing Word
+0.47 → 0.23, Preserve Life 0.68 → 0.47, Bless 0.90 → 1.29. A buff was worth one round × the fight's expected rounds, up to 8; a
+heal is worth the HP it gives back now. So the longer the party expects the fight to be, the more Bless beats healing, and
+the party dies sooner (7.7 → 7.0 rounds) with less dealt. The realistic HP number only exposed it.
+
+**A buff's horizon (`w.buffRounds`).** A buff is counted at most this many rounds ahead: `R = min(rounds, buffRounds)`.
+Measured: damage, not value. It says how far ahead a concentration buff can be banked on against the same turn spent
+healing. LR rows, learn, 200 runs, same seeds:
+
+| scenario | before | 5 | 4 | 3 | **2** | w.buff 0.85 | 0.7 | 0.6 |
+|---|---|---|---|---|---|---|---|---|
+| K3 / B5 / K5 learn, 3 LR | 44.0 | 44.5 | 45.5 | 53.0 | **58.5** | 50.0 | 57.5 | 59.5 |
+| K2 no-LR dragon | 73.0 | 73.0 | 73.0 | 75.0 | **84.0** | 76.0 | 80.0 | 84.5 |
+| K8 no-LR dragon, Bard | 53.0 | 53.0 | 53.0 | 53.0 | **53.0** | 53.5 | 53.5 | 54.0 |
+| B2 / B8 learn, +14 saves | 14.0 | 14.0 | 14.0 | 15.5 | **16.0** | 13.5 | 14.0 | 15.5 |
+| B4 learn, damage-heavy | 71.0 | 71.0 | 71.0 | 71.5 | **74.0** | 71.5 | 72.0 | 72.5 |
+| B9 learn, day | 4.5 | 4.5 | 5.0 | 7.0 | **7.5** | 4.5 | 6.5 | 7.5 |
+| B5 open | 51.5 | 52.0 | 52.5 | 56.0 | **60.5** | 49.5 | 55.5 | 56.0 |
+
+Chosen **2**: it cuts the term that was wrong rather than every buff. 1.5 is no better (K3 59.5, K2 85.5 learn; K2 87.5 open
+against 89.5). Whole table, against the priced-LR code above, 66 rows, 200 runs, nothing worse beyond 2 SE in any mode:
+
+| mode | mean | worse / better beyond 2 SE | rows that moved most |
+|---|---|---|---|
+| learn | 72.8 → 74.5 | 0 / 5 | K2 73 → 84, K3 44 → 58.5, K5 44 → 58.5, K4 37 → 44.5 |
+| open | 77.6 → 79.6 | 0 / 6 | K2 80 → 89.5, K3 51.5 → 60.5, K4 46 → 67, K5 53.5 → 74.5, B7 29.5 → 42 |
+| blind | 67.2 → 67.8 | 0 / 1 | B5 learn |
+
+K3 learn after it: Cure Wounds 1.29, Healing Word 1.11, Mass Healing Word 0.58, Preserve Life 0.86; damage dealt 217 → 230, deaths 0.32
+→ 0.22. Control still gets cast on a boss with no LR, more than before: K2 1.19 → 1.65 casts a day (K8 1.58 → 1.58). The party stops
+casting control into a dragon it has seen use LR (0.37 → 0.00 after the sighting), first cast unchanged (1.17 a day). Open's burn plan
+is unaffected: K3 open 51.5 → 60.5. Not capped: `v2Holding` still counts a running buff over the full rounds, so a caster keeps a buff it
+already has; the sweep was measured that way.
+
+**Not done.** A rider (Stunning Strike) still has no LR term: a martial's rider into LR is valued as if it lands. Nothing here measured it.
 
 ## Existing user-facing AI options → v2 knobs
 

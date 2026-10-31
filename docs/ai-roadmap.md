@@ -28,7 +28,7 @@ Statblock Forge is a DM prep tool. The War Table simulates fights and reports od
    0 HP are handled, `mayHitDowned`) become knobs; saved workspaces are migrated.
 6. **Odds runs should be seedable** (see the check below).
 7. *(history)* The Legendary Resistance burn plan works in open mode. A burn plan for learn and blind was tried and
-   dropped by the user; the probing code stays but is dormant. Learn and blind assume no Legendary Resistance until one is seen (step 2.9).
+   dropped by the user; the probing code stays but is dormant (`burn.modes`, open only: step 2.11 closed the gap where it still ran). Learn and blind assume no Legendary Resistance until one is seen (step 2.9).
 
 ## C. Layers
 
@@ -139,5 +139,6 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Harness dragon, true damage lowers win rate**: in the harness dragon (damage scaled to a quarter, full HP), giving the party the TRUE damage per round lowers the win rate. The AI under-values ending a long fight against a weak hitter: revisit.
 - **Threat estimate, not adopted** (`opts.threat`, `docs/ai-v2.md`): Zaki's party on hard-day +22, Legendary Resistance dragons −12 with a realistic HP number, because v2 then casts more control into LR. Revisit once control against LR is valued properly.
 - **Learn's kill leak**: fixed for v2 (step 2.11: the bloodied reading is v2 learn's default). The classic AI keeps the old reading, which writes a creature's exact maximum HP into `hpHi` on a kill, so its logs do not move.
+- **Riders into Legendary Resistance**: Stunning Strike and other riders have no LR term in `v2Value`; a rider into LR is valued as if it lands (step 2.11 priced spells only).
 - **Limited-use items (Pressurized Flame Squirter)**: the importer reads them as at-will attacks (its item text said 30 ft while the table said 5 ft). Tacitus's Squirter was removed from his actions by hand in the party file. Limited-use items should import as limited-use actions, and its second mode (+10, bludgeoning plus fire) modeled with it.
 - **Spell data gaps seen on those sheets**: Light, Prestidigitation, Minor Illusion, Disguise Self, Find Familiar, Lesser Restoration, Revivify, Daylight, Hunger of Hadar.
