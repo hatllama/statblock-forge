@@ -647,6 +647,38 @@ already has; the sweep was measured that way.
 
 **Not done.** A rider (Stunning Strike) still has no LR term: a martial's rider into LR is valued as if it lands. Nothing here measured it.
 
+### Pacing and danger: the hard day (step 2.11, diagnostic only)
+
+**The claim tested.** On Zaki's hard day the threat estimate gained 22 points with worse accuracy, which suggested a party that
+hoards on hard days and an overestimate that makes it spend. **It does not hoard, and the estimate does not change what it spends.**
+Per fight, 200 runs, step 2.11 part A code (bloodied reading / threat estimate; the share is what pacing allows the fight before the tax):
+
+| fight | reached | won | party HP start → end | slot levels start | spent | share | limited uses spent |
+|---|---|---|---|---|---|---|---|
+| 1 Ogres, goblins | 200 / 200 | 100 / 100 | 100 → 89 / 87 | 29.0 | 10.1 / 10.3 | 25% (7.3) | 4.8 / 4.7 |
+| 2 Troll, wolves | 200 / 200 | 100 / 100 | 89 → 82 / 87 → 81 | 19.0 | 4.8 / 4.9 | 33% (6.3) | 4.5 / 4.6 |
+| 3 Mage, Priest, 4 Goblins | 200 / 200 | 54.0 / 77.5 | 82 → 19 / 81 → 42 | 14.3 / 14.1 | 5.9 / 6.2 | 50% (7.1) | 5.2 / 4.8 |
+| 4 Owlbears | 108 / 155 | 94.4 / 94.8 | 36 → 37 / 55 → 51 | 7.8 / 8.3 | 5.2 / 5.3 | 100% | 4.3 / 3.8 |
+
+Slots spent match to within 0.3 levels in every fight, and fight 1 runs over its share. Fight 3 decides the day, and round 1 of fight 3
+decides that: party HP at round 2 is 29% against 46%.
+
+**Does pacing respond to danger?** Yes, fast. `losing` is on before party HP reaches 60% (0.8 rounds before it, in fight 3). Share of caster
+decisions spending a slot, fight 3, by party HP: ≥75% 59%, 50–75% 73%, 25–50% 91%, under 25% 94%; a slot's price falls from 8.1 to 2.2.
+But it can only respond to damage already taken, and here most of it arrives in one blow: the Mage's Cone of Cold deals 110 a fight in rounds 1–2
+(62 with the estimate). The 10 slot levels left on a lost fight are casters who went down before their next turn, not caution.
+
+**The cause.** Who the party hits first. Hits in round 1: Mage 4.07 → 4.75, Priest 2.30 → 3.15, Goblins 2.86 → 2.12; Hold Person 0.20 → 0.37; so the
+Mage casts its Cone of Cold in round 1 far less often. The size prior reads a Goblin at 15 HP, a soft target the posture picks (`finish`, `squishyHp`), and in round 1
+the party cannot yet know which foe is the caster (`kCaster` needs a cast seen). The estimate reads everyone alike, so the goblins stop soaking up the opening.
+Proof by ablation, no estimate: only raising Small foes' unseen HP to 32 takes the day from 51.0 to 66.5, slots spent unchanged. Tried on pacing instead:
+`fightInHand` off in round 1, 53.5; slots 40% cheaper and untaxed in round 1, 57.0 (fight 3 63.5, fight 4 89.8: it borrows from the end of the day). Both inside noise of 51.
+
+On the final code, with the estimate on, the same round-1 slot discount makes it worse: 70.0 → 66.0 (fight 4 starts with 5.5 slot levels against 8.6).
+
+**Proposal (not built).** Leave pacing alone. Raise `SIZE_PRIOR.Small.hp` from 15 to 32 (for v2 it only reaches blind, now that learn uses the estimate).
+Measured by ablation on the final code: Zaki's hard day under blind 47.5 → 68.0. Expected elsewhere: blind rows with Small swarms may spend more on goblins and lose a little; a full blind table is needed first (the classic AI reads the same prior, so its blind and learn logs would move: that needs the user's call).
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
