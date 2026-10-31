@@ -490,7 +490,7 @@ function Sim(opts) {
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
   this.expectFights = +opts.expectFights > 0 ? Math.round(+opts.expectFights) : 0;   // fights the party expects today (learn/blind; 0 = learn knows, blind assumes)
-  this.threatMode = opts.threat === true ? 2 : opts.threat === false ? 0 : 1;   // learn on v2 (keen): 1 the bloodied reading (default), 2 plus the threat estimate (not adopted, docs/ai-v2.md), 0 the classic reading
+  this.threatMode = opts.threat === false ? 0 : opts.threat === 'bounds' ? 1 : 2;   // learn on v2 (keen): 2 the threat estimate and the bloodied reading (default), 1 the bloodied reading alone, 0 the classic reading (docs/ai-v2.md)
   this.setTerrain(null);
 }
 
@@ -1189,8 +1189,8 @@ Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
      learn — knows the day's length (opts.expectFights overrides it); for the rest starts like blind, then reads what it sees: hits and misses bound AC, saves made and failed give the
              save bonus, "it resists that" sticks, the damage that bloodied or dropped a creature gives its hit points.
              It remembers per kind of creature for the rest of the day.
-             A learning side on AI v2 is keen: it reads the bloodied flag and its own net damage (learnBounds; opts.threat false
-             for the classic reading). With opts.threat true (not adopted) the party also starts from a threat estimate instead of size (threat, docs/ai-v2.md).
+             A learning side on AI v2 is keen: it reads the bloodied flag and its own net damage (learnBounds), and the party starts
+             from a threat estimate instead of size (threat, docs/ai-v2.md). opts.threat 'bounds': the bloodied reading alone; false: the classic reading.
    Only the AI's estimates use this; the dice always use the real numbers. */
 const KNOW_MODES = ['open', 'blind', 'learn'];
 const SIZE_PRIOR = { Tiny: { hp: 7, dpr: 3 }, Small: { hp: 15, dpr: 6 }, Medium: { hp: 32, dpr: 9 }, Large: { hp: 70, dpr: 16 }, Huge: { hp: 140, dpr: 28 }, Gargantuan: { hp: 260, dpr: 45 } };
@@ -1347,7 +1347,9 @@ function threatCr(f, v) {
 Sim.prototype.threatPrior = function (team) {
   const T = AI_BASE.threat, mine = this.units.filter(o => o.team === team), n = Math.max(1, this.units.length - mine.length);
   const level = mine.reduce((s, o) => s + (+(o.tpl && o.tpl.class && o.tpl.class.level) || T.level), 0) / Math.max(1, mine.length);
-  return threatCr('xp', threatAt('xp', level * T.crPerLevel) * mine.length / T.partySize / n);
+  let crowd = 1;
+  for (const [from, m] of T.crowd) if (n >= from) crowd = m;
+  return threatCr('xp', threatAt('xp', level * T.crPerLevel) * mine.length / T.partySize / n / crowd);
 };
 /* the most likely attack bonus given its plain rolls against our ACs */
 function threatAtk(obs) {
@@ -3267,6 +3269,7 @@ const AI_BASE = {
   // the threat estimate (docs/ai-v2.md): learn on v2, the party's side. prior + each signal's weight (× n / (n + half)), then the table
   threat: {
     useAc: 1, useSave: 0,                                        // AC, save bonus read from the score too (saves: off, one number hides a weak save, see the docs)
+    crowd: [[2, 1.5], [3, 2], [7, 2.5], [11, 3], [15, 4]],       // the same budget buys weaker creatures in a crowd: from this many enemies, xp ÷ this (DMG encounter multipliers)
     crPerLevel: 1.4, partySize: 4, level: 5,                     // a typical lone creature for a level; the party that goes with it; a creature with no class level
     prior: 2,
     atk: 3, atkHalf: 4, atkMin: -2, atkMax: 18,                  // attack bonus from plain rolls

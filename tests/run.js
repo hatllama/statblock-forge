@@ -662,12 +662,12 @@ section('Character sheets');
       const vals = Object.keys(k).filter(x => typeof k[x] === 'number').map(x => k[x]);
       check(k.hpHi === 150 && t.dead && vals.indexOf(97) < 0 && JSON.stringify(k).indexOf('97') < 0, `an overkill bounds max by the hit as rolled (<= ${k.hpHi}); the record holds no true HP`);
     }
-    // the same, by default: no opts.threat, the bloodied reading alone
+    // the same with the bloodied reading alone
     {
-      const S = keen({ threat: undefined }), me = pc1(), [t] = foeWith(100); S.units = [me, t];
+      const S = keen({ threat: 'bounds' }), me = pc1(), [t] = foeWith(100); S.units = [me, t];
       const k = S.kind('party', t);
       S.damage(me, t, 50, { attack: true });
-      check(t.hp === 50 && t.bloodied && k.hpHi === 100 && k.hpLo === 51 && said(S, /is bloodied/) === 1, `by default exactly half reads as bloodied: max ${k.hpLo}-${k.hpHi}`);
+      check(t.hp === 50 && t.bloodied && k.hpHi === 100 && k.hpLo === 51 && said(S, /is bloodied/) === 1, `exactly half reads as bloodied: max ${k.hpLo}-${k.hpHi}`);
       S.heal(t, t, 1);
       check(!t.bloodied && t.netLost === 49 && said(S, /no longer bloodied/) === 1 && k.hpHi === 100 && k.hpLo === 99, `one point healed above half and the flag leaves: max ${k.hpLo}-${k.hpHi}`);
       const C = keen({ threat: undefined }), [c] = foeWith(97), me2 = pc1(), kc = C.kind('party', c); C.units = [me2, c];
@@ -675,7 +675,7 @@ section('Character sheets');
       const noTrue = () => Object.keys(kc).every(x => kc[x] !== 97) && JSON.stringify(kc).indexOf('97') < 0;
       check(c.bloodied && noTrue(), 'the record holds no true HP while it stands');
       C.damage(me2, c, 60, { attack: true });
-      check(c.dead && kc.hpHi === 120 && noTrue() && C.kMax(me2, c) !== 97, `by default a kill bounds max by the hits as rolled (<= ${kc.hpHi}), not the true 97 (reads ${Math.round(C.kMax(me2, c))})`);
+      check(c.dead && kc.hpHi === 120 && noTrue() && C.kMax(me2, c) !== 97, `a kill bounds max by the hits as rolled (<= ${kc.hpHi}), not the true 97 (reads ${Math.round(C.kMax(me2, c))})`);
       const O = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: false }), [o] = foeWith(97), me3 = pc1(); O.units = [me3, o];
       O.damage(me3, o, 150, { attack: true });
       check(O.kind('party', o).hpHi === 97, 'threat: false keeps the classic reading (it writes the exact maximum on a kill)');
@@ -695,13 +695,16 @@ section('Character sheets');
       lone.units = [me].concat(one); S8.units = [me].concat(many);
       const a = lone.threat('party', one[0]).thPrior, b = S8.threat('party', many[0]).thPrior;
       check(a > b, `the prior shares the party's level out over the enemies (CR ${a.toFixed(1)} alone, ${b.toFixed(1)} of 8)`);
+      const S16 = keen(), many16 = foeWith(50, 16); S16.units = [me].concat(many16);
+      const c16 = S16.threat('party', many16[0]).thPrior;
+      check(c16 < 0.5, `in a crowd the budget buys weaker creatures: 16 enemies read about CR ${c16.toFixed(2)}, not the CR 1 a plain share gives`);
       const v = keen(); const m2 = foeWith(100), u2 = pc1(); v.units = [u2].concat(m2);
       v.learnAtk(m2[0], u2, 15, true, true); v.learnDc(m2[0], u2, 19); const ks = v.threat('party', m2[0]);
       check(ks.dc === 19 && ks.atk.length === 1 && ks.th > ks.thPrior, 'an announced high save DC raises the score');
     }
     {
       const lv = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' } }), cl = new Tac.Sim({ seed: 1, know: { party: 'learn' }, threat: true }), bl = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'blind' }, threat: true }), bd = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: 'bounds' }), off = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: false });
-      check(lv.keen('party') && !lv.threatOn('party') && !cl.keen('party') && !bl.keen('party') && !new Tac.Sim({ seed: 1, ai: { party: 'v2' }, threat: true }).keen('party') && bd.keen('party') && !bd.threatOn('party') && !off.keen('party'), 'the bloodied reading is the default for learn on v2 only: not the classic AI, not blind, not open; threat: false puts back the classic reading');
+      check(lv.keen('party') && lv.threatOn('party') && !cl.keen('party') && !bl.keen('party') && !new Tac.Sim({ seed: 1, ai: { party: 'v2' }, threat: true }).keen('party') && bd.keen('party') && !bd.threatOn('party') && !off.keen('party'), 'the threat estimate is the default for learn on v2 only: not the classic AI, not blind, not open; threat: bounds is the bloodied reading alone, false the classic reading');
       const S = keen({ ai: 'v2', know: { party: 'open', foes: 'learn' } }), me = pc1(), [t] = foeWith(60); me.maxHp = 80; me.hp = 80; me.startFull = true; S.units = [me, t];
       S.damage(t, me, 45, { attack: true });
       const k = S.kind('foes', me);

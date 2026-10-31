@@ -459,11 +459,10 @@ above is fixed. Left for a decision with a larger sample (the full SRD 5.2 list,
 
 ### The threat estimate: learn mode reads strength, not size
 
-**Status: the bloodied reading below is the default for learn on v2 (step 2.11, the user's decision); the threat score is
-built and measured, not adopted** (results at the end of this section). `opts.threat: true` (harness `THREAT=1`) adds the
-score; `opts.threat: false` (`THREAT=off`) puts back the classic reading, for comparing. The classic AI's logs, open and
-blind do not move; the v2 learn logs move on purpose (every fight with a bloodied line), baseline
-`tests/fixtures/hashes-v2-learn.txt` (`AI=v2 KNOW=learn node tests/flagoff-hash.js`).
+**Status: adopted, the default for learn on v2 since step 2.11** (bloodied reading, part A; the threat score, part C; gate at the
+end of this section). `opts.threat: 'bounds'` (harness `THREAT=bounds`) is the bloodied reading alone, `opts.threat: false`
+(`THREAT=off`) the classic reading, both for comparing. The classic AI's logs do not move; the v2 learn logs move on
+purpose, baseline `tests/fixtures/hashes-v2-learn.txt` (`AI=v2 KNOW=learn node tests/flagoff-hash.js`).
 
 Decisions (the user's): blind keeps its size priors and may play badly; open is unchanged; learn stops guessing HP from
 size. It judges how strong an enemy *seems* and reads HP from that. Applies when the side plays learn **and** runs AI v2
@@ -473,8 +472,10 @@ reading below.
 
 **The score.** One number per kind of creature, on the CR scale, kept in the kind's record (`threat`, cached until new
 evidence arrives).
-- *Prior*: a typical creature for the party's level, shared out. `xp(level × crPerLevel) × (party size / 4) / enemies`, read
-  back as a CR. The party knows its own level and sees the head count. Nothing about the creature is used.
+- *Prior*: a typical creature for the party's level, shared out. `xp(level × crPerLevel) × (party size / 4) / enemies / crowd`,
+  read back as a CR. `crowd` (`threat.crowd`) is the DMG's encounter multiplier: the same budget buys weaker creatures in a
+  crowd (× 1.5 from 2 enemies, 2 from 3, 2.5 from 7, 3 from 11, 4 from 15). The party knows its own level and sees the head
+  count. Nothing about the creature is used.
 - *Evidence*, each read back as a CR through the table and averaged with the prior by weight; weights grow with the
   number of observations (`w × n / (n + half)`), so the prior fades as the fight goes on:
   attack bonus (most likely bonus given its hits and misses against our ACs, plain rolls only), the best save DC it has
@@ -537,6 +538,37 @@ wrong until the bounds arrive: the glass cannon, and the swarm, whose prior is a
 harness dragon at a quarter damage is not read low, as expected beforehand: its attack bonus and save DCs are untouched,
 so they carry the score. Hard-day's gain comes with worse accuracy, so part of it is overestimates making the party spend
 more, not better reading.
+
+**The gate (step 2.11).** All learn rows, 200 runs, same seeds, on the Part B code (`w.buffRounds` 2): nothing worse beyond 2 SE, so
+adopted by the rule set for it. Bloodied reading → threat estimate:
+
+| scenario | bloodied | threat | threat + crowd prior (adopted) |
+|---|---|---|---|
+| Zaki's party, hard-day | 51.0±3.5 | 73.5±3.1 | **70.0±3.2** |
+| Default party, hard-day | 91.5±2.0 | 95.0±1.5 | **96.0±1.4** |
+| Caster: 2 Mages + 6 Guards | 35.5±3.4 | 40.5±3.5 | **38.5±3.4** |
+| A6 boss and minions | 78.5±2.9 | 81.0±2.8 | **81.5±2.7** |
+| K3 / K5 / B5 learn, 3 LR | 58.5±3.5 | 55.0±3.5 | **55.0±3.5** |
+| K2 / T1 no-LR dragon | 84.0±2.6 | 79.0±2.9 | **79.0±2.9** |
+| K8 no-LR dragon, Bard | 53.0±3.5 | 55.0±3.5 | **55.0±3.5** |
+| B2 / B8 learn, +14 saves | 16.0±2.6 | 14.0±2.5 | **14.0±2.5** |
+| B4 damage-heavy, 3 LR | 74.0±3.1 | 68.0±3.3 | **68.0±3.3** |
+| B9 learn, day | 7.5±1.9 | 6.5±1.7 | **7.5±1.9** |
+| C-Caster monster | 73.0±3.1 | 68.5±3.3 | **69.5±3.3** |
+| mean of 66 / worse, better beyond 2 SE | 74.5 | 74.7, 0 / 2 | **74.6, 0 / 2** |
+
+The two better rows are one scenario listed twice (the Zaki day). The dragons give back 3.5–6 points each, all inside 2 SE, and they all lean the same way; against the code before step 2.11 they are
+still up (K3 43.5 → 55, K2 73 → 79). The adoption rests on the rule, and the
+hard-day gain is not better reading (see "Pacing and danger").
+
+**Accuracy after it** (median estimate ÷ true at round 1): swarm 1.18 (2.54 before the crowd prior), Medium brute 0.60, the dragon 0.58, boss
+with minions 0.23 (the Hill Giant reads as one of seven; bounds fix it by round 3), glass cannon 2.37. The glass cannon stays: it hits like what it reads as
+until the first bloodied moment, and nothing general corrects that sooner. After bloodied every scenario reads 0.99–1.10.
+
+**Run time.** Ms per day, no replay, alternating arms, 100 days: default party hard-day 168 → 212 (+26%), Zaki's party 176 → 160, K3 299 → 291,
+swarm 217 → 216. So the +24% is one day, not the estimate: of the 4.4 s added over 100 of those days, `threat`'s own code is under 0.2 s,
+and `los` + `areaCatch` (area aiming) are 3.3 s, with call counts level on the first 40 days, so a minority of days carries it.
+Not cut: no cheap saving in the estimate, and area aiming is a separate job.
 
 **Why it was not adopted at first.** The LR dragons lost about 12 points whatever the estimate said: `crPerLevel` 1.4 / 2 / 3 and
 `legRes` 6 / 20 all left K3 at 32–33.5, and the party cast more control into LR (K3: control casts 1.44 → 1.90, LR burned 1.01 →

@@ -406,7 +406,7 @@ const aiOver = spec => {
   return base;
 };
 if (process.env.AI_THREAT) Object.assign(Tac.AI_BASE.threat, JSON.parse(process.env.AI_THREAT));     // sweeps: AI_THREAT='{"useSave":0}'
-// KNOW=learn: the party's knowledge in every scenario that doesn't name its own. V2ONLY=1: skip the old-AI and no-burn arms. THREAT=1: learn with the threat estimate, THREAT=off: the classic reading instead of the bloodied one.
+// KNOW=learn: the party's knowledge in every scenario that doesn't name its own. V2ONLY=1: skip the old-AI and no-burn arms. THREAT=bounds: learn with the bloodied reading alone, THREAT=off: the classic reading.
 const KNOW = process.env.KNOW ? { party: process.env.KNOW } : undefined, V2ONLY = process.env.V2ONLY === '1';
 function play(sc, ai, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
@@ -418,7 +418,7 @@ function play(sc, ai, n, tweak) {
     if (tweak) tweak(players);
     if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, threat: process.env.THREAT === '1' ? true : process.env.THREAT === 'off' ? false : process.env.THREAT });
+    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);
@@ -472,7 +472,7 @@ function accuracy(sc, N) {
   const cell = l => { if (!l.length) return lpad('-', 18); const s = l.slice().sort((p, q) => p - q), q = f => s[Math.floor(f * (s.length - 1))].toFixed(2); return lpad(`${q(0.5)} [${q(0.1)}-${q(0.9)}]`, 18); };
   console.log('\n' + sc.name);
   console.log('  ' + [pad('', 7), lpad('round 1', 18), lpad('round 3', 18), lpad('round 5', 18), lpad('before bloodied', 18), lpad('after bloodied', 18)].join(' '));
-  for (const [label, th] of [['bounds', undefined], ['threat', true]]) { const g = arm(th); console.log('  ' + [pad(label, 7), cell(g.r1), cell(g.r3), cell(g.r5), cell(g.pre), cell(g.post)].join(' ')); }
+  for (const [label, th] of [['bounds', 'bounds'], ['threat', undefined]]) { const g = arm(th); console.log('  ' + [pad(label, 7), cell(g.r1), cell(g.r3), cell(g.r5), cell(g.pre), cell(g.post)].join(' ')); }
 }
 function row(label, o) {
   const f = (x, d) => (x / o.n).toFixed(d === undefined ? 1 : d);
