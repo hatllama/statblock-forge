@@ -199,6 +199,92 @@ section('Flying');
   check(owl.alt === 4 && owl.hp === 30, 'a hovering flyer stays up when knocked prone');
 }
 
+section('Creature sizes');
+{
+  const SZ = [['Tiny', 1], ['Small', 1], ['Medium', 1], ['Large', 2], ['Huge', 3], ['Gargantuan', 4]];
+  const block = (size, type) => `Test ${size}\n${size} ${type || 'Dragon'}, Unaligned\nAC 15\nHP 60 (8d8 + 24)\nSpeed 30 ft.\nCR 4 (XP 1,100; PB +2)\nActions\nBite. Melee Attack Roll: +6, reach 10 ft. Hit: 12 (2d8 + 3) Piercing damage.`;
+  // parser: every size word, either case, and "Medium or Small" (the size is the first word)
+  for (const [z] of SZ) {
+    check(Parser.parse(block(z)).monsters[0].ext.size === z, `parser reads size ${z}`);
+    check(Parser.parse(block(z.toUpperCase())).monsters[0].ext.size === z, `parser reads size ${z} in capitals`);
+  }
+  check(Parser.parse(block('Medium or Small', 'Humanoid')).monsters[0].ext.size === 'Medium', 'parser reads "Medium or Small" as Medium');
+  // the units the engine builds: footprint side per size
+  for (const [z, n] of SZ) {
+    const u = Tac.expandTeam([{ id: 'z', name: z, count: 1, hp: 10, AC: 10, actions: [], ext: { size: z } }], 'foes', false)[0];
+    check(u.size === z && u.n === n, `engine unit of size ${z} covers ${n}x${n} squares (n=${u.n})`);
+  }
+  // occupancy, distance and fitting
+  const mk = (uid, team, x, y, n) => ({ uid, team, x, y, n, fly: 0, climb: 0, athletics: 0, onBoard: true, hp: 10, maxHp: 10, buffs: [], dead: false });
+  const sim = new Tac.Sim({ width: 16, height: 12 });
+  const dragon = mk('d', 'foes', 5, 5, 3), hero = mk('h', 'party', 1, 1, 1);
+  sim.units = [dragon, hero]; sim.setTerrain({ cells: {} });
+  check(sim.occupant(7, 7) === dragon && sim.occupant(8, 7) === null && sim.occupant(4, 4) === null, 'a Huge creature blocks all nine of its squares');
+  check(sim.occupant(8, 8, 2) === null && sim.occupant(7, 7, 2) === dragon, 'a Large mover overlapping a corner is blocked');
+  hero.x = 8; hero.y = 6;
+  check(sim.dist(hero, dragon) === 5 && sim.dist(dragon, hero) === 5, 'a hero beside a Huge creature is 5 ft away');
+  hero.x = 9; hero.y = 6;
+  check(sim.dist(hero, dragon) === 10, 'one square of gap is 10 ft');
+  hero.x = 8; hero.y = 8;
+  check(sim.dist(hero, dragon) === 5, 'diagonal from the corner square is 5 ft');
+  sim._mn = 1;
+  check(sim.distXY(8, 5, dragon) === 5 && sim.distXY(4, 4, dragon) === 5 && sim.distXY(10, 5, dragon) === 15, 'distXY measures to the nearest square of a big creature');
+  // walls and map edges: a 2x2 creature does not fit a 1-wide corridor or hang off the edge
+  const big = mk('g', 'foes', 2, 2, 2);
+  const cor = {}; for (let x = 0; x < 16; x++) for (let y = 0; y < 12; y++) if (y !== 5) cor[x + ',' + y] = { t: 'wall' };
+  sim.units = [big]; sim.setTerrain({ cells: cor });
+  big.x = 10; big.y = 5;   // a 2x2 body can't stand in a corridor 1 square tall
+  check(!sim.fits(big, 3, 5), 'a Large creature does not fit a 1-square corridor');
+  check(sim.fits(mk('s', 'foes', 0, 0, 1), 3, 5) && sim.fits(mk('s', 'foes', 0, 0, 1), 3, 4) === false, 'a Medium creature does');
+  sim.setTerrain({ cells: {} });
+  check(!sim.fits(big, 15, 5) && !sim.fits(big, 4, 11) && sim.fits(big, 14, 10), 'a Large creature stays inside the map');
+  const gap = { cells: {} }; for (let y = 0; y < 12; y++) if (y !== 5 && y !== 6) gap.cells['8,' + y] = { t: 'wall' };
+  sim.setTerrain(gap); big.x = 3; big.y = 5;
+  const rm = sim.reachMapRaw(big, 60);
+  check(rm.dist[10 + 5 * 16] >= 0, 'a Large creature squeezes through a 2-wide gap');
+  const narrow = { cells: {} }; for (let y = 0; y < 12; y++) if (y !== 5) narrow.cells['8,' + y] = { t: 'wall' };
+  sim.setTerrain(narrow);
+  check(sim.reachMapRaw(big, 60).dist[10 + 5 * 16] < 0 && sim.reachMapRaw(mk('m', 'foes', 3, 5, 1), 60).dist[10 + 5 * 16] >= 0, 'a Large creature cannot pass a 1-wide gap that a Medium one can');
+  // areas catch a big creature by any square, and a big mover is not placed on top of anyone
+  sim.units = [dragon]; sim.setTerrain({ cells: {} });
+  const burst = { useSaves: true, type: 'atk', actionSlot: 0, ext: { area: { shape: 'sphere', size: 10 } } }, spec = Tac.areaSpec(burst);
+  const aoe = sim.areaAt(burst, spec, dragon, 1, 5, 3, 5, [dragon], null, true);
+  check(aoe !== null, 'a burst that only touches the edge of a Huge creature catches it');
+  const party = Tac.expandTeam([{ id: 'p', name: 'P', count: 4, hp: 10, AC: 10, actions: [], ext: {} }], 'party', true);
+  const foes = Tac.expandTeam([{ id: 'w', name: 'W', count: 3, hp: 10, AC: 10, actions: [], ext: { size: 'Gargantuan' } }, { id: 'h', name: 'H', count: 3, hp: 10, AC: 10, actions: [], ext: { size: 'Huge' } }], 'foes', false);
+  const s2 = new Tac.Sim({ width: 30, height: 20 }); s2.units = party.concat(foes); s2.setTerrain({ cells: {} }); s2.place(party, foes, {});
+  let overlaps = 0, off = 0;
+  for (const a of s2.units) {
+    if (a.x < 0 || a.y < 0 || a.x + a.n > 30 || a.y + a.n > 20) off++;
+    for (const b of s2.units) if (a !== b && a.x < b.x + b.n && b.x < a.x + a.n && a.y < b.y + b.n && b.y < a.y + a.n) overlaps++;
+  }
+  check(overlaps === 0 && off === 0, `placement keeps big creatures apart and on the map (${overlaps} overlaps, ${off} off the map)`);
+  // whole fights: no two bodies share a square, none leaves the map or stands in a wall
+  const day = fixture('bandit-day.json');
+  let bad = 0, steps = 0;
+  for (const [z, n] of [['Large', 2], ['Huge', 3], ['Gargantuan', 4]]) for (const layout of [null, walled]) for (let i = 0; i < 4; i++) {
+    const mon = { id: 'bg', name: z + ' Brute', type: 'dragon', cr: '8', count: 2, hp: 150, AC: 15, saveBonus: 3, mode: 'custom', ext: { size: z },
+      actions: [{ id: 'bg1', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '3d8+5', toHit: 8, target: 'enemy with least HP', ext: { range: 10 } }] };
+    for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify(day.players)), encounters: [{ monsters: [mon] }] }, { seed: 300 + i * 17, partyAI: 'tactical', record: true, layouts: layout ? { 0: layout } : undefined })) {
+      const sz = {}; for (const u of r.units) sz[u.uid] = u.size === 'Large' ? 2 : u.size === 'Huge' ? 3 : u.size === 'Gargantuan' ? 4 : 1;
+      let st = {};
+      for (const e of r.events) {
+        st = Object.assign({}, st); for (const k in e.state || {}) st[k] = Object.assign({}, st[k] || {}, e.state[k]);
+        if (e.kind !== 'move') continue;
+        steps++;
+        const live = Object.keys(st).filter(k => st[k].onBoard !== false && st[k].hp > 0 && st[k].x !== undefined);
+        for (const a of live) {
+          const A = st[a], an = sz[a] || 1;
+          if (A.x < 0 || A.y < 0 || A.x + an > 24 || A.y + an > 16) bad++;
+          if (layout) for (let j = 0; j < an; j++) for (let q = 0; q < an; q++) if (isWall(A.x + q, A.y + j)) bad++;
+          for (const b of live) if (a < b) { const B = st[b], bn = sz[b] || 1; if (an + bn > 2 && A.x < B.x + bn && B.x < A.x + an && A.y < B.y + bn && B.y < A.y + an) bad++; }
+        }
+      }
+    }
+  }
+  check(steps > 50 && bad === 0, `big creatures never overlap, leave the map or stand in walls over ${steps} moves (${bad} bad)`);
+}
+
 section('Damage types and control spells');
 {
   const mods = { dmgMods: { resist: ['fire', 'nonmagical slashing'], immune: ['poison'], vulnerable: ['radiant'] } };
@@ -844,6 +930,7 @@ section('Character sheets');
     // a Bard and a Cleric against four ogres: the pattern is kept, nothing is stacked on a disabled ogre
     const d3 = run({ players: ['Cleric', 'Bard', 'Barbarian', 'Fighter'].map(pc), encounters: [{ monsters: [srd('Ogre', 4)] }] }, { seed: 60 + i * 7919, ai: { party: 'v2' }, record: true });
     if (d3[0]) walkR(d3[0], (e, prev) => {
+      if (e.kind === 'effect' && /snaps out of it/.test(e.text) && e.uid && prev[e.uid]) prev[e.uid].conds = [];   // that line carries no state of its own
       if (e.kind === 'save' && /^(Bard|Cleric) → Ogre[^:]*: [^,]*, DC \d+ \w+ — (affected|saved)/.test(e.text) && prev[e.target] && (prev[e.target].conds || []).some(c => INCAP.includes(c))) stacked++;
       const held = e.uid && prev[e.uid] && prev[e.uid].conc, now = e.uid && e.state && e.state[e.uid] && e.state[e.uid].conc;
       if (held === 'Hypnotic Pattern' && now && now !== held && Object.keys(prev).some(k => prev[k].hp > 0 && (prev[k].buffs || []).some(b => /Hypnotic Pattern/.test(b[0])))) dropped++;

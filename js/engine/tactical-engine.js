@@ -75,6 +75,10 @@ const ADV_SELF = ['Invisible', 'Attacks with Advantage', 'Attacks and is attacke
 const DIS_TARGET = ['Invisible', 'Is attacked with Disadvantage'];
 const DIS_SELF = ['Blinded', 'Frightened', 'Poisoned', 'Restrained', 'Attacks with Disadvantage', 'Attacks and saves with Disadvantage'];
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
+/* squares a creature covers along each side (5e grid: Large 2x2, Huge 3x3, Gargantuan 4x4). A unit's x,y is the top-left
+   square of its footprint; u.n holds the side. */
+const FOOT = { Large: 2, Huge: 3, Gargantuan: 4 };
+const footOf = size => FOOT[size] || 1;
 const sizeIdx = (s, d) => { const i = SIZES.indexOf(s || ''); return i < 0 ? d : i; };
 
 const TEMPLATES = {
@@ -400,6 +404,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     packTactics: !!ex.packTactics,                                          // advantage when an ally is next to the target
     speed: Math.max(typeof ex.speed === 'number' ? ex.speed : 30, typeof ex.fly === 'number' ? ex.fly : 0),
     size: ex.size || 'Medium',
+    n: footOf(ex.size),
     blindsight: !!ex.blindsight, elvenAccuracy: !!ex.elvenAccuracy,
     initBonus: typeof ex.initBonus === 'number' ? ex.initBonus : 0,
     initAdv: !!ex.initAdvantage,
@@ -650,7 +655,7 @@ Sim.prototype.slipAndHide = function (u, stepsLeft) {
     for (let i = 0; i < rm.dist.length; i++) {
       if (rm.dist[i] <= 0) continue;
       const x = i % this.W, y = (i / this.W) | 0;
-      const o = this.occupant(x, y); if (o && o !== u) continue;
+      if (this.occupant(x, y, u.n, u)) continue;
       if (this.adjacentEnemies(u, x, y).length || !this.concealedAt(u, x, y)) continue;
       const sc = rm.dist[i];
       if (sc < bs) { bs = sc; best = { x, y }; }
@@ -776,7 +781,14 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
   let isIn, cells = null;
   if (fast) {
     const W = this.W, inb = (x, y) => x >= 0 && y >= 0 && x < W && y < this.H;
-    isIn = o => inb(o.x, o.y) && inArea(spec, ox, oy, ax, ay, o.x, o.y) && (!this.T.any || (!this.T.wall[o.x + o.y * W] && this.los(cx, cy, o.x, o.y, true)));
+    isIn = o => {
+      const on = o.n || 1;
+      for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) {
+        const px = o.x + i, py = o.y + j;
+        if (inb(px, py) && inArea(spec, ox, oy, ax, ay, px, py) && (!this.T.any || (!this.T.wall[px + py * W] && this.los(cx, cy, px, py, true)))) return true;
+      }
+      return false;
+    };
   } else {
     cells = this.cellsFor(spec, ox, oy, ax, ay, cx, cy);
     const N = this.W * this.H;
@@ -901,15 +913,20 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
 /* height: the ground under a creature plus how high it's flying, in 5-ft steps. Distances are 3D (5e grid:
    the bigger of across and up). */
 Sim.prototype.zOf = function (u) { return (this.T.anyH ? this.T.h[u.x + u.y * this.W] : 0) + (u.alt || 0); };
+/* squares between two footprints along one axis (0 = touching or overlapping) */
+const gapAxis = (p, np, q, nq) => { const g = p > q ? p - (q + nq - 1) : q - (p + np - 1); return g > 0 ? g : 0; };
 Sim.prototype.dist = function (a, b) {
-  const d = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y));
+  const an = a.n || 1, bn = b.n || 1;
+  const gx = an + bn > 2 ? gapAxis(a.x, an, b.x, bn) : Math.abs(a.x - b.x), gy = an + bn > 2 ? gapAxis(a.y, an, b.y, bn) : Math.abs(a.y - b.y);
+  const d = gx > gy ? gx : gy;
   if (!this.T.anyH && !a.alt && !b.alt) return d * 5;                    // flat ground, nobody up in the air
   return Math.max(d, Math.abs(this.zOf(a) - this.zOf(b))) * 5;
 };
 /* distance from a square to b, for whoever is planning a move there: a flyer planning its own turn can rise or
    drop to b's height (but not below the ground); anyone else stands on the ground */
 Sim.prototype.distXY = function (x, y, b) {
-  const dx = x > b.x ? x - b.x : b.x - x, dy = y > b.y ? y - b.y : b.y - y, d = dx > dy ? dx : dy;
+  const mn = this._mn || 1, bn = b.n || 1, big = mn + bn > 2;
+  const dx = big ? gapAxis(x, mn, b.x, bn) : (x > b.x ? x - b.x : b.x - x), dy = big ? gapAxis(y, mn, b.y, bn) : (y > b.y ? y - b.y : b.y - y), d = dx > dy ? dx : dy;
   if (!this.T.anyH && !b.alt) return d * 5;
   const g = this.T.anyH ? this.T.h[x + y * this.W] : 0, zb = this.zOf(b);
   const dz = this._flyer ? Math.max(0, g - zb) : Math.abs(zb - g);
@@ -1079,9 +1096,28 @@ Sim.prototype.orderBySelector = function (list, sel) {
 };
 
 /* ----- grid & movement ----- */
-Sim.prototype.occupant = function (x, y) {
-  for (const u of this.units) if (u.onBoard && !u.dead && u.x === x && u.y === y) return u;
+/* who stands on (x,y); with n, who overlaps the n x n block whose top-left is (x,y) (a big creature's footprint) */
+Sim.prototype.occupant = function (x, y, n, skip) {
+  const m = n || 1;
+  for (const u of this.units) if (u.onBoard && !u.dead && u !== skip) {
+    const un = u.n || 1;
+    if (un + m === 2 ? (u.x === x && u.y === y) : (u.x < x + m && x < u.x + un && u.y < y + m && y < u.y + un)) return u;
+  }
   return null;
+};
+/* can u stand with its footprint's top-left on (x,y)? (map edge, walls, and anyone else's squares) */
+Sim.prototype.fits = function (u, x, y) {
+  const n = u.n || 1;
+  if (x < 0 || y < 0 || x + n > this.W || y + n > this.H) return false;
+  if (this.T.any) for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (this.T.wall[(x + i) + (y + j) * this.W]) return false;
+  return !this.occupant(x, y, n, u);
+};
+/* is any square of u's footprint in this set of cell indexes? */
+Sim.prototype.coversIn = function (set, u) {
+  const n = u.n || 1;
+  if (n === 1) return set.has(u.x + u.y * this.W);
+  for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (set.has((u.x + i) + (u.y + j) * this.W)) return true;
+  return false;
 };
 /* reach maps are reused until anyone moves, drops or dies (spellcasters ask for many per turn) */
 Sim.prototype.boardChanged = function () { this.posVer = (this.posVer || 0) + 1; this._rmCache = null; };
@@ -1094,12 +1130,35 @@ Sim.prototype.reachMap = function (u, budgetFt) {
   this._rmCache.set(key, rm);
   return rm;
 };
+/* top-left squares where u's footprint would overlap someone else (a big mover is blocked by anyone's footprint near its corner) */
+Sim.prototype.takenFor = function (u) {
+  const W = this.W, H = this.H, un = u.n || 1, taken = new Uint8Array(W * H);
+  for (const o of this.units) if (o !== u && o.onBoard && !o.dead) {
+    const on = o.n || 1;
+    for (let y = Math.max(0, o.y - un + 1); y < Math.min(H, o.y + on); y++) for (let x = Math.max(0, o.x - un + 1); x < Math.min(W, o.x + on); x++) taken[x + y * W] = 1;
+  }
+  return taken;
+};
 Sim.prototype.reachMapRaw = function (u, budgetFt) {
   const steps = Math.floor(budgetFt / 5);
   const W = this.W, H = this.H;
   const dist = new Int16Array(W * H).fill(-1), prev = new Int32Array(W * H).fill(-1);
   const block = new Uint8Array(W * H);   // 1 = standing enemy (can't pass)
-  for (const o of this.units) if (o !== u && o.onBoard && !o.dead && o.team !== u.team && this.alive(o)) block[o.x + o.y * W] = 1;
+  for (const o of this.units) if (o !== u && o.onBoard && !o.dead && o.team !== u.team && this.alive(o)) {
+    const on = o.n || 1;
+    for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) if (o.x + i < W && o.y + j < H) block[(o.x + i) + (o.y + j) * W] = 1;
+  }
+  const un = u.n || 1;
+  if (un > 1) {   // a big creature needs its whole footprint clear: mark every square it can't stand on as blocked
+    const bad = new Uint8Array(W * H);
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let ok = x + un <= W && y + un <= H;
+      for (let j = 0; ok && j < un; j++) for (let i = 0; i < un; i++) if (block[(x + i) + (y + j) * W] || (this.T.any && this.T.wall[(x + i) + (y + j) * W])) { ok = false; break; }
+      if (!ok) bad[x + y * W] = 1;
+    }
+    bad[u.x + u.y * W] = 0;
+    for (let c = 0; c < bad.length; c++) block[c] = bad[c];
+  }
   if (this.T.any) return this.reachMapT(u, steps, dist, prev, block);
   const q = [u.x + u.y * W]; dist[q[0]] = 0;
   for (let qi = 0; qi < q.length; qi++) {
@@ -1172,10 +1231,16 @@ Sim.prototype.meleeReach = function (u) {
   u._mr = r;
   return r;
 };
+/* squares between a footprint of side n with its top-left on (x,y) and b's footprint */
+Sim.prototype.gapTo = function (x, y, n, b) {
+  const mn = n || 1, bn = b.n || 1;
+  if (mn + bn === 2) return Math.max(Math.abs(x - b.x), Math.abs(y - b.y));
+  return Math.max(gapAxis(x, mn, b.x, bn), gapAxis(y, mn, b.y, bn));
+};
 Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
   const zm = (this.T.anyH ? this.T.h[x + y * this.W] : 0) + (alt !== undefined ? alt : (u.alt || 0));
   return this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 &&
-    Math.max(Math.abs(x - e.x), Math.abs(y - e.y), Math.abs(this.zOf(e) - zm)) * 5 <= this.meleeReach(e) && this.los(e.x, e.y, x, y));   // a reach weapon can't strike round a wall corner
+    Math.max(this.gapTo(x, y, u.n, e), Math.abs(this.zOf(e) - zm)) * 5 <= this.meleeReach(e) && this.los(e.x, e.y, x, y));   // a reach weapon can't strike round a wall corner
 };
 
 /* ----- expected outcomes, used by the tactical AI ----- */
@@ -1648,7 +1713,7 @@ Sim.prototype.concValue = function (u, t) {
     for (const b of o.buffs) if (b.src === t.uid && b.id === id) v += o.team === u.team ? this.effectValue(b.data, o, true) : this.effectValue(b.data, o, false, u) * 0.6;
   }
   if (t.buffs.some(b => b.id === id && b.src === t.uid)) v += 5;
-  for (const z of this.zones || []) if (z.src === t.uid && z.conc) for (const o of this.alliesOf(u)) if (o.onBoard && this.alive(o) && this.zoneCells(z).has(o.x + o.y * this.W)) v += 3;
+  for (const z of this.zones || []) if (z.src === t.uid && z.conc) for (const o of this.alliesOf(u)) if (o.onBoard && this.alive(o) && this.coversIn(this.zoneCells(z), o)) v += 3;
   return v;
 };
 /* the value of putting buff/debuff `b` on `t` (tactical) */
@@ -2050,8 +2115,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
 
   const options = [];
   // squares taken by anyone (can't end there)
-  const taken = new Uint8Array(W * this.H);
-  for (const o of this.units) if (o !== u && o.onBoard && !o.dead) taken[o.x + o.y * W] = 1;
+  const taken = this.takenFor(u);
   const consider = (budget, fn) => {
     const rm = this.reachMap(u, speed > 0 ? budget : 0);
     for (let i = 0; i < rm.dist.length; i++) {
@@ -2122,7 +2186,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
   if (jumpA && (hpFrac < 0.6 || !meleeSelf)) {
     const R = Math.round(jumpA.ext.teleport / 5);
     for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(W - 1, u.x + R); x++) {
-      if ((x === u.x && y === u.y) || taken[x + y * W] || this.isWall(x, y) || !this.los(u.x, u.y, x, y)) continue;
+      if ((x === u.x && y === u.y) || taken[x + y * W] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.los(u.x, u.y, x, y)) continue;
       const off = offenseAt(x, y), danger = threatAt(x, y) * safetyW + spacingAt(x, y);
       const cost = (jumpA._spell && jumpA._spell.level ? this.slotCost(u, jumpA._spell.level) : 2) + bonusCost() * 0.5;
       options.push({ mode: 'jump', jumpA, x, y, rm: null, off, score: (off ? off.val : -nearestNeed(x, y) * 0.2) - danger - cost });
@@ -2209,8 +2273,8 @@ Sim.prototype.planInner = function (u, a, budget) {
   let ci = this._cellInfo.get(rm);
   if (!ci) {
     const N = rm.dist.length, meleeFoes = standingFoes.filter(e => this.meleeReach(e) > 0);
-    ci = { adj: new Int8Array(N), nd: new Int16Array(N), occ: new Uint8Array(N), leave: new Int8Array(N) };
-    for (const o of this.units) if (o !== u && o.onBoard && !o.dead) ci.occ[o.x + o.y * W] = 1;
+    ci = { adj: new Int8Array(N), nd: new Int16Array(N), occ: null, leave: new Int8Array(N) };
+    ci.occ = this.takenFor(u);
     for (let i = 0; i < N; i++) {
       if (rm.dist[i] < 0) continue;
       const x = i % W, y = (i / W) | 0;
@@ -2399,7 +2463,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   // half cover helps Dexterity saves against something coming from elsewhere (the area's point, or the caster)
   if (ab === 'dex' && src && src !== t && this.T.any && !this._ignoreCover) {
     const from = this._coverFrom || src;
-    if (Math.max(Math.abs(from.x - t.x), Math.abs(from.y - t.y)) > 1) total += this.coverBetween(from.x, from.y, t.x, t.y, from.uid ? (from.alt || 0) : (from.alt || 0), t.alt || 0);
+    if (this.gapTo(from.x, from.y, from.n, t) > 1) total += this.coverBetween(from.x, from.y, t.x, t.y, from.uid ? (from.alt || 0) : (from.alt || 0), t.alt || 0);
   }
   if (total < dc && t.luckMax && (t.uses.get('__luck') || 0) > 0 && (this._saveStakes || 0) >= 1) {
     t.uses.set('__luck', t.uses.get('__luck') - 1);
@@ -2633,7 +2697,7 @@ Sim.prototype.zoneHit = function (z, t) {
 /* start of u's turn */
 Sim.prototype.zoneTick = function (u) {
   if (!this.zones || !this.zones.length || !u.onBoard) return;
-  for (const z of this.zones.slice()) if (z.dmg && !u.dead && this.zoneCells(z).has(u.x + u.y * this.W)) this.zoneHit(z, u);
+  for (const z of this.zones.slice()) if (z.dmg && !u.dead && this.coversIn(this.zoneCells(z), u)) this.zoneHit(z, u);
 };
 /* after u has moved: it walked into a zone, or it is the caster and its zone has moved onto others */
 Sim.prototype.zoneEnter = function (u) {
@@ -2642,8 +2706,8 @@ Sim.prototype.zoneEnter = function (u) {
     if (!z.dmg) continue;
     if (z.follow && z.src === u.uid) {
       this.zoneShift(z);
-      for (const o of this.units.slice()) if (o !== u && o.onBoard && !o.dead && this.zoneCells(z).has(o.x + o.y * this.W)) this.zoneHit(z, o);
-    } else if (!u.dead && u.onBoard && this.zoneCells(z).has(u.x + u.y * this.W)) this.zoneHit(z, u);
+      for (const o of this.units.slice()) if (o !== u && o.onBoard && !o.dead && this.coversIn(this.zoneCells(z), o)) this.zoneHit(z, o);
+    } else if (!u.dead && u.onBoard && this.coversIn(this.zoneCells(z), u)) this.zoneHit(z, u);
   }
 };
 Sim.prototype.zoneShift = function (z) {
@@ -2915,7 +2979,7 @@ Sim.prototype.push = function (src, t, ft) {
   const from = { x: t.x, y: t.y }, path = [];
   for (let i = 0; i < Math.round(ft / 5); i++) {
     const nx = t.x + dx, ny = t.y + dy;
-    if (nx < 0 || ny < 0 || nx >= this.W || ny >= this.H || this.isWall(nx, ny) || this.occupant(nx, ny)) break;
+    if (!this.fits(t, nx, ny)) break;
     if (!t.fly && this.T.anyH && this.hAt(nx, ny) > this.hAt(t.x, t.y)) break;     // can't be shoved up a ledge
     t.x = nx; t.y = ny; path.push({ x: nx, y: ny });
   }
@@ -2997,7 +3061,7 @@ Sim.prototype.expel = function (w, v, why) {
   for (let dx = -3; dx <= 3; dx++) for (let dy = -3; dy <= 3; dy++) {
     const x = w.x + dx, y = w.y + dy;
     if (x < 0 || y < 0 || x >= this.W || y >= this.H) continue;
-    if ((this.occupant(x, y) && !(w.dead && x === w.x && y === w.y)) || this.isWall(x, y)) continue;
+    if ((this.occupant(x, y, v.n) && !(w.dead && x === w.x && y === w.y)) || this.isWall(x, y)) continue;
     const d = Math.max(Math.abs(dx), Math.abs(dy)) + this.R() * 0.1;
     if (d < bd) { bd = d; best = { x, y }; }
   }
@@ -3491,7 +3555,7 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     let l = adjC.get(k);
     if (!l) {
       const zm = (this.T.anyH ? this.T.h[k] : 0) + (u.alt || 0);
-      l = oaFoes.filter(e => { const r = this.meleeReach(e); return Math.max(Math.abs(x - e.x), Math.abs(y - e.y)) * 5 <= r && Math.max(Math.abs(x - e.x), Math.abs(y - e.y), Math.abs(this.zOf(e) - zm)) * 5 <= r && this.los(e.x, e.y, x, y); });
+      l = oaFoes.filter(e => { const r = this.meleeReach(e); const g = this.gapTo(x, y, u.n, e); return g * 5 <= r && Math.max(g, Math.abs(this.zOf(e) - zm)) * 5 <= r && this.los(e.x, e.y, x, y); });
       adjC.set(k, l);
     }
     return l;
@@ -4010,7 +4074,7 @@ Sim.prototype.v2Holding = function (u, ctx) {
     if (z.src !== u.uid || z.id !== id) continue;
     if (z.rough) v += W.zone;
     if (z.fog) for (const e of ctx.foes) if (z.cells.has(e.x + e.y * this.W)) v += this.kDpr(u, e) * 0.5;
-    if (z.dmg) for (const e of ctx.foes) if (this.zoneCells(z).has(e.x + e.y * this.W)) v += Math.min(this.expected(u, z.act, e), this.kHp(u, e)) * (1 + this.kDpr(u, e) / W.dprScale) * W.damage * Math.min(1, W.zoneStay + (z.follow ? W.zoneFollow : 0)) * R;
+    if (z.dmg) for (const e of ctx.foes) if (this.coversIn(this.zoneCells(z), e)) v += Math.min(this.expected(u, z.act, e), this.kHp(u, e)) * (1 + this.kDpr(u, e) / W.dprScale) * W.damage * Math.min(1, W.zoneStay + (z.follow ? W.zoneFollow : 0)) * R;
   }
   v += exp;
   ctx.holdId = id; ctx.holding = v;
@@ -4116,8 +4180,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     bonusOpts.push(b);
   }
 
-  const taken = new Uint8Array(Wd * this.H);
-  for (const o of this.units) if (o !== u && o.onBoard && !o.dead) taken[o.x + o.y * Wd] = 1;
+  const taken = this.takenFor(u);
   const consider = (budget, fn) => {
     const rm = this.reachMap(u, speed > 0 ? budget : 0);
     for (let i = 0; i < rm.dist.length; i++) if (rm.dist[i] >= 0 && !taken[i]) fn(i % Wd, (i / Wd) | 0, rm, rm.dist[i]);
@@ -4278,7 +4341,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   if (jumpA && (engaged || threat(u.x, u.y) >= u.hp * 0.4)) {
     const R = Math.round(jumpA.ext.teleport / 5), jp = this.v2Pace(u, jumpA), noSlot = !!(jumpA._spell && jumpA._spell.level);
     for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(Wd - 1, u.x + R); x++) {
-      if ((x === u.x && y === u.y) || taken[x + y * Wd] || this.isWall(x, y) || !this.los(u.x, u.y, x, y)) continue;
+      if ((x === u.x && y === u.y) || taken[x + y * Wd] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.los(u.x, u.y, x, y)) continue;
       const { best } = offAt(x, y, noSlot);
       if (!best) continue;
       const th = threat(x, y), risk = th * safety + ctx.danger.spacing(x, y) * W.spacing + (caster ? reachPen(x, y) : 0) + concR(th);
@@ -4495,6 +4558,7 @@ Sim.prototype.v2Act = function (u, choice) {
 /* ----- a creature's turn ----- */
 Sim.prototype.turn = function (u) {
   // start of turn
+  this._mn = u.n || 1;   // distXY measures from the acting creature's footprint
   u.turnNo = (u.turnNo || 0) + 1;
   u.fightTurns = (u.fightTurns || 0) + 1;
   this.turnSeq = (this.turnSeq || 0) + 1;
@@ -4597,7 +4661,7 @@ Sim.prototype.turn = function (u) {
       const R = Math.round(j.ext.teleport / 5), foesUp = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
       let bx = null, bd = -1;
       for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(this.W - 1, u.x + R); x++) {
-        if (this.occupant(x, y) || this.isWall(x, y) || !this.los(u.x, u.y, x, y)) continue;
+        if ((x === u.x && y === u.y) || this.occupant(x, y, u.n, u) || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.los(u.x, u.y, x, y)) continue;
         const d = Math.min(...foesUp.map(e => this.distXY(x, y, e)));
         if (d > bd) { bd = d; bx = { x, y }; }
       }
@@ -4675,7 +4739,7 @@ Sim.prototype.turn = function (u) {
         const rm2 = this.reachMap(u, speed * 2);
         let k = 0;
         while (k < full.length && rm2.dist[full[k].x + full[k].y * this.W] <= Math.floor(speed / 5)) k++;
-        while (k > 0) { const o = this.occupant(full[k - 1].x, full[k - 1].y); if (!o || o === u) break; k--; }
+        while (k > 0) { if (!this.occupant(full[k - 1].x, full[k - 1].y, u.n, u)) break; k--; }
         this.moveAlong(u, full.slice(0, k));
       } else this.approach(u, speed);
       if (foesUp.length) {
@@ -4767,7 +4831,7 @@ Sim.prototype.approach = function (u, budget) {
   for (let i = 0; i < rm.dist.length; i++) {
     if (rm.dist[i] < 0) continue;
     const x = i % this.W, y = (i / this.W) | 0;
-    const occ = this.occupant(x, y); if (occ && occ !== u) continue;
+    if (this.occupant(x, y, u.n, u)) continue;
     const d = Math.min(...foes.map(f => this.distXY(x, y, f)));
     if (d < bs) { bs = d; best = { x, y }; }
   }
@@ -4841,7 +4905,7 @@ Sim.prototype.stepAwayFrom = function (u) {
     for (let c = 0; c < rm.dist.length; c++) {
       if (rm.dist[c] <= 0) continue;
       const x = c % this.W, y = (c / this.W) | 0;
-      if (this.units.some(o => o !== w && o.onBoard && !o.dead && o.x === x && o.y === y)) continue;
+      if (this.occupant(x, y, w.n, w)) continue;
       const sc = score(x, y) - rm.dist[c] * 0.01;
       if (sc > bs + 0.5) { bs = sc; best = { x, y }; }
     }
@@ -4869,7 +4933,7 @@ Sim.prototype.settleAltitude = function (u, a, p) {
   if (melee) want = this.zOf(t) - g;
   else {
     // out of reach of nearby foes that fight on the ground (or can't follow as high)
-    const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && Math.max(Math.abs(e.x - u.x), Math.abs(e.y - u.y)) <= 8);
+    const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 && this.gapTo(u.x, u.y, u.n, e) <= 8);
     want = foes.length ? Math.max(...foes.map(e => this.zOf(e) + Math.round(this.meleeReach(e) / 5) + 1)) - g : (u.alt || 0);
     if (a && t && t !== u && Math.max(5, a._range || 5) >= 30) want = Math.max(want, 6);       // a shooter or caster stays up, about 30 ft
     // …but the shot or spell still has to reach and see its target
@@ -5018,22 +5082,23 @@ Sim.prototype.place = function (party, foes, layout) {
   const pos = (layout && layout.positions) || {};
   const gap = Math.max(1, Math.round(((layout && layout.gapFt) || 30) / 5));
   const taken = new Set();
-  const put = (u, x, y) => { u.x = x; u.y = y; taken.add(x + ',' + y); };
-  const free = (x, y) => x >= 0 && y >= 0 && x < W && y < H && !taken.has(x + ',' + y) && !this.isWall(x, y);
-  const nearestFree = (x, y) => {
+  const put = (u, x, y) => { u.x = x; u.y = y; const n = u.n || 1; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) taken.add((x + i) + ',' + (y + j)); };
+  const free1 = (x, y) => x >= 0 && y >= 0 && x < W && y < H && !taken.has(x + ',' + y) && !this.isWall(x, y);
+  const free = (x, y, n) => { for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (!free1(x + i, y + j)) return false; return true; };
+  const nearestFree = (x, y, n) => {
     for (let r = 0; r < Math.max(W, H); r++) for (let dx = -r; dx <= r; dx++) for (let dy = -r; dy <= r; dy++) {
       if (Math.max(Math.abs(dx), Math.abs(dy)) !== r) continue;
-      if (free(x + dx, y + dy)) return [x + dx, y + dy];
+      if (free(x + dx, y + dy, n || 1)) return [x + dx, y + dy];
     }
     return [x, y];
   };
   const formation = (list, frontX, dir) => {
     const rows = Math.min(list.length, Math.max(3, Math.ceil(list.length / 2)));
     list.forEach((u, i) => {
-      if (pos[u.key]) { const [x, y] = nearestFree(pos[u.key].x, pos[u.key].y); put(u, x, y); return; }
+      if (pos[u.key]) { const [x, y] = nearestFree(pos[u.key].x, pos[u.key].y, u.n); put(u, x, y); return; }
       const col = Math.floor(i / rows), row = i % rows;
       const y = Math.round(H / 2 - rows + row * 2 + (col % 2));
-      const [x, yy] = nearestFree(frontX - dir * col * 2, Math.max(0, Math.min(H - 1, y)));
+      const [x, yy] = nearestFree(frontX - dir * col * 2, Math.max(0, Math.min(H - 1, y)), u.n);
       put(u, x, yy);
     });
   };
