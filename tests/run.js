@@ -270,19 +270,19 @@ section('Creature sizes');
       let st = {};
       for (const e of r.events) {
         st = Object.assign({}, st); for (const k in e.state || {}) st[k] = Object.assign({}, st[k] || {}, e.state[k]);
-        if (e.kind !== 'move') continue;
+        if (e.kind !== 'turn' && e !== r.events[r.events.length - 1]) continue;   // between turns: a mover may pass through an ally's square mid-move
         steps++;
         const live = Object.keys(st).filter(k => st[k].onBoard !== false && st[k].hp > 0 && st[k].x !== undefined);
         for (const a of live) {
           const A = st[a], an = sz[a] || 1;
           if (A.x < 0 || A.y < 0 || A.x + an > 24 || A.y + an > 16) bad++;
           if (layout) for (let j = 0; j < an; j++) for (let q = 0; q < an; q++) if (isWall(A.x + q, A.y + j)) bad++;
-          for (const b of live) if (a < b) { const B = st[b], bn = sz[b] || 1; if (an + bn > 2 && A.x < B.x + bn && B.x < A.x + an && A.y < B.y + bn && B.y < A.y + an) bad++; }
+          for (const b of live) if (a < b) { const B = st[b], bn = sz[b] || 1; if (A.x < B.x + bn && B.x < A.x + an && A.y < B.y + bn && B.y < A.y + an) { bad++; if (process.env.DBG) console.log("OVL", z, layout ? "walled" : "open", a, b, e.kind, e.text); } }
         }
       }
     }
   }
-  check(steps > 50 && bad === 0, `big creatures never overlap, leave the map or stand in walls over ${steps} moves (${bad} bad)`);
+  check(steps > 200 && bad === 0, `big creatures never overlap anyone (Medium ones too), leave the map or stand in walls over ${steps} turns (${bad} bad)`);
 }
 
 section('Damage types and control spells');

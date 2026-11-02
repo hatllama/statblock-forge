@@ -2376,8 +2376,24 @@ Sim.prototype.planInner = function (u, a, budget) {
   return null;
 };
 
+/* A move passes through friends' squares, but it can stop short (a failed climb, an opportunity attack, a slip) on one of
+   them: back up along the way to the last square nobody stands on. */
 Sim.prototype.moveAlong = function (u, path) {
   if (!path.length) return;
+  const trail = [{ x: u.x, y: u.y }];
+  this.moveAlongSteps(u, path, trail);
+  if (u.dead || !u.onBoard) return;
+  const o = this.occupant(u.x, u.y, u.n, u);
+  if (!o) return;
+  for (let i = trail.length - 1; i >= 0; i--) {
+    if (this.occupant(trail[i].x, trail[i].y, u.n, u)) continue;
+    const from = { x: u.x, y: u.y };
+    u.x = trail[i].x; u.y = trail[i].y; this.boardChanged();
+    this.ev('move', `${u.name} can't stop on ${o.name}'s square and steps back`, { uid: u.uid, path: [{ x: u.x, y: u.y }], from });
+    return;
+  }
+};
+Sim.prototype.moveAlongSteps = function (u, path, trail) {
   let seg = [], from = { x: u.x, y: u.y };
   const flush = () => {
     if (seg.length) this.ev('move', `${u.name} moves ${seg.length * 5} ft`, { uid: u.uid, path: seg.slice(), from: Object.assign({}, from) });
@@ -2404,7 +2420,7 @@ Sim.prototype.moveAlong = function (u, path) {
         flush();
         if (rise > 0) { this.ev('effect', `${u.name} fails to climb the ${rise * 5}-ft ledge (Athletics ${tot} vs DC ${dc >= 99 ? '—' : dc})`, { uid: u.uid }); return; }
         // climbing down and slipping: it falls the rest of the way
-        u.x = step.x; u.y = step.y; this.boardChanged();
+        u.x = step.x; u.y = step.y; trail.push({ x: step.x, y: step.y }); this.boardChanged();
         this.ev('move', `${u.name} slips climbing down`, { uid: u.uid, path: [{ x: step.x, y: step.y }], from: Object.assign({}, from) });
         const d = this.damage(u, u, Math.floor(rollDice(Math.floor(-rise / 2) + 'd6', this.R, false)), { type: 'bludgeoning' });
         u.dmgDealt -= d;   // it hurt itself; don't count it as damage dealt
@@ -2415,7 +2431,7 @@ Sim.prototype.moveAlong = function (u, path) {
       if (this.record) { flush(); this.ev('effect', `${u.name} climbs ${rise > 0 ? 'up' : 'down'} the ${Math.abs(rise) * 5}-ft ledge (Athletics ${tot} vs DC ${dc})`, { uid: u.uid }); }
     }
     const was = this._braceCheck ? null : this.enemiesOf(u).filter(e => e.reaction && e.onBoard && !e.dead && e.actions.some(y => y.actionSlot === 4 && y.ext && y.ext.brace) && this.dist(e, u) > this.meleeReach(e));
-    u.x = step.x; u.y = step.y; seg.push({ x: step.x, y: step.y }); u.movedThisTurn = true; this.boardChanged();
+    u.x = step.x; u.y = step.y; trail.push({ x: step.x, y: step.y }); seg.push({ x: step.x, y: step.y }); u.movedThisTurn = true; this.boardChanged();
     if (was && was.length) for (const e of was) if (this.dist(e, u) <= this.meleeReach(e)) {
       flush(); this._braceCheck = true;
       try { this.counterAttack(e, u, 'brace'); } finally { this._braceCheck = false; }
