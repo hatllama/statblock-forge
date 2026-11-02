@@ -60,6 +60,25 @@ const CUSTOM = {
   'mind spike': { level: 2, upcast: '1d8', concentration: true, actionSlot: 0, targets: 1, type: 'atk', dpr: '3d8', toHit: 0, useSaves: true, halfOnSave: true, target: 'enemy with highest DPR', ext: { range: 120, saveAbility: 'wis', damageType: 'psychic' } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
 };
+/* a spell name as sheets write it: "Misty Step High Elf Lineage", "Misty Step (high el…", "Mage Armour". The longest known name the text starts
+   with is the spell and the rest is its source label; a name cut short with "…" matches the one known name it begins. Returns { key, source } or null. */
+const spellKeys = () => Object.keys(root.SpellData || {}).concat(Object.keys(CUSTOM));
+const SPELL_ALIAS = { 'mage armour': 'mage armor' };
+function canonSpell(raw) {
+  let s = String(raw).toLowerCase().replace(/[’‘]/g, "'").replace(/\s+/g, ' ').trim();
+  const cut = /(?:…|\.{3})\s*$/.test(s);
+  s = s.replace(/(?:…|\.{3})\s*$/, '').trim();
+  if (!s) return null;
+  const SD = root.SpellData || {}, keys = spellKeys();
+  if (SD[s] || CUSTOM[s]) return { key: s, source: '' };
+  let best = '', rest = '';
+  const aliased = Object.keys(SPELL_ALIAS).find(a => s === a || s.indexOf(a + ' ') === 0 || s.indexOf(a + ' (') === 0);
+  const t = aliased ? SPELL_ALIAS[aliased] + s.slice(aliased.length) : s;
+  keys.forEach(k => { if (k.length > best.length && (t === k || (t.indexOf(k) === 0 && !/[a-z']/.test(t.charAt(k.length))))) best = k; });
+  if (best) { rest = t.slice(best.length).replace(/^[\s(\-–:,]+|[\s)]+$/g, '').trim(); return { key: best, source: cut ? '' : rest }; }
+  if (cut) { const m = keys.filter(k => k.indexOf(t) === 0); if (m.length === 1) return { key: m[0], source: '' }; }
+  return null;
+}
 const weaponOf = name => { const n = String(name).toLowerCase(); let best = null; for (const k in WEAPONS) if (n.indexOf(k) >= 0 && (!best || k.length > best.length)) best = k; return best ? { key: best, w: WEAPONS[best] } : null; };
 const DTYPES = /\b(acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder)\b/i;
 
@@ -292,9 +311,9 @@ function fromText(raw) {
   const SD = root.SpellData || {};
   const spells = [];
   const items = t.toLowerCase().split(/\n|,|;|•|\|/).map(s => s.replace(/\([^)]*\)|\[[^\]]*\]|^[\s*\-–o◯●○✓x]+|\s*(?:\d+(?:st|nd|rd|th)?\s*(?:level)?|cantrip|ritual|concentration|[cr]\b)\s*$/gi, '').replace(/^\s*(?:spell\s*name\s*\d*|spells?|cantrips?|prepared|known|\d+(?:st|nd|rd|th)\s*level|level\s*\d)\s*[:=]?\s*/i, '').trim());
-  items.forEach(s => { if ((SD[s] || CUSTOM[s]) && !spells.includes(s)) spells.push(s); });
+  items.forEach(s => { const c = s && !/\s{2}/.test(s) ? canonSpell(s) : null; if (c && c.key === s && !spells.includes(s)) spells.push(s); });
   // a spell table ("0  Sacred Flame  Action  60 feet  C R M") is the character's list: only its rows count, unknown spells too (they become notes)
-  const rowsOf = lines.map(l => l.match(/^(\d)\s+([A-Za-z][A-Za-z'’\/ -]{1,40}?)\s{2,}(?:Action|Bonus Action|Reaction|Free Action|Special|\d+ (?:minutes?|hours?|rounds?|actions?))\b/)).filter(Boolean);
+  const rowsOf = lines.map(l => l.match(/^(\d)\s+([A-Za-z][A-Za-z'’\/ ()…,.-]{1,50}?)\s+(?:Action|Bonus Action|Reaction(?:, which)?|Free Action|Special|\d+ (?:minutes?|hours?|rounds?|actions?))\b/)).filter(Boolean);
   if (rowsOf.length) { spells.length = 0; rowsOf.forEach(r => { const s = r[2].trim().toLowerCase(); if (!spells.includes(s)) spells.push(s); }); }
   const slots = [];
   const slotRe = /\b(?:([1-9])(?:st|nd|rd|th)|level\s*([1-9]))(?:[-\s]level)?(?:\s*spell)?\s*(?:slots?)?\s*[:=]?\s*(?:\d+\s*(?:\/|of)\s*)?(\d)\s*(?:slots?|total|\/|$|\n|\s)/gi;
@@ -651,9 +670,9 @@ function build(f, opts) {
     const top = slots.reduce((t, s, i) => s ? i + 1 : t, 0);
     const out = [], skipped = [];
     f.spells.forEach((nm0, i) => {
-      const nm = String(nm0).toLowerCase().trim(), d = SD[nm];
+      const cn = canonSpell(nm0), nm = cn ? cn.key : String(nm0).toLowerCase().trim(), d = SD[nm], src = cn ? cn.source : '';
       if (!d && CUSTOM[nm]) {
-        if (CUSTOM[nm].level <= top) { const cs = Object.assign(JSON.parse(JSON.stringify(CUSTOM[nm])), { name: titleSmall(nm), id: `${id}-s${i + 1}` }); if (cs.useSaves) cs.toHit = sctx.dc; out.push(cs); }
+        if (CUSTOM[nm].level <= top) { const cs = Object.assign(JSON.parse(JSON.stringify(CUSTOM[nm])), { name: titleSmall(nm), id: `${id}-s${i + 1}` }); if (cs.useSaves) cs.toHit = sctx.dc; if (src) cs.ext = Object.assign({}, cs.ext, { source: titleCase(src) }); out.push(cs); }
         return;
       }
       if (!d) { skipped.push(titleCase(nm0)); return; }
@@ -663,6 +682,7 @@ function build(f, opts) {
       sp.name = titleSmall(nm);
       if (nm === 'eldritch blast' && /agonizing blast/i.test(opts.text || '')) sp.dpr = `1d10 + ${m}`;
       sp.id = `${id}-s${i + 1}`;
+      if (src) sp.ext = Object.assign({}, sp.ext, { source: titleCase(src) });
       out.push(sp);
     });
     if (skipped.length) notes.push(`Not in its spell list (no rules for them yet): ${skipped.slice(0, 12).join(', ')}${skipped.length > 12 ? '…' : ''}.`);

@@ -433,6 +433,15 @@ section('Character sheets');
     'PDF page 2 features the sim cannot use are name-only notes grouped by section');
   check(/Weapons in the pack[^\n]*: Javelin ×4\./.test(notesOf(rl)) && !rl.actions.some(a => /Javelin/.test(a.name)) && /Magic items[^\n]*Cloak of the Manta Ray, Potion of Water Breathing ×2/.test(notesOf(rl)) && /Other gear: Backpack;[^\n]*Rations \(1 day\) ×20;[^\n]*10 gp\./.test(notesOf(rl)) && !/Greataxe/.test(notesOf(rl)) && rl.AC === 15,
     'PDF page 2 inventory: pack javelins without a bonus stay notes, duplicates merge, one gear line with coins, AC stays as stated');
+  const eld = p['eldar-yollavien.txt'];
+  check(eld && ['Misty Step', 'Mage Armor', 'Shocking Grasp', 'Shield', 'Silvery Barbs'].every(n => sp(eld).includes(n)) && !sp(eld).includes('Invisibility'),
+    'Eldar (Roll20-style 2024 PDF): spell rows cut short with "…" or carrying a lineage label ("Misty Step (high el…", "Mage Armour (ma…") import as Misty Step and Mage Armor');
+  {
+    const row = nm => { const r = SR.read(fs.readFileSync(path.join(dir, 'eldar-yollavien.txt'), 'utf8').replace('2 Misty Step (high el…', nm)).player; return actOf({ actions: r.ext.spellbook.spells }, /^Misty Step$/); };
+    const ms = row('2 Misty Step High Elf Lineage');
+    check(ms && ms.ext.source === 'High Elf Lineage' && ms.ext.teleport === 30, 'a spell name that carries its source ("Misty Step High Elf Lineage") imports by its longest known name, source kept in ext.source');
+    check(row('2 Misty Step') && !row('2 Misty Step').ext.source, 'an exact spell name gets no source');
+  }
   const b11 = p['barbarian11.txt'];
   check(b11 && b11.ext.brutalCritical === 1 && b11.ext.relentlessRage.hp === 22 && /Berserker/.test(b11.ext.build) && /Healing potions[^\n]*Potion of Healing ×2/.test(notesOf(b11)) && /Armor and shields[^\n]*Breastplate, Shield/.test(notesOf(b11)) && b11.AC === 15 && !/Potion of Healing/.test(JSON.stringify(b11.actions)),
     'a level-11 barbarian sheet: Brutal Critical, Relentless Rage, healing potions and armor as notes only');

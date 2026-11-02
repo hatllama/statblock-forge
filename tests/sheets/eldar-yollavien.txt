@@ -1,0 +1,781 @@
+Warning: Cannot polyfill `DOMMatrix`, rendering may be broken: "Error: Cannot find module 'canvas'
+Require stack:
+- C:\Users\zakip\AppData\Local\Temp\claude\C--Users-zakip-OneDrive-Documents-GitHub-statblock-forge\78b552e3-cd96-40f5-b703-35db1bef8959\scratchpad\pdfjs\node_modules\pdfjs-dist\legacy\build\pdf.js
+- C:\Users\zakip\AppData\Local\Temp\claude\C--Users-zakip-OneDrive-Documents-GitHub-statblock-forge\78b552e3-cd96-40f5-b703-35db1bef8959\scratchpad\pdf2txt.js".
+Warning: Cannot polyfill `Path2D`, rendering may be broken: "Error: Cannot find module 'canvas'
+Require stack:
+- C:\Users\zakip\AppData\Local\Temp\claude\C--Users-zakip-OneDrive-Documents-GitHub-statblock-forge\78b552e3-cd96-40f5-b703-35db1bef8959\scratchpad\pdfjs\node_modules\pdfjs-dist\legacy\build\pdf.js
+- C:\Users\zakip\AppData\Local\Temp\claude\C--Users-zakip-OneDrive-Documents-GitHub-statblock-forge\78b552e3-cd96-40f5-b703-35db1bef8959\scratchpad\pdf2txt.js".
+Name: ELDAR YOLLAVIEN
+Background: Sage
+Class: Wizard 5
+Species: Elf - High
+Subclass: Bladesinger
+Level: 5
+Xp: 0/14000
+Armor Class: 13
+Hit Points Current: 37
+Hit Points Max: 37
+Hit Dice Max: 4D6
+Proficiency Bonus: +3
+Strength Modifier: -1
+Strength Score: 8
+Strength Saving Throw: -1
+Athletics: -1
+Dexterity Modifier: +3
+Dexterity Score: 16
+Dexterity Saving Throw: +3
+Acrobatics: +6
+Sleight Of Hand: +3
+Stealth: +3
+Constitution Modifier: +3
+Constitution Score: 16
+Constitution Saving Throw: +3
+Intelligence Modifier: +4
+Intelligence Score: 18
+Intelligence Saving Throw: +7
+Arcana: +7
+History: +7
+Investigation: +7
+Nature: +4
+Religion: +10
+Wisdom Modifier: -1
+Wisdom Score: 9
+Wisdom Saving Throw: +2
+Animal Handling: -1
+Insight: -1
+Medicine: -1
+Perception: +2
+Survival: -1
+Charisma Modifier: -1
+Charisma Score: 8
+Charisma Saving Throw: -1
+Deception: -1
+Intimidation: -1
+Performance: -1
+Persuasion: -1
+Initiative: +3
+Speed: 30 ft.
+Size: Medium
+Passive Perception: 12
+Int: +4
+Spell Save Dc: 15
+Spell Slots Cantrips & Prepared Spells: CONCENTRATION,
+Backstory & Personality Alignment: Sage
+Languages: Common, Common Sign Language (Basic+),
+Defenses: VULNERABILITIES None
+Senses: DEFENSES, SENSES & PROFICIENCIES
+Passive: DARKVISION 60 ft
+Unseen Servant: 1
+Int: +4
+Spell Save Dc: 15
+Find Familiar: 1
+Backstory & Personality Class Features: Scholar (Class)
+Species Traits: Fey Ancestry (Species)
+ELDAR YOLLAVIEN
+NAME
+Sage
+BACKGROUND
+Wizard 5
+CLASS
+Elf - High
+SPECIES
+Bladesinger
+SUBCLASS
+5
+LEVEL
+0/14000
+XP
+ARMOR
+CLASS
+13
+SHIELD
+HIT POINTS
+TEMP
+37
+CURRENT
+37
+MAX
+HIT DICE
+SPENT
+4D6
+MAX
+DEATH SAVES
+SUCCESSES
+FAILURES
+PROFICIENCY BONUS
++3
+STRENGTH
+-1
+MODIFIER
+8
+SCORE
+Saving Throw
+Athletics
+-1
+-1
+DEXTERITY
++3
+MODIFIER
+16
+SCORE
+Saving Throw
+Acrobatics
+Sleight of Hand
+Stealth
++3
++6
++3
++3
+CONSTITUTION
++3
+MODIFIER
+16
+SCORE
++3 Saving Throw
+HEROIC INSPIRATION
+INTELLIGENCE
++4
+MODIFIER
+18
+SCORE
+Saving Throw
+Arcana
+History
+Investigation
+Nature
+Religion
++7
++7
++7
++7
++4
++10
+WISDOM
+-1
+MODIFIER
+9
+SCORE
+Saving Throw
+Animal Handling
+Insight
+Medicine
+Perception
+Survival
++2
+-1
+-1
+-1
++2
+-1
+CHARISMA
+-1
+MODIFIER
+8
+SCORE
+Saving Throw
+Deception
+Intimidation
+Performance
+Persuasion
+-1
+-1
+-1
+-1
+-1
+EQUIPMENT TRAINING & PROFICIENCIES
+ARMOR
+TRAINING LIGHT  MEDIUM  HEAVY  SHIELDS
+WEAPONS Simple, One handed non-heavy melee
+TOOLS  Caligrapher's Supplies
+INITIATIVE
++3
+SPEED
+30 ft.
+SIZE
+Medium
+PASSIVE PERCEPTION
+12
+WEAPONS & DAMAGE CANTRIPS
+NAME  ATK/DC  DAMAGE  NOTES
+Green-Flame Blade (mag +7  1d8+4 piercing, 1d
+Rapier  +6  1d8+3 piercing
+Rapier (w/ bladesong)  +7  1d8+4 piercing
+Ray of Frost  +7  2d8 cold
+Shocking Grasp (magic i +7  2d8 lightning
+Stab  +6  1d4+3 piercing, 1d
+Throw  +6  1d4+3 piercing
+CLASS FEATURES
+Memorize Spell ◆ Training in War and Song ◆
+Bladesong ◆ Scholar ◆ Arcane Recovery
+SPECIES TRAITS
+Trance ◆ Keen Senses ◆ Fey Ancestry ◆ Elven
+Lineage.
+FEATS
+Magic Initiate
+INT
+Spellcasting
+Ability
++4
+Spellcasting
+Modifier
+15  Spell Save DC
++7
+Spell Attack
+Bonus
+SPELL SLOTS
+Level  Total  Expended
+1  4
+2  3
+3  2
+Level  Total  Expended
+4
+5
+6
+Level  Total  Expended
+7
+8
+9
+CANTRIPS & PREPARED SPELLS
+LVL NAME  CASTING TIME  RANGE
+CONCENTRATION,
+RITUAL, MATERIAL
+NOTES
+0 Minor Illusion  Action  30ft  C  R  M
+0 Message  Action  120 feet  C  R  M
+0 Ray of Frost  Action  60 feet  C  R  M
+0 Mage Hand  Action  30 feet  C  R  M
+0 Elven lineage cant… Action  C  R  M
+0 Green-Flame Blad… Action  Self  C  R  M
+0 Shocking Grasp (…  Action  Touch  C  R  M
+1 Unseen Servant  Action  60 feet  C  R  M
+1 Disguise Self  Action  Self  C  R  M
+1 Feather Fall  Reaction  60 feet  C  R  M
+1 Chromatic Orb  Action  90 feet  C  R  M
+1 Tasha's Caustic Br… Action  Self  C  R  M
+1 Burning Hands  Action  C  R  M
+1 Expeditious Retreat Bonus Action  Self  C  R  M
+1 Identify  1 minute  Touch  C  R  M
+1 Silvery Barbs  Reaction  60 feet  C  R  M
+1 Shield  Reaction  Self  C  R  M
+1 Find Familiar  1 hour or Ritual  10 feet  C  R  M
+1 Detect Magic (hig…  Action  C  R  M
+1 Mage Armour (ma… Action  Touch  C  R  M
+2 Hold Person  Action  60 feet  C  R  M
+2 Mirror Image  Action  Self  C  R  M
+2 Misty Step (high el… Bonus Action  Self  C  R  M
+2 Invisibility  Action  Touch  C  R  M
+3 Fireball  Action  150 feet  C  R  M
+3 Counterspell  Reaction, which y… 60 feet  C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+C  R  M
+APPEARANCE
+BACKSTORY & PERSONALITY
+Sage
+ALIGNMENT
+PRONOUNS
+LANGUAGES
+Common, Common Sign Language (Basic+),
+Dwarvish, Elvish
+EQUIPMENT
+Dorian's Things, Map of Rueltran, Potion of
+Healing, Diamond (50gp), Rapier, Scholar's
+Pack, Spellbook, Robe, Arcane Focus (hat),
+Dagger
+MAGIC ITEM ATTUNEMENT
+COINS
+CP  SP  EP  GP  PP
+6  5  0  57  0
+COMBAT REFERENCE
+ATTACKS
+NAME  ATK/DC  DAMAGE  RANGE  NOTES
+Burning Hands  DEX 15  3d6 fire  —
+Chromatic Orb  +7  3d8 Chosen  90 feet
+Green-Flame Blade (magic
+initiate)
++7  1d8+4 piercing, 1d8 fire  Self
+Rapier  +6  1d8+3 piercing  5 ft.
+Rapier (w/ bladesong)  +7  1d8+4 piercing  5 ft.
+Ray of Frost  +7  2d8 cold  60 feet
+Shocking Grasp (magic
+initiate)
++7  2d8 lightning  Touch  Lightning springs from your hand to deliver a shock to a creature you try to
+touch. Make a melee spell attack against the target. You have advantage on
+the attack roll if the target is wearing armor made of metal. On a hit, the target
+takes 1d8 lightning damage, and it can’t take reactions until the start of its
+next turn. At Higher Levels. The spell’s damage increases by 1d8 when you
+reach 5th level (2d8), 11th level (3d8), and 17th level (4d8).
+Stab  +6  1d4+3 piercing, 1d4+3
+piercing
+5 ft.
+Tasha's Caustic Brew  DEX 15  —  Self
+Throw  +6  1d4+3 piercing  5 ft.
+Unarmed Strike  +2  0 bludgeoning  5 ft.  Instead of using a weapon to make a melee weapon attack, you can use an
+unarmed strike: a punch, kick, head-butt, or similar forceful blow (none of
+which count as weapons). On a hit, an unarmed strike deals bludgeoning
+damage equal to 1 + your Strength modifier. You are proficient with your
+unarmed strikes.
+Fireball  DEX 15  8d6 fire  150 feet
+ACTIONS
+NAME  NOTES
+Actions in Combat  Attack, Dash, Disengage, Dodge, Help, Hide, Influence, Magic, Ready, Search, Study, Utilize
+REACTIONS
+NAME  NOTES
+Reactions in Combat  Opportunity Attack
+DEFENSES, SENSES & PROFICIENCIES
+DEFENSES
+RESISTANCES  None
+VULNERABILITIES None
+IMMUNITIES  None
+CONDITION
+IMMUNITIES
+None
+SENSES
+PASSIVE
+PERCEPTION
+12
+DARKVISION 60 ft
+PROFICIENCIES
+WEAPONS Simple, One handed non-heavy melee
+TOOLS  Caligrapher's Supplies
+SPELLS & SPELLCASTING
+CANTRIPS & SPELLS
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+0
+Minor Illusion
+Action
+30ft
+V  S  M
+R  C
+You create a sound or an image of an object within range that lasts for the duration. See the descriptions below for the
+effects of each. The illusion ends if you cast this spell again.
+If a creature takes a Study action to examine the sound or image, the creature can determine that it is an illusion with a
+successful Intelligence (Investigation) check against your spell save DC. If a creature discerns the illusion for what it is,
+the illusion becomes faint to the creature.
+Sound. If you create a sound, its volume can range from a whisper to a scream. It can be your voice, someone else’s
+voice, a lion’s roar, a beating of drums, or any other sound you choose. The sound continues unabated throughout the
+duration, or you can make discrete sounds at different times before the spell ends.
+Image. If you create an image of an object—such as a chair, muddy footprints, or a small chest—it must be no larger than
+a 5-foot Cube. The image can’t create sound, light, smell, or any other sensory effect. Physical interaction with the image
+reveals it to be an illusion, since things can pass through it.
+0
+Message
+Action
+120 feet
+V  S  M
+R  C
+You point your finger toward a creature within range and whisper a message. The target (and only the target) hears the
+message and can reply in a whisper that only you can hear.
+You can cast this spell through solid objects if you are familiar with the target and know it is beyond the barrier. Magical
+silence, 1 foot of stone, 1 inch of common metal, a thin sheet of lead, or 3 feet of wood blocks the spell. The spell doesn’t
+have to follow a straight line and can travel freely around corners or through openings.
+0
+Ray of Frost
+Action
+60 feet
+V  S  M
+R  C
+A frigid beam of blue-white light streaks toward a creature within range. Make a ranged spell attack against the target.
+On a hit, it takes 1d8 cold damage, and its speed is reduced by 10 feet until the start of your next turn.
+At Higher Levels. The spell’s damage increases by 1d8 when you reach 5th level (2d8), 11th level (3d8), and 17th level
+(4d8).
+0
+Mage Hand
+Action
+30 feet
+V  S  M
+R  C
+A spectral, floating hand appears at a point you choose within range. The hand lasts for the duration or until you dismiss
+it as an action. The hand vanishes if it is ever more than 30 feet away from you or if you cast this spell again.
+You can use your action to control the hand. You can use the hand to manipulate an object, open an unlocked door or
+container, stow or retrieve an item from an open container, or pour the contents out of a vial. You can move the hand up
+to 30 feet each time you use it.
+The hand can’t attack, activate magical items, or carry more than 10 pounds.
+0
+Elven lineage cantrip
+Action
+V  S  M
+R  C
+You know the Prestidigitation cantrip. Whenever you finish a Long Rest, you can replace that cantrip with a different
+cantrip from the Wizard spell list.
+0
+Green-Flame Blade
+(magic initiate)
+Action
+Self
+V  S  M
+R  C
+You brandish the weapon used in the spell’s casting and make a melee attack with it against one creature within 5 feet
+of you. On a hit, the target suffers the weapon attack’s normal effects, and you can cause green fire to leap from the
+target to a different creature of your choice that you can see within 5 feet of it. The second creature takes fire damage
+equal to your spellcasting ability modifier.
+At Higher Levels. At 5th level, the melee attack deals an extra 1d8 fire damage to the target on a hit, and the fire damage
+to the second creature increases to 1d8 + your spellcasting ability modifier. Both damage rolls increase by 1d8 at 11th
+level (2d8 and 2d8) and 17th level (3d8 and 3d8).
+0
+Shocking Grasp (magic
+initiate)
+Action
+Touch
+V  S  M
+R  C
+Lightning springs from your hand to deliver a shock to a creature you try to touch. Make a melee spell attack against the
+target. You have advantage on the attack roll if the target is wearing armor made of metal. On a hit, the target takes 1d8
+lightning damage, and it can’t take reactions until the start of its next turn.
+At Higher Levels. The spell’s damage increases by 1d8 when you reach 5th level (2d8), 11th level (3d8), and 17th level
+(4d8).
+1  Unseen Servant
+Action
+60 feet  V S M
+R  C
+This spell creates an Invisible, mindless, shapeless, Medium force that performs simple tasks at your command until the
+spell ends. The servant springs into existence in an unoccupied space on the ground within range. It has AC 10, 1 Hit
+Point, and a Strength of 2, and it can’t attack. If it drops to 0 Hit Points, the spell ends.
+INT
+Spellcasting
+Ability
++4
+Spellcasting
+Modifier
+15  Spell Save DC
++7
+Spell Attack
+Bonus
+INT  Wizard  SPELL SLOTS
+Level  Total  Expended
+1  4
+2  3
+3  2
+Level  Total  Expended
+4
+5
+6
+Level  Total  Expended
+7
+8
+9
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+Once on each of your turns as a Bonus Action, you can mentally command the servant to move up to 15 feet and interact
+with an object. The servant can perform simple tasks that a human could do, such as fetching things, cleaning, mending,
+folding clothes, lighting fires, serving food, and pouring drinks. Once you give the command, the servant performs the
+task to the best of its ability until it completes the task, then waits for your next command.
+If you command the servant to perform a task that would move it more than 60 feet away from you, the spell ends.
+1
+Disguise Self
+Action
+Self
+V  S  M
+R  C
+You make yourself - including your clothing, armor, weapons, and other belongings on your person - look different until
+the spell ends. You can seem 1 foot shorter or taller and can appear heavier or lighter. You must adopt a form that has
+the same basic arrangement of limbs as you have. Otherwise, the extent of the illusion is up to you.
+The changes wrought by this spell fail to hold up to physical inspection. For example, if you use this spell to add a hat to
+your outfit, objects pass through the hat, and anyone who touches it would feel nothing.
+To discern that you are disguised, a creature must take the Study action to inspect your appearance and succeed on an
+Intelligence (Investigation) check against your spell save DC.
+1
+Feather Fall
+Reaction
+60 feet
+V  S  M
+R  C
+Choose up to five falling creatures within range. A falling creature’s rate of descent slows to 60 feet per round until the
+spell ends. If a creature lands before the spell ends, the creature takes no damage from the fall, and the spell ends for
+that creature.
+1
+Chromatic Orb
+Action
+90 feet
+V  S  M
+R  C
+You hurl an orb of energy at a target within range. Choose Acid, Cold, Fire, Lightning, Poison, or Thunder for the type of
+orb you create, and then make a ranged spell attack against the target. On a hit, the target takes 3d8 damage of the
+chosen type.
+If you roll the same number on two or more of the d8s, the orb leaps to a different target of your choice within 30 feet of
+the target. Make an attack roll against the new target, and make a new damage roll. The orb can’t leap again unless you
+cast the spell with a level 2+ spell slot.
+Using a Higher-Level Spell Slot. The damage increases by 1d8 for each spell slot level above 1. The orb can leap a
+maximum number of times equal to the level of the slot expended, and a creature can be targeted only once by each
+casting of this spell.
+1
+Tasha's Caustic Brew
+Action
+Self
+V  S  M
+R  C
+A stream of acid emanates from you in a line 30 feet long and 5 feet wide in a direction you choose. Each creature in the
+line must succeed on a Dexterity saving throw or be covered in acid for the spell’s duration or until a creature uses its
+action to scrape or wash the acid off itself or another creature. A creature covered in the acid takes 2d4 acid damage at
+the start of each of its turns.
+At Higher Levels. When you cast this spell using a spell slot 2nd level or higher, the damage increases by 2d4 for each
+slot level above 1st.
+1
+Burning Hands
+Action
+V  S  M
+R  C
+As you hold your hands with thumbs touching and fingers spread, a thin sheet of flames shoots forth from your
+outstretched fingertips. Each creature in a 15-foot cone must make a Dexterity saving throw. A creature takes 3d6 fire
+damage on a failed save, or half as much damage on a successful one.
+The fire ignites any flammable objects in the area that aren’t being worn or carried.
+Using a Higher-Level Spell Slot. The damage increases by 1d6 for each spell slot level above 1.
+1
+Expeditious Retreat
+Bonus Action
+Self
+V  S  M
+R  C
+This spell allows you to move at an incredible pace. When you cast this spell, and then as a bonus action on each of
+your turns until the spell ends, you can take the Dash action.
+1
+Identify
+1 minute
+Touch
+V  S  M
+R  C
+You choose one object that you must touch throughout the casting of the spell. If it is a magic item or some other magic-
+imbued object, you learn its properties and how to use them, whether it requires attunement to use, and how many
+charges it has, if any. You learn whether any spells are affecting the item and what they are. If the item was created by a
+spell, you learn which spell created it.
+If you instead touch a creature throughout the casting, you learn what spells, if any, are currently affecting it.
+1
+Silvery Barbs
+Reaction
+60 feet
+V  S  M
+R  C
+You magically distract the triggering creature and turn its momentary uncertainty into encouragement for another
+creature. The triggering creature must reroll the d20 and use the lower roll.
+You can then choose a different creature you can see within range (you can choose yourself). The chosen creature has
+advantage on the next attack roll, ability check, or saving throw it makes within 1 minute. A creature can be empowered
+by only one use of this spell at a time.
+1
+Shield
+Reaction
+Self
+V  S  M
+R  C
+An invisible barrier of magical force appears and protects you. Until the start of your next turn, you have a +5 bonus to
+AC, including against the triggering attack, and you take no damage from magic missile.
+1  Find Familiar
+1 hour or Ritual
+10 feet  V S M
+R  C
+You gain the service of a familiar, a spirit that takes an animal form you choose: Bat, Cat, Frog, Hawk, Lizard, Octopus,
+Owl, Rat, Raven, Spider, Weasel, or another Beast that has a Challenge Rating of 0. Appearing in an unoccupied space
+within range, the familiar has the statistics of the chosen form (see appendix B), though it is a Celestial, Fey, or Fiend
+(your choice) instead of a Beast. Your familiar acts independently of you, but it obeys your commands.
+Telepathic Connection. While your familiar is within 100 feet of you, you can communicate with it telepathically.
+Additionally, as a Bonus Action, you can see through the familiar's eyes and hear what it hears until the start of your next
+turn, gaining the benefits of any special senses it has.
+Finally, when you cast a spell with a range of touch, your familiar can deliver the touch. Your familiar must be within 100
+feet of you, and it must take a Reaction to deliver the touch when you cast the spell.
+LVL PR.  NAME  RANGE
+V  S  M
+R C  NOTES
+Combat. The familiar is an ally to you and your allies. It rolls its own Initiative and acts on its own turn. A familiar can't
+attack, but it can take other actions as normal.
+Disappearance of the Familiar. When the familiar drops to 0 Hit Points, it disappears. It reappears after you cast this spell
+again. As a Magic action, you can temporarily dismiss the familiar to a pocket dimension. Alternatively, you can dismiss it
+forever. As a Magic action while it is temporarily dismissed, you can cause it to reappear in an unoccupied space within
+30 feet of you. Whenever the familiar drops to 0 Hit Points or disappears into the pocket dimension, it leaves behind in
+its space anything it was wearing or carrying.
+One Familiar Only. You can't have more than one familiar at a time. If you cast this spell while you have a familiar, you
+instead cause it to adopt a new eligible form.
+1
+Detect Magic (high elf
+lineage)
+Action
+V  S  M
+R  C
+For the duration, you sense the presence of magic within 30 feet of you. If you sense magic in this way, you can use your
+action to see a faint aura around any visible creature or object in the area that bears magic, and you learn its school of
+magic, if any.
+The spell can penetrate most barriers, but is blocked by 1 foot of stone, 1 inch of common metal, a thin sheet of lead, or 3
+feet of wood or dirt.
+1
+Mage Armour (magic
+initiate)
+Action
+Touch
+V  S  M
+R  C
+You touch a willing creature who isn’t wearing armor, and a protective magical force surrounds it until the spell ends. The
+target’s base AC becomes 13 + its Dexterity modifier. The spell ends if the target dons armor or if you dismiss the spell as
+an action.
+2
+Hold Person
+Action
+60 feet
+V  S  M
+R  C
+Choose a Humanoid that you can see within range. The target must succeed on a Wisdom saving throw or have the
+Paralyzed condition for the duration. At the end of each of its turns, the target repeats the save, ending the spell on itself
+on a success.
+Using a Higher-Level Spell Slot. You can target one additional Humanoid for each spell slot level above 2.
+2
+Mirror Image
+Action
+Self
+V  S  M
+R  C
+Three illusory duplicates of yourself appear in your space. Until the spell ends, the duplicates move with you and mimic
+your actions, shifting position so it’s impossible to track which image is real.
+Each time a creature hits you with an attack roll during the spell’s duration, roll a d6 for each of your remaining
+duplicates. If any of the d6s rolls a 3 or higher, one of the duplicates is hit instead of you, and the duplicate is destroyed.
+The duplicates otherwise ignore all other damage and effects. The spell ends when all three duplicates are destroyed.
+A creature is unaffected by this spell if it has the Blinded condition, Blindsight, or Truesight.
+2
+Misty Step (high elf
+lineage)
+Bonus Action
+Self
+V  S  M
+R  C
+Briefly surrounded by silvery mist, you teleport up to 30 feet to an unoccupied space you can see.
+2
+Invisibility
+Action
+Touch
+V  S  M
+R  C
+A creature you touch has the Invisible condition until the spell ends. The spell ends early immediately after the target
+makes an attack roll, deals damage, or casts a spell.
+3
+Fireball
+Action
+150 feet
+V  S  M
+R  C
+A bright streak flashes from you to a point you choose within range and then blossoms with a low roar into a fiery
+explosion. Each creature in a 20-foot-radius Sphere centered on that point makes a Dexterity saving throw, taking 8d6
+Fire damage on a failed save or half as much damage on a successful one.
+Flammable objects in the area that aren't being worn or carried start burning.
+3
+Counterspell
+Reaction, which you
+take when you see a
+creature in range
+casting a spell
+60 feet
+V  S  M
+R  C
+You attempt to interrupt a creature in the process of casting a spell. If the creature is casting a spell of 3rd level or lower,
+its spell fails and has no effect. If it is casting a spell of 4th level or higher, make an ability check using your spellcasting
+ability. The DC equals 10 + the spell's level. On a success, the creature's spell fails and has no effect.
+INVENTORY
+EQUIPMENT
+Dorian's Things  0 lbs  1
+Gear
+his kidskin gloves, a small ring of keys, a purse, a small glass vial of powder, an iron
+blowpipe, glassblower's tools, and a vigil sash (fashionable right now).
+Map of Rueltran  0 lbs  1
+Gear
+Potion of Healing  0 lbs  1
+Gear
+Diamond (50gp)  0 lbs  1
+Gear
+Rapier  0 lbs  1
+Weapon · Gear · Proficient · Weapon · Rapier · Simple
+Scholar's Pack  0 lbs  1
+Gear
+Spellbook  0 lbs  1
+Gear
+Robe  0 lbs  1
+Gear
+Arcane Focus (hat)  0 lbs  1
+Gear
+Dagger  0 lbs  2
+Weapon · Gear · Proficient · Weapon · Dagger · Simple
+MAGIC ITEM ATTUNEMENT
+POSSESSIONS
+WEIGHT
+Current Total Weight (Unencumbered): 1.36 lbs  Carrying Capacity: 120 lbs
+EQ.  NAME  WT.  QTY  EQ.  NAME  WT.  QTY
+NAME  WT.  QTY NAME  WT.  QTY
+BACKSTORY, PERSONALITY & FEATURES
+BACKSTORY & PERSONALITY
+SAGE
+Alignment  Pronouns
+CLASS FEATURES
+Memorize Spell (Class)
+Whenever you finish a Short Rest, you can study your spellbook and replace one of the level
+1+ Wizard spells you have prepared for your Spellcasting feature with another level 1+ spell
+from the book.
+Training in War and Song (Class)
+You gain proficiency with all Melee Martial weapons that don’t have the Two-Handed or Heavy
+property. You can use a Melee weapon with which you have proficiency as a Spellcasting
+Focus for your Wizard spells.
+You also gain proficiency in one of the following skills of your choice: Acrobatics, Athletics,
+Performance, or Persuasion.
+Bladesong (Class)
+As a Bonus Action, you invoke an elven magic called the Bladesong, provided you aren’t
+wearing armor or using a Shield.
+The Bladesong lasts for 1 minute and ends early if you have the Incapacitated condition, if you
+don armor or a Shield, or if you use two hands to make an attack with a weapon. You can
+dismiss the Bladesong at any time (no action required).
+While the Bladesong is active, you gain the following benefits. You can invoke the Bladesong a
+number of times equal to your Intelligence modifier (minimum of once), and you regain all
+expended uses when you finish a Long Rest. You regain one expended use when you use
+Arcane Recovery.
+Agility. You gain a bonus to your AC equal to your Intelligence modifier (minimum of +1), and
+your Speed increases by 10 feet. In addition, you have Advantage on Dexterity (Acrobatics)
+checks.
+Bladework. Whenever you attack with a weapon with which you have proficiency, you can use
+your Intelligence modifier for the attack and damage rolls instead of using Strength or
+Dexterity.
+Focus. When you make a Constitution saving throw to maintain Concentration, you can add
+your Intelligence modifier to the total.
+Scholar (Class)
+While studying magic, you also specialized in another field of study. Choose one of the
+following skills in which you have proficiency: Arcana, History, Investigation, Medicine, Nature,
+or Religion. You have Expertise in the chosen skill.
+Arcane Recovery (Class)
+You can regain some of your magical energy by studying your spellbook. When you finish a
+Short Rest, you can choose expended spell slots to recover. The spell slots can have a
+combined level equal to no more than half your Wizard level (round up), and none of the slots
+can be level 6 or higher. For example, if you're a level 4 Wizard, you can recover up to two
+levels’ worth of spell slots, regaining either one level 2 spell slot or two level 1 spell slots.
+Once you use this feature, you can't do so again until you finish a Long Rest.
+SPECIES TRAITS
+Trance (Species)
+You don’t need to sleep, and magic can’t put you to sleep. You can finish a Long Rest in 4
+hours if you spend those hours in a trancelike meditation, during which you retain
+consciousness.
+Keen Senses (Species)
+You have proficiency in the Insight, Perception, or Survival skill.
+Fey Ancestry (Species)
+You have Advantage on saving throws you make to avoid or end the Charmed condition.
+Elven Lineage. (Species)
+You are part of a lineage that grants you supernatural abilities. Choose a lineage from the
+Elven Lineages table. You gain the level 1 benefit of that lineage.
+When you reach character levels 3 and 5, you learn a higher-level spell, as shown on the table.
+You always have that spell prepared. You can cast it once without a spell slot, and you regain
+the ability to cast it in that way when you finish a Long Rest. You can also cast the spell using
+any spell slots you have of the appropriate level.
+Intelligence, Wisdom, or Charisma is your spellcasting ability for the spells you cast with this
+trait (choose the ability when you select the lineage).
+OTHER FEATURES
+Magic Initiate (Feat)
+You gain the following benefits.
+Two Cantrips. You learn two cantrips of your choice from the Cleric, Druid, or Wizard spell list.
+Intelligence, Wisdom, or Charisma is your spellcasting ability for this feat's spells (choose when
+you select this feat).
+Level 1 Spell. Choose a level 1 spell from the same list you selected for this feat's cantrips. You
+always have that spell prepared. You can cast it once without a spell slot, and you regain the
+ability to cast it in that way when you finish a Long Rest. You can also cast the spell using any
+spell slots you have.
+Spell Change. Whenever you gain a new level, you can replace one of the spells you chose for
+this feat with a different spell of the same level from the chosen spell list.
+Repeatable. You can take this feat more than once, but you must choose a different spell list
+each time.
+Read a whole Zoology book (Other)
+Advantage on checks related to animals and creatures in Lawan
