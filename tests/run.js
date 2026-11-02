@@ -1152,5 +1152,73 @@ section('Pre-fight buffs: Mage Armor, Death Ward, the table and morningShare');
   }
 }
 
+section('AI v2: downed allies (step 2.12)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  const foe = (name, hp, count) => ({ id: name, name, mode: 'custom', hp, AC: 12, saveBonus: 0, count, speed: 30, actions: [{ id: name + '1', name: 'Club', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '14', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] });
+  // a fight stopped at its first turn, set up by hand: the Fighter down at (10,8), foes where the test puts them
+  const rig = (party, foes, set) => {
+    const players = party.map(build), proto = Tac.Sim.prototype, turn = proto.turn;
+    let out = null;
+    proto.turn = function (u) { if (!out) { out = this; set(this); } };
+    try { Tac.runDay({ players, encounters: [{ monsters: foes }] }, { seed: 7, partyAI: 'tactical', ai: { party: 'v2' }, maxRounds: 1, _keep: true }); } finally { proto.turn = turn; }
+    return out;
+  };
+  const worth = (sim, name, target) => {
+    const u = sim.units.find(o => o.name === name), t = sim.units.find(o => o.name === target), a = u.actions.find(x => x.name === 'Healing Word');
+    return sim.v2AllyValue(u, a, t, sim.v2Ctx(u, 30));
+  };
+  const lay = (s, foesAt) => {
+    const f = s.units.find(o => o.name === 'Fighter'), c = s.units.find(o => o.name === 'Cleric'), es = s.units.filter(o => o.team === 'foes');
+    es.forEach((e, i) => { const p = foesAt[i] || [28, i]; e.x = p[0]; e.y = p[1]; });
+    f.x = 10; f.y = 8; c.x = 2; c.y = 8; s.boardChanged(); s.downPC(f);
+  };
+  const clear = rig(['Fighter', 'Cleric'], [foe('Brute', 60, 3)], s => lay(s, []));
+  const alone = worth(clear, 'Cleric', 'Fighter');
+  const ringed = worth(rig(['Fighter', 'Cleric'], [foe('Brute', 60, 3)], s => lay(s, [[11, 8], [11, 7], [11, 9]])), 'Cleric', 'Fighter');
+  check(alone > ringed && ringed > 0, `a heal on a downed ally is worth less next to three foes (${alone.toFixed(1)} alone, ${ringed.toFixed(1)} ringed)`);
+  const f0 = clear.units.find(o => o.name === 'Fighter');
+  f0.deathF = 2;
+  const close = worth(clear, 'Cleric', 'Fighter');
+  check(close > alone, `two failed death saves make it worth more (${alone.toFixed(1)} to ${close.toFixed(1)})`);
+  f0.deathF = 0; f0.stable = true; f0.deathS = 3;
+  check(worth(clear, 'Cleric', 'Fighter') < alone, 'a stable ally is worth less than a dying one');
+  const odds = Tac.deathOdds;
+  check(Math.abs(odds(0, 0, 6, 0) - 0.4) < 0.1 && odds(0, 0, 1, 0) === 0 && Math.abs(odds(0, 2, 1, 0) - 0.45) < 1e-9 && odds(3, 0, 6, 0) === 0 && odds(0, 0, 6, 0, true) === 0,
+    `death odds: about 40% left alone, 0 after one turn, 45% on the last failure, 0 once stable (${odds(0, 0, 6, 0).toFixed(3)})`);
+  // the bonus heal goes out when the action still has a use; the action does not take a slot then
+  let healed = 0, chances = 0;
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  proto.turn = function (u) {
+    if (this.round === 1 && !this._dropped) { this._dropped = true; this.downPC(this.units.find(o => o.name === 'Fighter')); }
+    const want = u.name === 'Cleric' && this.alive(u) && this.units.some(o => o.name === 'Fighter' && o.hp <= 0 && !o.dead), before = u.healed;
+    if (want && u.concentrating) chances++;                                 // Spirit Guardians is up, so the action has no better slot to use
+    turn.call(this, u);
+    if (want && u.concentrating && u.healed > before) healed++;
+  };
+  for (let i = 0; i < 40; i++) Tac.runDay({ players: ['Fighter', 'Cleric', 'Wizard', 'Rogue'].map(build), encounters: [{ monsters: [foe('Brute', 90, 4)] }] }, { seed: 900 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' } });
+  proto.turn = turn;
+  check(chances > 5 && healed / chances > 0.5, `Healing Word gets a downed ally up on most turns the Cleric already holds its concentration spell (${healed}/${chances})`);
+  // a potion goes to a creature at 0 HP within 5 ft
+  const rogue = build('Rogue');
+  rogue.ext.resources = Object.assign({}, rogue.ext.resources, { 'Potion of Healing': { uses: 1, reset: 'lr' } });
+  rogue.actions.push({ id: 'rg-potion', name: 'Potion of Healing', actionSlot: 1, freq: 'at will', condition: 'ally under half HP', targets: 1, type: 'heal', amount: '2d4 + 2', target: 'ally with the least HP', ext: { range: 5, resource: 'Potion of Healing', potion: true } });
+  let fed = 0;
+  proto.turn = function (u) { if (!this._dropped) { this._dropped = true; const f = this.units.find(o => o.name === 'Fighter'), r = this.units.find(o => o.name === 'Rogue'); f.x = r.x; f.y = r.y + 1; this.boardChanged(); this.downPC(f); } turn.call(this, u); };
+  const rec = [];
+  for (let i = 0; i < 12; i++) rec.push(Tac.runDay({ players: [build('Fighter'), cp(rogue), build('Barbarian')], encounters: [{ monsters: [foe('Brute', 60, 3)] }] }, { seed: 300 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true }));
+  proto.turn = turn;
+  for (const res of rec) for (const r of res) if (r.events.some(e => e.kind === 'heal' && /Rogue → Fighter: Potion of Healing/.test(e.text || ''))) fed++;
+  check(fed >= 6, `a potion is fed to a downed ally within 5 ft (${fed}/12 days)`);
+  // Healing Light: a dice-pool heal is an ordinary heal on v2
+  const w = build('Warlock');
+  w.actions.push({ id: 'w-hl', name: 'Healing Light', actionSlot: 1, freq: { reset: 'lr', uses: 6 }, condition: 'ally under half HP', targets: 1, type: 'heal', amount: '4d6', target: 'ally with the least HP', ext: { range: 60, pool: { dice: 6, die: 6, maxPer: 4 } } });
+  const res = Tac.runDay({ players: [w, build('Fighter')], encounters: [{ monsters: [foe('Brute', 30, 2)] }] }, { seed: 5, partyAI: 'tactical', ai: { party: 'v2' }, _keep: true });
+  check(res._sim.units.find(o => o.name === 'Warlock').v2 === true, 'a creature with a dice-pool heal plays on v2');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

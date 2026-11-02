@@ -3336,7 +3336,10 @@ const AI_BASE = {
     ctlRound: 0.5, lull: 0.6, legRes: 0.4, concKeep: 0.75, shakeOff: 0.55, expose: 1, critDmg: 1.6,
     // control: one round's worth × rounds; damage ends it; a save bought off (legRes / the uses it has left: docs/ai-v2.md); holding it that long; a hold that damage can save it out of (Laughter);
     // our side's extra damage on a foe easier to hit (advantage, crits up close: v2Expose); a crit's damage over a plain hit
-    heal: 1, healLow: 1.4, healDanger: 0.8, revive: 15, reviveRounds: 0.6,   // HP back (more under half), a heal that keeps it standing; a downed ally back up
+    heal: 1, healLow: 1.4, healDanger: 0.8,                     // HP back (more under half), a heal that keeps it standing
+    // a downed ally back up (v2BackUp, docs/ai-v2.md): its value per round; the turn it may get even if it drops again; foes beside it turning on it; the blow it soaks for someone else; what a healer's round is worth;
+    // a life in points, more per fight still to come; the chance a round an adjacent foe finishes it, first time down and after a second drop
+    backRound: 4, backFirst: 0.75, backFocus: 1, backSoak: 0.5, backHealer: 10, backLife: 40, backDay: 0.25, backFinish: 0.1, backFinish2: 0.4,
     buff: 1, buffRounds: 2, zone: 2,                             // buffs on allies (per round × rounds, counted this many rounds ahead at most); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
@@ -3387,7 +3390,7 @@ const AI_PRESETS = {
   // casters
   controller: { w: { ctlRound: 0.75, concKeep: 0.85, concSwap: 1.3, concRisk: 1.6, control: 1.25 }, burn: { bias: 1.3, probeBias: 1.4 } },
   artillery: { w: { area: 1.15, ffValue: 1.5, casterRisk: 1.5, ctlRound: 0.4, control: 0.8 }, pacing: { slot: 6 }, burn: { bias: 0.75, probeBias: 0.6 } },
-  support: { w: { heal: 1.3, healLow: 1.6, healDanger: 1.2, revive: 22, buff: 1.3, healReach: 3 } },
+  support: { w: { heal: 1.3, healLow: 1.6, healDanger: 1.2, backLife: 60, buff: 1.3, healReach: 3 } },
 };
 function mergeProfile(base, over) {
   const out = JSON.parse(JSON.stringify(base));
@@ -3410,12 +3413,12 @@ function aiProfile(spec) {
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
 /* which creatures v2 drives: plays tactically (or names a profile), no spellbook or a full caster's (casterKind),
-   and nothing it can't score yet (swallowing, dice pools) */
+   and nothing it can't score yet (swallowing, dice pools other than heals) */
 Sim.prototype.v2Eligible = function (u) {
   const prof = u.tpl.ext && u.tpl.ext.aiProfile;
   if (!this.aiV2 || !this.aiV2[u.team] || (u.ai !== 'tactical' && !prof)) return false;
   if (u.hasSpells && u.casterKind !== 'full') return false;            // half and third casters: step 3
-  return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.ext && (a.ext.swallow || a.ext.pool));
+  return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.ext && (a.ext.swallow || (a.ext.pool && a.type !== 'heal')));
 };
 Sim.prototype.v2Setup = function (u) {
   u.v2 = this.v2Eligible(u);
@@ -3807,8 +3810,7 @@ Sim.prototype.v2AllyValue = function (u, a, t, ctx) {
   const W = u.v2P.w;
   if (a.type === 'heal') {
     const amt = avgDice(a.amount), hx = a.ext || {};
-    // a downed ally back up: its damage for the rest of the fight, and no more death saves to fail
-    if (t.hp <= 0) return W.revive + (t.dpr || 0) * Math.min(ctx.rounds, 4) * W.reviveRounds + (t.deathF || 0) * 4 + amt * 0.2;
+    if (t.hp <= 0) return this.v2BackUp(u, a, t, ctx, amt);
     if (hx.aid) return amt * 0.6 * W.heal;
     if (a.tempHP) return Math.max(0, amt - (t.temp || 0)) * 0.7 * W.heal;
     const got = Math.min(amt, Math.max(0, t.maxHp - t.hp));
@@ -3823,6 +3825,32 @@ Sim.prototype.v2AllyValue = function (u, a, t, ctx) {
     return this.effectValue(Object.assign({}, b, { duration: '1 round' }), t, false, u) * R * W.buff;
   }
   return 0;
+};
+/* the chance a creature at 0 HP dies within `rounds` turns, from s successes and f failures; hit2: the chance a round an attack lands two failures on it */
+function deathOdds(s, f, rounds, hit2, stable) {
+  const walk = (ds, df, r) => {
+    if (df >= 3) return 1;
+    if (r <= 0 || (ds >= 3 && !hit2)) return 0;
+    const atk = hit2 ? hit2 * walk(ds, df + 2, r - 1) : 0, rest = (1 - hit2);
+    if (ds >= 3) return atk + rest * walk(ds, df, r - 1);                                   // stable: only an attack can kill it
+    return atk + rest * (0.4 * walk(ds, df + 1, r - 1) + 0.05 * walk(ds, df + 2, r - 1) + 0.5 * walk(ds + 1, df, r - 1));   // the other 5%: a natural 20, back up
+  };
+  return walk(stable ? 3 : s, f, Math.min(6, Math.ceil(rounds)));
+}
+/* a downed ally back up (docs/ai-v2.md, step 2.12): its turns for the rest of the fight, cut short by the foes around it, plus the
+   death it avoids, less the chance it drops again and pays for it anyway */
+Sim.prototype.v2BackUp = function (u, a, t, ctx, amt) {
+  const W = u.v2P.w, hp = Math.max(1, Math.min(t.maxHp, amt));
+  const adj = ctx.foes.filter(e => !this.incap(e) && this.dist(e, t) <= this.meleeReach(e));
+  const hit = Math.max(this.v2Pressure(u, t, ctx), adj.reduce((s, e) => s + this.kDpr(u, e), 0) * 0.6 * W.backFocus);
+  const turns = Math.min(ctx.rounds, W.backFirst + hp / Math.max(1, hit)), pDrop = Math.min(1, hit / hp);
+  const heals = t.actions.some(o => o.type === 'heal' && o.target !== 'self' && o._range !== 0 && (o.actionSlot === 0 || o.actionSlot === 1) && this.usable(t, o));
+  // its damage on the same scale as any attack's (× how dangerous the foes are); the blow past its HP is one nobody else takes
+  const threat = 1 + ctx.foes.reduce((s, e) => s + this.kDpr(u, e), 0) / Math.max(1, ctx.foes.length) / W.dprScale;
+  const round = Math.max((t.dpr || 0) * threat, heals ? W.backHealer : 0), soak = Math.max(0, hit - hp) * W.backSoak;
+  const life = W.backLife * (1 + W.backDay * (t.team === 'party' ? this.leftFor(u) : 0));
+  const saved = deathOdds(t.deathS || 0, t.deathF || 0, ctx.rounds, Math.min(1, W.backFinish * adj.length), t.stable) - pDrop * deathOdds(0, 0, ctx.rounds, Math.min(1, W.backFinish2 * adj.length));
+  return round * turns * W.backRound + soak + life * Math.max(0, saved);
 };
 /* damage heading for ally o next round, as u's side reckons it */
 Sim.prototype.v2Pressure = function (u, o, ctx) {
@@ -5366,5 +5394,5 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, AI_BASE, AI_PROFILES, aiProfile, casterKind, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, AI_BASE, AI_PROFILES, aiProfile, casterKind, deathOdds, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

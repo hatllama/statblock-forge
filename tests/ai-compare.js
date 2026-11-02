@@ -397,6 +397,83 @@ function playCtl(sc, N) {
   for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
 }
 
+/* ---- downed allies (step 2.12) ---- */
+// a limited-use healing potion as the sheet reader builds it
+const withPotions = (p, n) => {
+  p.ext = Object.assign({}, p.ext, { resources: Object.assign({}, p.ext && p.ext.resources, { 'Potion of Healing': { uses: n, reset: 'lr' } }) });
+  p.actions.push({ id: p.id + '-potion', name: 'Potion of Healing', actionSlot: 1, freq: 'at will', condition: 'ally under half HP', targets: 1, type: 'heal', amount: '2d4 + 2', target: 'ally with the least HP', ext: { range: 5, resource: 'Potion of Healing', potion: true } });
+  return p;
+};
+const zaki = () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players);
+// DOWN_NOW: the names knocked to 0 HP as the day's first fight starts
+let DOWN_NOW = null;
+const realTurn = Tac.Sim.prototype.turn;
+Tac.Sim.prototype.turn = function (u) {
+  if (DOWN_NOW && this.fightNo === 0 && !this._downDone) {
+    this._downDone = true;
+    for (const o of this.units) if (o.team === 'party' && DOWN_NOW.some(n => o.name.indexOf(n) === 0)) this.downPC(o);
+  }
+  return realTurn.call(this, u);
+};
+// the party's front line at (14,7), n foes of one kind round it
+const around = (name, n, who) => encs => {
+  const m = encs[0].monsters.find(x => x.name === name), pos = {}, ring = [[15, 7], [15, 6], [15, 8], [13, 6], [13, 8], [14, 6], [14, 8]];
+  for (let i = 0; i < n; i++) pos['foes|' + m.id + '|' + i] = { x: ring[i][0], y: ring[i][1] };
+  pos['party|' + who + '|0'] = { x: 14, y: 7 };
+  return { 0: { gapFt: 30, positions: pos } };
+};
+const potionRogue = () => withPotions(pc('Rogue'), 2);
+const DOWN_SCENARIOS = [
+  { name: 'D1 healer, downed Fighter: Cleric, Wizard, Rogue (Fighter down) vs Hill Giant + 3 Ogres', party: ['Fighter', 'Cleric', 'Wizard', 'Rogue'], day: 'Hill Giant,Ogre*3', down: ['Fighter'] },
+  { name: 'D2 downed Fighter beside 3 Gnoll Warriors: Cleric, Wizard, Rogue vs 20 Gnoll Warriors', party: ['Fighter', 'Cleric', 'Wizard', 'Rogue'], day: 'Gnoll Warrior*20', down: ['Fighter'], layoutFn: around('Gnoll Warrior', 3, 'c5-fighter') },
+  { name: 'D3 downed healer: Cleric down; Bard, Fighter, Rogue (2 potions) vs 2 Hill Giants + 2 Ogres', players: () => [pc('Cleric'), pc('Bard'), pc('Fighter'), potionRogue()], encounters: () => fights('Hill Giant*2,Ogre*2'), down: ['Cleric'] },
+  { name: 'D4 two downed: Fighter and Barbarian down; Cleric, Bard, Wizard vs 2 Hill Giants + 3 Ogres', party: ['Fighter', 'Barbarian', 'Cleric', 'Bard', 'Wizard'], day: 'Hill Giant*2,Ogre*3', down: ['Fighter', 'Barbarian'] },
+  { name: 'D5 potions only: Fighter down; Rogue (2 potions), Monk, Barbarian vs 2 Hill Giants + 3 Ogres', players: () => [pc('Fighter'), potionRogue(), pc('Monk'), pc('Barbarian')], encounters: () => fights('Hill Giant*2,Ogre*3'), down: ['Fighter'] },
+  { name: 'D6 a day: downed Fighter in fight 1; Cleric, Bard, Rogue vs 10 goblins / Hill Giant + 3 Ogres / 2 Bandit Captains + 10 Bandits', party: ['Fighter', 'Cleric', 'Bard', 'Rogue'], day: 'Goblin Warrior*10/Hill Giant,Ogre*3/Bandit Captain*2,Bandit*10', down: ['Fighter'] },
+  { name: "D7 Zaki's party, Kraax down, vs 2 Hill Giants + 4 Ogres + 6 Gnoll Warriors", players: zaki, encounters: () => fights('Hill Giant*2,Ogre*4,Gnoll Warrior*6'), down: ['Kraax'] },
+  { name: "D8 Zaki's party, Faithwalker down, vs 2 Hill Giants + 4 Ogres + 6 Gnoll Warriors", players: zaki, encounters: () => fights('Hill Giant*2,Ogre*4,Gnoll Warrior*6'), down: ['Faithwalker'] },
+  { name: "D9 Zaki's party vs hard-day.json", players: zaki, encounters: () => clone(fixture('hard-day.json').encounters) },
+];
+/* DOWNED=1: per downed ally, did a v2 creature that could have healed it do so? A chance = a turn of a standing creature with a
+   heal in reach of it (move + range, line of sight not checked); an event = one time at 0 HP with at least one chance */
+function downedRate(sc, N, know) {
+  const c = { ev: 0, evHealed: 0, bTurns: 0, bUsed: 0, aTurns: 0, aUsed: 0, v1Turns: 0, v1Used: 0 };
+  const proto = Tac.Sim.prototype, wrapped = proto.turn;
+  const seen = new Map();
+  const note = key => { let e = seen.get(key); if (!e) { e = { healed: 0 }; seen.set(key, e); } return e; };
+  proto.turn = function (u) {
+    const down = u.team === 'party' && this.alive(u) && !this.incap(u) ? this.alliesOf(u).filter(o => o.onBoard && !o.dead && o.hp <= 0) : [];
+    if (!down.length) return wrapped.call(this, u);
+    const reach = (a, t) => a.type === 'heal' && this.usable(u, a) && this.condOk(u, a) && a.target !== 'self' && a._range !== 0 && !(a.ext && a.ext.aid) && !a.tempHP && !(a.ext && a.ext.revivify) && this.dist(u, t) <= this.speedOf(u) + Math.max(5, a._range || 5);
+    const bon = down.filter(t => u.actions.some(a => a.actionSlot === 1 && reach(a, t))), act = down.filter(t => u.actions.some(a => a.actionSlot === 0 && reach(a, t)));
+    const could = down.filter(t => bon.includes(t) || act.includes(t));
+    if (!could.length) return wrapped.call(this, u);
+    for (const t of could) note(this.fightNo + '|' + t.uid + '|' + t.downs);
+    const before = u.healed;
+    wrapped.call(this, u);
+    const up = could.filter(t => t.hp > 0 && u.healed > before);
+    for (const t of up) note(this.fightNo + '|' + t.uid + '|' + t.downs).healed = 1;
+    if (!u.v2) { c.v1Turns++; if (up.length) c.v1Used++; return; }
+    if (bon.length) { c.bTurns++; if (up.length) c.bUsed++; } else { c.aTurns++; if (up.length) c.aUsed++; }
+  };
+  for (let i = 0; i < N; i++) {
+    const encounters = sc.encounters ? sc.encounters() : fights(sc.day), players = sc.players ? sc.players() : sc.party.map(pc);
+    const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
+    seen.clear(); DOWN_NOW = sc.down || null;
+    Tac.runDay({ players, encounters }, { seed: (1000 + i * 7919) >>> 0, ai: { party: 'v2' }, partyAI: 'tactical', layouts, know: sc.know || { party: know } });
+    for (const e of seen.values()) { c.ev++; c.evHealed += e.healed; }
+  }
+  proto.turn = wrapped; DOWN_NOW = null;
+  const rate = (a, b) => b ? lpad((a / b * 100).toFixed(0) + '%', 5) : lpad('-', 5);
+  console.log(['  ' + pad(sc.name.slice(0, 74), 74), lpad(c.ev, 6), rate(c.evHealed, c.ev), lpad(c.bTurns, 6), rate(c.bUsed, c.bTurns), lpad(c.aTurns, 6), rate(c.aUsed, c.aTurns), lpad(c.v1Turns, 6), rate(c.v1Used, c.v1Turns)].join(' '));
+  return c;
+}
+function playDown(sc, N) {
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({}, sc, { know: { party: mode } }), { party: 'v2' }, N))); DOWN_NOW = null; }
+}
+
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
 const AI_OVER = ['w', 'pacing', 'burn'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
@@ -486,12 +563,23 @@ const N = Math.max(1, parseInt(process.argv[2], 10) || 200);
 const only = process.argv[3] ? new RegExp(process.argv[3], 'i') : null;
 console.log(`Old AI (v1) vs AI v2 for the party, ${N} seeded runs per scenario. Per day: win = won every fight; rounds, PC deaths, damage dealt and taken by the party; ms per day.`);
 const spellLine = o => Array.from(o.spells).sort((p, q) => q[1] - p[1]).slice(0, 6).map(([k, v]) => `${k} ${(v / o.n).toFixed(2)}`).join(', ');
+if (process.env.DOWNED === '1') {
+  const all = BURN_SCENARIOS.concat(CTL_SCENARIOS, SCENARIOS, DOWN_SCENARIOS).filter(sc => sc.side !== 'foes' && (!only || only.test(sc.name)));
+  for (const know of KNOW ? [KNOW.party] : ['learn', 'open', 'blind']) {
+    console.log('\n' + pad(know, 76) + ' events healed | turns with a bonus heal, used | with only an action heal, used | v1 creatures, used');
+    const sum = { ev: 0, evHealed: 0, bTurns: 0, bUsed: 0, aTurns: 0, aUsed: 0 };
+    for (const sc of all) { const c = downedRate(sc, N, know); for (const k in sum) sum[k] += c[k]; }
+    console.log(`  TOTAL events ${sum.ev}, healed ${(sum.evHealed / sum.ev * 100).toFixed(1)}%; bonus-heal turns ${sum.bTurns}, used ${(sum.bUsed / sum.bTurns * 100).toFixed(1)}%; action-heal turns ${sum.aTurns}, used ${(sum.aUsed / sum.aTurns * 100).toFixed(1)}%`);
+  }
+  process.exit(0);
+}
 if (process.env.ACCURACY === '1') {
   for (const sc of BURN_SCENARIOS.concat(CTL_SCENARIOS, SCENARIOS)) if (!only || only.test(sc.name)) accuracy(sc, N);
   process.exit(0);
 }
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
+for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };

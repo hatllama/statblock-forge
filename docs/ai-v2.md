@@ -139,9 +139,9 @@ The caster path is the same `v2TurnInner` square × option search; casters only 
   Resistance left (`kLegRes`, new accessor) is worth only `w.legRes` of that: the save gets bought off. Area control
   sums over everyone caught, single-target control does not; the target values decide which wins.
 - **Healing** an ally: missing hit points restored × `w.heal` (× `w.healLow` under half), plus `w.healDanger` × the
-  damage heading its way next round that would drop it. A **downed** ally: `w.revive` + its DPR × the rounds left ×
-  `w.reviveRounds`, more after failed death saves. Full-HP allies are never targets. Multi-target heals sum their
-  best targets in range.
+  damage heading its way next round that would drop it. A **downed** ally: the "back in the fight" term `v2BackUp`
+  (step 2.12, below), which replaces the flat revive bonus. Full-HP allies are never targets. Multi-target heals sum
+  their best targets in range. Potions are heal options like any other: a bonus action on a creature within 5 ft.
 - **Buffs** on allies (Bless, Shield of Faith, Aid): the per-round `effectValue` for that ally × the rounds it lasts,
   × `w.buff`, summed over targets; self buffs (Hex, Armor of Agathys) use step 1's `v2SelfValue`. Spells that conjure
   a follow-up attack (`ext.grantsBuff` + an action with `ext.requiresBuff`: Spiritual Weapon, Starry Form) add the
@@ -678,6 +678,45 @@ On the final code, with the estimate on, the same round-1 slot discount makes it
 
 **Proposal (not built).** Leave pacing alone. Raise `SIZE_PRIOR.Small.hp` from 15 to 32 (for v2 it only reaches blind, now that learn uses the estimate).
 Measured by ablation on the final code: Zaki's hard day under blind 47.5 → 68.0. Expected elsewhere: blind rows with Small swarms may spend more on goblins and lose a little; a full blind table is needed first (the classic AI reads the same prior, so its blind and learn logs would move: that needs the user's call).
+
+### Downed allies: back in the fight (step 2.12, part A)
+
+A heal priced by hit points restored is tiny for an ally at 0. What it really buys is the ally's next turns and the end
+of its death saves. `v2BackUp(u, a, t, ctx, amt)` values that, in points of damage like everything else:
+
+```
+hp      = what the heal leaves it with
+hit     = damage it would take next round if it stood up: the larger of v2Pressure and its adjacent foes' kDpr × 0.6 × backFocus
+turns   = min(rounds left, backFirst + hp / hit)                 // it may get a turn even if it drops again at once
+round   = its DPR, or backHealer if that is more and it can still heal
+pDrop   = min(1, hit / hp)                                       // dropped again next round
+up      = round × turns × backRound
+life    = backLife × (1 + backDay × fights left)
+saved   = deathOdds(left down) − pDrop × deathOdds(down again)   // the avoided death, less the chance of paying for it anyway
+value   = up + life × saved
+```
+
+- **`deathOdds(s, f, rounds, hit2)`** is the exact chance of dying from `s` successes and `f` failures within `rounds`
+  turns (a small table walk, no dice, no search): 40% one failure, 5% two, 5% back up, 50% a success, plus `hit2` a
+  round for an attack on it that lands two failures. A stable ally only dies to attacks. Fight's end ends the risk,
+  so a short fight leaves little to save.
+- **`hit2`**: left down it is `backFinish` × adjacent foes (nobody can know a foe's policy on the downed, so it is a
+  weight, not a read of `mayHitDowned`); after a second drop, `backFinish2` × adjacent foes, because foes that spare a
+  first-timer do finish someone on the second drop (`mayHitDowned`).
+- **The focus risk** is `hit`, and it costs twice: fewer turns up, and `pDrop` taking back the avoided death. Next to
+  three foes a 7-point Healing Word buys about one turn and little else; across the room it buys the fight.
+- **Bonus or action** needs no rule. A bonus heal is added to the action's score, so it wins whenever the action still
+  has a use (a cantrip pairs with it; the one-slot rule makes "Healing Word + cantrip" compete with "Fireball").
+  A full-action heal has to beat the whole action, so it wins only for an ally worth it at low risk.
+- **Potions** go through the same term, on any creature within 5 ft, bonus action, drawn from `ext.resources`.
+- **Own-side facts** (`t.dpr`, `t.deathF`, the heal's dice) are real; foes' damage goes through `kDpr`.
+
+Replaces `w.revive`, `w.reviveRounds` and the failed-saves bonus. New weights in `AI_BASE.w`: `backRound`, `backFirst`,
+`backFocus`, `backHealer`, `backLife`, `backDay`, `backFinish`, `backFinish2`; `support` raises `backLife`.
+
+**Healing Light joins v2.** `v2Eligible` sent a creature with a dice-pool heal (`ext.pool`) to v1 for the whole fight,
+so Niko, the only member of Zaki's party with Revivify, was not on v2 at all. A heal pool is an ordinary heal to the
+scorer: the amount is `a.amount` (the per-use cap), `doAction` rolls the dice. Swallowing still goes to v1.
 
 ## Existing user-facing AI options → v2 knobs
 
