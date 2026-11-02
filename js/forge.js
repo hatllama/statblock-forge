@@ -905,7 +905,7 @@ function validateSpellbook(m, issues){
   const slots = Array.from({ length: 9 }, (_, i) => parseInt((sb.slots || [])[i], 10) || 0);
   (sb.spells || []).forEach(sp=>{
     const nm = sp.name || sp.templateOptions?.templateName || 'unnamed';
-    if(sp.type !== 'template') validateAction(Object.assign({}, sp, { freq: 'at will', condition: 'default', actionSlot: typeof sp.actionSlot === 'number' ? sp.actionSlot : 0 }), issues, `Spell "${nm}"`);
+    if(sp.type !== 'template' && !(sp.ext && sp.ext.wtOnly)) validateAction(Object.assign({}, sp, { freq: 'at will', condition: 'default', actionSlot: typeof sp.actionSlot === 'number' ? sp.actionSlot : 0 }), issues, `Spell "${nm}"`);
     const L = parseInt(sp.level, 10) || 0;
     if(L > 0 && !slots.slice(L - 1).some(n=>n > 0)) issues.push(`Spell "${nm}" is level ${L}, but there are no level ${L}+ spell slots, so it can never be cast`);
   });
