@@ -7,14 +7,14 @@
    "mode": "custom",
    "class": {
     "type": "druid",
-    "level": 4,
+    "level": 5,
     "options": {}
    },
    "name": "Faithwalker",
    "count": 1,
-   "hp": 35,
+   "hp": 43,
    "AC": 14,
-   "saveBonus": 1.67,
+   "saveBonus": 2.17,
    "ext": {
     "speed": 35,
     "initBonus": 1,
@@ -22,15 +22,15 @@
      "str": -1,
      "dex": 1,
      "con": 3,
-     "int": 2,
-     "wis": 5,
+     "int": 3,
+     "wis": 7,
      "cha": 0
     },
     "spellbook": {
      "slots": [
+      4,
       3,
-      3,
-      0,
+      2,
       0,
       0,
       0,
@@ -47,14 +47,14 @@
        "actionSlot": 0,
        "targets": 1,
        "type": "atk",
-       "dpr": "1d8 + 1",
-       "toHit": 13,
+       "dpr": "2d8 + 1",
+       "toHit": 15,
        "useSaves": true,
        "target": "enemy with least HP",
        "ext": {
         "range": 60,
         "saveAbility": "wis",
-        "dprIfHurt": "1d12",
+        "dprIfHurt": "2d12",
         "damageType": "necrotic"
        }
       },
@@ -65,8 +65,8 @@
        "actionSlot": 0,
        "targets": 1,
        "type": "atk",
-       "dpr": "1d8",
-       "toHit": 5,
+       "dpr": "2d8",
+       "toHit": 7,
        "target": "enemy with least HP",
        "ext": {
         "range": 60,
@@ -83,8 +83,8 @@
        "actionSlot": 0,
        "targets": 1,
        "type": "atk",
-       "dpr": "1d6",
-       "toHit": 5,
+       "dpr": "2d6",
+       "toHit": 7,
        "target": "enemy with least HP",
        "ext": {
         "range": 30,
@@ -99,7 +99,7 @@
        "actionSlot": 0,
        "targets": 1,
        "type": "heal",
-       "amount": "2d8 + 3",
+       "amount": "2d8 + 4",
        "target": "ally with the least HP",
        "ext": {
         "range": 5
@@ -113,7 +113,7 @@
        "actionSlot": 1,
        "targets": 1,
        "type": "heal",
-       "amount": "2d4 + 3",
+       "amount": "2d4 + 4",
        "target": "ally with the least HP",
        "ext": {
         "range": 60
@@ -128,7 +128,7 @@
        "targets": 1,
        "type": "atk",
        "dpr": "4d6",
-       "toHit": 5,
+       "toHit": 7,
        "target": "enemy with highest DPR",
        "riderEffect": {
         "dc": 99,
@@ -151,7 +151,7 @@
        "targets": 2,
        "type": "atk",
        "dpr": "2d8",
-       "toHit": 13,
+       "toHit": 15,
        "useSaves": true,
        "halfOnSave": true,
        "target": "enemy with least HP",
@@ -176,7 +176,7 @@
        "actionSlot": 0,
        "targets": 3,
        "type": "debuff",
-       "saveDC": 13,
+       "saveDC": 15,
        "target": "enemy with highest DPR",
        "buff": {
         "duration": "repeat the save each round",
@@ -204,7 +204,7 @@
        "targets": 3,
        "type": "atk",
        "dpr": "3d8",
-       "toHit": 13,
+       "toHit": 15,
        "useSaves": true,
        "halfOnSave": true,
        "target": "enemy with most HP",
@@ -274,7 +274,7 @@
       }
      ]
     },
-    "multiclass": "Druid 3 / Cleric 1"
+    "multiclass": "Druid 4 / Cleric 1"
    },
    "actions": [
     {
@@ -288,8 +288,8 @@
      "condition": "not used yet",
      "targets": 1,
      "type": "atk",
-     "dpr": "3d6",
-     "toHit": 13,
+     "dpr": "4d6",
+     "toHit": 15,
      "useSaves": true,
      "target": "enemy with highest DPR",
      "ext": {
@@ -313,8 +313,8 @@
      "condition": "default",
      "targets": 1,
      "type": "atk",
-     "dpr": "3d6",
-     "toHit": 13,
+     "dpr": "4d6",
+     "toHit": 15,
      "useSaves": true,
      "target": "enemy with highest DPR",
      "ext": {
@@ -347,7 +347,7 @@
      "actionSlot": 1,
      "freq": {
       "reset": "lr",
-      "uses": 2
+      "uses": 3
      },
      "condition": "default",
      "targets": 1,
