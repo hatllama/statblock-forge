@@ -1432,31 +1432,34 @@
    "mode": "custom",
    "class": {
     "type": "wizard",
-    "level": 4,
+    "level": 5,
     "options": {}
    },
    "name": "Eldar Yollavien",
    "count": 1,
-   "hp": 25,
-   "AC": 16,
-   "saveBonus": 1.83,
+   "hp": 37,
+   "AC": 13,
+   "saveBonus": 2.17,
    "ext": {
     "speed": 30,
     "initBonus": 3,
-    "escapeBonus": 7,
     "saves": {
      "str": -1,
      "dex": 3,
      "con": 3,
-     "int": 6,
-     "wis": 1,
+     "int": 7,
+     "wis": 2,
      "cha": -1
     },
+    "unarmored": true,
+    "dexMod": 3,
+    "athletics": -1,
+    "escapeBonus": 6,
     "spellbook": {
      "slots": [
       4,
       3,
-      0,
+      2,
       0,
       0,
       0,
@@ -1465,195 +1468,86 @@
       0
      ],
      "slotReset": "lr",
-     "recovery": {
-      "levels": 2,
-      "maxSlot": 5,
-      "restores": [
-       "ey-bladesong"
-      ]
-     },
      "spells": [
       {
-       "id": "ey-sp-gfb",
-       "name": "Green-Flame Blade",
-       "level": 0,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "1d8 + 4 + 2",
-       "toHit": 6,
-       "target": "enemy with least HP",
-       "ext": {
-        "range": 5,
-        "wtDpr": "1d8 + 4",
-        "onHit": {
-         "splash": {
-          "dmg": "4",
-          "range": 5,
-          "type": "fire"
-         }
-        },
-        "damageType": "piercing"
-       }
-      },
-      {
-       "id": "ey-sp-rof",
        "name": "Ray of Frost",
-       "level": 0,
        "actionSlot": 0,
        "targets": 1,
-       "type": "atk",
-       "dpr": "1d8",
-       "toHit": 6,
-       "target": "enemy with least HP",
        "ext": {
         "range": 60,
+        "damageType": "cold",
         "onHit": {
          "slow": 10
-        },
-        "damageType": "cold"
-       }
+        }
+       },
+       "type": "atk",
+       "dpr": "2d8",
+       "toHit": 7,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s3"
       },
       {
-       "id": "ey-sp-sg",
        "name": "Shocking Grasp",
-       "level": 0,
        "actionSlot": 0,
        "targets": 1,
-       "type": "atk",
-       "dpr": "1d8",
-       "toHit": 6,
-       "target": "enemy with least HP",
        "ext": {
         "range": 5,
+        "damageType": "lightning",
         "onHit": {
          "noReactions": true
-        },
-        "damageType": "lightning"
-       }
+        }
+       },
+       "type": "atk",
+       "dpr": "2d8",
+       "toHit": 7,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s7"
       },
       {
-       "id": "ey-sp-orb",
        "name": "Chromatic Orb",
-       "level": 1,
-       "upcast": "1d8",
        "actionSlot": 0,
        "targets": 1,
-       "type": "atk",
-       "dpr": "3d8 + 2.8",
-       "toHit": 6,
-       "target": "enemy with least HP",
        "ext": {
         "range": 90,
-        "wtDpr": "3d8",
+        "damageType": "acid/cold/fire/lightning/poison/thunder",
         "leap": {
          "range": 30
-        },
-        "damageType": "acid/cold/fire/lightning/poison/thunder"
-       }
+        }
+       },
+       "type": "atk",
+       "dpr": "3d8",
+       "toHit": 7,
+       "target": "enemy with most HP",
+       "level": 1,
+       "upcast": "1d8",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s11"
       },
       {
-       "id": "ey-sp-bh",
        "name": "Burning Hands",
-       "level": 1,
-       "upcast": "1d6",
        "actionSlot": 0,
        "targets": 2,
-       "type": "atk",
-       "dpr": "3d6",
-       "toHit": 14,
-       "useSaves": true,
-       "halfOnSave": true,
-       "target": "enemy with least HP",
        "ext": {
         "range": 15,
+        "saveAbility": "dex",
+        "damageType": "fire",
         "area": {
          "shape": "cone",
          "size": 15
-        },
-        "saveAbility": "dex",
-        "damageType": "fire"
-       }
-      },
-      {
-       "id": "ey-sp-tcb",
-       "name": "Tasha's Caustic Brew",
-       "level": 1,
-       "upcast": "4d4",
-       "concentration": true,
-       "actionSlot": 0,
-       "targets": 2,
+        }
+       },
        "type": "atk",
-       "dpr": "4d4",
-       "toHit": 14,
+       "dpr": "3d6",
+       "toHit": 15,
        "useSaves": true,
        "target": "enemy with most HP",
-       "ext": {
-        "range": 30,
-        "area": {
-         "shape": "line",
-         "size": 30
-        },
-        "saveAbility": "dex",
-        "dot": {
-         "dice": "2d4",
-         "upcast": "2d4"
-        },
-        "damageType": "acid"
-       }
-      },
-      {
-       "id": "ey-sp-hold",
-       "name": "Hold Person",
-       "level": 2,
-       "upcastTargets": 1,
-       "concentration": true,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "debuff",
-       "saveDC": 14,
-       "target": "enemy with highest DPR",
-       "buff": {
-        "duration": "repeat the save each round",
-        "condition": "Paralyzed"
-       },
-       "ext": {
-        "range": 60,
-        "targetTypes": [
-         "humanoid"
-        ],
-        "saveAbility": "wis"
-       }
-      },
-      {
-       "id": "ey-sp-mirror",
-       "name": "Mirror Image",
-       "level": 2,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "buff",
-       "target": "self",
-       "buff": {
-        "duration": "entire encounter",
-        "damageTakenMultiplier": 0.29
-       },
-       "ext": {
-        "mirror": 3
-       }
-      },
-      {
-       "id": "ey-sp-shield",
-       "name": "Shield",
+       "halfOnSave": true,
        "level": 1,
-       "actionSlot": 4,
-       "type": "template",
-       "templateOptions": {
-        "templateName": "Shield"
-       }
+       "upcast": "1d6",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s13"
       },
       {
-       "id": "ey-sp-barbs",
-       "name": "Silvery Barbs",
        "level": 1,
        "actionSlot": 4,
        "targets": 1,
@@ -1666,61 +1560,272 @@
        },
        "ext": {
         "range": 60
-       }
+       },
+       "name": "Silvery Barbs",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s16"
+      },
+      {
+       "name": "Shield",
+       "actionSlot": 4,
+       "type": "template",
+       "templateOptions": {
+        "templateName": "Shield"
+       },
+       "level": 1,
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s17"
+      },
+      {
+       "level": 1,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "buff",
+       "target": "ally",
+       "buff": {
+        "duration": "entire encounter"
+       },
+       "ext": {
+        "range": 5,
+        "prefight": "mageArmor",
+        "wtOnly": true
+       },
+       "name": "Mage Armor",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s20"
+      },
+      {
+       "name": "Hold Person",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 60,
+        "saveAbility": "wis",
+        "targetTypes": [
+         "humanoid"
+        ]
+       },
+       "type": "debuff",
+       "saveDC": 15,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "repeat the save each round",
+        "condition": "Paralyzed"
+       },
+       "level": 2,
+       "concentration": true,
+       "upcastTargets": 1,
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s21"
+      },
+      {
+       "name": "Mirror Image",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "mirror": 3
+       },
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "entire encounter",
+        "damageTakenMultiplier": 0.29
+       },
+       "level": 2,
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s22"
+      },
+      {
+       "name": "Misty Step",
+       "actionSlot": 1,
+       "targets": 1,
+       "ext": {
+        "teleport": 30,
+        "wtOnly": true
+       },
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "1 round"
+       },
+       "level": 2,
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s23"
+      },
+      {
+       "name": "Fireball",
+       "actionSlot": 0,
+       "targets": 4,
+       "ext": {
+        "range": 150,
+        "saveAbility": "dex",
+        "damageType": "fire",
+        "area": {
+         "shape": "sphere",
+         "size": 20
+        }
+       },
+       "type": "atk",
+       "dpr": "8d6",
+       "toHit": 15,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "halfOnSave": true,
+       "level": 3,
+       "upcast": "1d6",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s25"
+      },
+      {
+       "level": 3,
+       "actionSlot": 4,
+       "targets": 1,
+       "type": "buff",
+       "target": "self",
+       "buff": {
+        "duration": "1 round"
+       },
+       "ext": {
+        "range": 60,
+        "counterspell": true,
+        "wtOnly": true
+       },
+       "name": "Counterspell",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s26"
       }
-     ]
-    }
+     ],
+     "conSave": 3
+    },
+    "resources": {
+     "Potion of Healing": {
+      "uses": 1,
+      "reset": "lr"
+     }
+    },
+    "build": "Wizard 5 (Bladesinger) · read from a pasted sheet"
    },
    "actions": [
     {
-     "id": "ey-rapier",
-     "name": "Rapier (Bladework)",
-     "actionSlot": 0,
      "freq": "at will",
      "condition": "default",
      "targets": 1,
+     "name": "Shocking Grasp (Magic I",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "2d8",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "lightning",
+      "wtOnly": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a1"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Green-Flame Blade (Mag",
+     "actionSlot": 0,
      "type": "atk",
      "dpr": "1d8 + 4",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a2"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Initiate)",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d8 + 4",
+     "toHit": 7,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a3"
+    },
+    {
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Rapier",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d8 + 3",
      "toHit": 6,
      "target": "enemy with least HP",
      "ext": {
       "range": 5,
-      "damageType": "piercing"
-     }
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a4"
     },
     {
-     "id": "ey-bladesong",
-     "name": "Bladesong",
-     "actionSlot": 1,
-     "freq": {
-      "reset": "lr",
-      "uses": 4
-     },
-     "condition": "not used yet",
+     "freq": "at will",
+     "condition": "default",
      "targets": 1,
-     "type": "buff",
-     "target": "self",
-     "buff": {
-      "duration": "entire encounter",
-      "ac": 4
-     },
+     "name": "Stab",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d4 + 3",
+     "toHit": 6,
+     "target": "enemy with least HP",
      "ext": {
-      "speedBonus": 10,
-      "concBonus": 4,
-      "endsOnIncap": true
-     }
+      "range": 5,
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a5"
     },
     {
-     "id": "ey-potion",
+     "freq": "at will",
+     "condition": "default",
+     "targets": 1,
+     "name": "Throw",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d4 + 3",
+     "toHit": 6,
+     "target": "enemy with least HP",
+     "ext": {
+      "range": 5,
+      "damageType": "piercing",
+      "wtOnly": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a6"
+    },
+    {
+     "freq": "at will",
+     "condition": "ally under half HP",
+     "targets": 1,
      "name": "Potion of Healing",
      "actionSlot": 1,
-     "freq": "1/day",
-     "condition": "is under half HP",
-     "targets": 1,
      "type": "heal",
      "amount": "2d4 + 2",
-     "target": "self"
+     "target": "ally with the least HP",
+     "ext": {
+      "range": 5,
+      "resource": "Potion of Healing",
+      "potion": true
+     },
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a7"
     }
+   ],
+   "_notes": [
+    "Class features (no fight rules): Memorize Spell, Training in War and Song, Bladesong, Scholar, Arcane Recovery.",
+    "Species traits (no fight rules): Trance, Keen Senses, Fey Ancestry, Elven Lineage..",
+    "Feats (no fight rules): Magic Initiate.",
+    "Other features (no fight rules): Read a whole Zoology book.",
+    "Healing potions (a bonus action in fights): Potion of Healing.",
+    "Weapons in the pack with no attack bonus or damage on the sheet: Dagger ×2.",
+    "Other gear: Dorian's Things; Map of Rueltran; Diamond (50gp); Scholar's Pack; Spellbook; Robe; Arcane Focus (hat); 57 gp 5 sp 6 cp.",
+    "Not in its spell list (no rules for them yet): Minor Illusion, Message, Mage Hand, Elven Lineage Cant…, Green-Flame Blad…, Unseen Servant, Disguise Self, Feather Fall, Tasha's Caustic Br…, Expeditious Retreat, Identify, Find Familiar…."
    ]
   }
  ],
