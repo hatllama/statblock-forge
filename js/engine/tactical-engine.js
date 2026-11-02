@@ -3345,6 +3345,7 @@ const AI_BASE = {
     buff: 1, buffRounds: 2, zone: 2,                             // buffs on allies (per round × rounds, counted this many rounds ahead at most); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
+    dot: 1, dotLag: 0.5, dotMin: 0.5, dotMax: 3.5, dotHold: 1,   // a burn (Caustic Brew: ext.dot): its value; the rounds it loses because the first tick comes on the foe's turn; the fewest and most ticks counted; what a running one is worth to keep
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
@@ -3447,6 +3448,7 @@ function castCopy(a, L) {
     else if (a.type === 'atk') { o.dpr = a.dpr + ' + ' + extra; if (a.ext && a.ext.wtDpr) o.ext = Object.assign({}, a.ext, { wtDpr: a.ext.wtDpr + ' + ' + extra }); }
   }
   if (a._spell.upcastTargets) o.targets = (a.targets || 1) + a._spell.upcastTargets * k;
+  if (a.ext && a.ext.dot) o.ext = Object.assign({}, o.ext, { dotAt: [a.ext.dot.dice].concat(a.ext.dot.upcast ? Array(k).fill(a.ext.dot.upcast) : []).join(' + ') });
   return o;
 }
 /* the slot levels worth weighing for a spell: its lowest free slot, and up to two higher ones when upcasting adds something.
@@ -3813,12 +3815,14 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
     const healers = this.alliesOf(t).filter(o => o !== t && this.alive(o) && this.kHeals(u, o)).length;
     return { val: pKill * (10 + this.kDpr(u, t)) * (healers ? 1.4 : 0.8) * W.kill, why: 'execute', pKill };
   }
-  const exp = this.expected(u, a, t), tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
+  // a burn (ext.dot) deals nothing now: what counts is the tick, on the foe's turns
+  const dot = a.ext && a.ext.dot, exp = this.expected(u, dot ? Object.assign({}, a, { dpr: a.ext.dotAt || dot.dice, ext: Object.assign({}, a.ext, { wtDpr: null }) }) : a, t), tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
   let val, why = '', pKill = 0;
   if (a.type === 'debuff') { val = this.v2Control(u, a, t, ctx, false, bare); if (bare) return { val, why: '', pKill: 0 }; }
   else {
-    val = Math.min(exp, tHp + W.overkill) * (1 + tDpr / W.dprScale) * W.damage;
-    pKill = 1 / (1 + Math.exp(-5 * (exp - tHp) / Math.max(4, exp)));
+    const ticks = dot ? Math.min(W.dotMax, Math.max(W.dotMin, ctx.rounds - W.dotLag)) * W.concKeep : 1;
+    val = Math.min(exp * ticks, tHp + W.overkill) * (1 + tDpr / W.dprScale) * W.damage * (dot ? W.dot : 1);
+    pKill = dot ? 0 : 1 / (1 + Math.exp(-5 * (exp - tHp) / Math.max(4, exp)));
     val += pKill * (tDpr * W.killRounds + 5) * W.kill;
     if (pKill >= 0.5) why = 'finish';
     // Extra Attack: what's left after it drops goes to the next one in reach
@@ -4181,6 +4185,10 @@ Sim.prototype.v2Holding = function (u, ctx) {
     if (!o.onBoard || o.dead || o.hp <= 0) continue;
     for (const b of o.buffs) {
       if (b.src !== u.uid || b.id !== id) continue;
+      if (b.dot) {
+        const a = u.actions.find(x => x.id === id), tick = avgDice(b.dot) * (a ? this.kMult(u, a, o) : 1);
+        v += Math.min(tick * Math.min(W.dotMax, Math.max(W.dotMin, R - W.dotLag)) * W.concKeep, this.kHp(u, o) + W.overkill) * (1 + this.kDpr(u, o) / W.dprScale) * W.damage * W.dot * W.dotHold;
+      }
       const one = Object.assign({}, b.data, { duration: '1 round' });
       if (o.team === u.team) { v += this.effectValue(one, o, false, u) * W.buff * R; continue; }
       let r = R;
@@ -5476,5 +5484,5 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, AI_BASE, AI_PROFILES, aiProfile, casterKind, deathOdds, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, AI_BASE, AI_PROFILES, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

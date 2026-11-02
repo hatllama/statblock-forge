@@ -1319,5 +1319,34 @@ section('AI v2: Revivify (step 2.12)');
   proto.turn = turn;
 }
 
+section('AI v2: a burn is scored as a burn (Caustic Brew)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const w = cp(ctx.CB.find(b => b.name === 'Wizard'));
+  const brew = { level: 1, upcast: '4d4', concentration: true, actionSlot: 0, targets: 2, type: 'atk', dpr: '4d4', toHit: 15, useSaves: true, target: 'enemy with most HP', ext: { range: 30, area: { shape: 'line', size: 30 }, saveAbility: 'dex', dot: { dice: '2d4', upcast: '2d4' }, damageType: 'acid' }, name: 'Brew', id: 'brew' };
+  const orb = { level: 1, upcast: '1d8', actionSlot: 0, targets: 1, type: 'atk', dpr: '3d8', toHit: 7, target: 'enemy with most HP', ext: { range: 90, damageType: 'fire' }, name: 'Orb', id: 'orb' };
+  w.ext.spellbook.spells = [brew, orb];
+  const foe = { id: 'bg', name: 'Bag', mode: 'custom', hp: 200, AC: 12, saveBonus: 0, count: 1, speed: 30, actions: [{ id: 'bg1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 0, target: 'enemy with least HP', ext: { range: 5 } }] };
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  let sim = null;
+  proto.turn = function () { sim = sim || this; };
+  Tac.runDay({ players: [w], encounters: [{ monsters: [foe] }] }, { seed: 3, partyAI: 'tactical', ai: { party: 'v2' }, maxRounds: 1, _keep: true });
+  proto.turn = turn;
+  const u = sim.units.find(o => o.team === 'party'), t = sim.units.find(o => o.team === 'foes');
+  const B = u.actions.find(a => a.name === 'Brew'), O = u.actions.find(a => a.name === 'Orb'), c = sim.v2Ctx(u, 30);
+  const val = (a, L, hp, rounds) => { t.hp = hp; c.rounds = rounds; return sim.v2Value(u, Tac.castCopy(a, L), t, c).val; };
+  check(val(B, 2, 17, 1) < val(O, 2, 17, 1), 'a foe about to drop: the Orb, not a burn that cannot finish it this turn');
+  check(val(B, 2, 200, 1) < val(B, 2, 200, 6) && val(B, 2, 200, 6) > 2.5 * val(B, 2, 200, 2) * 0.6, 'a burn is worth more the longer the fight runs');
+  check(val(B, 3, 200, 4) > val(B, 2, 200, 4) * 1.3, 'each slot level adds to the tick');
+  check(sim.v2Value(u, Tac.castCopy(B, 2), t, c).pKill === 0, 'no kill term on the cast');
+  t.hp = 200; c.rounds = 4; u.concentrating = B.id; c.holdId = null;
+  const none = sim.v2Holding(u, c);
+  sim.addBuff(t, u, B, { duration: 'entire encounter' }, { dot: '4d4' }); c.holdId = null;
+  check(none === 0 && sim.v2Holding(u, c) > 10, 'a running burn counts as what the caster holds');
+  u.concentrating = null;
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

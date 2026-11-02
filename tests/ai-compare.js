@@ -478,6 +478,16 @@ function playDown(sc, N) {
   for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({}, sc, { know: { party: mode } }), { party: 'v2' }, N))); DOWN_NOW = null; }
 }
 
+/* ---- Caustic Brew: a burn scored as a burn (step 2.12) ---- */
+const BREW_SCENARIOS = [
+  { name: "E1 Zaki's party vs Young Red Dragon (one target)", players: zaki, encounters: () => fights('Young Red Dragon') },
+  { name: "E2 Zaki's party vs Young Red Dragon + 2 Ogres", players: zaki, encounters: () => fights('Young Red Dragon,Ogre*2') },
+  { name: "E3 Zaki's party vs 2 Stone Golems (long fight, few targets)", players: zaki, encounters: () => fights('Stone Golem*2') },
+  { name: "E4 Zaki's party vs 7 Ogres (a line to catch)", players: zaki, encounters: () => fights('Ogre*7') },
+  { name: "E5 Zaki's party vs 24 Gnoll Warriors", players: zaki, encounters: () => fights('Gnoll Warrior*24') },
+  { name: "E6 Zaki's party, a day: 2 Ogres + 5 Gnoll Warriors / Troll + 2 Ogres / Young Red Dragon", players: zaki, encounters: () => fights('Ogre*2,Gnoll Warrior*5/Troll,Ogre*2/Young Red Dragon') },
+];
+
 /* ---- Revivify (step 2.12) ---- */
 const noRevivify = players => { for (const p of players) if (p.ext && p.ext.spellbook) p.ext.spellbook.spells = p.ext.spellbook.spells.filter(s => !(s.ext && s.ext.revivify)); };
 // results carry the day's running count per creature: this fight's is what it added
@@ -613,6 +623,7 @@ for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of REVIVE_SCENARIOS) if (only && only.test(sc.name)) playRevive(sc, N);
+for (const sc of BREW_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };

@@ -858,8 +858,46 @@ holds. But `dpr: '4d4'` (upcast +4d4) is what the scorer reads, so a 2nd-level B
 round 3, a dragon on 17 HP and one round left: Brew 74, Orb 42, though the Brew cannot kill it this turn and its first tick averages 10 on a failed
 save. Also, `v2Holding` knows nothing of a burn (`holding 0.0` in the logs), so 97 of 309 Brews on the dragon were cast while concentrating, for free.
 
-Proposed (not built): score the burn as what it is: chance of a failed save × the tick × the rounds it should run (`ctx.rounds`, × `w.concKeep`),
-no kill term on the cast; and count a running burn in `v2Holding`. That keeps the Brew for lines of foes in long fights and hands single targets to the Orb.
+The change this audit proposed is built: see the next section.
+
+### A burn is scored as a burn (step 2.12, after the audit)
+
+A spell with `ext.dot` (Tasha's Caustic Brew, Phantasmal Force) deals nothing when cast; the engine gives each creature that fails a tick at the start of
+its turn while concentration holds. `v2Value` now reads that instead of `a.dpr`, which stays as it is for the rule (`_saveDmg`, what Legendary Resistance weighs):
+
+```
+tick    = expected(the action with the tick as its damage): chance of failing × the dice at this slot level × what its resistances leave
+ticks   = min(w.dotMax, max(w.dotMin, ctx.rounds − w.dotLag)) × w.concKeep   // the first tick is on its turn, and concentration may not last
+value   = min(tick × ticks, kHp + overkill) × (1 + kDpr / dprScale) × w.dot
+```
+
+- **No kill term.** A burn cannot drop anything on the turn it is cast.
+- **Upcasting.** `castCopy` puts the tick at slot level L in `ext.dotAt`, so each slot level is scored with its own dice.
+- **Holding.** `v2Holding` counts a running burn: its tick × the rounds left × `w.concKeep`, per creature burning, capped by `kHp`. So a new concentration
+  spell, or a second Brew, pays for what it ends.
+- The other caster terms stay: the area sum over a line, slot pacing, the risk of losing concentration where it stands.
+
+New weights: `w.dot`, `w.dotLag`, `w.dotMin`, `w.dotMax`, `w.dotHold` (× a running burn's value in `v2Holding`). `expected`, which the old AI reads, is unchanged.
+
+**The cap.** Without `w.dotMax` the Brew rows gained, but D7 and D8 (twelve foes) fell 7–13 points in every mode: `ctx.rounds` sits at its ceiling of 8 in a crowd, so a burn out-scored
+Fireball's damage now. On those rows and E2, E3, E6, 200 runs, open, `dotMax` 9: D7 52, D8 55, E3 88; 4: 60, 64, 87; 3.5: 61, 67, 88; 3: 64, 66, 79; 2: 65, 67, 80. So 3.5.
+`dotHold` under 1 only hurts (0.5: D7 47; 0.25: E3 70), and `dot` 0.6–2.2 stays within noise or worse, so both stay at 1.
+
+**Results.** E scenarios (`node tests/ai-compare.js 200 '^E[0-9]'`, Zaki's party), win before → after, 200 runs, same seeds, ±3.5 (E1 ±2.5):
+
+| scenario | open | learn | blind |
+|----------|------|-------|-------|
+| E1 Young Red Dragon | 86.0 → 86.5 | 86.0 → 88.0 | 86.5 → 85.0 |
+| E2 the dragon + 2 Ogres | 66.0 → **73.0** | 69.0 → 68.5 | 65.5 → 62.5 |
+| E3 2 Stone Golems | 77.0 → **88.0** | 78.0 → 83.0 | 68.0 → 68.5 |
+| E4 7 Ogres | 100 → 100 | 100 → 100 | 100 → 100 |
+| E5 24 Gnoll Warriors | 100 → 100 | 99.5 → 99.5 | 99.5 → 99.5 |
+| E6 a day | 46.0 → 53.0 | 54.5 → 51.0 | 47.0 → 48.0 |
+
+Damage per cast read from the log (learn, 200 runs), before → after: on the dragon a 2nd-level Brew 3.8 → 13.1 and a 3rd-level one 7.7 → 14.7, because a running burn is kept instead of thrown away (Orb
+10–16 there); on 2.2–2.7 foes 21.6 → 26.5 at 3rd level. The Brew now gives about what the Orb does on one target and more on a line, so the choice no longer costs damage. On the hard day it falls from 76 casts to 52.
+Whole table against the Part B commit, 83 rows (the 66, D1–D9, R1–R7 and the arms), 200 runs: nothing worse or better beyond 2 SE in any mode (means 78.3 → 78.3, 81.2 → 81.2, 72.7 → 72.8). No hash moved:
+neither spell is in the hashed parties.
 
 ## Existing user-facing AI options → v2 knobs
 

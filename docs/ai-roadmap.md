@@ -120,7 +120,7 @@ Aid, Mage Armor and Death Ward are cast in the morning from a table (`PREFIGHT_S
 
 ## Done outside the phases: downed and dead allies (step 2.12)
 
-A "back in the fight" term for healing a downed ally, Healing Light on v2, Revivify (a death keeps a slot, cast as the fight ends). Audits of Entangle on one foe and Caustic Brew over Chromatic Orb; both changes below are proposed, not built. See `docs/ai-v2.md`.
+A "back in the fight" term for healing a downed ally, Healing Light on v2, Revivify (a death keeps a slot, cast as the fight ends). Audits of Entangle on one foe and Caustic Brew over Chromatic Orb; the Brew's scoring is fixed, Entangle's proposal is below, not built. See `docs/ai-v2.md`.
 
 ## Backlog (checked / to add later)
 
@@ -147,7 +147,6 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Riders into Legendary Resistance**: Stunning Strike and other riders have no LR term in `v2Value`; a rider into LR is valued as if it lands (step 2.11 priced spells only).
 - **Limited-use items (Pressurized Flame Squirter)**: the importer reads them as at-will attacks (its item text said 30 ft while the table said 5 ft). Tacitus's Squirter was removed from his actions by hand in the party file. Limited-use items should import as limited-use actions, and its second mode (+10, bludgeoning plus fire) modeled with it.
 - **Spell data gaps seen on those sheets**: Light, Prestidigitation, Minor Illusion, Disguise Self, Find Familiar, Lesser Restoration, Daylight, Hunger of Hadar.
-- **Caustic Brew is overpriced**: the scorer reads `dpr: '4d4'` as damage now, with a kill term, though the engine deals nothing on the cast and only the tick each turn; `v2Holding` ignores a running burn. A 2nd-level Brew on one foe really deals 3.8 against the Orb's 11.9. Proposed in `docs/ai-v2.md` ("Two audits"): score chance × tick × rounds.
 - **Learn's save prior on strong bosses**: `kSave` reads an unseen Strength save at +2, so learn casts Entangle on a +6 boss five times as often as open (19% landed). No win-rate cost seen. Proposed in `docs/ai-v2.md`.
 - **Revivify, not built**: casting it mid-fight; other classes' builds (Druid, 2024); revival for the old AI. Natural play rarely leaves the caster standing with a slot, because monsters focus healers.
 - **Invisibility**: Eldar has it (an action, touch, ends when the target attacks or casts). Needs hide/ambush rules and line-of-sight work (attackers without sight of the target, guessing squares) before it can be an action; not imported.
