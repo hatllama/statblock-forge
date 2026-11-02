@@ -2411,7 +2411,7 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
       this.ev('oa', `${e.name} takes an opportunity attack at ${u.name}`, { uid: e.uid, target: u.uid });
       this.attackOnce(e, atk, u, { oa: true });
       if (u.dead || u.hp <= 0) return;
-      if (u.grappledBy || this.has(u, ['Restrained'])) { flush(); this.ev('effect', `${u.name} is stopped in place`, { uid: u.uid }); return; }
+      if (u.grappledBy || this.incap(u) || this.has(u, ['Restrained'])) { flush(); this.ev('effect', `${u.name} is stopped in place`, { uid: u.uid }); return; }
     }
     const rise = this.T.anyH && !u.fly ? this.hAt(step.x, step.y) - this.hAt(u.x, u.y) : 0;
     if ((rise >= 2 || rise <= -2) && !u.climb) {
@@ -3230,13 +3230,14 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
         this.ev('heal', `${u.name} → ${t.name}: ${a.name}, max HP +${Math.round(amt)}`, { uid: u.uid, target: t.uid });
         continue;
       }
+      const hpWas = t.hp;
       this.heal(u, t, amt, a.tempHP);
       if (a.tempHP && (hx.retaliate || hx.tempBuff)) {
         const lvl = (a._spell && u.castLevel) || 1;
         const data = Object.assign({ duration: 'entire encounter' }, hx.tempBuff || {});
         this.addBuff(t, u, a, data, { whileTemp: true, retaliate: hx.retaliate ? hx.retaliate.dmg * (hx.retaliate.perLevel ? lvl : 1) : 0, retaliateType: hx.retaliate && hx.retaliate.type });
       }
-      this.ev('heal', `${u.name} → ${t.name}: ${a.name}, +${Math.round(amt)}${a.tempHP ? ' temp' : ''} HP`, { uid: u.uid, target: t.uid });
+      this.ev('heal', `${u.name} → ${t.name}: ${a.name}, +${a.tempHP ? Math.round(amt) : t.hp - hpWas}${a.tempHP ? ' temp' : ''} HP`, { uid: u.uid, target: t.uid });
     }
     return true;
   }
@@ -4779,6 +4780,7 @@ Sim.prototype.turn = function (u) {
   }
   // what will the action be?
   let choice = null, moved = false, bonusSpent = false, hideAfter = null, v2tp = null;
+  const out = () => u.dead || u.hp <= 0 || this.incap(u);          // dropped or disabled partway through: the rest of the turn is lost
   // self-buffs that change how the turn goes (Bladesong's speed and AC, Rage…) are invoked before moving
   if (!actionUsed) {
     const pre = u.v2 ? this.v2Bonus(u, 'pre') : this.choose(u, 1, 0);
@@ -4842,12 +4844,12 @@ Sim.prototype.turn = function (u) {
       }
       if (tp.mode === 'dash') { actionUsed = true; this.ev('dash', `${u.name} dashes`, { uid: u.uid }); }
       this.moveAlong(u, tp.path); moved = true;
-      if (tp.mode === 'dodge' || tp.mode === 'hide') {
+      if ((tp.mode === 'dodge' || tp.mode === 'hide') && !out()) {
         actionUsed = true;
         this.addBuff(u, u, { id: 'dodge', name: 'Dodge' }, { duration: '1 round', condition: 'Is attacked with Disadvantage' });
         this.ev('buff', `${u.name} takes the Dodge action`, { uid: u.uid });
       }
-      if (tp.mode === 'hide' && !bonusSpent && this.slipAndHide(u, 0)) bonusSpent = true;
+      if (tp.mode === 'hide' && !bonusSpent && !out() && this.slipAndHide(u, 0)) bonusSpent = true;
       if (tp.mode === 'act' && tp.hideAfter !== undefined) hideAfter = tp.hideAfter;
     }
   }
@@ -4875,7 +4877,7 @@ Sim.prototype.turn = function (u) {
         while (k > 0) { if (!this.occupant(full[k - 1].x, full[k - 1].y, u.n, u)) break; k--; }
         this.moveAlong(u, full.slice(0, k));
       } else this.approach(u, speed);
-      if (foesUp.length) {
+      if (foesUp.length && !out()) {
         this.addBuff(u, u, { id: 'dodge', name: 'Dodge' }, { duration: '1 round', condition: 'Is attacked with Disadvantage' });
         this.ev('buff', `${u.name} closes in carefully, taking the Dodge action`, { uid: u.uid });
       }
@@ -4898,6 +4900,7 @@ Sim.prototype.turn = function (u) {
   if (choice && !moved) { this.intent(u, choice.a, choice.p); this.moveAlong(u, choice.p.path); moved = true; }
   u.disengaged = false;
   if (u.dead || u.hp <= 0) return;
+  if (this.incap(u)) { this.endTurn(u); return; }
 
   // bonus action: first usable one, before or after the action depending on what it is
   u.reserveSlot = !!(choice && !actionUsed && choice.a._spell && choice.a._spell.level);
@@ -4905,7 +4908,7 @@ Sim.prototype.turn = function (u) {
   u.reserveSlot = false;
   const after = bonus && (bonus.a.type === 'atk' || (bonus.a.buff && bonus.a.buff.condition === 'Invisible'));
   if (bonus && !after) { if (u.v2) u.castAt = bonus.p.castL || 0; this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, bonus.p); }
-  if (choice && !actionUsed) {
+  if (choice && !actionUsed && !out()) {
     // re-plan from where it ended up: it may have been stopped, or the target may have dropped
     let a = choice.a, p = null;
     if (u.v2) { const c2 = this.v2Act(u, choice); if (c2) { a = c2.a; p = c2.p; } }
@@ -4918,6 +4921,7 @@ Sim.prototype.turn = function (u) {
       // couldn't get level with it this turn: a melee swing can't reach
       const t0 = p.targets[0];
       if (t0 && t0 !== u && a.type === 'atk' && !a.useSaves && this.dist(u, t0) > Math.max(5, a._range || 5)) { this.ev('skip', `${u.name} can't reach ${t0.name} from ${(u.alt || 0) * 5} ft up`, { uid: u.uid }); p = null; }
+      if (out()) p = null;                                       // rising or dropping can draw an opportunity attack
     }
     if (p && p.targets.length) {
       if (u.v2) this.v2Reckless(u, a, p);
@@ -4926,17 +4930,17 @@ Sim.prototype.turn = function (u) {
       if ((a.type === 'atk' || a.type === 'debuff') && p.targets[0] && p.targets[0] !== u) u.focus = p.targets[0].uid;
     }
   }
-  if ((hideAfter !== null || u.ai === 'regular') && !bonusSpent && !(bonus && !after) && !u.dead && u.hp > 0) {
+  if ((hideAfter !== null || u.ai === 'regular') && !bonusSpent && !(bonus && !after) && !out()) {
     const left = Math.floor(speed / 5) - (u._steps || 0);
     if (this.slipAndHide(u, hideAfter !== null ? Math.min(hideAfter, left) : left)) bonusSpent = true;
   }
-  if (bonus && after && !bonusSpent && !u.dead && u.hp > 0) {
+  if (bonus && after && !bonusSpent && !out()) {
     const p = u.v2 ? this.v2Aim(u, bonus.a, bonus.p.targets[0]) : this.plan(u, bonus.a, 0);
     if (p) { if (u.v2) { this.v2Reckless(u, bonus.a, p); u.castAt = p.castL || 0; } this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, p); }
   }
   if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) { if (u.v2) this.v2Surge(u); else this.surge(u); }
   // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
-  if (u.fly && !u._settled && !u.dead && u.hp > 0) this.settleAltitude(u, null, null);
+  if (u.fly && !u._settled && !out()) this.settleAltitude(u, null, null);
   this.endTurn(u);
 };
 /* Action Surge: one more action this turn. Monsters use it as soon as it lands an attack; the party holds it while a
@@ -5092,7 +5096,7 @@ Sim.prototype.settleAltitude = function (u, a, p) {
       e.reaction = false;
       this.ev('oa', `${e.name} takes an opportunity attack at ${u.name}`, { uid: e.uid, target: u.uid });
       this.attackOnce(e, atk, u, { oa: true });
-      if (u.dead || u.hp <= 0 || !this.airborne(u)) return;
+      if (u.dead || u.hp <= 0 || !this.airborne(u) || this.incap(u)) return;
     }
   }
   u.alt = to; u._steps = (u._steps || 0) + Math.abs(to - cur); u._settled = true;

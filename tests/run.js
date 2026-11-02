@@ -1348,5 +1348,83 @@ section('AI v2: a burn is scored as a burn (Caustic Brew)');
   u.concentrating = null;
 }
 
+section('A creature that drops loses the rest of its turn');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  const zaki = () => cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players);
+  const ACTS = new Set(['attack', 'save', 'heal', 'buff', 'aoe', 'move', 'dash', 'disengage']);
+  const foe = (id, hp, count, dmg, extra) => Object.assign({ id, name: id, mode: 'custom', hp, AC: 14, saveBonus: 2, count, speed: 40, actions: [{ id: id + '1', name: 'Rend', actionSlot: 0, freq: 'at will', condition: 'default', targets: 3, type: 'atk', dpr: String(dmg), toHit: 9, target: 'enemy with least HP', ext: { range: 10 } }] }, extra);
+  // in any log: nothing done by the actor after it dropped in its own turn
+  const afterDrop = res => {
+    let n = 0;
+    for (const r of res) { let cur = null, fell = false; for (const e of r.events) { if (e.kind === 'turn') { cur = e.uid; fell = false; } else if (e.kind === 'down' && e.uid === cur) fell = true; else if (fell && e.uid === cur && ACTS.has(e.kind) && !/steps back/.test(e.text || '')) n++; } }
+    return n;
+  };
+  let bad = 0, heals = 0;
+  for (const ai of ['v2', undefined]) for (const know of ['learn', 'open']) for (let i = 0; i < 40; i++) {
+    const res = Tac.runDay({ players: zaki(), encounters: [{ monsters: [foe('Wyrm', 150, 2, 12, { ext: { fly: 80 } })] }] }, { seed: 77 + i * 7919, ai: ai && { party: ai }, partyAI: 'tactical', know: { party: know }, record: true });
+    bad += afterDrop(res); heals += res.reduce((t, r) => t + r.events.filter(e => e.kind === 'heal').length, 0);
+  }
+  check(bad === 0 && heals > 20, `Zaki's party against flyers: nothing done after dropping in its own turn (${bad} acts, ${heals} heals seen)`);
+
+  // scripted: the mover is dropped by an opportunity attack partway along its path, or while changing height
+  const proto = Tac.Sim.prototype, att = proto.attackOnce;
+  let acted = 0, turns = 0;
+  const pass = (setup) => {
+    const res = [];
+    for (let i = 0; i < 10; i++) res.push(Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 200, 2, 9)] }] }, { seed: 400 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, maxRounds: 4 }));
+    return res;
+  };
+  proto.attackOnce = function (e, a, t, o) { if (o && o.oa && t.team === 'party' && t.hp > 0) { const r = att.call(this, e, a, t, o); if (t.hp > 0) { t.hp = 1; this.damage(e, t, 5, {}); } return r; } return att.call(this, e, a, t, o); };
+  const scripted = pass();
+  proto.attackOnce = att;
+  const oaDrops = scripted.reduce((s, res) => s + res.reduce((c, r) => c + r.events.filter(e => e.kind === 'oa').length, 0), 0);
+  check(scripted.every(res => afterDrop(res) === 0), `dropped by an opportunity attack mid-move: the turn ends there (${oaDrops} opportunity attacks)`);
+
+  // its own action's side effects: a retaliation that drops it mid-action stops the rest of the turn
+  const r2 = []; const dmg = proto.damage;
+  proto.damage = function (src, tgt, n, info) { const d = dmg.call(this, src, tgt, n, info); if (src && src.team === 'party' && src === this.current && src.hp > 0 && d > 0) { src.hp = 1; dmg.call(this, tgt, src, 5, {}); } return d; };
+  for (let i = 0; i < 12; i++) r2.push(Tac.runDay({ players: [build('Monk'), build('Rogue'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 300, 1, 2)] }] }, { seed: 500 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, maxRounds: 3 }));
+  proto.damage = dmg;
+  const afterOwnHit = res => { let n = 0; for (const r of res) { let cur = null, fell = false, seen = false; for (const e of r.events) { if (e.kind === 'turn') { cur = e.uid; fell = false; } else if (e.kind === 'down' && e.uid === cur) { fell = true; seen = true; } else if (fell && e.uid === cur && (e.kind === 'heal' || e.kind === 'buff' || e.kind === 'dash' || (e.kind === 'move' && !/steps back/.test(e.text || '')))) n++; } } return n; };
+  check(r2.every(res => afterOwnHit(res) === 0), 'dropped by the backlash of its own action: no bonus action, move or Dodge after it');
+
+  // disabled mid-move: alive, but the action is gone
+  const r3 = [];
+  proto.attackOnce = function (e, a, t, o) { const r = att.call(this, e, a, t, o); if (o && o.oa && t.team === 'party' && t.hp > 0) this.addBuff(t, e, { id: 'stun', name: 'Stunned' }, { duration: '1 round', condition: 'Stunned' }); return r; };
+  for (let i = 0; i < 10; i++) r3.push(Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 200, 2, 2)] }] }, { seed: 600 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, maxRounds: 4 }));
+  proto.attackOnce = att;
+  let stunActs = 0, stunned = 0;
+  for (const res of r3) for (const r of res) { let cur = null, hit = false; for (const e of r.events) { if (e.kind === 'turn') { cur = e.uid; hit = false; } else if (e.kind === 'oa' && e.target === cur && r.units.some(u => u.uid === cur && u.team === 'party')) { hit = true; stunned++; } else if (hit && e.uid === cur && ['heal', 'attack', 'save', 'move'].includes(e.kind)) stunActs++; } }
+  check(stunned > 0 && stunActs === 0, `stunned by an opportunity attack mid-move: it stops, and no action after it (${stunActs} acts in ${stunned} turns)`);
+
+  // heals: what is rolled stays inside the spell's dice, and the log says what it gave
+  const measure = pool => {
+    const got = [], inner = proto.doActionInner, heal = proto.heal;
+    let act = null;
+    proto.doActionInner = function (u, a, plan, opt, targets) { const was = act; act = a; try { return inner.call(this, u, a, plan, opt, targets); } finally { act = was; } };
+    proto.heal = function (src, tgt, amt, temp) { const hp = tgt.hp; heal.call(this, src, tgt, amt, temp); if (act && act.name) got.push({ name: act.name, amt, gained: tgt.hp - hp, max: tgt.maxHp, temp }); };
+    for (let i = 0; i < 40; i++) {
+      const players = zaki();
+      if (!pool) for (const p of players) p.actions = p.actions.filter(a => !(a.ext && a.ext.pool));
+      Tac.runDay({ players, encounters: [{ monsters: [foe('Wyrm', 200, 2, 12)] }] }, { seed: 900 + i * 7919, ai: { party: 'v2' }, partyAI: 'tactical', record: true });
+    }
+    proto.doActionInner = inner; proto.heal = heal;
+    return got;
+  };
+  for (const pool of [true, false]) {
+    const got = measure(pool), cure = got.filter(g => /^Cure Wounds/.test(g.name));
+    const inRange = g => { const L = +(/\(L(\d)\)/.exec(g.name) || [0, 1])[1], dice = 2 * L, mod = 4; return g.amt >= dice + mod && g.amt <= dice * 8 + mod; };
+    check(cure.length > 5 && cure.every(inRange), `Cure Wounds stays inside its dice (2d8 per slot level + 4) ${pool ? 'with' : 'without'} a Healing Light pool (${cure.length} heals, top ${Math.max(0, ...cure.map(g => g.amt))})`);
+    check(got.every(g => g.temp || g.gained <= g.max), 'no heal gives more than the maximum');
+  }
+  const capped = Tac.runDay({ players: zaki(), encounters: [{ monsters: [foe('Wyrm', 200, 2, 12)] }] }, { seed: 31, ai: { party: 'v2' }, partyAI: 'tactical', record: true, _keep: true });
+  const roster = {}; capped._sim.units.forEach(u => { roster[u.name] = u.maxHp; });
+  check(capped.every(r => r.events.filter(e => e.kind === 'heal' && /→ .*, +d+ HP/.test(e.text || '')).every(e => +(/\+(\d+)/.exec(e.text) || [0, 0])[1] <= roster[/→ ([^:]+):/.exec(e.text)[1]])), 'the log gives what a heal restored, never more than a maximum');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);
