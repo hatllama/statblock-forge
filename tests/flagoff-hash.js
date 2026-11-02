@@ -31,7 +31,16 @@ const DAYS = [
   ['default party vs bandit-day', () => ({ players: cp(D.PP), encounters: cp(fixture('bandit-day.json').encounters) })],
   ['casters vs goblins / ogres / mage', () => ({ players: casters(), encounters: [{ monsters: [mon('Goblin Warrior', 8)] }, { monsters: [mon('Ogre', 3)], shortRest: true }, { monsters: [file('mage-2014.txt', 2), mon('Guard', 4)] }] })],
   ['casters vs priests + young dragon', () => ({ players: casters(), encounters: [{ monsters: [mon('Priest', 2), mon('Bandit', 4)] }, { monsters: [mon('Young Green Dragon')] }] })],
+  // Medium and Small only, party and foes: footprints must not change these logs (guard for the size work)
+  ['default party vs medium-day', () => mediumDay(cp(D.PP))],
+  ['casters vs medium-day', () => mediumDay(casters())],
 ];
+function mediumDay(players) {
+  const day = { players, encounters: [{ monsters: [mon('Bandit', 4), mon('Cultist', 2)] }, { monsters: [mon('Wolf', 3), mon('Goblin Warrior', 4)], shortRest: true }, { monsters: [mon('Gnoll Warrior', 3), mon('Ghoul', 2), mon('Mage', 1)] }] };
+  for (const e of day.encounters) for (const m of e.monsters) if (!/^(Tiny|Small|Medium)$/.test(m.ext.size)) throw new Error('medium-day has a ' + m.ext.size + ' creature: ' + m.name);
+  for (const p of day.players) if (p.ext && p.ext.size && !/^(Tiny|Small|Medium)$/.test(p.ext.size)) throw new Error('medium-day has a ' + p.ext.size + ' party member');
+  return day;
+}
 const walled = (() => { const cells = {}; for (let y = 0; y < 16; y++) if (y < 6 || y > 9) cells['11,' + y] = { t: 'wall' }; for (let y = 2; y < 14; y++) for (let x = 3; x <= 5; x++) cells[x + ',' + y] = { h: 2 }; return { gapFt: 30, terrain: { cells } }; })();
 for (const [name, mk] of DAYS) for (const lay of [null, walled]) for (const partyAI of ['tactical', 'regular']) for (let i = 0; i < 4; i++) {
   const seed = 500 + i * 7919;

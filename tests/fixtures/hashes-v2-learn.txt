@@ -62,3 +62,35 @@ casters vs priests + young dragon | walled | regular | 500 | a4fe22474bdc
 casters vs priests + young dragon | walled | regular | 8419 | 094a07a68a2f
 casters vs priests + young dragon | walled | regular | 16338 | 99387c9912d5
 casters vs priests + young dragon | walled | regular | 24257 | 7456255c00b5
+default party vs medium-day | open | tactical | 500 | a21f4ce7dff3
+default party vs medium-day | open | tactical | 8419 | 678cff211562
+default party vs medium-day | open | tactical | 16338 | c7092f39e26a
+default party vs medium-day | open | tactical | 24257 | a3e45e0f68c7
+default party vs medium-day | open | regular | 500 | f23ac0eace70
+default party vs medium-day | open | regular | 8419 | de35610692c2
+default party vs medium-day | open | regular | 16338 | 8b3bc374b1d6
+default party vs medium-day | open | regular | 24257 | 9eb250d548b1
+default party vs medium-day | walled | tactical | 500 | bed78576a288
+default party vs medium-day | walled | tactical | 8419 | 65d888b05baa
+default party vs medium-day | walled | tactical | 16338 | 8e1de48aafe1
+default party vs medium-day | walled | tactical | 24257 | cc59cb8c62cf
+default party vs medium-day | walled | regular | 500 | b3acdb5e443b
+default party vs medium-day | walled | regular | 8419 | e4b75d8ee49a
+default party vs medium-day | walled | regular | 16338 | e239f6d2117f
+default party vs medium-day | walled | regular | 24257 | 706be43bac83
+casters vs medium-day | open | tactical | 500 | e10af3ba1713
+casters vs medium-day | open | tactical | 8419 | 5bb851b4006d
+casters vs medium-day | open | tactical | 16338 | 9fada7638628
+casters vs medium-day | open | tactical | 24257 | 50aa1effa98a
+casters vs medium-day | open | regular | 500 | d92eb21c056c
+casters vs medium-day | open | regular | 8419 | 76fb1e7b0037
+casters vs medium-day | open | regular | 16338 | c33ea34e92bd
+casters vs medium-day | open | regular | 24257 | 59c6fbd7521d
+casters vs medium-day | walled | tactical | 500 | 1101e84646f3
+casters vs medium-day | walled | tactical | 8419 | 933abd39c97f
+casters vs medium-day | walled | tactical | 16338 | 97dea2b08304
+casters vs medium-day | walled | tactical | 24257 | 4d854a145e6c
+casters vs medium-day | walled | regular | 500 | 9f031646d4cc
+casters vs medium-day | walled | regular | 8419 | 690efd097b03
+casters vs medium-day | walled | regular | 16338 | dfad5bbe0c70
+casters vs medium-day | walled | regular | 24257 | 8312bab7b260
