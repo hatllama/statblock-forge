@@ -494,6 +494,10 @@ const noRevivify = players => { for (const p of players) if (p.ext && p.ext.spel
 let revivedSoFar = 0;
 const REVIVE_METRICS = { 'revived/day': (r, k) => { const all = r.party.reduce((t, p) => t + (p.revived || 0), 0), got = all - (k ? revivedSoFar : 0); revivedSoFar = all; return got; } };
 const lastSlots = (n, id) => players => { const p = players.find(x => x.id === id || x.name === id); p.ext.spellbook.slots[2] = n; return players; };
+const FLYER_SCENARIOS = [
+  { name: "F1 Zaki's party vs 2 Young Green Dragons", players: zaki, encounters: () => fights('Young Green Dragon*2') },
+  { name: "F2 Zaki's party vs hard-day.json, then 2 Young Green Dragons", players: zaki, encounters: () => clone(fixture('hard-day.json').encounters).concat(fights('Young Green Dragon*2')) },
+];
 const REVIVE_SCENARIOS = [
   { name: "R1 Zaki's party vs a hard day: 2 Ogres + 5 Gnoll Warriors / 3 Ogres / Hill Giant + 2 Ogres / 2 Bandit Captains + 6 Bandits", players: zaki, encounters: () => fights('Ogre*2,Gnoll Warrior*5/Ogre*3/Hill Giant,Ogre*2/Bandit Captain*2,Bandit*6') },
   { name: "R2 Zaki's party vs hard-day.json", players: zaki, encounters: () => clone(fixture('hard-day.json').encounters) },
@@ -624,6 +628,7 @@ for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of REVIVE_SCENARIOS) if (only && only.test(sc.name)) playRevive(sc, N);
 for (const sc of BREW_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
+for (const sc of FLYER_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };

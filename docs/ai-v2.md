@@ -899,6 +899,56 @@ Damage per cast read from the log (learn, 200 runs), before → after: on the dr
 Whole table against the Part B commit, 83 rows (the 66, D1–D9, R1–R7 and the arms), 200 runs: nothing worse or better beyond 2 SE in any mode (means 78.3 → 78.3, 81.2 → 81.2, 72.7 → 72.8). No hash moved:
 neither spell is in the hashed parties.
 
+### The price of going down (after a bug report: Niko, two Young Green Dragons)
+
+**What happened.** Niko, low and flying beside a dragon, chose a touch heal on a downed ally. Touching a creature on the ground means dropping to its height, so
+`settleAltitude` took him out of the dragon's reach and drew an opportunity attack. The search priced none of it: `v2Danger.oa` walks the ground path only, and a change of
+height is not on it. And a priced opportunity attack is only its damage, capped by nothing and with no cost for what going down loses, while the heal it buys is priced by
+`v2BackUp` at everything the ally is worth. So the two sides of the decision were not in the same currency.
+
+**The term.** The same "back in the fight" sum, for the actor:
+
+```
+altOa   = opportunity attacks from foes in reach at its height that are out of reach at the target's (touch options, airborne, v2Danger.altOa)
+share   = (oa + altOa) × w.dropEdge / its HP                         // expected damage understates a hit that lands
+pDrop   = clamp((share − w.dropFrom) / (1 − w.dropFrom), 0, 1)       // nothing until one attack can take a real share of what it has
+own     = its round (as in v2BackUp) × min(rounds left, w.dropRounds) × w.dropRound + w.dropLife + what it keeps for a dead ally (v2KeepWorth)
+cost    = oa + altOa + pDrop × own
+```
+
+So going down costs the actor's turns and, for the only caster with a reserve, the ally it would have brought back. It is one term on the option's score, not a rule, and it
+applies to any move: walking off, a touch heal, an action Dash. Rising out of reach at the end of a turn still draws an unpriced attack (backlog).
+
+The height price lands after a square's best option is picked, so a priced touch would hide a ranged option that needs no descent. When a touch carries that price the square also offers its best non-touch
+option (`offAt(x, y, false, true)`), unpriced, and the two compete. On the dragons it is offered 170 to 279 times per 300 days and tops the touch beside it 67 to 129 times (Eldritch Blast over Healing Hands, Aid or Mind Spike over Cure Wounds).
+
+New weights: `w.dropEdge`, `w.dropFrom`, `w.dropRounds`, `w.dropRound`, `w.dropLife`.
+
+**`w.dropFrom`.** Without it, `pDrop` grew from the first point of damage, so every small attack near a healthy caster carried part of its worth and casters stopped closing:
+"Caster: 2 Mages + 6 Guards", blind, went from 49.5 to 36. Other weights did not cure that, because the fault is the shape, not the size. At 0.25 the row holds (45, within 2 SE) and the
+gains stay (blind D2 81, D3 84, D4 72, D7 81, D8 73); at 0.5 they shrink (77, 83, 72, 78, 71), so 0.25.
+
+**Results** (200 runs, same seeds, ±SE per row, against the rules fix alone; committed party):
+
+| | D1 | D2 | D3 | D4 | D5 | D6 | D7 | D8 | D9 | F1 | F2 |
+|---|---|---|---|---|---|---|---|---|---|---|---|
+| open, before | 86 | 85 | 81 | 64 | 67.5 | 63 | 58 | 66 | 95 | 50.5 | 1 |
+| open, after | 89 | 89 | 89.5 | 67 | 69 | 68 | 72 | 74.5 | 96 | 52.5 | 1 |
+| learn, before | 87 | 80 | 79.5 | 65.5 | 59.5 | 50.5 | 63 | 72.5 | 94.5 | 54 | 5 |
+| learn, after | 92 | 86.5 | 88 | 73.5 | 66.5 | 57 | 78.5 | 74.5 | 95 | 55.5 | 3.5 |
+| blind, before | 84.5 | 64.5 | 73.5 | 68 | 60 | 31.5 | 65.5 | 60.5 | 91.5 | 51.5 | 2.5 |
+| blind, after | 89 | 80.5 | 84 | 72 | 68.5 | 38.5 | 80.5 | 72.5 | 90.5 | 51 | 2.5 |
+
+R5-R7 (ally revived included): open 34 → 35, 68.5 → 75, 97.5 → 98.5; learn 31 → 35, 63 → 68.5, 99.5 → 100; blind 21 → 22.5, 56.5 → 60, 98.5 → 99.
+
+All 104 rows per mode: 0 worse beyond 2 SE; 4 better in open, 11 in learn, 12 in blind (means 78.0 → 78.9, 75.5 → 76.8, 70.4 → 71.8). Downed allies healed: learn 82.8 → 84.7%, open 80.5 → 81.5%,
+blind 82.1 → 84.3%; bonus-action turns 69.3 → 69.7, 63.3 → 64.0, 70.3 → 72.0; action turns 92.2 → 94.1, 85.5 → 85.6, 92.2 → 92.6. Old-AI logs do not change.
+
+**What it does not do.** It is a price, not a veto. In a set-up scene (Cleric at 12 HP, flying beside an 18-damage foe, the only ally dying below) the touch costs 91 of an ally worth 627, and
+still beats the best option that stays up (514 against 466), so it goes down to heal. On Zaki's party against two Young Green Dragons (300 days per mode) going down to an opportunity attack on one's own turn
+falls from 111 to 77 and attacks drawn from 503 to 366, but F1's win rate does not move beyond noise (50.5 → 52.5, 54 → 55.5, 51.5 → 51): the chain in the report is rarer, not gone, and
+that fight is decided elsewhere.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |

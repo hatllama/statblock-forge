@@ -131,6 +131,7 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
 - **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.
 - **Relentless Rage DC counter** never resets on rests: small rules fix, bundle with the next engine job.
+- **Rising out of reach**: `settleAltitude` at the end of a turn can draw an opportunity attack the search does not price (`altOa` covers touch options only): next AI job on flyers.
 - **Lingering-zone gaps**: Flaming Sphere's bonus-action move and ram, Wall of Fire's side damage, Cloudkill drift, foes avoiding a damage zone; the cast-time hit counts as a round's zone hit (a small over-credit): next engine job, foe avoidance with phase 4.
 - **Spell data gaps, zones**: Cloud of Daggers, Hunger of Hadar, Create Bonfire, Spike Growth, Sleet Storm: next spell-data job (phase 2 for the casters that use them).
 - **Spell data gaps, utility**: Invisibility, Fly, Dimension Door, Dispel Magic, Animate Dead, Plane Shift, Power Word Kill, Scrying, Detect Thoughts, Detect Magic, Light, Mage Hand, Prestidigitation, Thaumaturgy: phase 2 (those with a combat effect), the rest are out of scope.

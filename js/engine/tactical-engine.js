@@ -3346,6 +3346,8 @@ const AI_BASE = {
     buff: 1, buffRounds: 2, zone: 2,                             // buffs on allies (per round × rounds, counted this many rounds ahead at most); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
+    // going down on its own turn (docs/ai-v2.md): how far expected damage understates a hit; the share of its HP a hit must reach before it can drop it; its rounds lost, at most this many, × a weight; a life in points
+    dropEdge: 1.5, dropFrom: 0.25, dropRounds: 2, dropRound: 1, dropLife: 60,
     dot: 1, dotLag: 0.5, dotMin: 0.5, dotMax: 3.5, dotHold: 1,   // a burn (Caustic Brew: ext.dot): its value; the rounds it loses because the first tick comes on the foe's turn; the fewest and most ticks counted; what a running one is worth to keep
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
   },
@@ -3514,8 +3516,11 @@ Sim.prototype.v2Doomed = function (u) {
 /* breaking the reserve: the ally's worth, little when the fight is lost anyway (a term: nobody casts Revivify after a defeat) */
 Sim.prototype.v2KeepCost = function (u, res, L, F) {
   if (L < res.min || slotsFrom(u, res.min) > res.n) return 0;
+  return this.v2KeepWorth(u, res, F);
+};
+Sim.prototype.v2KeepWorth = function (u, res, F) {
   const P = u.v2P.pacing;
-  return (P.reviveLife + (res.t.dpr || 0) * P.reviveDay * F) * (this.v2Doomed(u) ? P.losing : 1);
+  return (P.reviveLife + (res.t.dpr || 0) * P.reviveDay * (F === undefined ? this.leftFor(u) : F)) * (this.v2Doomed(u) ? P.losing : 1);
 };
 /* a caster left at 0 HP with a slot: someone standing spends a heal to wake it, inside the minute */
 Sim.prototype.wakeReviver = function () {
@@ -3684,7 +3689,14 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     }
     return cost;
   };
-  return { info, at, spacing, oa };
+  // a flyer changing height beside a foe leaves its reach too (settleAltitude); z = the height it goes to, over the ground there
+  const altOa = (x, y, z) => {
+    let cost = 0;
+    const zm = (this.T.anyH ? this.T.h[x + y * this.W] : 0) + z;
+    for (const e of adjAt(x, y)) if (Math.max(this.gapTo(x, y, u.n, e), Math.abs(this.zOf(e) - zm)) * 5 > this.meleeReach(e)) cost += oaHit(e);
+    return cost;
+  };
+  return { info, at, spacing, oa, altOa };
 };
 Sim.prototype.v2Ctx = function (u, speed) {
   const key = this.turnSeq + ':' + (this.posVer || 0) + ':' + speed + ':' + u.hp + ':' + u.buffs.length + ':' + this.units.reduce((t, o) => t + (o.hp > 0 ? 1 : 0), 0);
@@ -3922,6 +3934,23 @@ function deathOdds(s, f, rounds, hit2, stable) {
   };
   return walk(stable ? 3 : s, f, Math.min(6, Math.ceil(rounds)));
 }
+/* one round of t on our side: its damage on the same scale as any attack's (× how dangerous the foes are), or a healer's round */
+Sim.prototype.v2RoundWorth = function (u, t, ctx) {
+  const W = u.v2P.w;
+  const heals = t.actions.some(o => o.type === 'heal' && o.target !== 'self' && o._range !== 0 && (o.actionSlot === 0 || o.actionSlot === 1) && this.usable(t, o));
+  const threat = 1 + ctx.foes.reduce((s, e) => s + this.kDpr(u, e), 0) / Math.max(1, ctx.foes.length) / W.dprScale;
+  return Math.max((t.dpr || 0) * threat, heals ? W.backHealer : 0);
+};
+/* how likely d, the expected damage of the attacks a move draws, is to drop u: nothing until one attack can take a real share of what it has */
+Sim.prototype.v2DropChance = function (u, d) {
+  const W = u.v2P.w, p = (d * W.dropEdge / Math.max(1, u.hp) - W.dropFrom) / (1 - W.dropFrom);
+  return p > 0 ? Math.min(1, p) : 0;
+};
+/* what u loses by going down: its turns, a life, and the ally it would have brought back */
+Sim.prototype.v2OwnWorth = function (u, ctx) {
+  const W = u.v2P.w, res = this.v2Reserve(u);
+  return this.v2RoundWorth(u, u, ctx) * Math.min(ctx.rounds, W.dropRounds) * W.dropRound + W.dropLife + (res ? this.v2KeepWorth(u, res) : 0);
+};
 /* a downed ally back up (docs/ai-v2.md, step 2.12): its turns for the rest of the fight, cut short by the foes around it, plus the
    death it avoids, less the chance it drops again and pays for it anyway */
 Sim.prototype.v2BackUp = function (u, a, t, ctx, amt) {
@@ -3929,10 +3958,8 @@ Sim.prototype.v2BackUp = function (u, a, t, ctx, amt) {
   const adj = ctx.foes.filter(e => !this.incap(e) && this.dist(e, t) <= this.meleeReach(e));
   const hit = Math.max(this.v2Pressure(u, t, ctx), adj.reduce((s, e) => s + this.kDpr(u, e), 0) * 0.6 * W.backFocus);
   const turns = Math.min(ctx.rounds, W.backFirst + hp / Math.max(1, hit)), pDrop = Math.min(1, hit / hp);
-  const heals = t.actions.some(o => o.type === 'heal' && o.target !== 'self' && o._range !== 0 && (o.actionSlot === 0 || o.actionSlot === 1) && this.usable(t, o));
-  // its damage on the same scale as any attack's (× how dangerous the foes are); the blow past its HP is one nobody else takes
-  const threat = 1 + ctx.foes.reduce((s, e) => s + this.kDpr(u, e), 0) / Math.max(1, ctx.foes.length) / W.dprScale;
-  const round = Math.max((t.dpr || 0) * threat, heals ? W.backHealer : 0), soak = Math.max(0, hit - hp) * W.backSoak;
+  // the blow past its HP is one nobody else takes
+  const round = this.v2RoundWorth(u, t, ctx), soak = Math.max(0, hit - hp) * W.backSoak;
   const life = W.backLife * (1 + W.backDay * (t.team === 'party' ? this.leftFor(u) : 0));
   const saved = deathOdds(t.deathS || 0, t.deathF || 0, ctx.rounds, Math.min(1, W.backFinish * adj.length), t.stable) - pDrop * deathOdds(0, 0, ctx.rounds, Math.min(1, W.backFinish2 * adj.length));
   return round * turns * W.backRound + soak + life * Math.max(0, saved);
@@ -4234,6 +4261,10 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u) && !caster;
   let safety = (meleeSelf ? W.risk : W.riskRanged * (caster ? W.casterRisk : 1)) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
   if (post.kind === 'retreat') { safety *= W.retreatSafety; if (!post.kite) offMult = W.retreatOffense; }
+  // what an opportunity attack costs: its damage, and the chance it drops it (docs/ai-v2.md)
+  let ownWorth = null;
+  const dropCost = d => { const p = this.v2DropChance(u, d); if (!p) return 0; if (ownWorth === null) ownWorth = this.v2OwnWorth(u, ctx); return p * ownWorth; };
+  const zHere = (x, y) => this.T.anyH ? this.T.h[x + y * this.W] : 0;
   // it can't lose more than it has: past that, more incoming damage only means going down (a bit worse than its HP)
   const hpCap = Math.max(1, u.hp) * W.downCap;
   const threat = (x, y) => Math.min(ctx.danger.at(x, y), hpCap);
@@ -4370,7 +4401,8 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   // the best way to spend the action from (x, y); noSlot: the bonus action already took this turn's spell slot
   const acShared = new Map();
   let slotRaw = 0;
-  const offAt = (x, y, noSlot) => {
+  const touchPl = pl => pl.range <= 10 && (pl.ally || (pl.a.type === 'atk' && !pl.a.useSaves) || pl.a.type === 'debuff');
+  const offAt = (x, y, noSlot, noTouch) => {
     const seen = new Map(), dC = new Map();
     const dOf = t => { let d = dC.get(t); if (d === undefined) { d = this.distXY(x, y, t); dC.set(t, d); } return d; };
     const sees = t => { let v = seen.get(t); if (v === undefined) { v = this.canSee(x, y, t); seen.set(t, v); } return v; };
@@ -4378,6 +4410,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     let best = null;
     for (const pl of plans) {
       if (noSlot && pl.slot) continue;
+      if (noTouch && !pl.self && touchPl(pl)) continue;
       if (pl.self) { const raw = pl.vals.get(u.uid).val * offMult, v = net(pl, raw); if (!best || v > best.val) best = { pl, t: u, val: v, raw, why: '' }; continue; }
       if (pl.ally) {
         // heals and buffs: the best targets in reach from here (a multi-target spell sums them)
@@ -4449,20 +4482,25 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     const th = threat(x, y), sp = ctx.danger.spacing(x, y) * W.spacing;
     const keep = (caster ? reachPen(x, y) : 0) + concR(th);
     const risk = th * safety + sp + keep, walk = steps * W.move;
-    const oa = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0;
+    const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0, oa = oa0 + dropCost(oa0);
     const prog = (need0 - need(x, y)) * progUnit;
     if (best) {
       anyOffense = true;
       const bon = bonusAt(dOf, sees, best.pl.slot) * W.bonus;
+      // a touch from the air means coming level with the target
+      const touch = u.alt > 0 && this.airborne(u) && best.t !== u && touchPl(best.pl);
+      const alt0 = touch ? ctx.danger.altOa(x, y, this.zOf(best.t) - zHere(x, y)) * W.oa : 0, alt = alt0 ? alt0 + dropCost(oa0 + alt0) - dropCost(oa0) : 0;
       let aim = 0;
       if (canAim && steps === 0 && best.pl.a.type === 'atk' && !best.pl.a.useSaves && best.t !== u) aim = this.v2AdvGain(u, best.pl.a, best.t) * W.aim;
-      const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - walk, aim: aim > bon && aim > 0 };
+      const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - alt - walk, aim: aim > bon && aim > 0 };
       // shoot, then use the rest of the move to get out of sight and Hide
       if (distH && !opt.aim && best.pl.a.type === 'atk') {
         const dh = distH[x + y * Wd];
         if (dh >= 0 && dh <= spSteps - steps && (dh === 0 || !this.adjacentEnemies(u, x, y).length)) { opt.hideAfter = spSteps - steps; opt.score += best.val * W.hide + risk * 0.5 + 2 - bon; }
       }
       options.push(opt);
+      // the same square without coming down: the option a priced touch would otherwise hide
+      if (alt > 0) { const far = offAt(x, y, false, true).best; if (far) options.push({ mode: 'act', x, y, rm, off: far, steps, score: far.val + bonusAt(dOf, sees, far.pl.slot) * W.bonus - risk - oa - walk, aim: false }); }
       if (bonusDis && steps > 0) options.push({ mode: 'bonusDis', x, y, rm, off: best, steps, score: best.val - risk - walk });
     }
     if (onlyAct) return;
@@ -4484,7 +4522,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   }
   // nothing to hit from anywhere it can walk: Dash is the other way to spend the action
   if (!onlyAct && !anyOffense && speed > 0) consider(speed * 2, (x, y, rm, steps) => {
-    const oa = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0;
+    const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0, oa = oa0 + dropCost(oa0);
     options.push({ mode: 'dash', x, y, rm, steps, score: (need0 - need(x, y)) * progUnit - threat(x, y) * safety - ctx.danger.spacing(x, y) * W.spacing - oa - steps * W.move * 0.5 });
   });
   if (!options.length) return null;
