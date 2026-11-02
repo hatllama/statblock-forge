@@ -96,6 +96,7 @@ const DEFS = [
       { name: 'spiritual weapon', custom: { level: 2, concentration: true, actionSlot: 1, targets: 1, type: 'atk', dpr: '1d8 + 4', toHit: 7, target: 'enemy with least HP', upcast: '1d8',
         ext: { range: 60, damageType: 'force', grantsBuff: { id: 'c5-cleric-s11', name: 'Spiritual Weapon' } } } },
       { name: 'mass healing word', patch: sp => { sp.amount += ' + 5'; } },
+      { name: 'revivify', custom: { level: 3, actionSlot: 0, targets: 1, type: 'heal', amount: '1', target: 'ally with the least HP', ext: { range: 5, revivify: true, wtOnly: true } } },
     ] } },
   { cls: 'druid', name: 'Druid', build: 'Circle of the Stars · Starry Form: Archer', hp: 38, ac: 15,
     scores: [8, 14, 14, 12, 18, 10], saves: ['int', 'wis'],

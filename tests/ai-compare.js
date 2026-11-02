@@ -406,12 +406,16 @@ const withPotions = (p, n) => {
 };
 const zaki = () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players);
 // DOWN_NOW: the names knocked to 0 HP as the day's first fight starts
-let DOWN_NOW = null;
+let DOWN_NOW = null, KILL_NOW = null;     // KILL_NOW: the same, dead
 const realTurn = Tac.Sim.prototype.turn;
 Tac.Sim.prototype.turn = function (u) {
   if (DOWN_NOW && this.fightNo === 0 && !this._downDone) {
     this._downDone = true;
     for (const o of this.units) if (o.team === 'party' && DOWN_NOW.some(n => o.name.indexOf(n) === 0)) this.downPC(o);
+  }
+  if (KILL_NOW && this.fightNo === 0 && !this._killDone) {
+    this._killDone = true;
+    for (const o of this.units) if (o.team === 'party' && KILL_NOW.some(n => o.name.indexOf(n) === 0)) this.kill(o, null, 'scenario');
   }
   return realTurn.call(this, u);
 };
@@ -472,6 +476,34 @@ function playDown(sc, N) {
   console.log('\n' + sc.name);
   console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
   for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({}, sc, { know: { party: mode } }), { party: 'v2' }, N))); DOWN_NOW = null; }
+}
+
+/* ---- Revivify (step 2.12) ---- */
+const noRevivify = players => { for (const p of players) if (p.ext && p.ext.spellbook) p.ext.spellbook.spells = p.ext.spellbook.spells.filter(s => !(s.ext && s.ext.revivify)); };
+// results carry the day's running count per creature: this fight's is what it added
+let revivedSoFar = 0;
+const REVIVE_METRICS = { 'revived/day': (r, k) => { const all = r.party.reduce((t, p) => t + (p.revived || 0), 0), got = all - (k ? revivedSoFar : 0); revivedSoFar = all; return got; } };
+const lastSlots = (n, id) => players => { const p = players.find(x => x.id === id || x.name === id); p.ext.spellbook.slots[2] = n; return players; };
+const REVIVE_SCENARIOS = [
+  { name: "R1 Zaki's party vs a hard day: 2 Ogres + 5 Gnoll Warriors / 3 Ogres / Hill Giant + 2 Ogres / 2 Bandit Captains + 6 Bandits", players: zaki, encounters: () => fights('Ogre*2,Gnoll Warrior*5/Ogre*3/Hill Giant,Ogre*2/Bandit Captain*2,Bandit*6') },
+  { name: "R2 Zaki's party vs hard-day.json", players: zaki, encounters: () => clone(fixture('hard-day.json').encounters) },
+  { name: 'R3 a Cleric with exactly one 3rd-level slot: Fighter, Cleric, Rogue, Wizard vs 2 Ogres + 3 Bugbear Warriors / Hill Giant + 2 Ogres / 2 Bandit Captains + 6 Bandits', players: () => lastSlots(1, 'Cleric')(['Fighter', 'Cleric', 'Rogue', 'Wizard'].map(pc)), encounters: () => fights('Ogre*2,Bugbear Warrior*3/Hill Giant,Ogre*2/Bandit Captain*2,Bandit*6') },
+  { name: 'R4 the same with the usual two 3rd-level slots', party: ['Fighter', 'Cleric', 'Rogue', 'Wizard'], encounters: () => fights('Ogre*2,Bugbear Warrior*3/Hill Giant,Ogre*2/Bandit Captain*2,Bandit*6') },
+  // natural deaths almost never leave the caster standing with a slot (docs/ai-v2.md), so these start the day with one
+  { name: 'R5 one 3rd-level slot, the Fighter dead as fight 1 starts: R3 day', kill: ['Fighter'], players: () => lastSlots(1, 'Cleric')(['Fighter', 'Cleric', 'Rogue', 'Wizard'].map(pc)), encounters: () => fights('Ogre*2,Bugbear Warrior*3/Hill Giant,Ogre*2/Bandit Captain*2,Bandit*6') },
+  { name: 'R6 two 3rd-level slots, the Fighter dead as fight 1 starts: R3 day', kill: ['Fighter'], party: ['Fighter', 'Cleric', 'Rogue', 'Wizard'], encounters: () => fights('Ogre*2,Bugbear Warrior*3/Hill Giant,Ogre*2/Bandit Captain*2,Bandit*6') },
+  { name: "R7 Zaki's party, Kraax dead as fight 1 starts: 2 Ogres + 5 Gnoll Warriors / 3 Ogres / Hill Giant + 2 Ogres", kill: ['Kraax'], players: zaki, encounters: () => fights('Ogre*2,Gnoll Warrior*5/Ogre*3/Hill Giant,Ogre*2') },
+];
+// the arm with Revivify but no reserve: the slot is priced like any other, though the pool still leaves out what is kept
+const noKeep = players => { for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: { pacing: { reviveLife: 0, reviveDay: 0 } } }); };
+function playRevive(sc, N) {
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('mode', 12), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6), lpad('revived/day', 13)].join(' '));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) for (const [tag, tw] of [['', noRevivify], ['+nokeep', noKeep], ['+revive', null]]) {
+    KILL_NOW = sc.kill || null;
+    console.log(row(mode + tag, play(Object.assign({}, sc, { know: { party: mode }, metrics: REVIVE_METRICS }), { party: 'v2' }, N, tw)).replace(/^ {2}(\S+)\s/, (m, l) => '  ' + pad(l, 12) + ' '));
+    KILL_NOW = null;
+  }
 }
 
 /* ---- running ---- */
@@ -580,6 +612,7 @@ if (process.env.ACCURACY === '1') {
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
+for (const sc of REVIVE_SCENARIOS) if (only && only.test(sc.name)) playRevive(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };

@@ -1004,6 +1004,21 @@
        },
        "name": "Mind Spike",
        "id": "7157d787-a405-41be-afb8-88bde61ef76f-s18"
+      },
+      {
+       "level": 3,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "heal",
+       "amount": "1",
+       "target": "ally with the least HP",
+       "ext": {
+        "range": 5,
+        "revivify": true,
+        "wtOnly": true
+       },
+       "name": "Revivify",
+       "id": "7157d787-a405-41be-afb8-88bde61ef76f-s13"
       }
      ],
      "conSave": 2

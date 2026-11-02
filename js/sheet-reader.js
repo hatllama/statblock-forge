@@ -64,6 +64,8 @@ const CUSTOM = {
   'green-flame blade': { level: 0, actionSlot: 0, targets: 1, type: 'atk', dpr: '0', toHit: 0, target: 'enemy with least HP', ext: { range: 5, onHit: { splash: { dmg: '0', range: 5, type: 'fire' } }, damageType: 'piercing' } },
   'mind spike': { level: 2, upcast: '1d8', concentration: true, actionSlot: 0, targets: 1, type: 'atk', dpr: '3d8', toHit: 0, useSaves: true, halfOnSave: true, target: 'enemy with highest DPR', ext: { range: 120, saveAbility: 'wis', damageType: 'psychic' } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
+  // never a turn option: AI v2 keeps a slot when an ally dies and casts it when the fight ends (docs/ai-v2.md); War Table only
+  'revivify': { level: 3, actionSlot: 0, targets: 1, type: 'heal', amount: '1', target: 'ally with the least HP', ext: { range: 5, revivify: true, wtOnly: true } },
 };
 /* a spell name as sheets write it: "Misty Step High Elf Lineage", "Misty Step (high el…", "Mage Armour". The longest known name the text starts
    with is the spell and the rest is its source label; a name cut short with "…" matches the one known name it begins. Returns { key, source } or null. */

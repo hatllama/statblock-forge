@@ -118,6 +118,10 @@ report win ±SE, rounds, deaths, slots spent.**
 
 Aid, Mage Armor and Death Ward are cast in the morning from a table (`PREFIGHT_SPELLS`) under one toggle and one slot share (`morningShare`); see "Pre-fight buffs" in `docs/ai-v2.md`. Not built: concentration buffs (they would block the caster in the fight), spells under 8 hours, Heroes' Feast, and monsters casting pre-fight.
 
+## Done outside the phases: downed and dead allies (step 2.12)
+
+A "back in the fight" term for healing a downed ally, Healing Light on v2, Revivify (a death keeps a slot, cast as the fight ends). Audits of Entangle on one foe and Caustic Brew over Chromatic Orb; both changes below are proposed, not built. See `docs/ai-v2.md`.
+
 ## Backlog (checked / to add later)
 
 One line each: what, why, which phase takes it. Phase 7 (summons and companions) is in the table above.
@@ -142,7 +146,10 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Learn's kill leak**: fixed for v2 (step 2.11: the bloodied reading is v2 learn's default). The classic AI keeps the old reading, which writes a creature's exact maximum HP into `hpHi` on a kill, so its logs do not move.
 - **Riders into Legendary Resistance**: Stunning Strike and other riders have no LR term in `v2Value`; a rider into LR is valued as if it lands (step 2.11 priced spells only).
 - **Limited-use items (Pressurized Flame Squirter)**: the importer reads them as at-will attacks (its item text said 30 ft while the table said 5 ft). Tacitus's Squirter was removed from his actions by hand in the party file. Limited-use items should import as limited-use actions, and its second mode (+10, bludgeoning plus fire) modeled with it.
-- **Spell data gaps seen on those sheets**: Light, Prestidigitation, Minor Illusion, Disguise Self, Find Familiar, Lesser Restoration, Revivify, Daylight, Hunger of Hadar.
+- **Spell data gaps seen on those sheets**: Light, Prestidigitation, Minor Illusion, Disguise Self, Find Familiar, Lesser Restoration, Daylight, Hunger of Hadar.
+- **Caustic Brew is overpriced**: the scorer reads `dpr: '4d4'` as damage now, with a kill term, though the engine deals nothing on the cast and only the tick each turn; `v2Holding` ignores a running burn. A 2nd-level Brew on one foe really deals 3.8 against the Orb's 11.9. Proposed in `docs/ai-v2.md` ("Two audits"): score chance × tick × rounds.
+- **Learn's save prior on strong bosses**: `kSave` reads an unseen Strength save at +2, so learn casts Entangle on a +6 boss five times as often as open (19% landed). No win-rate cost seen. Proposed in `docs/ai-v2.md`.
+- **Revivify, not built**: casting it mid-fight; other classes' builds (Druid, 2024); revival for the old AI. Natural play rarely leaves the caster standing with a slot, because monsters focus healers.
 - **Invisibility**: Eldar has it (an action, touch, ends when the target attacks or casts). Needs hide/ambush rules and line-of-sight work (attackers without sight of the target, guessing squares) before it can be an action; not imported.
 - **Potions other than healing**: only Healing, Greater, Superior and Supreme are actions now (`POTIONS` in `sheet-reader.js`). Resistance, Speed, Haste-like and breath potions, oils and scrolls stay name-only notes. Foundry VTT inventories do not feed the potion pools yet (D&D Beyond and pasted/PDF sheets do).
 - **Counterspell has no engine rule**: it imports as a reaction-slot spell (`ext.counterspell`, War Table only, `wtOnly`) so it shows on the sheet and spends nothing, but nothing fires it. Needs a reaction hook on enemy casts within 60 ft (2024 rule: the caster makes a Con save against the spell save DC or the spell fails, slot not spent), valued like Silvery Barbs in `attackRoll`'s neighbourhood; phase 3 with the other reactions.

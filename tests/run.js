@@ -576,6 +576,7 @@ section('Character sheets');
       'PDF page layout pairs a value above its caption, a title with the value under it and a bonus beside its label, and joins "+" and "5" into "+5"');
   }
   const nk = p['niko-roll20.txt'], tc = p['tacitus-roll20.txt'];
+  check(nk && nk.ext.spellbook.spells.some(s => s.name === 'Revivify' && s.level === 3 && s.ext.revivify && s.ext.wtOnly), 'Niko: Revivify from the sheet, War Table only');
   check(nk && nk.name === 'Niko Aris' && nk.class.type === 'warlock' && nk.class.level === 5 && nk.AC === 13 && nk.hp === 38 && nk.ext.speed === 30 && nk.ext.saves.wis === 4 && nk.ext.saves.cha === 7 && nk.ext.saves.int === 0
     && nk.ext.resist.join() === 'necrotic,radiant' && nk.ext.luck === 3 && !nk.ext.unarmored && /Pact of the Celestial/.test(nk.ext.build) && !/No score found|No hit points|No AC/.test(notesOf(nk)),
     'a Roll20 2024 sheet (Niko, warlock 5): name, level, AC, HP, speed, saves, resistances, Lucky; nothing guessed');
@@ -1218,6 +1219,104 @@ section('AI v2: downed allies (step 2.12)');
   w.actions.push({ id: 'w-hl', name: 'Healing Light', actionSlot: 1, freq: { reset: 'lr', uses: 6 }, condition: 'ally under half HP', targets: 1, type: 'heal', amount: '4d6', target: 'ally with the least HP', ext: { range: 60, pool: { dice: 6, die: 6, maxPer: 4 } } });
   const res = Tac.runDay({ players: [w, build('Fighter')], encounters: [{ monsters: [foe('Brute', 30, 2)] }] }, { seed: 5, partyAI: 'tactical', ai: { party: 'v2' }, _keep: true });
   check(res._sim.units.find(o => o.name === 'Warlock').v2 === true, 'a creature with a dice-pool heal plays on v2');
+}
+
+section('AI v2: Revivify (step 2.12)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  const foe = (name, hp, count, dmg) => ({ id: name, name, mode: 'custom', hp, AC: 10, saveBonus: 0, count, speed: 30, actions: [{ id: name + '1', name: 'Club', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: String(dmg || 2), toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const cleric = slots => { const c = build('Cleric'); if (slots) c.ext.spellbook.slots = slots; return c; };
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  // the Fighter is killed on the first turn of fight `at`
+  const killing = (at, fn) => {
+    proto.turn = function (u) {
+      if (this.fightNo === at && !this._killed) { this._killed = true; const f = this.units.find(o => o.name === 'Fighter'); this.kill(f, null, 'test'); if (fn) fn(this, f); }
+      return turn.call(this, u);
+    };
+  };
+  const day = (players, n, o) => Tac.runDay({ players, encounters: Array.from({ length: n }, () => ({ monsters: [foe('Dummy', 12, 2)] })) }, Object.assign({ seed: 21, partyAI: 'tactical', ai: { party: 'v2' }, record: true, _keep: true }, o));
+  const fighter = r => r.party.find(p => p.name === 'Fighter');
+
+  check(build('Cleric').ext.spellbook.spells.some(s => s.name === 'Revivify' && s.ext.revivify && s.ext.wtOnly), 'the Life Cleric has Revivify, War Table only');
+  killing(0);
+  let r = day([cleric(), build('Fighter'), build('Rogue')], 2);
+  check(!fighter(r[0]).dead && fighter(r[0]).hp >= 1 && fighter(r[0]).revived === 1 && r[0].events.some(e => e.kind === 'heal' && /Cleric → Fighter: Revivify/.test(e.text || '')), 'a death in fight 1: the Cleric casts Revivify as the fight ends, 1 HP');
+  check(r[0].events.findIndex(e => /Revivify/.test(e.text || '') && e.kind === 'heal') < r[0].events.findIndex(e => e.kind === 'end'), 'it shows in the log before the fight ends');
+  check(r[1].party.find(p => p.name === 'Fighter').dead === false, 'the Fighter stands in fight 2');
+  const slots = r._sim.units.find(u => u.name === 'Cleric').slots;
+  check(slots.slice(2).reduce((t, n) => t + n, 0) < 2, `the casting took a 3rd-level slot (${slots})`);
+
+  killing(0);
+  r = day([build('Wizard'), build('Fighter'), build('Rogue')], 2);
+  check(fighter(r[0]).dead && fighter(r[1]).dead && r[1].party.find(p => p.name === 'Wizard').dead === false, 'no one with Revivify: dead from fight 1 is still dead in fight 2');
+  killing(0);
+  r = day([cleric(), build('Fighter'), build('Rogue')], 2, { ai: undefined });
+  check(fighter(r[0]).dead && !r[0].events.some(e => /Revivify/.test(e.text || '')), 'the old AI never casts it');
+  killing(0);
+  r = day([cleric([4, 3, 0, 0, 0, 0, 0, 0, 0]), build('Fighter'), build('Rogue')], 2);
+  check(fighter(r[0]).dead, 'no 3rd-level slot: no Revivify');
+  killing(0, (s) => { s.units.find(o => o.name === 'Cleric').slots = [4, 3, 0, 0, 0, 0, 0, 0, 0]; });
+  r = day([cleric(), build('Fighter'), build('Rogue')], 2);
+  check(fighter(r[0]).dead, 'slots gone before the end: still dead');
+
+  // the heal paths leave the dead alone, and ordinary heals cannot bring them back
+  let probe = {};
+  killing(0, (s, f) => {
+    const c = s.units.find(o => o.name === 'Cleric'), w = c.actions.find(a => a.name === 'Healing Word'), rv = c.actions.find(a => a.ext && a.ext.revivify), ctx2 = s.v2Ctx(c, 30);
+    probe.pool = s.v2PoolFor(c, w, ctx2).includes(f);
+    probe.usable = s.usable(c, rv);
+    s.heal(c, f, 10, false); probe.dead = f.dead; probe.hp = f.hp;
+    probe.duty = s.reviveDuty('party').get(c.uid);
+    const fb = c.actions.find(a => a.name === 'Spirit Guardians');
+    const res = s.v2Reserve(c);
+    probe.n = res && res.n; probe.t = res && res.t.name;
+    c.slots = [4, 3, 1, 0, 0, 0, 0, 0, 0];                   // the last slot that casts it
+    probe.keepLast = s.v2Pace(c, fb, 3).base;
+    c.slots = [4, 3, 2, 0, 0, 0, 0, 0, 0];
+    probe.keepSpare = s.v2Pace(c, fb, 3).base;
+    probe.low = s.v2Pace(c, c.actions.find(a => a.name === 'Bless'), 1).base;
+    c.v2P = Object.assign({}, c.v2P); probe.window = 0;
+    const dr = f.diedRound; f.diedRound = s.round - 11; probe.window = !!s.v2Reserve(c); f.diedRound = dr;
+    f.dead = false; f.hp = 1; probe.other = !!s.v2Reserve(c); f.dead = true; f.hp = 0;
+  });
+  day([cleric(), build('Fighter'), build('Rogue')], 1);
+  check(probe.pool === false && probe.usable === false, 'the dead are no target for ordinary heals; Revivify is no turn option');
+  check(probe.dead === true && probe.hp === 0, 'a heal does nothing to the dead');
+  check(probe.n === 1 && probe.t === 'Fighter' && probe.duty === 1, 'a death makes the caster keep one slot');
+  check(probe.keepLast > probe.keepSpare + 40, `taking the last slot that casts it costs the ally's worth (${probe.keepLast.toFixed(1)} against ${probe.keepSpare.toFixed(1)} with one spare)`);
+  check(probe.window === false && probe.other === false, 'the reserve goes when the minute is up or the ally is back another way');
+
+  // no death, no reserve; one caster with a single slot and two dead: one comes back
+  killing(-1);
+  r = day([cleric(), build('Fighter')], 1);
+  check(!r[0].events.some(e => /keeps a slot/.test(e.text || '')), 'no reserve without a death');
+  proto.turn = function (u) {
+    if (!this._killed) { this._killed = true; for (const n of ['Fighter', 'Rogue']) this.kill(this.units.find(o => o.name === n), null, 'test'); }
+    return turn.call(this, u);
+  };
+  r = day([cleric([4, 3, 1, 0, 0, 0, 0, 0, 0]), build('Fighter'), build('Rogue'), build('Barbarian')], 1);
+  check(r[0].party.filter(p => p.dead).length === 1 && r[0].party.filter(p => p.revived).length === 1, 'one 3rd-level slot, two dead: one comes back');
+  // a caster at 0 HP when the fight ends: an ally wakes it, it casts
+  killing(0, (s) => { const c = s.units.find(o => o.name === 'Cleric'); s.downPC(c); });
+  const bard = build('Bard');
+  r = day([cleric(), build('Fighter'), bard], 1);
+  check(!fighter(r[0]).dead && r[0].events.some(e => e.kind === 'heal' && /Bard → Cleric/.test(e.text || '')) && r[0].events.some(e => /Cleric → Fighter: Revivify/.test(e.text || '')), 'a downed caster is woken by an ally with a heal, then casts');
+  killing(0, (s) => { const c = s.units.find(o => o.name === 'Cleric'); s.downPC(c); });
+  r = day([cleric(), build('Fighter'), build('Rogue')], 1);
+  check(fighter(r[0]).dead, 'a downed caster with nobody to wake it casts nothing');
+  // a reaction leaves the kept slot alone
+  killing(0, (s) => {
+    const c = s.units.find(o => o.name === 'Cleric');
+    c.actions.push({ id: 'sh', name: 'Shield', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: '1 round', ac: 5 }, _spell: { level: 1 } });
+    c.slots = [0, 0, 1, 0, 0, 0, 0, 0, 0]; probe.react = s.usable(c, c.actions[c.actions.length - 1]);
+    c.slots = [0, 0, 2, 0, 0, 0, 0, 0, 0]; probe.react2 = s.usable(c, c.actions[c.actions.length - 1]);
+  });
+  day([cleric(), build('Fighter'), build('Rogue')], 1);
+  check(probe.react === false && probe.react2 === true, 'a reaction spell does not take the last slot that casts Revivify');
+  proto.turn = turn;
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

@@ -995,9 +995,10 @@ Sim.prototype.slotFor = function (u, level) {
   return -1;
 };
 Sim.prototype.usable = function (u, a) {
-  if (a.ext && a.ext.prefight) return false;     // pre-fight buffs are cast in the morning only (morningCasts)
+  if (a.ext && (a.ext.prefight || a.ext.revivify)) return false;     // pre-fight buffs are cast in the morning only (morningCasts), Revivify when the fight ends (endFightRevives)
   if (a._spell) {
     if (!a._spell.level) return true;
+    if (a.actionSlot === 4 && u.reviver && this.v2Eats(u, this.slotFor(u, a._spell.level))) return false;   // no scorer for reactions yet (roadmap phase 3): they leave a kept slot alone
     if (this.sustaining(u, a)) return true;                                                  // moving Moonbeam, another Call Lightning bolt: no new slot
     if (a._spell.conc && a.ext && a.ext.zone && a.ext.zone.dmg && u.concentrating === a.id && (this.zones || []).some(z => z.src === u.uid && z.id === a.id)) return false;   // it's already up
     if (a.actionSlot !== 4 && u.slotTurn === u.turnNo && this.current === u) return false;   // one spell slot per turn (2024 rules)
@@ -2771,6 +2772,7 @@ Sim.prototype.kill = function (u, src, why) {
   u.alt = 0;
   this.endConcentration(u, 'slain');
   u.hp = 0; u.dead = true;
+  if (u.isPC) { u.diedRound = this.round; u.diedFight = this.fightNo; }
   this.releaseGrappleOf(u);
   // whoever it swallowed tumbles out
   for (const vid of u.inside.slice()) this.expel(u, this.byId[vid], 'freed');
@@ -3348,7 +3350,8 @@ const AI_BASE = {
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
   burn: { modes: ['open'], bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
-            slot: 8, slotUp: 0.35, slotEasyTax: 0.7 },           // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
+            slot: 8, slotUp: 0.35, slotEasyTax: 0.7,             // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
+            reviveLife: 60, reviveDay: 6, reviveDoom: 2 },       // spending the slot kept for a dead ally's Revivify: a life, + its DPR × this many rounds per fight still to come; a fight counts as lost when the side falls in under 1/reviveDoom of the time it needs to win
   // the threat estimate (docs/ai-v2.md): learn on v2, the party's side. prior + each signal's weight (× n / (n + half)), then the table
   threat: {
     useAc: 1, useSave: 0,                                        // AC, save bonus read from the score too (saves: off, one number hides a weak save, see the docs)
@@ -3423,7 +3426,9 @@ Sim.prototype.v2Eligible = function (u) {
 Sim.prototype.v2Setup = function (u) {
   u.v2 = this.v2Eligible(u);
   u._v2c = null;
+  u.reviver = null;
   if (!u.v2) return;
+  u.reviver = u.isPC && u.slots ? u.actions.find(a => a.ext && a.ext.revivify && a._spell) || null : null;
   u.ai = 'tactical';
   u.v2P = aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
   u.v2Start = new Map(u.uses);      // what it had when the fight started, for pacing
@@ -3461,6 +3466,79 @@ Sim.prototype.v2Recovery = function (u) {
   return restAhead ? u.recovery.levels || 0 : 0;
 };
 
+/* ---- Revivify (docs/ai-v2.md, step 2.12 part B): a death makes a caster keep a slot; the fight's end spends it ---- */
+const REVIVIFY_ROUNDS = 10;      // the rule: dead for no longer than a minute
+const slotsFrom = (u, level) => u.slots ? u.slots.slice(level - 1).reduce((t, n) => t + n, 0) : 0;
+/* the party's dead that Revivify can still reach: died this fight, within the minute */
+Sim.prototype.revivable = function (team) {
+  return this.units.filter(o => o.team === team && o.isPC && o.dead && !o.fled && o.diedFight === this.fightNo && this.round - o.diedRound <= REVIVIFY_ROUNDS);
+};
+/* who keeps a slot for whom: each of the dead goes to the caster with the most slots free, standing casters first. Worked out afresh, so a
+   reserve goes away by itself once the ally is back, the minute is up, or another caster covers it */
+Sim.prototype.reviveDuty = function (team) {
+  const duty = new Map(), casters = this.units.filter(o => o.team === team && o.reviver && !o.dead);
+  const free = o => slotsFrom(o, o.reviver._spell.level) - (duty.get(o.uid) || 0);
+  for (const t of this.revivable(team).sort((p, q) => (q.dpr || 0) - (p.dpr || 0))) {
+    const c = casters.filter(o => free(o) > 0).sort((p, q) => (q.hp > 0 ? 1 : 0) - (p.hp > 0 ? 1 : 0) || free(q) - free(p))[0];
+    if (c) duty.set(c.uid, (duty.get(c.uid) || 0) + 1);
+    if (c) (duty.who = duty.who || new Map()).set(c.uid, t);
+  }
+  return duty;
+};
+/* what u keeps for its dead: { n slots, their levels, the lowest level that casts it, t: the ally } or null */
+Sim.prototype.v2Reserve = function (u) {
+  if (!u.reviver) return null;
+  const duty = this.reviveDuty(u.team), n = duty.get(u.uid);
+  if (!n) return null;
+  const min = u.reviver._spell.level;
+  let levels = 0, want = n;
+  for (let l = min; l <= 9 && want > 0; l++) { const k = Math.min(want, u.slots[l - 1]); levels += k * l; want -= k; }
+  return { n, levels, min, t: duty.who.get(u.uid) };
+};
+/* would spending a slot of level L leave too few for the reserve? */
+Sim.prototype.v2Eats = function (u, L) {
+  const res = this.v2Reserve(u);
+  return !!res && L >= res.min && slotsFrom(u, res.min) <= res.n;
+};
+/* will u's side fall well before it wins? Its standing HP over the foes' damage against the foes' HP over its damage, as fightInHand reads it.
+   Not losing(): that is true whenever someone is dead, which is exactly when a reserve exists */
+Sim.prototype.v2Doomed = function (u) {
+  const mine = this.alliesOf(u).filter(o => this.alive(o) && o.onBoard), theirs = this.enemiesOf(u).filter(e => this.alive(e) && e.onBoard);
+  const myDpr = mine.reduce((t, o) => t + o.dpr, 0) * 0.6, theirDpr = theirs.reduce((t, e) => t + this.kDpr(u, e), 0) * 0.6;
+  const toWin = theirs.reduce((t, e) => t + this.kHp(u, e), 0) / Math.max(1, myDpr), toLose = mine.reduce((t, o) => t + o.hp, 0) / Math.max(1, theirDpr);
+  return toLose * u.v2P.pacing.reviveDoom < toWin;
+};
+/* breaking the reserve: the ally's worth, little when the fight is lost anyway (a term: nobody casts Revivify after a defeat) */
+Sim.prototype.v2KeepCost = function (u, res, L, F) {
+  if (L < res.min || slotsFrom(u, res.min) > res.n) return 0;
+  const P = u.v2P.pacing;
+  return (P.reviveLife + (res.t.dpr || 0) * P.reviveDay * F) * (this.v2Doomed(u) ? P.losing : 1);
+};
+/* a caster left at 0 HP with a slot: someone standing spends a heal to wake it, inside the minute */
+Sim.prototype.wakeReviver = function () {
+  const d = this.units.find(o => o.reviver && !o.dead && o.hp <= 0 && slotsFrom(o, o.reviver._spell.level) > 0);
+  if (!d) return;
+  for (const h of this.units) {
+    if (h.team !== d.team || !this.alive(h) || this.incap(h)) continue;
+    const a = h.actions.find(o => o.type === 'heal' && (o.actionSlot === 0 || o.actionSlot === 1) && o.target !== 'self' && o._range !== 0 && !o.tempHP && !(o.ext && o.ext.aid) && this.usable(h, o));
+    if (a) { this.spend(h, a); this.doActionInner(h, a, {}, {}, [d]); return; }
+  }
+};
+/* the fight is won: each caster with a slot left brings back its dead, at 1 HP (the 300 gp diamond is assumed) */
+Sim.prototype.endFightRevives = function () {
+  for (const t of this.revivable('party').sort((p, q) => (q.dpr || 0) - (p.dpr || 0))) {
+    const standing = () => this.units.filter(o => o.reviver && this.alive(o) && !this.incap(o) && slotsFrom(o, o.reviver._spell.level) > 0).sort((p, q) => slotsFrom(q, q.reviver._spell.level) - slotsFrom(p, p.reviver._spell.level))[0];
+    if (!standing()) this.wakeReviver();
+    const c = standing();
+    if (!c) continue;
+    const L = this.slotFor(c, c.reviver._spell.level);
+    c.slots[L - 1]--;
+    t.dead = false; t.hp = 1; t.deathS = 0; t.deathF = 0; t.stable = false; t.revived = (t.revived || 0) + 1;
+    this.boardChanged();
+    this.ev('heal', `${c.name} → ${t.name}: ${c.reviver.name}${L > c.reviver._spell.level ? ' (L' + L + ')' : ''}, +1 HP, back from the dead`, { uid: c.uid, target: t.uid });
+  }
+};
+
 /* ---- layer 3: pacing. What one use of a limited ability costs, in points of damage ---- */
 Sim.prototype.v2Pool = function (u, a, L) {
   if (a._spell) return a._spell.level ? { key: 'slots', reset: u.slotReset === 'sr' ? 'sr' : 'lr', n: L || this.slotFor(u, a._spell.level), slots: true } : null;
@@ -3477,18 +3555,20 @@ Sim.prototype.v2Pace = function (u, a, L) {
   if (!pl || pl.n < 0) return { base: 0, tax: 0 };
   const P = u.v2P.pacing;
   let F = u.team === 'party' ? this.leftFor(u) : 0;                      // a monster's day is this fight
+  // slots kept for Revivify are out of the pool, and taking one costs what the ally is worth
+  const res = pl.slots ? this.v2Reserve(u) : null, kept = res ? res.levels : 0, keep = res ? this.v2KeepCost(u, res, pl.n, F) : 0;
   if (pl.reset === 'sr') F = Math.min(F, typeof this.fightsBeforeRest === 'number' ? this.fightsBeforeRest : P.srFights);
   // spell slots are one pool counted in slot levels (plus what Arcane Recovery will win back); anything else, in uses
   const base = pl.slots ? P.slot * pl.n * (1 + P.slotUp * (pl.n - 1)) : Math.max(4, u.dpr) * P.costPerUse * pl.n;
   // no fight ahead: a slot is still worth its best use later in this one, when the fight should outlast them
-  if (!F) return { base: base * (pl.slots ? Math.min(0.5, Math.max(P.lastFight, (u._v2c ? u._v2c.rounds : 3) * 3 / Math.max(1, slotLevels(u)))) : P.lastFight) * (this.losing(u) ? P.losing : 1), tax: 0 };
+  if (!F) return { base: keep + base * (pl.slots ? Math.min(0.5, Math.max(P.lastFight, (u._v2c ? u._v2c.rounds : 3) * 3 / Math.max(1, slotLevels(u) - kept))) : P.lastFight) * (this.losing(u) ? P.losing : 1), tax: 0 };
   let left, start;
-  if (pl.slots) { const rec = this.v2Recovery(u); left = slotLevels(u) + rec; start = (u.v2Slots0 !== undefined ? u.v2Slots0 : slotLevels(u)) + rec; }
+  if (pl.slots) { const rec = this.v2Recovery(u) - kept; left = slotLevels(u) + rec; start = (u.v2Slots0 !== undefined ? u.v2Slots0 : slotLevels(u)) + rec; }
   else { left = u.uses.get(pl.key) || 0; start = u.v2Start && u.v2Start.has(pl.key) ? u.v2Start.get(pl.key) : left; }
   let c = base * F / (F + 1), tax = start - left + pl.n > start / (F + 1) + 1e-9 ? P.overTax : 0;   // this fight has had its share
   if (this.losing(u)) { c *= P.losing; tax *= P.losing; }
   else if (this.fightInHand(u)) { c *= P.easyFight; tax = Math.max(tax, pl.slots ? P.slotEasyTax : P.easyTax); }
-  return { base: c, tax };
+  return { base: c + keep, tax };
 };
 Sim.prototype.v2PaceCost = function (u, a, val, L) {
   const p = this.v2Pace(u, a, L);
@@ -4140,6 +4220,7 @@ Sim.prototype.v2Turn = function (u, speed, bonusSpent, onlyAct) {
 Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const ctx = this.v2Ctx(u, speed);
   if (!ctx.foes.length) return null;
+  if (u.reviver && this.record && !onlyAct) { const res = this.v2Reserve(u); if (res && u.saidKeep !== res.t.uid) { u.saidKeep = res.t.uid; this.ev('intent', `${u.name} keeps a slot for ${res.t.name}'s Revivify`, { uid: u.uid }); } }
   const W = u.v2P.w, Wd = this.W, post = ctx.posture, caster = !!u.hasSpells;
   const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u) && !caster;
   let safety = (meleeSelf ? W.risk : W.riskRanged * (caster ? W.casterRisk : 1)) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
@@ -5116,6 +5197,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
     this.round++;
   }
   const won = !this.foesStanding() && this.partyStanding();
+  if (won) this.endFightRevives();
   if (this.tpkKills && !this.partyStanding() && this.foesStanding()) for (const u of this.units) if (u.team === 'party' && !u.dead) this.kill(u, null, 'the whole party is down');
   this.ev('end', won ? 'The party wins' : this.partyStanding() ? 'The fight drags on — stopped' : 'The party falls', { won });
   return { won, rounds: Math.min(this.round - 1, this.maxRounds) };
@@ -5268,7 +5350,7 @@ function runDay(day, opts) {
       index: realIdx, won: r.won, rounds: r.rounds,
       events: sim.record ? sim.events : null,
       start: sim.record ? sim.events.length && null : null,
-      party: party.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, down: !u.dead && u.hp <= 0, everDowned: u.everDowned, downs: u.downs, dealt: u.dmgDealt, taken: u.dmgTaken, healed: u.healed })),
+      party: party.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, down: !u.dead && u.hp <= 0, everDowned: u.everDowned, downs: u.downs, dealt: u.dmgDealt, taken: u.dmgTaken, healed: u.healed, revived: u.revived || 0 })),
       foes: foes.map(u => ({ uid: u.uid, name: u.name, hp: u.hp, maxHp: u.maxHp, dead: !!u.dead, fled: u.fled || undefined, dealt: u.dmgDealt, taken: u.dmgTaken })),
       units: sim.record ? sim.units.map(u => ({ uid: u.uid, key: u.key, name: u.name, team: u.team, isPC: u.isPC, maxHp: u.maxHp, size: u.size, init: u.init, auras: aurasOf(u), areas: areasOf(u), sheet: sheetOf(u) })) : null,
     });

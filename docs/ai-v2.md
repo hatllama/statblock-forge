@@ -109,7 +109,7 @@ Shield/Silvery-Barbs-style reactions and Lucky (decided inside `attackRoll`), Di
 `ext.casterKind` overrides the guess (`'full' | 'half' | 'third' | 'none'`). Multiclass sheets use the main class the
 sheet reader picked. `kCaster` is unchanged: it is what the *other* side knows, not who v2 drives.
 
-Still delegated to v1, for the whole creature: swallowing (`ext.swallow`) and dice pools (`ext.pool`, Lay on Hands).
+Still delegated to v1, for the whole creature: swallowing (`ext.swallow`) and dice pools that are not heals (`ext.pool`; Lay on Hands stays on v1 because paladins are half casters).
 Everything step 1 kept on v1 for want of scoring (heals and buffs aimed at allies, bonus-action teleports, zones and
 fog) is now scored by v2, for every creature v2 drives. Reactions (Shield, Hellish Rebuke, Cutting Words,
 Counterspell-style cancels) keep v1's rules inside `attackRoll`/`cancelled`, as in step 1.
@@ -717,6 +717,104 @@ Replaces `w.revive`, `w.reviveRounds` and the failed-saves bonus. New weights in
 **Healing Light joins v2.** `v2Eligible` sent a creature with a dice-pool heal (`ext.pool`) to v1 for the whole fight,
 so Niko, the only member of Zaki's party with Revivify, was not on v2 at all. A heal pool is an ordinary heal to the
 scorer: the amount is `a.amount` (the per-use cap), `doAction` rolls the dice. Swallowing still goes to v1.
+
+**Why the flat bonus lost.** Measured before the change: a Cleric with Spirit Guardians up chose Spiritual Weapon (32–48) over Healing Word for
+the bonus action. An ally's round was priced in plain damage while every attack carries the threat multiplier, so the first version of this term
+made things worse (44% healed, D4 from 53% to 31%). `round` now carries the same multiplier (1 + the foes' mean `kDpr` / `dprScale`), and the sweep
+below set `backRound`.
+
+**Calibration.** `DOWNED=1 node tests/ai-compare.js [runs]` counts, per ally at 0 HP with a heal in reach of someone on v2, whether it was healed.
+D scenarios: `node tests/ai-compare.js 200 '^D[0-9]'`, one or more allies dropped as fight 1 starts. `backRound` on D1–D9, learn, 200 runs: 2: 68.4,
+3: 71.3, 4: 72.2, 5: 72.8, 7: 73.4; it flattens from 4, so 4. `backSoak` 0.5 to 1 and `backFirst` 0.75 to 1 moved nothing beyond noise.
+
+Rate over every harness scenario plus D1–D9, 100 runs each (more events after, because Niko is on v2 and counted):
+
+| mode | events before, healed | after | turns with a bonus heal, used, before | after | turns with only an action heal, used, before | after |
+|------|----------------------|-------|---------------------------------------|-------|---------------------------------------------|-------|
+| learn | 2848, 70.0% | 3106, 82.6% | 35.1% | 69.5% | 85.9% | 93.8% |
+| open | 2839, 69.7% | 3123, 80.5% | 35.6% | 64.8% | 79.7% | 85.8% |
+| blind | 3410, 61.2% | 3588, 82.8% | 33.0% | 70.9% | 63.6% | 92.8% |
+
+Win ± 3.5 (D9 ± 2), 200 runs, same seeds, before → after:
+
+| scenario | open | learn | blind |
+|----------|------|-------|-------|
+| D1 healer, downed Fighter | 71.5 → 86.0 | 68.5 → 87.0 | 70.0 → 84.5 |
+| D2 downed Fighter beside 3 foes | 81.0 → 85.0 | 79.0 → 80.0 | 64.0 → 64.5 |
+| D3 downed healer | 83.0 → 81.0 | 74.5 → 79.5 | 71.0 → 73.5 |
+| D4 two downed | 45.5 → 64.0 | 55.5 → 65.5 | 42.0 → 68.0 |
+| D5 potions only | 65.5 → 66.0 | 58.5 → 58.5 | 60.5 → 60.5 |
+| D6 a day | 53.0 → 63.0 | 48.0 → 50.5 | 28.0 → 31.5 |
+| D7 Zaki, Kraax down | 42.5 → 65.0 | 47.5 → 66.0 | 45.5 → 62.0 |
+| D8 Zaki, Faithwalker down | 58.5 → 67.5 | 59.5 → 69.0 | 50.0 → 63.0 |
+| D9 Zaki, hard day | 96.5 → 94.0 | 92.5 → 95.0 | 85.5 → 90.0 |
+
+D2 is the focus risk working: next to three foes the heal is priced down and the row does not move. D5 does not move because potions were already
+used (93% of chances before): the term had nothing to fix there. Whole table, 66 rows, 200 runs: nothing worse beyond 2 SE in any mode; learn 77.2 → 77.8
+(1 better), open 80.6 → 80.8 (1 better), blind 69.9 → 71.7 (10 better).
+
+### Revivify: a death keeps a slot (step 2.12, part B)
+
+**How the dead carry today.** `kill` sets `u.dead`; nothing clears it. `runDay` keeps the same units from fight to fight:
+`resetFightState` leaves `hp` and `dead` alone, and `place` takes the dead off the board. So someone dead in fight 1 is
+still dead in fight 4. Hit points carry between fights too: only a `shortRest` restores them, a downed creature wakes at
+1 HP as the next fight starts, and a lost fight ends the day.
+
+**The rule.** Revivify (level 3, action, touch, a creature dead for no more than a minute, back at 1 HP; the 300 gp
+diamond is assumed). It is `ext.revivify` on an ordinary heal action, War Table only, and never a turn option: `usable`
+says no, as for morning buffs, so neither AI can pick it or aim it, and it cannot touch the living. `heal()` still does
+nothing to the dead and every heal pool still skips them, so ordinary heals cannot bring anyone back.
+
+**The reserve is created by a death, not hoarded.** Nothing is kept until an ally dies.
+- `revivable(team)`: the dead who died this fight, within `REVIVIFY_ROUNDS` (10, the minute). Someone dead from an
+  earlier fight is out of reach. Fled creatures do not count.
+- `reviveDuty(team)`: each of them goes to the caster with the most slots that can cast it, standing casters first.
+  It is worked out afresh every time, so a reserve lets go by itself when the ally is back another way, the minute is up,
+  or another caster covers it.
+- `v2Reserve(u)`: what `u` keeps: the slots, their levels, the ally.
+
+**Out of the pacing share.** In `v2Pace` the kept levels leave the pool: `left`, `start` and the last-fight budget all
+drop by them, so the caster's share of this fight shrinks. On top, a cast that would take the last slot that can cast it
+pays `v2KeepCost`: `pacing.reviveLife` + the ally's DPR × `pacing.reviveDay` × fights to come, × `pacing.losing` when the
+fight looks lost (`v2Doomed`: the side falls in under 1/`pacing.reviveDoom` of the time it needs to win; not `losing`, which is
+true whenever someone is dead). That is a term, not a veto: a lost fight still spends the slot, because nobody casts Revivify after a
+defeat. Lower slots are untouched.
+
+Reactions have no scorer yet (phase 3), so `usable` keeps them off the last slot that casts it. That is the one hard stop,
+and only on v2 creatures holding a reserve.
+
+**The fight's end.** `endFightRevives`, in `runEncounter` before the `end` event, when the party won: each of the dead,
+highest DPR first, is brought back by a standing caster with a slot, which it pays for. It is logged as a `heal` event, so
+the replay shows it; `results.party[].revived` counts it, and a revived creature is not dead in the results. A
+caster who is down when the fight ends has to be woken first: `wakeReviver` has someone standing spend a heal on it
+(a slot, a pool die, a potion), inside the minute. With no one to wake it, that ally stays dead.
+
+**v2 only.** The rule runs for creatures on v2 (`u.reviver`), so the old AI's logs do not change. Mid-fight Revivify is
+not built: it would take an action and a 3rd-level slot for an ally at 1 HP on a square foes may now stand on, and the
+scorer would need a separate target path, so it did not come out naturally.
+
+**Results.** On natural play it almost never fires. On the Zaki day and the Cleric day (R1–R4), rows with and without Revivify are identical, 0.00
+revived a day. In 141 deaths on two harder days (200 runs each), the caster was never standing with a slot: it had just died itself (70), was dead
+(26) or down (33), or had no slot left (12, all Niko's). Monsters focus healers, so the
+casualty usually is the caster. So R5–R7 start the day with a non-caster dead, 200 runs, win / PC deaths / revived a day:
+
+| scenario | mode | no Revivify | Revivify, no `v2KeepCost` | Revivify and reserve |
+|----------|------|-------------|---------------------------|----------------------|
+| R5 one 3rd-level slot | open | 5.0 / 1.39 / 0 | 5.5 / 1.39 / 0.01 | **34.0** / 1.02 / 0.47 |
+| | learn | 2.5 / 1.33 / 0 | 3.5 / 1.33 / 0.01 | **31.0** / 1.02 / 0.45 |
+| | blind | 3.0 / 1.27 / 0 | 3.0 / 1.27 / 0 | **21.0** / 1.04 / 0.40 |
+| R6 two 3rd-level slots | open | 9.0 / 1.33 / 0 | 59.0 / 0.78 / 0.77 | **68.5** / 0.67 / 0.91 |
+| | learn | 6.5 / 1.30 / 0 | 51.0 / 0.79 / 0.73 | **63.0** / 0.69 / 0.92 |
+| | blind | 2.0 / 1.28 / 0 | 51.0 / 0.83 / 0.78 | **56.5** / 0.82 / 0.90 |
+| R7 Zaki, Kraax dead | open | 66.0 / 1.50 / 0 | 89.5 / 0.46 / 0.73 | **97.5** / 0.12 / 0.97 |
+| | learn | 77.0 / 1.29 / 0 | 92.5 / 0.41 / 0.76 | **99.5** / 0.04 / 0.99 |
+| | blind | 69.0 / 1.39 / 0 | 85.0 / 0.58 / 0.67 | **97.5** / 0.13 / 0.99 |
+
+With one slot, the keep term is the whole difference: without it the Cleric puts the slot into Spirit Guardians and the ally stays dead. In R5 a win
+needs the slot to last the fight, and a reserve can only keep a slot that is still there, so the rate stops near 45%.
+
+**Who has it.** The spell data lacked it; it is in `CUSTOM` in `sheet-reader.js`. The Life Cleric build gets it as a
+domain spell. Niko is the only member of Zaki's party who has it (a Celestial patron spell, from the sheet).
 
 ## Existing user-facing AI options → v2 knobs
 
