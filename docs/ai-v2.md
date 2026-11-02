@@ -816,6 +816,51 @@ needs the slot to last the fight, and a reserve can only keep a slot that is sti
 **Who has it.** The spell data lacked it; it is in `CUSTOM` in `sheet-reader.js`. The Life Cleric build gets it as a
 domain spell. Niko is the only member of Zaki's party who has it (a Celestial patron spell, from the sheet).
 
+### Two audits: Entangle on one foe, Caustic Brew over Chromatic Orb (step 2.12, parts C and D; no code changed)
+
+Zaki's party, 200–300 seeded runs. "Without" removes the spell from that caster's book, same seeds.
+
+**Entangle on a single enemy (Faithwalker).** DC 13 Strength, 1st-level slot, concentration.
+
+| day | mode | casts per run | caught 1 | landed | win with / without |
+|-----|------|---------------|----------|--------|--------------------|
+| Stone Golem (Str +6) | learn | 1.27 | all | 19% | 100 / 100 |
+| Stone Golem | open | 0.25 | all | 26% | 100 / 100 |
+| Young Red Dragon (Str +6) | learn | 0.62 | all | 29% | 85.3 / 84.3 |
+| Young Red Dragon | open | 0.04 (13 in 300) | all | n/a | 83.3 / 84.0 |
+| hard-day.json | learn | 0.27 | two thirds | 62% | 94.7 / 94.7 |
+
+A typical decision: the golem, round 1, nothing held. Entangle 30.7 raw, 26.7 net; Thunderwave 21.9 / 17.9; Toll the Dead 7.6; Guiding
+Bolt 8.1 / 4.1. Entangle leads the next option by a median of 8–9 points. The target value decides, as designed; `ext.minCatch` is read by
+v1 only, on purpose (terms, not vetoes).
+
+**Verdict: right in kind, wrong in learn against a strong boss.** A lone boss can justify it, and open shows that: it is cast 7% of turns on
+the golem. Learn casts it five times as often, because `kSave` reads an unseen Strength save at the +2 prior when the truth is +6, so it prices
+a 30% spell as a 50% one. On a boss with a poor Strength it would be the right call. The cost is one 1st-level slot and an action: no row moves
+beyond noise with the spell removed, though Faithwalker deals less with it (golem 12 against 18, the three-fight day 31 against 36). Proposed
+(not built): let learn's prior for physical saves follow what the threat estimate reads (size or the attack bonus shown), in `kSave`.
+
+**Caustic Brew over Chromatic Orb (Eldar).** What the log says each cast really dealt, a Brew's whole burn included (learn, 200 runs):
+
+| day | Brew L2 | Brew L3 | Orb L1 | Orb L2 | Orb L3 | targets per Brew |
+|-----|---------|---------|--------|--------|--------|------------------|
+| Young Red Dragon | 3.8 | 7.7 | 11.6 | 11.9 | 19.9 | 1.0 |
+| Stone Golem | 3.5 | | 9.9 | 14.4 | | 1.0 |
+| hard-day.json | 8.4 | 13.7 | 8.8 | 15.2 | | 2.0 |
+| 3 Ogres | | 21.6 | 17.8 | 16.0 | 14.8 | 2.5 |
+
+Eldar deals as much or more with the Brew taken out: dragon 15 to 18 (learn), 24 to 27 (open); hard day 182 to 186, 161 to 165; golem (open) 50 to
+56. Taking out the Orb instead costs damage: hard day 182 to 174, 161 to 152; dragon (open) 24 to 19. No win rate moves beyond noise either way.
+
+**Verdict: the preference is wrong, except for a 3rd-level Brew on two or three foes in a long fight.** The cause is the action's data, not
+the scorer. The engine deals nothing when it is cast and 2d4 per slot level at the start of each covered creature's turn while concentration
+holds. But `dpr: '4d4'` (upcast +4d4) is what the scorer reads, so a 2nd-level Brew counts as 20 damage now, and earns the kill term on top. At
+round 3, a dragon on 17 HP and one round left: Brew 74, Orb 42, though the Brew cannot kill it this turn and its first tick averages 10 on a failed
+save. Also, `v2Holding` knows nothing of a burn (`holding 0.0` in the logs), so 97 of 309 Brews on the dragon were cast while concentrating, for free.
+
+Proposed (not built): score the burn as what it is: chance of a failed save × the tick × the rounds it should run (`ctx.rounds`, × `w.concKeep`),
+no kill term on the cast; and count a running burn in `v2Holding`. That keeps the Brew for lines of foes in long fights and hands single targets to the Orb.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
