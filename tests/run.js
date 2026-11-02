@@ -451,6 +451,15 @@ section('Character sheets');
       'Eldar (Bladesinger 5): Bladesong (Int-mod uses, +4 AC, +10 ft, concentration bonus), Arcane Recovery restores 3 levels and one Bladesong use, Bladework puts Int on the rapier');
   }
   {
+    // Pre-fight buffs on (the default): Eldar, who wears no armor, casts Mage Armor on himself before fight 1 (AC 13 -> 16), whatever the morning budget
+    let cast = 0;
+    for (let i = 0; i < 6; i++) {
+      const r0 = Tac.runDay({ players: JSON.parse(JSON.stringify([eld])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 59, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, partyAI: 'tactical', record: true })[0];
+      if (r0.events.some(e => /Eldar Yollavien cast Mage Armor this morning: Eldar Yollavien AC 16/.test(e.text || ''))) cast++;
+    }
+    check(eld.AC === 13 && eld.ext.unarmored === true && cast === 6, `Eldar casts Mage Armor before fight 1 and his AC goes 13 -> 16 (${cast}/6 days)`);
+  }
+  {
     const row = nm => { const r = SR.read(fs.readFileSync(path.join(dir, 'eldar-yollavien.txt'), 'utf8').replace('2 Misty Step (high el…', nm)).player; return actOf({ actions: r.ext.spellbook.spells }, /^Misty Step$/); };
     const ms = row('2 Misty Step High Elf Lineage');
     check(ms && ms.ext.source === 'High Elf Lineage' && ms.ext.teleport === 30, 'a spell name that carries its source ("Misty Step High Elf Lineage") imports by its longest known name, source kept in ext.source');
