@@ -1488,6 +1488,29 @@
        "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s3"
       },
       {
+       "level": 0,
+       "actionSlot": 0,
+       "targets": 1,
+       "type": "atk",
+       "dpr": "1d8 + 4 + 1d8",
+       "toHit": 7,
+       "target": "enemy with least HP",
+       "ext": {
+        "range": 5,
+        "onHit": {
+         "splash": {
+          "dmg": "1d8 + 4",
+          "range": 5,
+          "type": "fire"
+         }
+        },
+        "damageType": "piercing",
+        "wtDpr": "1d8 + 4"
+       },
+       "name": "Green-Flame Blade",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s6"
+      },
+      {
        "name": "Shocking Grasp",
        "actionSlot": 0,
        "targets": 1,
@@ -1523,6 +1546,33 @@
        "level": 1,
        "upcast": "1d8",
        "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s11"
+      },
+      {
+       "level": 1,
+       "upcast": "4d4",
+       "concentration": true,
+       "actionSlot": 0,
+       "targets": 2,
+       "type": "atk",
+       "dpr": "4d4",
+       "toHit": 15,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "ext": {
+        "range": 30,
+        "area": {
+         "shape": "line",
+         "size": 30
+        },
+        "saveAbility": "dex",
+        "dot": {
+         "dice": "2d4",
+         "upcast": "2d4"
+        },
+        "damageType": "acid"
+       },
+       "name": "Tasha's Caustic Brew",
+       "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s12"
       },
       {
        "name": "Burning Hands",
@@ -1687,7 +1737,14 @@
        "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-s26"
       }
      ],
-     "conSave": 3
+     "conSave": 3,
+     "recovery": {
+      "levels": 3,
+      "maxSlot": 5,
+      "restores": [
+       "427e06c2-caa6-474a-9b95-c4aa5c49301f-a1"
+      ]
+     }
     },
     "resources": {
      "Potion of Healing": {
@@ -1699,19 +1756,24 @@
    },
    "actions": [
     {
-     "freq": "at will",
-     "condition": "default",
+     "freq": {
+      "reset": "lr",
+      "uses": 4
+     },
+     "condition": "not used yet",
      "targets": 1,
-     "name": "Shocking Grasp (Magic I",
-     "actionSlot": 0,
-     "type": "atk",
-     "dpr": "2d8",
-     "toHit": 7,
-     "target": "enemy with least HP",
+     "name": "Bladesong",
+     "actionSlot": 1,
+     "type": "buff",
+     "target": "self",
+     "buff": {
+      "duration": "entire encounter",
+      "ac": 4
+     },
      "ext": {
-      "range": 5,
-      "damageType": "lightning",
-      "wtOnly": true
+      "speedBonus": 10,
+      "concBonus": 4,
+      "endsOnIncap": true
      },
      "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a1"
     },
@@ -1719,7 +1781,7 @@
      "freq": "at will",
      "condition": "default",
      "targets": 1,
-     "name": "Green-Flame Blade (Mag",
+     "name": "Rapier",
      "actionSlot": 0,
      "type": "atk",
      "dpr": "1d8 + 4",
@@ -1736,10 +1798,10 @@
      "freq": "at will",
      "condition": "default",
      "targets": 1,
-     "name": "Initiate)",
+     "name": "Stab",
      "actionSlot": 0,
      "type": "atk",
-     "dpr": "1d8 + 4",
+     "dpr": "1d4 + 4",
      "toHit": 7,
      "target": "enemy with least HP",
      "ext": {
@@ -1753,11 +1815,11 @@
      "freq": "at will",
      "condition": "default",
      "targets": 1,
-     "name": "Rapier",
+     "name": "Throw",
      "actionSlot": 0,
      "type": "atk",
-     "dpr": "1d8 + 3",
-     "toHit": 6,
+     "dpr": "1d4 + 4",
+     "toHit": 7,
      "target": "enemy with least HP",
      "ext": {
       "range": 5,
@@ -1765,40 +1827,6 @@
       "wtOnly": true
      },
      "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a4"
-    },
-    {
-     "freq": "at will",
-     "condition": "default",
-     "targets": 1,
-     "name": "Stab",
-     "actionSlot": 0,
-     "type": "atk",
-     "dpr": "1d4 + 3",
-     "toHit": 6,
-     "target": "enemy with least HP",
-     "ext": {
-      "range": 5,
-      "damageType": "piercing",
-      "wtOnly": true
-     },
-     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a5"
-    },
-    {
-     "freq": "at will",
-     "condition": "default",
-     "targets": 1,
-     "name": "Throw",
-     "actionSlot": 0,
-     "type": "atk",
-     "dpr": "1d4 + 3",
-     "toHit": 6,
-     "target": "enemy with least HP",
-     "ext": {
-      "range": 5,
-      "damageType": "piercing",
-      "wtOnly": true
-     },
-     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a6"
     },
     {
      "freq": "at will",
@@ -1814,18 +1842,19 @@
       "resource": "Potion of Healing",
       "potion": true
      },
-     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a7"
+     "id": "427e06c2-caa6-474a-9b95-c4aa5c49301f-a5"
     }
    ],
    "_notes": [
-    "Class features (no fight rules): Memorize Spell, Training in War and Song, Bladesong, Scholar, Arcane Recovery.",
+    "Used in fights: Bladesong, Arcane Recovery.",
+    "Class features (no fight rules): Memorize Spell, Training in War and Song, Scholar.",
     "Species traits (no fight rules): Trance, Keen Senses, Fey Ancestry, Elven Lineage..",
     "Feats (no fight rules): Magic Initiate.",
     "Other features (no fight rules): Read a whole Zoology book.",
     "Healing potions (a bonus action in fights): Potion of Healing.",
     "Weapons in the pack with no attack bonus or damage on the sheet: Dagger ×2.",
     "Other gear: Dorian's Things; Map of Rueltran; Diamond (50gp); Scholar's Pack; Spellbook; Robe; Arcane Focus (hat); 57 gp 5 sp 6 cp.",
-    "Not in its spell list (no rules for them yet): Minor Illusion, Message, Mage Hand, Elven Lineage Cant…, Green-Flame Blad…, Unseen Servant, Disguise Self, Feather Fall, Tasha's Caustic Br…, Expeditious Retreat, Identify, Find Familiar…."
+    "Not in its spell list (no rules for them yet): Minor Illusion, Message, Mage Hand, Elven Lineage Cant…, Unseen Servant, Disguise Self, Feather Fall, Expeditious Retreat, Identify, Find Familiar, Detect Magic (Hig…, Invisibility."
    ]
   }
  ],
