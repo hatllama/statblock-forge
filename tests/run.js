@@ -445,8 +445,8 @@ section('Character sheets');
     check(row('2 Misty Step') && !row('2 Misty Step').ext.source, 'an exact spell name gets no source');
   }
   const b11 = p['barbarian11.txt'];
-  check(b11 && b11.ext.brutalCritical === 1 && b11.ext.relentlessRage.hp === 22 && /Berserker/.test(b11.ext.build) && /Healing potions[^\n]*Potion of Healing ×2/.test(notesOf(b11)) && /Armor and shields[^\n]*Breastplate, Shield/.test(notesOf(b11)) && b11.AC === 15 && !/Potion of Healing/.test(JSON.stringify(b11.actions)),
-    'a level-11 barbarian sheet: Brutal Critical, Relentless Rage, healing potions and armor as notes only');
+  check(b11 && b11.ext.brutalCritical === 1 && b11.ext.relentlessRage.hp === 22 && /Berserker/.test(b11.ext.build) && /Healing potions[^\n]*Potion of Healing ×2/.test(notesOf(b11)) && /Armor and shields[^\n]*Breastplate, Shield/.test(notesOf(b11)) && b11.AC === 15 && b11.actions.some(a => a.name === 'Potion of Healing'),
+    'a level-11 barbarian sheet: Brutal Critical, Relentless Rage, healing potions as a bonus-action heal (still listed in the notes), armor as notes only');
   {
     // Relentless Rage: a raging barbarian dropped to 0 sometimes stays up on 2 × level HP; one at level 7 never does
     const run = c => { let n = 0; for (let i = 0; i < 40; i++) for (const r of Tac.runDay({ players: [Object.assign(JSON.parse(JSON.stringify(c)), { hp: 12 })], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 200, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 8, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 100 + i, partyAI: 'tactical', record: true })) n += r.events.filter(e => /Relentless Rage keeps it up/.test(e.text || '')).length; return n; };
@@ -491,6 +491,21 @@ section('Character sheets');
       flurries += n; maxSpent = Math.max(maxSpent, n);
     }
     check(flurries > 0 && maxSpent <= 8, `Focus Points get spent and run out (${flurries} uses, at most ${maxSpent} in a fight)`);
+  }
+  {
+    // inventory healing potions: a limited-use bonus-action heal per kind, quantity from the inventory; sheets without potions get none
+    const pot = c => c.actions.filter(a => a.ext && a.ext.potion);
+    const bb = p['barbarian11.txt'], po = pot(bb)[0];
+    check(pot(bb).length === 1 && po.name === 'Potion of Healing' && po.actionSlot === 1 && po.type === 'heal' && po.amount === '2d4 + 2' && po.ext.range === 5 && po.ext.resource === 'Potion of Healing' && bb.ext.resources['Potion of Healing'].uses === 2
+      && pot(p['eldar-yollavien.txt'])[0].amount === '2d4 + 2' && p['eldar-yollavien.txt'].ext.resources['Potion of Healing'].uses === 1 && !pot(p['tacitus-roll20.txt']).length && !(p['tacitus-roll20.txt'].ext.resources && p['tacitus-roll20.txt'].ext.resources['Potion of Healing']),
+      'inventory Healing potions become a pool (uses = quantity) and a bonus-action heal within 5 ft; a sheet without potions gets neither');
+    let drunk = 0, fed = 0, over = 0;
+    for (let i = 0; i < 12; i++) for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify([bb, p['eldar-yollavien.txt']])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 130, AC: 11, saveBonus: 0, count: 8, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, partyAI: 'tactical', record: true })) {
+      const by = {};
+      for (const e of r.events) { const m = /^(.+?) → (.+?): Potion of Healing, \+\d+ HP/.exec(e.text || ''); if (m) { by[m[1]] = (by[m[1]] || 0) + 1; if (m[1] === m[2]) drunk++; else fed++; } }
+      for (const k in by) if (by[k] > (/Eldar/.test(k) ? 1 : 2)) over++;
+    }
+    check(drunk > 0 && fed > 0 && over === 0, `potions are drunk and fed to a neighbour, never more than the inventory holds (${drunk} drunk, ${fed} fed, ${over} over)`);
   }
   let err = 0;
   const party = Object.values(got);

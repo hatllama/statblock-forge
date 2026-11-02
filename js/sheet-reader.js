@@ -81,6 +81,9 @@ function canonSpell(raw) {
   if (cut) { const m = keys.filter(k => k.indexOf(t) === 0); if (m.length === 1) return { key: m[0], source: '' }; }
   return null;
 }
+// healing potions (SRD 5.2 / DMG): a bonus action, drunk or fed to a creature within 5 ft (a downed one included)
+const POTIONS = { basic: ['Potion of Healing', '2d4 + 2'], greater: ['Potion of Greater Healing', '4d4 + 4'], superior: ['Potion of Superior Healing', '8d4 + 8'], supreme: ['Potion of Supreme Healing', '10d4 + 20'] };
+const potionTier = n => /\bpotions?\b.*\bhealing\b|\bhealing\b.*\bpotions?\b/i.test(n) ? (/supreme/i.test(n) ? 'supreme' : /superior/i.test(n) ? 'superior' : /greater/i.test(n) ? 'greater' : 'basic') : null;
 const weaponOf = name => { const n = String(name).toLowerCase(); let best = null; for (const k in WEAPONS) if (n.indexOf(k) >= 0 && (!best || k.length > best.length)) best = k; return best ? { key: best, w: WEAPONS[best] } : null; };
 const DTYPES = /\b(acid|bludgeoning|cold|fire|force|lightning|necrotic|piercing|poison|psychic|radiant|slashing|thunder)\b/i;
 
@@ -145,7 +148,8 @@ function fromDDB(d) {
   const size = d.race && d.race.sizeId === 2 ? 'Small' : /\b(goblin|halfling|gnome|kobold|fairy)\b/i.test(race) ? 'Small' : '';
   if (/fury of the small/i.test(traits.join('|'))) notes.push('Fury of the Small (extra damage a few times a day) isn\'t modelled.');
   if (/uncanny metabolism/i.test(traits.join('|'))) notes.push('Uncanny Metabolism (Focus Points back on initiative once a day) isn\'t modelled.');
-  return { name: d.name, classes, scores, hp, ac, unarmored: !armor, dexM, speed, fly, init, saveProf, skills, size, attacks, spells, resist, traits, notes, src: 'D&D Beyond' };
+  return { name: d.name, classes, scores, hp, ac, unarmored: !armor, dexM, speed, fly, init, saveProf, skills, size, attacks, spells, resist, traits, notes, src: 'D&D Beyond',
+    potions: inv.filter(it => it.definition && potionTier(it.definition.name)).map(it => ({ name: it.definition.name, qty: it.quantity || 1 })) };
 }
 
 /* ---------- facts from a Foundry VTT dnd5e actor ---------- */
@@ -690,6 +694,17 @@ function build(f, opts) {
     if (skipped.length) notes.push(`Not in its spell list (no rules for them yet): ${skipped.slice(0, 12).join(', ')}${skipped.length > 12 ? '…' : ''}.`);
     if (out.length) { ext.spellbook = { slots, slotReset: reset, spells: out, conSave: saves.con }; if (top === 0 && out.some(s => s.level > 0)) notes.push('No spell slots found.'); }
   }
+  // inventory healing potions: one pool per kind, each a limited-use bonus-action heal
+  {
+    const have = {};
+    (f.potions || f.inventory || []).forEach(it => { const t = potionTier(it.name); if (t) have[t] = (have[t] || 0) + (it.qty > 0 ? it.qty : 1); });
+    Object.keys(POTIONS).forEach(t => {
+      if (!have[t]) return;
+      const nm = POTIONS[t][0];
+      ext.resources = Object.assign(ext.resources || {}, { [nm]: { uses: have[t], reset: 'lr' } });
+      add({ name: nm, actionSlot: 1, condition: 'ally under half HP', type: 'heal', amount: POTIONS[t][1], target: 'ally with the least HP', ext: { range: 5, resource: nm, potion: true } });
+    });
+  }
   // within each slot, the plain at-will options go last so pooled, conditional and limited ones get their turn
   const plain = a => a.condition === 'default' && a.freq === 'at will' && !(a.ext && (a.ext.resource || a.ext.requiresBuff || a.ext.wtOnly));
   Array.from(new Set(actions.map(a => a.actionSlot))).forEach(sl => {
@@ -731,7 +746,7 @@ function sheetNotes(f, used, actions) {
       else if (/\b(potions?|scrolls?|wand|rod|staff of|ring of|cloak of|boots of|amulet|bracers?|gauntlets?|helm|belt of|elixir)\b/i.test(n)) magic.push(it);
       else rest.push(it);
     });
-    line('Healing potions (no use rule yet)', names(heal));
+    line('Healing potions (a bonus action in fights)', names(heal));
     line('Weapons in the pack with no attack bonus or damage on the sheet', names(weapons));
     line('Armor and shields (the stated AC is used as is)', names(armor));
     line('Magic items and other consumables', names(magic));
