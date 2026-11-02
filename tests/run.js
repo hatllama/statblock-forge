@@ -433,6 +433,10 @@ section('Character sheets');
     'PDF page 2 features the sim cannot use are name-only notes grouped by section');
   check(/Weapons in the pack[^\n]*: Javelin ×4\./.test(notesOf(rl)) && !rl.actions.some(a => /Javelin/.test(a.name)) && /Magic items[^\n]*Cloak of the Manta Ray, Potion of Water Breathing ×2/.test(notesOf(rl)) && /Other gear: Backpack;[^\n]*Rations \(1 day\) ×20;[^\n]*10 gp\./.test(notesOf(rl)) && !/Greataxe/.test(notesOf(rl)) && rl.AC === 15,
     'PDF page 2 inventory: pack javelins without a bonus stay notes, duplicates merge, one gear line with coins, AC stays as stated');
+  {
+    const nk = p['niko-roll20.txt'], eb = nk && (nk.ext.spellbook.spells || []).find(s => s.name === 'Eldritch Blast'), nn = (nk._notes || []).join(String.fromCharCode(10));
+    check(eb && eb.ext.onHit.push === 10 && /Used in fights:.*Repelling Blast/.test(nn) && !/no fight rules\).*Repelling Blast/.test(nn), 'Niko: Repelling Blast pushes 10 ft on each Eldritch Blast hit');
+  }
   const eld = p['eldar-yollavien.txt'], canon = n => { const c = SR.canonSpell(n); return c ? c.key : null; };
   check(eld && ['Misty Step', 'Mage Armor', 'Shocking Grasp', 'Shield', 'Silvery Barbs', 'Counterspell'].every(n => sp(eld).includes(n)) && !sp(eld).includes('Invisibility'),
     'Eldar (Roll20-style 2024 PDF): spell rows cut short with "…" or carrying a lineage label ("Misty Step (high el…", "Mage Armour (ma…") import as Misty Step and Mage Armor');

@@ -543,6 +543,7 @@ function classFeatures(f, pb, add, ext, used) {
   const wlk = lv('warlock');
   if (wlk) {
     used.push('pact magic');
+    ['agonizing blast', 'repelling blast'].forEach(n => { if (ent(n) || (!(f.featList && f.featList.length) && new RegExp(n, 'i').test(f.featuresText || ''))) used.push(n); });   // Eldritch Blast picks them up in build
     if (wlk >= 3 && (ent('healing light') || (!(f.featList && f.featList.length) && /celestial/i.test(sub('warlock'))))) {
       const dice = 1 + wlk, per = Math.max(1, M(5));
       add({ name: 'Healing Light', actionSlot: 1, freq: { reset: 'lr', uses: dice }, condition: 'ally under half HP', type: 'heal', amount: `${per}d6`, target: 'ally with the least HP', ext: { range: 60, pool: { dice, die: 6, maxPer: per } } });
@@ -710,6 +711,7 @@ function build(f, opts) {
       delete sp._avg;
       sp.name = titleSmall(nm);
       if (nm === 'eldritch blast' && /agonizing blast/i.test(opts.text || '')) sp.dpr = `1d10 + ${m}`;
+      if (nm === 'eldritch blast' && /repelling blast/i.test(opts.text || '')) sp.ext = Object.assign({}, sp.ext, { onHit: Object.assign({}, sp.ext && sp.ext.onHit, { push: 10 }) });
       sp.id = `${id}-s${i + 1}`;
       if (src) sp.ext = Object.assign({}, sp.ext, { source: titleCase(src) });
       out.push(sp);
