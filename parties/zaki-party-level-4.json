@@ -368,36 +368,38 @@
    "mode": "custom",
    "class": {
     "type": "monk",
-    "level": 4,
+    "level": 5,
     "options": {}
    },
    "name": "Kraax",
    "count": 1,
-   "hp": 30,
+   "hp": 38,
    "AC": 16,
-   "saveBonus": 2,
+   "saveBonus": 2.33,
    "ext": {
     "speed": 40,
-    "initBonus": 6,
+    "initBonus": 7,
     "saves": {
-     "str": 2,
-     "dex": 6,
+     "str": 3,
+     "dex": 7,
      "con": 2,
      "int": 1,
      "wis": 2,
      "cha": -1
     },
+    "unarmored": true,
+    "dexMod": 4,
     "size": "Small",
     "athletics": 0,
-    "escapeBonus": 6,
+    "escapeBonus": 7,
     "resources": {
      "Focus Points": {
-      "uses": 4,
+      "uses": 5,
       "reset": "sr"
      }
     },
     "bonusDisengage": true,
-    "build": "Monk 4 (Warrior of the Elements) · read from D&D Beyond"
+    "build": "Monk 5 (Warrior of the Elements) · read from D&D Beyond"
    },
    "actions": [
     {
@@ -427,7 +429,7 @@
      "target": "self",
      "buff": {
       "duration": "until next attack taken",
-      "damageReduction": "1d10 + 8"
+      "damageReduction": "1d10 + 9"
      },
      "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a2"
     },
@@ -443,40 +445,65 @@
       "damageType": "bludgeoning"
      },
      "type": "atk",
-     "dpr": "1d6 + 4",
-     "toHit": 6,
+     "dpr": "1d8 + 4",
+     "toHit": 7,
      "target": "enemy with least HP",
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a7"
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a8"
     },
     {
      "freq": "at will",
      "condition": "default",
-     "targets": 1,
-     "name": "Elemental Strikes (Unarmed Strike, 15 ft, push)",
+     "targets": 2,
+     "name": "Elemental Strikes (Unarmed Strike ×2, 15 ft, push)",
      "actionSlot": 0,
      "type": "atk",
-     "dpr": "1d6 + 4",
-     "toHit": 6,
+     "dpr": "1d8 + 4",
+     "toHit": 7,
      "target": "enemy with least HP",
      "ext": {
       "range": 15,
       "damageType": "bludgeoning",
-      "requiresBuff": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5",
+      "requiresBuff": "7ba165da-a21c-4d81-9553-c8acf97f9294-a6",
       "onHit": {
        "push": 10
       }
      },
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a6"
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a7"
+    },
+    {
+     "freq": "at will",
+     "condition": "is available",
+     "targets": 2,
+     "name": "Stunning Strike (Unarmed Strike ×2, 1 Focus Point)",
+     "actionSlot": 0,
+     "type": "atk",
+     "dpr": "1d8 + 4",
+     "toHit": 7,
+     "target": "enemy with highest DPR",
+     "ext": {
+      "range": 5,
+      "damageType": "bludgeoning",
+      "riderSave": "con",
+      "resource": "Focus Points"
+     },
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5",
+     "riderEffect": {
+      "dc": 13,
+      "buff": {
+       "duration": "1 round",
+       "condition": "Stunned"
+      }
+     }
     },
     {
      "freq": "at will",
      "condition": "default",
-     "targets": 1,
-     "name": "Unarmed Strike",
+     "targets": 2,
+     "name": "Unarmed Strike ×2 (Extra Attack)",
      "actionSlot": 0,
      "type": "atk",
-     "dpr": "1d6 + 4",
-     "toHit": 6,
+     "dpr": "1d8 + 4",
+     "toHit": 7,
      "target": "enemy with least HP",
      "ext": {
       "range": 5,
@@ -498,11 +525,11 @@
      "ext": {
       "resource": "Focus Points",
       "grantsBuff": {
-       "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5",
+       "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a6",
        "name": "Elemental Attunement"
       }
      },
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a5"
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a6"
     },
     {
      "freq": "at will",
@@ -511,8 +538,8 @@
      "name": "Martial Arts (bonus strike)",
      "actionSlot": 1,
      "type": "atk",
-     "dpr": "1d6 + 4",
-     "toHit": 6,
+     "dpr": "1d8 + 4",
+     "toHit": 7,
      "target": "enemy with least HP",
      "ext": {
       "range": 5,
