@@ -73,7 +73,7 @@ function normalize(text) {
 
 /* several statblocks in one paste: split on lines of dashes, or at each name line that sits
    right above a "Size type, alignment" line */
-const META_RE = /^(?:Tiny|Small|Medium|Large|Huge|Gargantuan)\b(?:\s+or\s+\w+)?\s+(?:swarm of \w+ )?[A-Za-z]+/;
+const META_RE = /^(?:Tiny|Small|Medium|Large|Huge|Gargantuan|TINY|SMALL|MEDIUM|LARGE|HUGE|GARGANTUAN)\b(?:\s+or\s+\w+)?\s+(?:swarm of \w+ )?[A-Za-z]+/;
 function splitBlocks(text) {
   const parts = normalize(text).split(/\n\s*-{3,}\s*\n/);
   const out = [];
