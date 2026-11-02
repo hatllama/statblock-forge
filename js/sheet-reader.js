@@ -59,6 +59,9 @@ const CUSTOM = {
   'silvery barbs': { level: 1, actionSlot: 4, targets: 1, type: 'debuff', target: 'enemy with highest DPR', saveDC: 99, buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: 60 } },
   // a reaction like Silvery Barbs: it sits in the reaction slot (never a turn option). No fight rule fires it yet (docs/ai-roadmap.md); War Table only, so exports leave it out
   'counterspell': { level: 3, actionSlot: 4, targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: { range: 60, counterspell: true, wtOnly: true } },
+  "tasha's caustic brew": { level: 1, upcast: '4d4', concentration: true, actionSlot: 0, targets: 2, type: 'atk', dpr: '4d4', toHit: 0, useSaves: true, target: 'enemy with most HP', ext: { range: 30, area: { shape: 'line', size: 30 }, saveAbility: 'dex', dot: { dice: '2d4', upcast: '2d4' }, damageType: 'acid' } },
+  // a melee weapon attack with fire on top; the numbers come from the sheet's best melee weapon (see build)
+  'green-flame blade': { level: 0, actionSlot: 0, targets: 1, type: 'atk', dpr: '0', toHit: 0, target: 'enemy with least HP', ext: { range: 5, onHit: { splash: { dmg: '0', range: 5, type: 'fire' } }, damageType: 'piercing' } },
   'mind spike': { level: 2, upcast: '1d8', concentration: true, actionSlot: 0, targets: 1, type: 'atk', dpr: '3d8', toHit: 0, useSaves: true, halfOnSave: true, target: 'enemy with highest DPR', ext: { range: 120, saveAbility: 'wis', damageType: 'psychic' } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
 };
@@ -573,7 +576,20 @@ function classFeatures(f, pb, add, ext, used) {
     const die = ba >= 15 ? 'd12' : ba >= 10 ? 'd10' : ba >= 5 ? 'd8' : 'd6';
     add({ name: 'Bardic Inspiration', actionSlot: 1, freq: { reset: ba >= 5 ? 'sr' : 'lr', uses: Math.max(1, M(5)) }, type: 'buff', target: 'ally with the highest DPR', buff: { duration: 'until next attack made', toHit: '1' + die }, ext: { range: 60 } });
   }
-  return { fi, bb, ro, mo, pa };
+  // Wizard: Bladesong (a Bladesinger who wears no armor or shield) and Arcane Recovery (a short rest, so it only matters between fights: the engine restores slots through spellbook.recovery)
+  const wz = lv('wizard'), out = { fi, bb, ro, mo, pa, wz };
+  if (wz >= 3 && /bladesing/i.test(sub('wizard')) && has('bladesong', true) && f.unarmored !== false) {
+    const im = Math.max(1, M(3));
+    add({ name: 'Bladesong', actionSlot: 1, freq: { reset: 'lr', uses: im }, condition: 'not used yet', type: 'buff', target: 'self', buff: { duration: 'entire encounter', ac: im }, ext: { speedBonus: 10, concBonus: M(3), endsOnIncap: true } });
+    out.bladesong = M(3);
+    used.push('bladesong');
+  }
+  if (wz && has('arcane recovery', wz >= 1)) {
+    out.recovery = { levels: Math.ceil(wz / 2), maxSlot: 5, restores: [] };
+    if (out.bladesong !== undefined) out.recovery.restores.push('bladesong');   // "You regain one expended use when you use Arcane Recovery"
+    used.push('arcane recovery');
+  }
+  return out;
 }
 
 /* ---------- the creature ---------- */
@@ -608,7 +624,14 @@ function build(f, opts) {
   // weapon attacks: the best melee and the best ranged one lead; the rest stay War Table alternatives
   const extra = cf.fi >= 20 ? 4 : cf.fi >= 11 ? 3 : (cf.fi >= 5 || cf.bb >= 5 || cf.pa >= 5 || cf.mo >= 5 || lv(f, 'ranger') >= 5 || /valor|swords|bladesing/i.test(f.classes.map(c => c.sub).join(' ')) && level >= 6) ? 2 : 1;
   const avg = d => String(d).split(/\s*([+-])\s*/).reduce((s, p, i, arr) => { if (i % 2) return s; const sign = i && arr[i - 1] === '-' ? -1 : 1; const dm = p.match(/^(\d*)d(\d+)$/); return s + sign * (dm ? (+dm[1] || 1) * (+dm[2] + 1) / 2 : +p || 0); }, 0);
-  const atks = (f.attacks || []).filter(a => a.dmg && !(root.SpellData || {})[String(a.name).toLowerCase()]);
+  // a spell's row in the weapons table ("Shocking Grasp (Magic Initiate)") is the spell, not a weapon
+  const spellRow = a => { const n = String(a.name).replace(/\s*\(.*$/, '').toLowerCase().replace(/[’‘]/g, "'").trim(), c = canonSpell(n); return !!c && c.key === n; };
+  const atks = (f.attacks || []).filter(a => a.dmg && !spellRow(a) && !/^[^(]*\)/.test(a.name)).map(a => {
+    // Bladework: a Bladesinger's weapon attacks use Intelligence when it beats the ability the sheet used
+    if (cf.bladesong === undefined || a.range > 10) return a;
+    const d = cf.bladesong - (a.toHit - pb);
+    return d > 0 ? Object.assign({}, a, { toHit: a.toHit + d, dmg: a.dmg.replace(/(?:\s*\+\s*(\d+))?$/, (m, n) => ` + ${(+n || 0) + d}`).replace(/^\s+/, '') }) : a;
+  });
   const melee = atks.filter(a => a.range <= 10).sort((a, b) => avg(b.dmg) * (20 + b.toHit) - avg(a.dmg) * (20 + a.toHit));
   const ranged = atks.filter(a => a.range > 10).sort((a, b) => avg(b.dmg) * (20 + b.toHit) - avg(a.dmg) * (20 + a.toHit));
   const isCaster = CLASSES[main.name] && (CLASSES[main.name].cast === 1 || main.name === 'warlock');
@@ -678,7 +701,7 @@ function build(f, opts) {
     f.spells.forEach((nm0, i) => {
       const cn = canonSpell(nm0), nm = cn ? cn.key : String(nm0).toLowerCase().trim(), d = SD[nm], src = cn ? cn.source : '';
       if (!d && CUSTOM[nm]) {
-        if (CUSTOM[nm].level <= top) { const cs = Object.assign(JSON.parse(JSON.stringify(CUSTOM[nm])), { name: titleSmall(nm), id: `${id}-s${i + 1}` }); if (cs.useSaves) cs.toHit = sctx.dc; if (src) cs.ext = Object.assign({}, cs.ext, { source: titleCase(src) }); out.push(cs); }
+        if (CUSTOM[nm].level <= top) { const cs = Object.assign(JSON.parse(JSON.stringify(CUSTOM[nm])), { name: titleSmall(nm), id: `${id}-s${i + 1}` }); if (cs.useSaves) cs.toHit = sctx.dc; if (nm === 'green-flame blade') greenFlame(cs, melee[0], level, m); if (src) cs.ext = Object.assign({}, cs.ext, { source: titleCase(src) }); out.push(cs); }
         return;
       }
       if (!d) { skipped.push(titleCase(nm0)); return; }
@@ -692,7 +715,8 @@ function build(f, opts) {
       out.push(sp);
     });
     if (skipped.length) notes.push(`Not in its spell list (no rules for them yet): ${skipped.slice(0, 12).join(', ')}${skipped.length > 12 ? '…' : ''}.`);
-    if (out.length) { ext.spellbook = { slots, slotReset: reset, spells: out, conSave: saves.con }; if (top === 0 && out.some(s => s.level > 0)) notes.push('No spell slots found.'); }
+    if (out.length) { ext.spellbook = { slots, slotReset: reset, spells: out, conSave: saves.con };
+      if (cf.recovery) ext.spellbook.recovery = Object.assign({}, cf.recovery, { restores: cf.recovery.restores.map(n => (actions.find(a => a.name === 'Bladesong') || {}).id).filter(Boolean) }); if (top === 0 && out.some(s => s.level > 0)) notes.push('No spell slots found.'); }
   }
   // inventory healing potions: one pool per kind, each a limited-use bonus-action heal
   {
@@ -719,6 +743,14 @@ function build(f, opts) {
   const c = { id, mode: 'custom', class: cls, name: (f.name || 'Adventurer').slice(0, 60), count: 1, hp, AC: ac, saveBonus: avgSave, ext, actions };
   if (notes.length) c._notes = notes;
   return c;
+}
+/* Green-Flame Blade: the weapon attack plus fire (a die more at 5, 11 and 17), and the fire that leaps to a second foe (the same dice plus the casting modifier) */
+function greenFlame(cs, w, level, castMod) {
+  if (!w) return;
+  const tier = level >= 17 ? 3 : level >= 11 ? 2 : level >= 5 ? 1 : 0, fire = tier ? `${tier}d8` : '';
+  cs.toHit = w.toHit; cs.dpr = fire ? `${w.dmg} + ${fire}` : w.dmg;
+  cs.ext.wtDpr = w.dmg; cs.ext.damageType = w.type || 'piercing';
+  cs.ext.onHit.splash.dmg = fire ? `${fire} + ${castMod}` : String(castMod);
 }
 /* what the sheet lists that the War Table has no rules for, as short name-only notes: features and traits, then the pack */
 const STATED = /^(fast movement|unarmored defense|unarmored movement)$/i;
@@ -776,5 +808,5 @@ function read(input, opts) {
 /* the facts layout a reader (or Claude) can fill in, for the "convert with Claude" route */
 const FACTS_SCHEMA = '{"name":string,"classes":[{"name":"fighter|wizard|…(lowercase)","level":number,"sub":"subclass name"}],"scores":[STR,DEX,CON,INT,WIS,CHA],"hp":max hit points,"ac":number,"speed":walking ft,"fly":fly ft or 0,"init":initiative bonus,"saveVals":{"str":total save bonus,…all six},"attacks":[{"name":string,"toHit":number,"dmg":"1d8 + 4","type":"slashing","range":5 for melee/10 for reach/normal range in ft for ranged}],"spells":["spell names the character has prepared or knows, cantrips included"],"slots":[max slots for levels 1..9],"dc":spell save DC,"spellAtk":spell attack bonus,"resist":["damage types"],"features":["one line per class feature, feat or trait that matters in a fight"]}';
 
-root.SheetReader = { read, fromText, fromDDB, fromFoundry, build, layoutText, FACTS_SCHEMA };
+root.SheetReader = { read, fromText, fromDDB, fromFoundry, build, layoutText, canonSpell, FACTS_SCHEMA };
 })(typeof globalThis !== 'undefined' ? globalThis : this);

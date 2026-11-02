@@ -433,11 +433,23 @@ section('Character sheets');
     'PDF page 2 features the sim cannot use are name-only notes grouped by section');
   check(/Weapons in the pack[^\n]*: Javelin ×4\./.test(notesOf(rl)) && !rl.actions.some(a => /Javelin/.test(a.name)) && /Magic items[^\n]*Cloak of the Manta Ray, Potion of Water Breathing ×2/.test(notesOf(rl)) && /Other gear: Backpack;[^\n]*Rations \(1 day\) ×20;[^\n]*10 gp\./.test(notesOf(rl)) && !/Greataxe/.test(notesOf(rl)) && rl.AC === 15,
     'PDF page 2 inventory: pack javelins without a bonus stay notes, duplicates merge, one gear line with coins, AC stays as stated');
-  const eld = p['eldar-yollavien.txt'];
+  const eld = p['eldar-yollavien.txt'], canon = n => { const c = SR.canonSpell(n); return c ? c.key : null; };
   check(eld && ['Misty Step', 'Mage Armor', 'Shocking Grasp', 'Shield', 'Silvery Barbs', 'Counterspell'].every(n => sp(eld).includes(n)) && !sp(eld).includes('Invisibility'),
     'Eldar (Roll20-style 2024 PDF): spell rows cut short with "…" or carrying a lineage label ("Misty Step (high el…", "Mage Armour (ma…") import as Misty Step and Mage Armor');
   const cns = actOf({ actions: (eld.ext.spellbook.spells) }, /^Counterspell$/);
   check(cns && cns.actionSlot === 4 && cns.level === 3 && cns.ext.counterspell && cns.ext.wtOnly, 'Counterspell imports as a reaction-slot spell (never a turn option), War Table only');
+  {
+    const sb = eld.ext.spellbook, spn = n => sb.spells.find(x => x.name === n), gf = spn('Green-Flame Blade'), cb = spn("Tasha's Caustic Brew"), co = spn('Chromatic Orb');
+    check(gf && cb && co && gf.dpr === '1d8 + 4 + 1d8' && gf.toHit === 7 && gf.ext.onHit.splash.dmg === '1d8 + 4' && cb.ext.area.shape === 'line' && cb.ext.dot.dice === '2d4' && cb.toHit === 15 && co.dpr === '3d8',
+      "Eldar: Green-Flame Blade (weapon + a die of fire at 5, fire leaps for a die + Int), Tasha's Caustic Brew and Chromatic Orb import with their rules");
+    check(canon("Tasha’s Caustic Brew") === "tasha's caustic brew" && canon("Tasha’s Caustic Br…") === "tasha's caustic brew" && canon('Green-Flame Blad…') === 'green-flame blade' && canon('Detect Magic (hig…') === null,
+      'a curly apostrophe or a name cut short matches the spell data; a spell it has no rules for still does not');
+    check(!eld.actions.some(a => /Initiate\)|Chromatic Orb|Green-Flame|Shocking/.test(a.name)), "a spell's row in the weapons table or a wrapped label is not a weapon attack");
+    const bs = actOf(eld, /^Bladesong$/);
+    check(bs && bs.freq.uses === 4 && bs.buff.ac === 4 && bs.ext.speedBonus === 10 && bs.ext.concBonus === 4 && bs.ext.endsOnIncap && sb.recovery.levels === 3 && sb.recovery.maxSlot === 5 && sb.recovery.restores.join() === bs.id
+      && actOf(eld, /^Rapier/).toHit === 7 && actOf(eld, /^Rapier/).dpr === '1d8 + 4',
+      'Eldar (Bladesinger 5): Bladesong (Int-mod uses, +4 AC, +10 ft, concentration bonus), Arcane Recovery restores 3 levels and one Bladesong use, Bladework puts Int on the rapier');
+  }
   {
     const row = nm => { const r = SR.read(fs.readFileSync(path.join(dir, 'eldar-yollavien.txt'), 'utf8').replace('2 Misty Step (high el…', nm)).player; return actOf({ actions: r.ext.spellbook.spells }, /^Misty Step$/); };
     const ms = row('2 Misty Step High Elf Lineage');
