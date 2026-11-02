@@ -101,8 +101,8 @@ function buildBoard(units){
   layers.fx = el('g', {}, svg);
   for(const u of units){
     const t = el('g', { class: 'tok', 'data-uid': u.uid }, layers.tokens);
-    const big = u.size === 'Large' || u.size === 'Huge' || u.size === 'Gargantuan';
-    const r = big ? 16.5 : 14;
+    const n = footN(u.size);          // squares across: Large 2, Huge 3, Gargantuan 4
+    const r = n * CELL / 2 - 4;
     const fill = u.team === 'party' ? 'var(--party)' : 'var(--foe)';
     const ink = u.team === 'party' ? 'var(--party-ink)' : 'var(--foe-ink)';
     el('circle', { r: r+7, class: 'halo', fill: 'rgba(207,219,138,.10)', stroke: '#cfdb8a', 'stroke-width': 2.5 }, t);
@@ -126,10 +126,15 @@ function buildBoard(units){
     ring.setAttribute('stroke-dasharray', `${circ} ${circ}`);
   }
 }
+/* a creature's x,y is the top-left square of its footprint: tokens and auras are centred on the whole block */
+const FOOT_N = { Large: 2, Huge: 3, Gargantuan: 4 };
+const footN = size => FOOT_N[size] || 1;
+const cen = st => ({ x: (st.x + (st.n || 1) / 2) * CELL, y: (st.y + (st.n || 1) / 2) * CELL });
 function placeToken(uid, x, y){
   const t = tokenEls[uid]; if(!t) return;
-  t.g.setAttribute('transform', `translate(${(x+.5)*CELL},${(y+.5)*CELL})`);
-  for(const a of t.auras){ a.rect.setAttribute('x', (x - a.n) * CELL); a.rect.setAttribute('y', (y - a.n) * CELL); }
+  const n = footN(t.unit.size);
+  t.g.setAttribute('transform', `translate(${(x+n/2)*CELL},${(y+n/2)*CELL})`);
+  for(const a of t.auras){ a.rect.setAttribute('x', (x + (n-1)/2 - a.n) * CELL); a.rect.setAttribute('y', (y + (n-1)/2 - a.n) * CELL); }
 }
 /* areas of effect: the squares an area covers, coloured by what it does, with the caster's origin marked */
 function drawArea(e, strong){
@@ -368,17 +373,21 @@ svg.addEventListener('pointermove', ev=>{
   if(painting){ const c = cellAt(ev); if(!painting.done.has(c.x + ',' + c.y)){ paintCell(c.x, c.y); drawTerrain(layoutFor(S.enc).terrain); } return; }
   if(!drag) return;
   const p = svgPoint(ev);
-  placeToken(drag.u.uid, p.x / CELL - .5, p.y / CELL - .5);
+  const n = footN(drag.u.size);
+  placeToken(drag.u.uid, p.x / CELL - n / 2, p.y / CELL - n / 2);
 });
 svg.addEventListener('pointerup', ev=>{
   if(painting){ painting = null; S.odds[S.enc] = null; renderOdds(); renderSetup(); scheduleSave(); return; }
   if(!drag) return;
   const p = svgPoint(ev);
-  const x = Math.max(0, Math.min(W()-1, Math.floor(p.x / CELL))), y = Math.max(0, Math.min(H()-1, Math.floor(p.y / CELL)));
+  const n = footN(drag.u.size);
+  const x = Math.max(0, Math.min(W()-n, Math.round(p.x / CELL - n / 2))), y = Math.max(0, Math.min(H()-n, Math.round(p.y / CELL - n / 2)));
   // a click without moving it: show what it is instead
   if(x === drag.x0 && y === drag.y0){ const uid = drag.u.uid; drag.g.classList.remove('dragging'); drag = null; placeToken(uid, x, y); inspect(uid); return; }
-  const other = preview.find(o=>o !== drag.u && o.x === x && o.y === y);
   const lay = layoutFor(S.enc);
+  // dropped on someone: same-size creatures trade places; any other overlap puts it back
+  const other = preview.find(o=>{ if(o === drag.u) return false; const m = footN(o.size); return o.x < x + n && x < o.x + m && o.y < y + n && y < o.y + m; });
+  if(other && (footN(other.size) !== n || other.x !== x || other.y !== y)){ const uid = drag.u.uid, u0 = drag.u; drag.g.classList.remove('dragging'); drag = null; placeToken(uid, u0.x, u0.y); return; }
   if(other){ lay.positions[other.key] = { x: drag.u.x, y: drag.u.y }; }
   lay.positions[drag.u.key] = { x, y };
   drag.g.classList.remove('dragging'); drag = null;
@@ -505,6 +514,7 @@ function startReplay(seed){
   const frames = []; let cur = {};
   r.events.forEach(e=>{ cur = Object.assign({}, cur); for(const k in e.state) cur[k] = e.state[k]; frames.push(cur); });
   const units = {}; r.units.forEach(u=>units[u.uid] = u);
+  frames.forEach(f=>{ for(const k in f) if(units[k]) f[k].n = footN(units[k].size); });   // footprint side, for drawing
   // which area (if any) is still resolving at each step: from the 'aoe' line through the saves and effects it causes
   const AOE_TAIL = new Set(['save','effect','down','death','react','deathsave','trigger','fail','swallow','expel','heal','zone','zoneEnd']);
   const aoeAt = []; let open = -1;
@@ -518,7 +528,7 @@ function startReplay(seed){
   drawTerrain(layoutFor(S.enc).terrain);
   // zoom to the part of the map the fight actually uses
   let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
-  frames.forEach(f=>{ for(const k in f){ const st = f[k]; x0 = Math.min(x0, st.x); y0 = Math.min(y0, st.y); x1 = Math.max(x1, st.x); y1 = Math.max(y1, st.y); } });
+  frames.forEach(f=>{ for(const k in f){ const st = f[k]; x0 = Math.min(x0, st.x); y0 = Math.min(y0, st.y); x1 = Math.max(x1, st.x + (st.n || 1) - 1); y1 = Math.max(y1, st.y + (st.n || 1) - 1); } });
   if(isFinite(x0)){
     const pad = 2, minW = 12, minH = 8;
     let cw = Math.max(minW, x1 - x0 + 1 + pad*2), ch = Math.max(minH, y1 - y0 + 1 + pad*2);
@@ -550,7 +560,7 @@ function showFrame(idx){
     const st = f[uid];
     if(st.swallowedBy) inside[st.swallowedBy] = (inside[st.swallowedBy]||0) + 1;
     if(st.grappledBy && f[st.grappledBy]){ const g = f[st.grappledBy];
-      el('line', { x1:(st.x+.5)*CELL, y1:(st.y+.5)*CELL, x2:(g.x+.5)*CELL, y2:(g.y+.5)*CELL, stroke:'#d9a24f', 'stroke-width':2, 'stroke-dasharray':'2 4', opacity:.8 }, layers.links); }
+      el('line', { x1:cen(st).x, y1:cen(st).y, x2:cen(g).x, y2:cen(g).y, stroke:'#d9a24f', 'stroke-width':2, 'stroke-dasharray':'2 4', opacity:.8 }, layers.links); }
   }
   for(const uid in tokenEls) tokenEls[uid].badge.textContent = inside[uid] ? `◉ ${inside[uid]} inside` : '';
   layers.areas.innerHTML = '';
@@ -618,15 +628,16 @@ function tween(uid, from, to, ms){
     requestAnimationFrame(step);
   });
 }
-function floater(x, y, text, color){
-  const t = el('text', { x: (x+.5)*CELL, y: (y+.5)*CELL - 18, class: 'floater', fill: color, 'text-anchor': 'middle' }, layers.fx);
+function floater(st, text, color){
+  const c = cen(st), x = c.x, y = c.y;
+  const t = el('text', { x, y: y - 18, class: 'floater', fill: color, 'text-anchor': 'middle' }, layers.fx);
   t.textContent = text;
   const t0 = performance.now(), dur = 900 / speed();
-  const step = now=>{ const k = Math.min(1, (now - t0) / dur); t.setAttribute('y', (y+.5)*CELL - 18 - k*18); t.setAttribute('opacity', 1 - k*k); if(k<1) requestAnimationFrame(step); else t.remove(); };
+  const step = now=>{ const k = Math.min(1, (now - t0) / dur); t.setAttribute('y', y - 18 - k*18); t.setAttribute('opacity', 1 - k*k); if(k<1) requestAnimationFrame(step); else t.remove(); };
   requestAnimationFrame(step);
 }
 function strike(a, b, hit, ranged){
-  const x1 = (a.x+.5)*CELL, y1 = (a.y+.5)*CELL, x2 = (b.x+.5)*CELL, y2 = (b.y+.5)*CELL;
+  const c1 = cen(a), c2 = cen(b), x1 = c1.x, y1 = c1.y, x2 = c2.x, y2 = c2.y;
   const line = el('line', { x1, y1, x2, y2, stroke: hit ? '#d9573f' : '#7d7866', 'stroke-width': ranged ? 2 : 3.5, 'stroke-linecap': 'round', 'stroke-dasharray': hit ? '' : '5 5', opacity: .9 }, layers.fx);
   setTimeout(()=>line.remove(), 420 / speed());
 }
@@ -648,12 +659,12 @@ async function animateEvent(i){
   const inArea = R.aoeAt && R.aoeAt[i] >= 0 && e.kind === 'save';
   if((e.kind === 'attack' || e.kind === 'save' || e.kind === 'react') && A && B && e.target){
     if(!inArea) strike(A, B, e.hit !== false, e.ranged);
-    if(e.dmg) floater(B.x, B.y, (e.crit ? 'CRIT ' : '') + '-' + e.dmg, '#ff8a73');
-    else if(e.kind === 'attack' && !e.hit) floater(B.x, B.y, 'miss', '#aca792');
+    if(e.dmg) floater(B, (e.crit ? 'CRIT ' : '') + '-' + e.dmg, '#ff8a73');
+    else if(e.kind === 'attack' && !e.hit) floater(B, 'miss', '#aca792');
     await wait(e.dmg ? 520 : 380); return;
   }
-  if(e.kind === 'heal' && e.target && R.frames[i][e.target]){ const t = R.frames[i][e.target]; const m = e.text.match(/\+(\d+)/); floater(t.x, t.y, '+' + (m ? m[1] : ''), '#7fc08a'); await wait(420); return; }
-  if(e.kind === 'digest' && e.dmg && R.frames[i][e.uid]){ const t = R.frames[i][e.uid]; floater(t.x, t.y, 'digesting', '#d98a5f'); await wait(380); return; }
+  if(e.kind === 'heal' && e.target && R.frames[i][e.target]){ const t = R.frames[i][e.target]; const m = e.text.match(/\+(\d+)/); floater(t, '+' + (m ? m[1] : ''), '#7fc08a'); await wait(420); return; }
+  if(e.kind === 'digest' && e.dmg && R.frames[i][e.uid]){ const t = R.frames[i][e.uid]; floater(t, 'digesting', '#d98a5f'); await wait(380); return; }
   if(e.kind === 'turn' || e.kind === 'round'){ await wait(e.kind === 'round' ? 300 : 120); return; }
   await wait(['death','down','swallow','expel'].includes(e.kind) ? 520 : 260);
 }
