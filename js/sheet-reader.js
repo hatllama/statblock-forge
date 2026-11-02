@@ -57,6 +57,8 @@ const CUSTOM = {
   'mage armor': { level: 1, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'mageArmor', wtOnly: true } },
   'death ward': { level: 4, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'deathWard', wtOnly: true } },
   'silvery barbs': { level: 1, actionSlot: 4, targets: 1, type: 'debuff', target: 'enemy with highest DPR', saveDC: 99, buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: 60 } },
+  // a reaction like Silvery Barbs: it sits in the reaction slot (never a turn option). No fight rule fires it yet (docs/ai-roadmap.md); War Table only, so exports leave it out
+  'counterspell': { level: 3, actionSlot: 4, targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: { range: 60, counterspell: true, wtOnly: true } },
   'mind spike': { level: 2, upcast: '1d8', concentration: true, actionSlot: 0, targets: 1, type: 'atk', dpr: '3d8', toHit: 0, useSaves: true, halfOnSave: true, target: 'enemy with highest DPR', ext: { range: 120, saveAbility: 'wis', damageType: 'psychic' } },
   'aid': { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } },
 };

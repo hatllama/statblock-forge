@@ -434,8 +434,10 @@ section('Character sheets');
   check(/Weapons in the pack[^\n]*: Javelin ×4\./.test(notesOf(rl)) && !rl.actions.some(a => /Javelin/.test(a.name)) && /Magic items[^\n]*Cloak of the Manta Ray, Potion of Water Breathing ×2/.test(notesOf(rl)) && /Other gear: Backpack;[^\n]*Rations \(1 day\) ×20;[^\n]*10 gp\./.test(notesOf(rl)) && !/Greataxe/.test(notesOf(rl)) && rl.AC === 15,
     'PDF page 2 inventory: pack javelins without a bonus stay notes, duplicates merge, one gear line with coins, AC stays as stated');
   const eld = p['eldar-yollavien.txt'];
-  check(eld && ['Misty Step', 'Mage Armor', 'Shocking Grasp', 'Shield', 'Silvery Barbs'].every(n => sp(eld).includes(n)) && !sp(eld).includes('Invisibility'),
+  check(eld && ['Misty Step', 'Mage Armor', 'Shocking Grasp', 'Shield', 'Silvery Barbs', 'Counterspell'].every(n => sp(eld).includes(n)) && !sp(eld).includes('Invisibility'),
     'Eldar (Roll20-style 2024 PDF): spell rows cut short with "…" or carrying a lineage label ("Misty Step (high el…", "Mage Armour (ma…") import as Misty Step and Mage Armor');
+  const cns = actOf({ actions: (eld.ext.spellbook.spells) }, /^Counterspell$/);
+  check(cns && cns.actionSlot === 4 && cns.level === 3 && cns.ext.counterspell && cns.ext.wtOnly, 'Counterspell imports as a reaction-slot spell (never a turn option), War Table only');
   {
     const row = nm => { const r = SR.read(fs.readFileSync(path.join(dir, 'eldar-yollavien.txt'), 'utf8').replace('2 Misty Step (high el…', nm)).player; return actOf({ actions: r.ext.spellbook.spells }, /^Misty Step$/); };
     const ms = row('2 Misty Step High Elf Lineage');
