@@ -1532,11 +1532,29 @@ Sim.prototype.kSave = function (u, t, ab) {
   k.saveEst[key] = best;
   return best;
 };
+/* immunities a table knows from the name alone (the user's decision: obvious ones only). Learn on v2 reads them until it has seen what the kind takes */
+const NAME_PRIORS = [
+  [/\b(red|gold|brass)\b.*\b(dragon|wyrmling)\b/i, ['fire']],
+  [/\b(white|silver)\b.*\b(dragon|wyrmling)\b/i, ['cold']],
+  [/\b(blue|bronze)\b.*\b(dragon|wyrmling)\b/i, ['lightning']],
+  [/\b(black|copper)\b.*\b(dragon|wyrmling)\b/i, ['acid']],
+  [/\bgreen\b.*\b(dragon|wyrmling)\b/i, ['poison']],
+  [/\bfire (giant|elemental)\b|\b(magma|fire) mephit\b|\bhell hound\b|\bsalamander\b/i, ['fire']],
+  [/\bfrost giant\b|\bice mephit\b/i, ['cold']],
+  [/\bstorm giant\b/i, ['lightning', 'thunder']],
+];
+function namePrior(name) {
+  const immune = [];
+  for (const [re, types] of NAME_PRIORS) if (re.test(name || '')) for (const x of types) if (immune.indexOf(x) < 0) immune.push(x);
+  return immune.length ? { resist: [], immune, vulnerable: [] } : null;
+}
 Sim.prototype.kMult = function (u, a, t) {
   const m = this.kOf(u, t); if (!m) return damageMultFor(a, t);
   if (m === 'blind') return 1;
   const k = this.kind(u.team, t);
-  return k.mods ? damageMultFor(a, { dmgMods: k.mods, buffs: [] }) : 1;
+  if (k.mods) return damageMultFor(a, { dmgMods: k.mods, buffs: [] });
+  const named = this.keen(u.team) ? namePrior((t.tpl && t.tpl.name) || t.name) : null;
+  return named ? damageMultFor(a, { dmgMods: named, buffs: [] }) : 1;
 };
 Sim.prototype.kHeals = function (u, t) {
   const m = this.kOf(u, t); if (!m) return t.actions.some(o => o.type === 'heal' && o.target !== 'self');

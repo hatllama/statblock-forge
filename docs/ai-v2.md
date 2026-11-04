@@ -1042,6 +1042,21 @@ value that ranks the dying ally first in both scenes.
 All 104 rows per mode against the tip: 0 worse and 0 better beyond 2 SE (means 76.2 → 76.4, 79.3 → 79.4, 71.3 → 71.3). Downed allies healed: learn 85.6 →
 86.6%, open 81.3 → 82.3%, blind 84.3 → 85.4%. D8's deaths lean up in learn and open, inside the noise. Logs: old AI unchanged; v2 2 of 96, v2 learn 2 of 96.
 
+### Obvious immunities from a creature's name (learn, the user's decision)
+
+**What happened.** Learn on first contact priced Fireball at full against an Adult Red Dragon (0.60 fire spells a fight before the first one showed
+the immunity). A table knows a red dragon breathes fire.
+
+**The change.** Learn on v2 (`keen`) reads a small table of names (`NAME_PRIORS`): a dragon's colour or metal gives its breath's immunity (red, gold,
+brass: fire; white, silver: cold; blue, bronze: lightning; black, copper: acid; green: poison), and fire / frost / ice / storm in a creature's name gives fire,
+cold, cold, lightning. `kMult` uses it until the kind has a seen record (`k.mods`), which then wins. Only immunities a table would call obvious; nothing
+from size or type. Open, blind and the old AI do not change.
+
+**Results** (200 runs, same seeds, against the tip before it): learn 0 of 104 rows worse beyond 2 SE, one better: E2, Zaki's party against a Young Red
+Dragon and 2 Ogres, 68 → 76.5. Open and blind do not move. On the Adult Red Dragon (learn, 200 fights) fire spells cast into it before its immunity was
+seen fall from 0.61 a fight to none. The Library holds only 47 monsters, so most of the table is not exercised by the harness; a name it gets wrong is
+corrected the first time the kind takes that damage. Logs: no change (no fixture names a coloured dragon).
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |

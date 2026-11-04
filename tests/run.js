@@ -1555,5 +1555,36 @@ section('AI v2: the ally about to die comes first (Adult Red Dragon log, Faithwa
   check(probe.off[0] > probe.off[1], `with the term off (deathNow 0) the stronger ally won whatever the failures (${f1(probe.off)})`);
 }
 
+section('Learn: obvious immunities from a name (Adult Red Dragon log)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const beast = (id, name) => ({ id, name, mode: 'custom', hp: 80, AC: 14, count: 1, speed: 30, actions: [{ id: id + '1', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '8', toHit: 5, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const fire = { ext: { damageType: 'fire' } }, cold = { ext: { damageType: 'cold' } };
+  const read = (know, ai) => {
+    const out = {}, proto = Tac.Sim.prototype, turn = proto.turn;
+    proto.turn = function (u) {
+      if (!out.done && u.team === 'party') {
+        out.done = true;
+        const by = n => this.units.find(o => o.name === n);
+        out.red = this.kMult(u, fire, by('Young Red Dragon')); out.redCold = this.kMult(u, cold, by('Young Red Dragon'));
+        out.white = this.kMult(u, cold, by('Ancient White Dragon')); out.giant = this.kMult(u, fire, by('Fire Giant')); out.beetle = this.kMult(u, fire, by('Giant Fire Beetle'));
+        const k = this.kind(u.team, by('Young Red Dragon')); k.mods = { resist: [], immune: [], vulnerable: [] }; out.seen = this.kMult(u, fire, by('Young Red Dragon')); k.mods = null;
+      }
+      return turn.call(this, u);
+    };
+    Tac.runDay({ players: [build('Wizard'), build('Fighter')], encounters: [{ monsters: [beast('r', 'Young Red Dragon'), beast('w', 'Ancient White Dragon'), beast('g', 'Fire Giant'), beast('b', 'Giant Fire Beetle')] }] }, { seed: 2, partyAI: 'tactical', ai: ai, know: { party: know } });
+    proto.turn = turn;
+    return out;
+  };
+  const L = read('learn', { party: 'v2' });
+  check(L.red === 0 && L.white === 0 && L.giant === 0, `learn on v2 knows a red dragon, a white dragon and a fire giant are immune to their element (${L.red}, ${L.white}, ${L.giant})`);
+  check(L.redCold === 1 && L.beetle === 1, 'nothing else: cold on a red dragon, fire on a Giant Fire Beetle');
+  check(L.seen === 1, 'what it has seen the kind take wins over the name');
+  const B = read('blind', { party: 'v2' }), V1 = read('learn', undefined);
+  check(B.red === 1 && V1.red === 1, 'blind, and the old AI in learn, do not read names');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);
