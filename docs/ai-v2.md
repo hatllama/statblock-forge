@@ -999,6 +999,18 @@ an opportunity attack that drops it there ends the action as before). (b) In `v2
 within its move; where it does not fit, the square offers its best option that stays up instead (the same `offAt(x, y, false, true)` as the priced touch).
 The old AI keeps its order, so its logs do not move.
 
+### Reactions that need an attack roll (rules, same log)
+
+**What happened.** Tacitus's Uncanny Dodge halved a Fire Breath (30 → 15) and Kraax's Deflect Attacks cut Fire Breath and fire rays. In 2024 both need an
+attack roll that hits; Deflect Attacks also needs Bludgeoning, Piercing or Slashing damage. The engine fires any damage-cutting reaction on any damage
+marked `attack`, and save damage was marked `attack` too (it still is, for "when damaged" triggers). Stone's Endurance has the same shape and rightly
+works on any damage, so the engine cannot tell them apart without data.
+
+**The change (rules).** A reaction can carry `ext.react`: `{ roll: true }` (an attack roll that hits) and `types: [...]` (the damage must include one of
+them; untyped damage counts, as the engine cannot tell). Attack-roll damage now carries `roll: true` into `damage`. The sheet reader and the class builds
+set it on Uncanny Dodge (`roll`) and Deflect Attacks (`roll`, bludgeoning / piercing / slashing); `parties/zaki-party-level-5.json` gets it too, and a
+saved workspace is updated by name (`PARTY_FN_UPDATES[13]`). Both AIs' logs move where these reactions met a save or a fire ray.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |

@@ -2599,6 +2599,18 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
 };
 
 /* ----- damage, healing, death ----- */
+/* a damage-cutting reaction's own limits (ext.react): roll — only an attack roll that hit (Uncanny Dodge, Deflect Attacks); types — the damage must
+   include one of these (Deflect Attacks: bludgeoning, piercing, slashing). Untyped damage passes: the engine can't tell */
+function reactFits(x, info) {
+  const rx = x.ext && x.ext.react;
+  if (!rx) return true;
+  if (rx.roll && !info.roll) return false;
+  if (rx.types) {
+    const type = String(info.type || (info.a && info.a.ext && info.a.ext.damageType) || '').toLowerCase();
+    if (type && !rx.types.some(t => type.indexOf(t) >= 0)) return false;
+  }
+  return true;
+}
 Sim.prototype.damage = function (src, tgt, raw, info) {
   info = info || {};
   if (tgt.dead) return 0;
@@ -2615,7 +2627,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   // a defensive reaction on the target that reduces damage (e.g. "until next attack taken" resistance)
   if (info.attack && tgt.reaction && !this.incap(tgt) && tgt.hp > 0) {
     const r = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac === undefined &&
-      (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) && this.usable(tgt, x) && this.condOk(tgt, x));
+      (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) && reactFits(x, info) && this.usable(tgt, x) && this.condOk(tgt, x));
     if (r && (!tgt.v2 || this.v2ReactOk(tgt, r, dmg))) {
       tgt.reaction = false; this.spend(tgt, r);
       const red = Math.floor(Math.max(0, dmg * (typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1) - avgDice(r.buff.damageReduction || 0)));
@@ -2930,7 +2942,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       if (u.sneak.assassinate && this.round === 1) raw += u.sneak.assassinate;     // Assassinate: Surprising Strikes
     }
     raw *= this.multBuff(u, 'damageMultiplier');
-    dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, crit: r.crit, a });
+    dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, roll: true, crit: r.crit, a });
   }
   const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : r.fa === 'pack' ? ', Pack Tactics' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '');
   this.ev('attack', `${u.name} → ${t.name}: ${a.name}${tag}, ${r.total} vs AC ${r.ac} — ${r.crit && r.hit ? 'CRIT' : r.hit ? 'hit' : r.mirror ? 'image' : 'miss'}${r.hit ? `, ${dealt} damage` : ''}`,

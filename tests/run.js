@@ -1504,5 +1504,25 @@ section('AI v2: a touch from the air (Adult Red Dragon log, Niko)');
   check(far.every(o => o.said === null), 'an ally it cannot get level with this turn is not planned as a touch');
 }
 
+section('Reactions that need an attack roll (Uncanny Dodge, Deflect Attacks)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const goliath = { id: 'g', name: 'Goliath', mode: 'custom', hp: 200, AC: 10, count: 1, actions: [{ id: 'g1', name: "Stone's Endurance", actionSlot: 4, type: 'buff', target: 'self', freq: 'at will', buff: { duration: 'until next attack taken', damageReduction: '10' } }] };
+  const party = Tac.expandTeam([build('Rogue'), build('Monk'), goliath], 'party', true);
+  const foe = Tac.expandTeam([{ id: 'f', name: 'Foe', mode: 'custom', hp: 50, AC: 10, count: 1, actions: [] }], 'foes', false)[0];
+  const sim = new Tac.Sim({ width: 12, height: 8, seed: 3 }); sim.units = party.concat([foe]); sim.setTerrain({ cells: {} }); sim.place(party, [foe], {});
+  const [rogue, monk, gol] = party;
+  const hit = (t, info) => { t.hp = t.maxHp = 200; t.reaction = true; return sim.damage(foe, t, 30, info); };
+  const A = type => ({ ext: { damageType: type } });
+  check(hit(rogue, { attack: true, roll: true, a: A('slashing') }) === 15, 'Uncanny Dodge halves a hit from an attack roll');
+  check(hit(rogue, { attack: true, a: A('fire') }) === 30, 'Uncanny Dodge does nothing against a failed save (a breath, a Fireball)');
+  check(hit(monk, { attack: true, roll: true, a: A('slashing') }) < 30, 'Deflect Attacks cuts a slashing hit');
+  check(hit(monk, { attack: true, roll: true, a: A('fire') }) === 30, 'Deflect Attacks does nothing against a fire ray');
+  check(hit(monk, { attack: true, a: A('bludgeoning') }) === 30, 'Deflect Attacks does nothing against save damage');
+  check(hit(gol, { attack: true, a: A('fire') }) === 20, "a reaction without limits (Stone's Endurance) still works on save damage");
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

@@ -431,7 +431,17 @@
       "duration": "until next attack taken",
       "damageReduction": "1d10 + 9"
      },
-     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a2"
+     "id": "7ba165da-a21c-4d81-9553-c8acf97f9294-a2",
+     "ext": {
+      "react": {
+       "roll": true,
+       "types": [
+        "bludgeoning",
+        "piercing",
+        "slashing"
+       ]
+      }
+     }
     },
     {
      "freq": "at will",
@@ -621,7 +631,12 @@
       "duration": "until next attack taken",
       "damageTakenMultiplier": 0.5
      },
-     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a2"
+     "id": "f4d574da-e9e2-48be-9857-8cefd726544a-a2",
+     "ext": {
+      "react": {
+       "roll": true
+      }
+     }
     },
     {
      "freq": "at will",
