@@ -1466,5 +1466,43 @@ section('Learn: save priors by ability (Adult Red Dragon log)');
   check(probe.off.str === 2 && probe.off.wis === 2 && probe.off.int === 2, 'saveShare 0 is the old +2 prior');
 }
 
+section('AI v2: a touch from the air (Adult Red Dragon log, Niko)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const wyrm = { id: 'Wyrm', name: 'Wyrm', mode: 'custom', hp: 200, AC: 15, saveBonus: 2, count: 1, speed: 30, actions: [{ id: 'w1', name: 'Rend', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '6', toHit: 8, target: 'enemy with least HP', ext: { range: 5 } }] };
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  // a Cleric flying 30 ft up, hurt, a downed Fighter on the ground below; Cure Wounds is its only heal
+  const scene = (far, seed) => {
+    let first = false;
+    proto.turn = function (u) {
+      if (u.name === 'Cleric' && !first) {
+        first = true;
+        const f = this.units.find(o => o.name === 'Fighter'), w = this.units.find(o => o.name === 'Wyrm');
+        f.hp = 0; f.stable = false; f.x = 8 + far; f.y = 6; w.x = 20; w.y = 14;
+        u.x = 8; u.y = 5; u.alt = 6; u.fly = 30; u.hp = 12;
+        u.actions = u.actions.filter(a => a.type !== 'heal' || a.name === 'Cure Wounds');
+      }
+      return turn.call(this, u);
+    };
+    const r = Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [cp(wyrm)] }] }, { seed, partyAI: 'tactical', ai: { party: 'v2' }, record: true })[0];
+    proto.turn = turn;
+    let seen = 0, said = null, healed = null;
+    for (const e of r.events) {
+      if (e.kind === 'turn' && /Cleric/.test(e.text || '') && ++seen > 1) break;
+      if (seen !== 1) continue;
+      const m = /^Cleric gets (.+) back up with/.exec(e.text || '');
+      if (e.kind === 'intent' && m) said = m[1];
+      if (e.kind === 'heal' && /^Cleric →/.test(e.text || '') && !healed) healed = /→ ([^:]+):/.exec(e.text)[1];
+    }
+    return { said, healed };
+  };
+  const near = [1, 2, 3, 4, 5, 6].map(s => scene(1, s)), far = [1, 2, 3, 4, 5, 6].map(s => scene(5, s));
+  check(near.every(o => o.healed === 'Fighter'), `the ally right below: it comes down and the touch heal lands on it (${near.map(o => o.healed).join(', ')})`);
+  check(near.concat(far).every(o => !o.said || o.healed === o.said), `no turn says it gets one ally up and heals another (${near.concat(far).filter(o => o.said && o.healed !== o.said).length})`);
+  check(far.every(o => o.said === null), 'an ally it cannot get level with this turn is not planned as a touch');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

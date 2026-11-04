@@ -4491,6 +4491,8 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       const bon = bonusAt(dOf, sees, best.pl.slot) * W.bonus;
       // a touch from the air means coming level with the target
       const touch = u.alt > 0 && this.airborne(u) && best.t !== u && touchPl(best.pl);
+      // coming down takes movement too: a touch it can't get level with this turn is no option from here
+      const short = touch && steps + Math.abs(this.zOf(best.t) - zHere(x, y) - u.alt) > spSteps;
       const alt0 = touch ? ctx.danger.altOa(x, y, this.zOf(best.t) - zHere(x, y)) * W.oa : 0, alt = alt0 ? alt0 + dropCost(oa0 + alt0) - dropCost(oa0) : 0;
       let aim = 0;
       if (canAim && steps === 0 && best.pl.a.type === 'atk' && !best.pl.a.useSaves && best.t !== u) aim = this.v2AdvGain(u, best.pl.a, best.t) * W.aim;
@@ -4500,9 +4502,9 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
         const dh = distH[x + y * Wd];
         if (dh >= 0 && dh <= spSteps - steps && (dh === 0 || !this.adjacentEnemies(u, x, y).length)) { opt.hideAfter = spSteps - steps; opt.score += best.val * W.hide + risk * 0.5 + 2 - bon; }
       }
-      options.push(opt);
-      // the same square without coming down: the option a priced touch would otherwise hide
-      if (alt > 0) { const far = offAt(x, y, false, true).best; if (far) options.push({ mode: 'act', x, y, rm, off: far, steps, score: far.val + bonusAt(dOf, sees, far.pl.slot) * W.bonus - risk - oa - walk, aim: false }); }
+      if (!short) options.push(opt);
+      // the same square without coming down: the option a priced or unreachable touch would otherwise hide
+      if (alt > 0 || short) { const far = offAt(x, y, false, true).best; if (far) options.push({ mode: 'act', x, y, rm, off: far, steps, score: far.val + bonusAt(dOf, sees, far.pl.slot) * W.bonus - risk - oa - walk, aim: false }); }
       if (bonusDis && steps > 0) options.push({ mode: 'bonusDis', x, y, rm, off: best, steps, score: best.val - risk - walk });
     }
     if (onlyAct) return;
@@ -4951,7 +4953,9 @@ Sim.prototype.turn = function (u) {
   if (choice && !actionUsed && !out()) {
     // re-plan from where it ended up: it may have been stopped, or the target may have dropped
     let a = choice.a, p = null;
-    if (u.v2) { const c2 = this.v2Act(u, choice); if (c2) { a = c2.a; p = c2.p; } }
+    // a flyer comes level with the creature it planned to touch before it aims again: from the air the ground is out of reach
+    if (u.v2 && u.fly && choice.p && choice.p.targets && choice.p.targets[0]) this.settleAltitude(u, choice.a, choice.p);
+    if (u.v2) { const c2 = out() ? null : this.v2Act(u, choice); if (c2) { a = c2.a; p = c2.p; } }
     else {
       p = this.usable(u, a) && this.condOk(u, a) ? this.plan(u, a, 0) : null;
       if (!p) { const c2 = this.choose(u, 0, 0); if (c2) { a = c2.a; p = c2.p; } }

@@ -986,6 +986,19 @@ different model, not a bigger weight.
 **Not done (the user's call).** A name-based prior (a red dragon is fire-immune, a skeleton is weak to bludgeoning) would answer the round-1 Fireball,
 but learn has never read a creature's name; it is a design question, not a fix.
 
+### A touch from the air lands on the caster (same log, Niko's Healing Hands)
+
+**What happened.** Niko, flying at 30 ft, planned Healing Hands on a downed ally and healed himself for 5. Not the stay-up option and not a
+self-preservation term: `turn` re-aims (`v2Act` → `v2Aim`) before `settleAltitude` brings a flyer level with its target, and `v2Aim` measures reach in
+three dimensions, so from 30 ft up the ally on the ground is out of touch and the caster itself is the only creature in reach. With nothing else in
+reach it does nothing. A second gap: the planner counted a touch as reachable from any square within flat range, without the movement it takes to come
+down, so after a full move there was no movement left to drop. In 300 dragon fights (learn, 60-ft gap) an airborne touch heal ended on the caster 11 times.
+
+**The change.** (a) On v2, a flyer comes level with the creature it planned to touch before it aims again (one `settleAltitude` call, moved forward;
+an opportunity attack that drops it there ends the action as before). (b) In `v2TurnInner`, a touch from the air needs `steps + |height to the target|`
+within its move; where it does not fit, the square offers its best option that stays up instead (the same `offAt(x, y, false, true)` as the priced touch).
+The old AI keeps its order, so its logs do not move.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
