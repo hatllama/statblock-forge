@@ -1438,5 +1438,33 @@ section('A creature that drops loses the rest of its turn');
   check(capped.every(r => r.events.filter(e => e.kind === 'heal' && /→ .*, +d+ HP/.test(e.text || '')).every(e => +(/\+(\d+)/.exec(e.text) || [0, 0])[1] <= roster[/→ ([^:]+):/.exec(e.text)[1]])), 'the log gives what a heal restored, never more than a maximum');
 }
 
+section('Learn: save priors by ability (Adult Red Dragon log)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const T = Tac.AI_BASE.threat, row = T.table[T.table.length - 1];
+  check(['str', 'dex', 'con', 'int', 'wis', 'cha'].every(ab => T.table.every((r, i) => typeof r[ab] === 'number' && (!i || r[ab] >= T.table[i - 1][ab]))), 'the threat table has a save column per ability, rising with CR');
+  const boss = { id: 'Boss', name: 'Boss', mode: 'custom', hp: 300, AC: 18, saveBonus: 7, count: 1, speed: 30, actions: [{ id: 'b1', name: 'Rend', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '20', toHit: 12, target: 'enemy with least HP', ext: { range: 5 } }] };
+  const probe = {}, proto = Tac.Sim.prototype, turn = proto.turn, share = T.saveShare;
+  proto.turn = function (u) {
+    if (!probe.done && u.team === 'party') {
+      probe.done = true;
+      const t = this.units.find(o => o.team === 'foes'), k = this.kind(u.team, t);
+      const read = () => { k.thAt = -2; k.saveEst = {}; const o = {}; for (const ab of ['str', 'wis', 'int']) o[ab] = this.kSave(u, t, ab); return o; };
+      k.thPrior = 19; probe.strong = read();
+      k.thPrior = 0.25; probe.weak = read();
+      T.saveShare = 0; k.thPrior = 19; probe.off = read(); T.saveShare = share;
+      k.thPrior = undefined; k.thAt = -2; k.saveEst = {};
+    }
+    return turn.call(this, u);
+  };
+  Tac.runDay({ players: [build('Wizard'), build('Fighter')], encounters: [{ monsters: [boss] }] }, { seed: 4, partyAI: 'tactical', ai: { party: 'v2' }, know: { party: 'learn' } });
+  proto.turn = turn;
+  check(probe.strong.str > 2 && probe.strong.wis > 2 && probe.strong.str >= probe.weak.str && probe.strong.wis > probe.weak.wis, `an unseen save reads stronger on a strong creature (Str ${probe.strong.str} / ${probe.weak.str}, Wis ${probe.strong.wis} / ${probe.weak.wis})`);
+  check(Math.abs(probe.strong.wis - (2 + share * (row.wis - 2))) <= 1, `it moves saveShare of the way to the column (Wis ${probe.strong.wis}, column ${row.wis})`);
+  check(probe.off.str === 2 && probe.off.wis === 2 && probe.off.int === 2, 'saveShare 0 is the old +2 prior');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);
