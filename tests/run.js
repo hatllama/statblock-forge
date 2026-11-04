@@ -1366,7 +1366,7 @@ section('A creature that drops loses the rest of its turn');
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
   const cp = x => JSON.parse(JSON.stringify(x));
   const build = n => cp(ctx.CB.find(b => b.name === n));
-  const zaki = () => cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players);
+  const zaki = () => cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players);
   const ACTS = new Set(['attack', 'save', 'heal', 'buff', 'aoe', 'move', 'dash', 'disengage']);
   const foe = (id, hp, count, dmg, extra) => Object.assign({ id, name: id, mode: 'custom', hp, AC: 14, saveBonus: 2, count, speed: 40, actions: [{ id: id + '1', name: 'Rend', actionSlot: 0, freq: 'at will', condition: 'default', targets: 3, type: 'atk', dpr: String(dmg), toHit: 9, target: 'enemy with least HP', ext: { range: 10 } }] }, extra);
   // in any log: nothing done by the actor after it dropped in its own turn

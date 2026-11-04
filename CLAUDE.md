@@ -20,7 +20,7 @@
 - The built-in party and the class roster (`CLASS_BUILDS`, one level-5 build per class) are generated: edit
   `tools/build-party.js`, run `node tools/build-party.js` (rewrites `data/party.js`), then bump `PARTY_VERSION` in
   `js/forge.js` and list changed ids in `PARTY_UPDATES` so saved workspaces update. Zaki's own party lives in
-  `parties/zaki-party-level-4.json` (load it with Day file → Load just the party).
+  `parties/zaki-party-level-5.json` (load it with Day file → Load just the party).
 - The official monsters in the Library (`data/srd-monsters.js`, `SRD_MONSTERS`) are generated from SRD 5.2 data by
   `tools/build-srd.js` (see its header for the 5e-database clone). Only SRD 5.2 monsters, never other books; keep the
   CC-BY attribution (`SRD_ATTRIBUTION`, the footer) wherever they appear. They are parsed by the statblock reader when

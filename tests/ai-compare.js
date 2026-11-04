@@ -197,7 +197,7 @@ const SCENARIOS = [
   { name: 'Flyer: Young Green Dragon', party: MARTIALS, day: 'Young Green Dragon' },
   { name: 'Three-fight day: goblins / ogres + bugbears / gladiators', party: MARTIALS, day: 'Goblin Warrior*6/Ogre*2,Bugbear Warrior*2/Gladiator*2' },
   { name: 'Mixed party (Fighter, Paladin, Cleric, Wizard, Rogue, Bard; casters stay v1) vs hard-day.json', players: () => clone(D.PP), encounters: () => clone(fixture('hard-day.json').encounters) },
-  { name: "Zaki's party (Kraax and Tacitus on v2, the casters on v1) vs hard-day.json", players: () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players), encounters: () => clone(fixture('hard-day.json').encounters) },
+  { name: "Zaki's party (Kraax and Tacitus on v2, the casters on v1) vs hard-day.json", players: () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players), encounters: () => clone(fixture('hard-day.json').encounters) },
 
   // ---- dumb behaviors ----
   { name: 'DUMB 1: the Monk spends Stunning Strike / Flurry on a foe its free strikes would drop (Guards, then Ogres)',
@@ -261,7 +261,7 @@ const SCENARIOS = [
   { name: 'C-Cleric (lingering damage): Fighter, Rogue, Cleric, Wizard vs Hill Giant + 2 Ogres', party: ['Fighter', 'Rogue', 'Cleric', 'Wizard'], day: 'Hill Giant,Ogre*2', record: true, spells: true, metrics: CASTER_METRICS },
   { name: 'C-Druid (lingering damage): Fighter, Rogue, Druid, Wizard vs Hill Giant + 2 Ogres', party: ['Fighter', 'Rogue', 'Druid', 'Wizard'], day: 'Hill Giant,Ogre*2', record: true, spells: true, metrics: CASTER_METRICS },
   { name: 'C-Default party (Fighter, Paladin, Cleric, Wizard, Rogue, Bard; the Paladin stays v1) vs hard-day.json', players: () => clone(D.PP), encounters: () => clone(fixture('hard-day.json').encounters), record: true, metrics: CASTER_METRICS },
-  { name: "C-Zaki's party (druid, two warlocks, wizard, monk, rogue: all on v2) vs hard-day.json", players: () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players), encounters: () => clone(fixture('hard-day.json').encounters) },
+  { name: "C-Zaki's party (druid, two warlocks, wizard, monk, rogue: all on v2) vs hard-day.json", players: () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players), encounters: () => clone(fixture('hard-day.json').encounters) },
 
   // ---- step 2.5 check: lingering zones in long fights ----
   { name: 'L-Long boss (400 HP Troll): Fighter, Rogue, Cleric, Druid', party: ['Fighter', 'Rogue', 'Cleric', 'Druid'], encounters: () => [{ monsters: [withHp(mon('Troll'), 400)] }], record: true, spells: true,
@@ -404,7 +404,7 @@ const withPotions = (p, n) => {
   p.actions.push({ id: p.id + '-potion', name: 'Potion of Healing', actionSlot: 1, freq: 'at will', condition: 'ally under half HP', targets: 1, type: 'heal', amount: '2d4 + 2', target: 'ally with the least HP', ext: { range: 5, resource: 'Potion of Healing', potion: true } });
   return p;
 };
-const zaki = () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-4.json'), 'utf8')).players);
+const zaki = () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players);
 // DOWN_NOW: the names knocked to 0 HP as the day's first fight starts
 let DOWN_NOW = null, KILL_NOW = null;     // KILL_NOW: the same, dead
 const realTurn = Tac.Sim.prototype.turn;

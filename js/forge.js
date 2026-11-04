@@ -2605,7 +2605,7 @@ const SAVE_KEY = 'forge-workspace-v1';
 // Saved workspaces from older versions get exactly those players swapped in, nothing else touched.
 const PARTY_VERSION = 12;
 // v10: the built-in party is now a generic level-5 one (data/party.js, made by tools/build-party.js). A saved party is left
-// as it is, it's the user's work; the old sheets are in parties/zaki-party-level-4.json.
+// as it is, it's the user's work; the old sheets are in parties/zaki-party-level-5.json.
 // v5: real saving throws for Eldar and Tacitus (from their sheets) and the save each of Eldar's spells calls for; only fills what's missing
 const PARTY_FN_UPDATES = { 5: p => {
   const fresh = DEFAULT_PARTY.find(x=>x.id === p.id); if(!fresh || !fresh.ext) return false;
