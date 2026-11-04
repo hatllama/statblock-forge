@@ -1138,31 +1138,37 @@
    "mode": "custom",
    "class": {
     "type": "warlock",
-    "level": 4,
+    "level": 5,
     "options": {}
    },
    "name": "Juniper Watson",
    "count": 1,
-   "hp": 24,
+   "hp": 28,
    "AC": 11,
-   "saveBonus": 1.83,
+   "saveBonus": 2.17,
    "ext": {
     "speed": 35,
     "initBonus": 1,
-    "bonusDisengage": true,
     "saves": {
      "str": -1,
      "dex": 1,
      "con": 1,
      "int": 1,
-     "wis": 4,
-     "cha": 5
+     "wis": 5,
+     "cha": 6
     },
+    "unarmored": true,
+    "dexMod": 1,
+    "resist": [
+     "necrotic"
+    ],
+    "athletics": -1,
+    "escapeBonus": 4,
     "spellbook": {
      "slots": [
       0,
-      2,
       0,
+      2,
       0,
       0,
       0,
@@ -1171,217 +1177,246 @@
       0
      ],
      "slotReset": "sr",
-     "recovery": {
-      "levels": 2,
-      "maxSlot": 5,
-      "anyBreak": true
-     },
      "spells": [
       {
-       "id": "jw-eb",
-       "name": "Eldritch Blast",
-       "level": 0,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "1d10 + 3",
-       "toHit": 5,
-       "target": "enemy with least HP",
-       "ext": {
-        "range": 120,
-        "damageType": "force"
-       }
-      },
-      {
-       "id": "jw-sb",
-       "name": "Sorcerous Burst",
-       "level": 0,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "1d8 + 0.6",
-       "toHit": 5,
-       "target": "enemy with least HP",
-       "ext": {
-        "range": 120,
-        "damageType": "acid/cold/fire/lightning/poison/psychic/thunder"
-       }
-      },
-      {
-       "id": "jw-ms",
-       "name": "Mind Sliver",
-       "level": 0,
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "1d6",
-       "toHit": 13,
-       "useSaves": true,
-       "target": "enemy with highest DPR",
-       "riderEffect": {
-        "dc": 99,
-        "buff": {
-         "duration": "1 round",
-         "save": "-1d4"
-        }
-       },
-       "ext": {
-        "range": 60,
-        "saveAbility": "int",
-        "damageType": "psychic"
-       }
-      },
-      {
-       "id": "jw-hex",
        "name": "Hex",
-       "level": 1,
-       "concentration": true,
        "actionSlot": 1,
        "targets": 1,
+       "ext": {},
        "type": "buff",
        "target": "self",
        "buff": {
         "duration": "entire encounter",
         "damage": "1d6"
        },
-       "ext": {
-        "range": 0
-       }
-      },
-      {
-       "id": "jw-dw",
-       "name": "Dissonant Whispers",
        "level": 1,
-       "upcast": "1d6",
-       "actionSlot": 0,
-       "targets": 1,
-       "type": "atk",
-       "dpr": "3d6",
-       "toHit": 13,
-       "useSaves": true,
-       "halfOnSave": true,
-       "target": "enemy with highest DPR",
-       "ext": {
-        "range": 60,
-        "saveAbility": "wis",
-        "damageType": "psychic"
-       }
+       "concentration": true,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s2"
       },
       {
-       "id": "jw-aoh",
        "name": "Arms of Hadar",
-       "level": 1,
-       "upcast": "1d6",
        "actionSlot": 0,
        "targets": 3,
-       "type": "atk",
-       "dpr": "2d6",
-       "toHit": 13,
-       "useSaves": true,
-       "halfOnSave": true,
-       "target": "enemy with least HP",
        "ext": {
         "range": 10,
+        "saveAbility": "str",
+        "damageType": "necrotic",
         "area": {
          "shape": "emanation",
          "size": 10
         },
-        "saveAbility": "str",
         "onHit": {
          "noReactions": true
-        },
-        "damageType": "necrotic"
-       }
+        }
+       },
+       "type": "atk",
+       "dpr": "2d6",
+       "toHit": 14,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "halfOnSave": true,
+       "level": 1,
+       "upcast": "1d6",
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s3"
       },
       {
-       "id": "jw-wb",
        "name": "Witch Bolt",
-       "level": 1,
-       "upcast": "1d12",
-       "concentration": true,
        "actionSlot": 0,
        "targets": 1,
-       "type": "atk",
-       "dpr": "1d12 + 6.5",
-       "toHit": 5,
-       "target": "enemy with most HP",
        "ext": {
         "range": 60,
-        "wtDpr": "1d12",
+        "damageType": "lightning",
+        "wtDpr": "2d12",
         "onHit": {
          "dot": {
           "dice": "1d12",
           "upcast": "1d12"
          }
-        },
-        "damageType": "lightning"
-       }
+        }
+       },
+       "type": "atk",
+       "dpr": "2d12",
+       "toHit": 6,
+       "target": "enemy with most HP",
+       "level": 1,
+       "concentration": true,
+       "upcast": "1d12",
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s4"
       },
       {
-       "id": "jw-thl",
-       "name": "Tasha's Hideous Laughter",
-       "level": 1,
-       "upcastTargets": 1,
-       "concentration": true,
+       "name": "Mind Sliver",
        "actionSlot": 0,
        "targets": 1,
+       "ext": {
+        "range": 60,
+        "saveAbility": "int",
+        "damageType": "psychic"
+       },
+       "type": "atk",
+       "dpr": "2d6",
+       "toHit": 14,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s5"
+      },
+      {
+       "name": "Eldritch Blast",
+       "actionSlot": 0,
+       "targets": 2,
+       "ext": {
+        "range": 120,
+        "damageType": "force",
+        "onHit": {
+         "push": 10
+        }
+       },
+       "type": "atk",
+       "dpr": "1d10 + 3",
+       "toHit": 6,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s7"
+      },
+      {
+       "name": "Vampiric Touch",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 5,
+        "damageType": "necrotic",
+        "onHit": {
+         "drain": true
+        }
+       },
+       "type": "atk",
+       "dpr": "3d6",
+       "toHit": 6,
+       "target": "enemy with most HP",
+       "level": 3,
+       "concentration": true,
+       "upcast": "1d6",
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s8"
+      },
+      {
+       "name": "Fear",
+       "actionSlot": 0,
+       "targets": 3,
+       "ext": {
+        "range": 30,
+        "saveAbility": "wis",
+        "area": {
+         "shape": "cone",
+         "size": 30
+        }
+       },
        "type": "debuff",
-       "saveDC": 13,
+       "saveDC": 14,
+       "target": "enemy with highest DPR",
+       "buff": {
+        "duration": "repeat the save each round",
+        "condition": "Frightened"
+       },
+       "level": 3,
+       "concentration": true,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s9"
+      },
+      {
+       "name": "Dissonant Whispers",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 60,
+        "saveAbility": "wis",
+        "damageType": "psychic"
+       },
+       "type": "atk",
+       "dpr": "3d6",
+       "toHit": 14,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "halfOnSave": true,
+       "level": 1,
+       "upcast": "1d6",
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s11"
+      },
+      {
+       "name": "Phantasmal Force",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 60,
+        "saveAbility": "int",
+        "damageType": "psychic",
+        "wtDpr": "2d8",
+        "dot": {
+         "dice": "2d8"
+        }
+       },
+       "type": "atk",
+       "dpr": "4d8",
+       "toHit": 14,
+       "useSaves": true,
+       "target": "enemy with most HP",
+       "level": 2,
+       "concentration": true,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s12"
+      },
+      {
+       "name": "Tasha's Hideous Laughter",
+       "actionSlot": 0,
+       "targets": 1,
+       "ext": {
+        "range": 30,
+        "saveAbility": "wis",
+        "saveOnDamage": "adv"
+       },
+       "type": "debuff",
+       "saveDC": 14,
        "target": "enemy with highest DPR",
        "buff": {
         "duration": "repeat the save each round",
         "condition": "Incapacitated"
        },
-       "ext": {
-        "range": 30,
-        "saveAbility": "wis",
-        "saveOnDamage": "adv"
-       }
+       "level": 1,
+       "concentration": true,
+       "upcastTargets": 1,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s13"
       },
       {
-       "id": "jw-roe",
-       "name": "Ray of Enfeeblement",
-       "level": 2,
-       "concentration": true,
+       "name": "Sorcerous Burst",
        "actionSlot": 0,
        "targets": 1,
-       "type": "debuff",
-       "saveDC": 13,
-       "target": "enemy with highest DPR",
-       "buff": {
-        "duration": "repeat the save each round",
-        "condition": "Attacks with Disadvantage",
-        "damage": "-1d8"
+       "ext": {
+        "range": 120,
+        "damageType": "acid/cold/fire/lightning/poison/psychic/thunder"
        },
-       "ext": {
-        "range": 60,
-        "saveAbility": "con"
-       }
+       "type": "atk",
+       "dpr": "2d8",
+       "toHit": 6,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s17"
       },
       {
-       "id": "jw-pf",
-       "name": "Phantasmal Force",
-       "level": 2,
-       "concentration": true,
+       "name": "Chill Touch",
        "actionSlot": 0,
        "targets": 1,
-       "type": "atk",
-       "dpr": "4d8",
-       "toHit": 13,
-       "useSaves": true,
-       "target": "enemy with highest DPR",
        "ext": {
-        "range": 60,
-        "saveAbility": "int",
-        "wtDpr": "2d8",
-        "dot": {
-         "dice": "2d8"
-        },
-        "damageType": "psychic"
-       }
+        "range": 120,
+        "damageType": "necrotic"
+       },
+       "type": "atk",
+       "dpr": "2d8",
+       "toHit": 6,
+       "target": "enemy with most HP",
+       "level": 0,
+       "id": "269adf29-1d78-49ba-be98-1e71db9f5504-s18"
       }
-     ]
-    }
+     ],
+     "conSave": 1
+    },
+    "build": "Warlock 5 (Great Old One Patron) · read from D&D Beyond"
    },
    "actions": [
     {
@@ -1404,7 +1439,7 @@
      "targets": 1,
      "type": "atk",
      "dpr": "0",
-     "toHit": 13,
+     "toHit": 14,
      "useSaves": true,
      "target": "enemy with highest DPR",
      "ext": {
@@ -1423,7 +1458,7 @@
      "actionSlot": 0,
      "freq": {
       "reset": "lr",
-      "uses": 2
+      "uses": 3
      },
      "condition": "default",
      "targets": 1,
@@ -1440,6 +1475,9 @@
       "damageType": "piercing"
      }
     }
+   ],
+   "_notes": [
+    "Not in its spell list (no rules for them yet): Prestidigitation, Invisibility, Detect Thoughts, Clairvoyance, Hunger Of Hadar, Message, Water Breathing, Mage Hand."
    ]
   },
   {
