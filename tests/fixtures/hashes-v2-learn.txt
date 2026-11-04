@@ -30,7 +30,7 @@ default party vs bandit-day | walled | regular | 500 | 38340e976cec
 default party vs bandit-day | walled | regular | 8419 | 52236fd933df
 default party vs bandit-day | walled | regular | 16338 | a366f0201955
 default party vs bandit-day | walled | regular | 24257 | 8b804414a8b7
-casters vs goblins / ogres / mage | open | tactical | 500 | 347ab2d863ac
+casters vs goblins / ogres / mage | open | tactical | 500 | 2f117c7d31c0
 casters vs goblins / ogres / mage | open | tactical | 8419 | e64b46db7945
 casters vs goblins / ogres / mage | open | tactical | 16338 | a0a467176c3e
 casters vs goblins / ogres / mage | open | tactical | 24257 | 04d504bcf8e0
@@ -40,7 +40,7 @@ casters vs goblins / ogres / mage | open | regular | 16338 | a7160f344b77
 casters vs goblins / ogres / mage | open | regular | 24257 | eec5f1bf3c90
 casters vs goblins / ogres / mage | walled | tactical | 500 | 967858a69d15
 casters vs goblins / ogres / mage | walled | tactical | 8419 | 533e5ed9e90a
-casters vs goblins / ogres / mage | walled | tactical | 16338 | e54254e2e8b3
+casters vs goblins / ogres / mage | walled | tactical | 16338 | c107eb9d3521
 casters vs goblins / ogres / mage | walled | tactical | 24257 | 65e236e40665
 casters vs goblins / ogres / mage | walled | regular | 500 | 94f99c0d9b02
 casters vs goblins / ogres / mage | walled | regular | 8419 | 0cf75def1fb0

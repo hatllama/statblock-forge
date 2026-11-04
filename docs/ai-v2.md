@@ -1011,6 +1011,37 @@ them; untyped damage counts, as the engine cannot tell). Attack-roll damage now 
 set it on Uncanny Dodge (`roll`) and Deflect Attacks (`roll`, bludgeoning / piercing / slashing); `parties/zaki-party-level-5.json` gets it too, and a
 saved workspace is updated by name (`PARTY_FN_UPDATES[13]`). Both AIs' logs move where these reactions met a save or a fire ray.
 
+### A death is the worst thing a heal can prevent (same log, Faithwalker's Cure Wounds)
+
+**What happened.** Faithwalker healed Tacitus (one death-save failure) while Eldar stood at two. Set up with both in reach, the "death it avoids" part
+did rank Eldar first (67.5% to die against 43.5%), but a death was worth `w.backLife` 40 points, while each one's rounds back for the fight came to about
+1,460 (Tacitus) and 650 (Eldar). The stronger ally won whatever the failures, and the term measured a death over the whole fight, where the healer
+can still reach the other one next turn.
+
+**The change.** Two parts, both in `v2BackUp`.
+- *A death costs what a dead PC loses*: its rounds for the rest of this fight and, for a party member, the fights left today, plus a life that a heal
+  will not bring back (`w.deathLife`; a death needs Revivify or worse, not a Healing Word): `dead = round × (rounds left + w.deathDay × fights left × w.deathFightRounds) × w.backRound + w.deathLife`.
+- *Urgency*: the chance it dies before this healer's next turn (`deathOdds` over one round, attacks included) times `dead`, weighted `w.deathNow`. The
+  rest of the old "saved" term stays as it was. Two downed allies: the one about to die now carries most of its whole worth; the one who can wait carries little.
+New weights: `w.deathNow`, `w.deathLife`, `w.deathDay`, `w.deathFightRounds`. Harness: `D10` (two downed, the weaker one at two failures) and `D11`
+(the same, the stronger one at two).
+
+**The weight.** The rounds-back term counts the whole fight for whichever ally is healed, though the other will usually be reached next turn, so the
+urgency term has to outweigh a strong ally's head start. Set up with both in reach, the dying one is ranked first from `deathNow` 3 (Tacitus against
+Eldar) and from 6–8 (a Fighter against a Wizard). On the downed rows the weight is flat from 1 to 8 (D10 learn 77 / 77 / 76 / 76 for 1, 3, 6, 8), so 8, the
+value that ranks the dying ally first in both scenes.
+
+**Results** (200 runs, same seeds, `deathNow` 8 against 0):
+
+| | D10 | D11 | D10 deaths | D8 deaths |
+|---|---|---|---|---|
+| learn | 72 → 76 | 71.5 → 73.5 | 0.65 → 0.54 | 0.45 → 0.51 |
+| open | 71.5 → 79 | 72.5 → 75.5 | 0.68 → 0.57 | 0.42 → 0.48 |
+| blind | 73.5 → 77 | 69 → 74.5 | 0.54 → 0.51 | 0.50 → 0.46 |
+
+All 104 rows per mode against the tip: 0 worse and 0 better beyond 2 SE (means 76.2 → 76.4, 79.3 → 79.4, 71.3 → 71.3). Downed allies healed: learn 85.6 →
+86.6%, open 81.3 → 82.3%, blind 84.3 → 85.4%. D8's deaths lean up in learn and open, inside the noise. Logs: old AI unchanged; v2 2 of 96, v2 learn 2 of 96.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |

@@ -3356,6 +3356,9 @@ const AI_BASE = {
     // a downed ally back up (v2BackUp, docs/ai-v2.md): its value per round; the turn it may get even if it drops again; foes beside it turning on it; the blow it soaks for someone else; what a healer's round is worth;
     // a life in points, more per fight still to come; the chance a round an adjacent foe finishes it, first time down and after a second drop
     backRound: 4, backFirst: 0.75, backFocus: 1, backSoak: 0.5, backHealer: 10, backLife: 40, backDay: 0.25, backFinish: 0.1, backFinish2: 0.4,
+    // a downed ally about to die (docs/ai-v2.md): the chance it dies before this healer's next turn × what a dead PC loses (its rounds here and,
+    // for each fight left today, deathFightRounds more × deathDay; a life no ordinary heal brings back), × deathNow
+    deathNow: 8, deathLife: 200, deathDay: 1, deathFightRounds: 4,
     buff: 1, buffRounds: 2, zone: 2,                             // buffs on allies (per round × rounds, counted this many rounds ahead at most); difficult ground
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
@@ -3976,7 +3979,10 @@ Sim.prototype.v2BackUp = function (u, a, t, ctx, amt) {
   const round = this.v2RoundWorth(u, t, ctx), soak = Math.max(0, hit - hp) * W.backSoak;
   const life = W.backLife * (1 + W.backDay * (t.team === 'party' ? this.leftFor(u) : 0));
   const saved = deathOdds(t.deathS || 0, t.deathF || 0, ctx.rounds, Math.min(1, W.backFinish * adj.length), t.stable) - pDrop * deathOdds(0, 0, ctx.rounds, Math.min(1, W.backFinish2 * adj.length));
-  return round * turns * W.backRound + soak + life * Math.max(0, saved);
+  // dying before our next turn: a dead PC needs Revivify or worse, not a Healing Word
+  const left = t.team === 'party' ? this.leftFor(u) : 0, dead = round * (ctx.rounds + W.deathDay * left * W.deathFightRounds) * W.backRound + W.deathLife;
+  const now = deathOdds(t.deathS || 0, t.deathF || 0, 1, Math.min(1, W.backFinish * adj.length), t.stable);
+  return round * turns * W.backRound + soak + life * Math.max(0, saved) + W.deathNow * now * dead;
 };
 /* damage heading for ally o next round, as u's side reckons it */
 Sim.prototype.v2Pressure = function (u, o, ctx) {

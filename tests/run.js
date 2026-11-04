@@ -1524,5 +1524,36 @@ section('Reactions that need an attack roll (Uncanny Dodge, Deflect Attacks)');
   check(hit(gol, { attack: true, a: A('fire') }) === 20, "a reaction without limits (Stone's Endurance) still works on save damage");
 }
 
+section('AI v2: the ally about to die comes first (Adult Red Dragon log, Faithwalker)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const ogre = { id: 'Ogre', name: 'Ogre', mode: 'custom', hp: 120, AC: 12, saveBonus: 1, count: 1, speed: 30, actions: [{ id: 'o1', name: 'Club', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '13', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] };
+  const proto = Tac.Sim.prototype, turn = proto.turn, probe = {};
+  proto.turn = function (u) {
+    if (!probe.done && u.name === 'Cleric') {
+      probe.done = true;
+      const F = this.units.find(o => o.name === 'Fighter'), Wz = this.units.find(o => o.name === 'Wizard'), o = this.units.find(x => x.team === 'foes');
+      for (const t of [F, Wz]) { this.downPC(t); t.deathS = 1; }
+      u.x = 5; u.y = 5; F.x = 4; F.y = 6; Wz.x = 6; Wz.y = 6; o.x = 15; o.y = 10;
+      const c2 = this.v2Ctx(u, 30), cw = Tac.castCopy(u.actions.find(a => a.name === 'Cure Wounds'), 1);
+      const val = () => [this.v2AllyValue(u, cw, F, c2), this.v2AllyValue(u, cw, Wz, c2)];
+      F.deathF = 1; Wz.deathF = 2; probe.wizNear = val();
+      F.deathF = 2; Wz.deathF = 1; probe.fighterNear = val();
+      F.deathF = 0; Wz.deathF = 0; probe.even = val();
+      const w = u.v2P.w, keep = w.deathNow; w.deathNow = 0; F.deathF = 1; Wz.deathF = 2; probe.off = val(); w.deathNow = keep;
+    }
+    return turn.call(this, u);
+  };
+  Tac.runDay({ players: [build('Cleric'), build('Fighter'), build('Wizard')], encounters: [{ monsters: [cp(ogre)] }] }, { seed: 6, partyAI: 'tactical', ai: { party: 'v2' } });
+  proto.turn = turn;
+  const f1 = p => p.map(x => x.toFixed(0)).join(' / ');
+  check(probe.wizNear[1] > probe.wizNear[0], `the Wizard at two failures comes before the Fighter at one (Fighter / Wizard ${f1(probe.wizNear)})`);
+  check(probe.fighterNear[0] > probe.fighterNear[1], `and the other way round, the Fighter at two failures first (${f1(probe.fighterNear)})`);
+  check(probe.even[0] > probe.even[1], `with no failures the stronger ally first (${f1(probe.even)})`);
+  check(probe.off[0] > probe.off[1], `with the term off (deathNow 0) the stronger ally won whatever the failures (${f1(probe.off)})`);
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

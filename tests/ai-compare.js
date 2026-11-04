@@ -405,13 +405,13 @@ const withPotions = (p, n) => {
   return p;
 };
 const zaki = () => clone(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players);
-// DOWN_NOW: the names knocked to 0 HP as the day's first fight starts
+// DOWN_NOW: the names knocked to 0 HP as the day's first fight starts ('Wizard:2' also gives it two death-save failures)
 let DOWN_NOW = null, KILL_NOW = null;     // KILL_NOW: the same, dead
 const realTurn = Tac.Sim.prototype.turn;
 Tac.Sim.prototype.turn = function (u) {
   if (DOWN_NOW && this.fightNo === 0 && !this._downDone) {
     this._downDone = true;
-    for (const o of this.units) if (o.team === 'party' && DOWN_NOW.some(n => o.name.indexOf(n) === 0)) this.downPC(o);
+    for (const o of this.units) for (const n of DOWN_NOW) { const [nm, f] = n.split(':'); if (o.team === 'party' && o.name.indexOf(nm) === 0) { this.downPC(o); o.deathF = +f || 0; } }
   }
   if (KILL_NOW && this.fightNo === 0 && !this._killDone) {
     this._killDone = true;
@@ -437,6 +437,8 @@ const DOWN_SCENARIOS = [
   { name: "D7 Zaki's party, Kraax down, vs 2 Hill Giants + 4 Ogres + 6 Gnoll Warriors", players: zaki, encounters: () => fights('Hill Giant*2,Ogre*4,Gnoll Warrior*6'), down: ['Kraax'] },
   { name: "D8 Zaki's party, Faithwalker down, vs 2 Hill Giants + 4 Ogres + 6 Gnoll Warriors", players: zaki, encounters: () => fights('Hill Giant*2,Ogre*4,Gnoll Warrior*6'), down: ['Faithwalker'] },
   { name: "D9 Zaki's party vs hard-day.json", players: zaki, encounters: () => clone(fixture('hard-day.json').encounters) },
+  { name: 'D10 two downed, the Wizard at two failures, the Fighter at none; Cleric, Bard, Rogue vs 2 Hill Giants + 3 Ogres', party: ['Fighter', 'Wizard', 'Cleric', 'Bard', 'Rogue'], day: 'Hill Giant*2,Ogre*3', down: ['Fighter', 'Wizard:2'] },
+  { name: 'D11 the same, the Fighter at two failures, the Wizard at none', party: ['Fighter', 'Wizard', 'Cleric', 'Bard', 'Rogue'], day: 'Hill Giant*2,Ogre*3', down: ['Fighter:2', 'Wizard'] },
 ];
 /* DOWNED=1: per downed ally, did a v2 creature that could have healed it do so? A chance = a turn of a standing creature with a
    heal in reach of it (move + range, line of sight not checked); an event = one time at 0 HP with at least one chance */
