@@ -158,6 +158,16 @@ function areaCells(spec, ox, oy, tx, ty, W, H) {
   const add = (x, y) => { if (x >= 0 && y >= 0 && x < W && y < H) out.push([x, y]); };
   const n = Math.round(spec.size / 5);
   const R2 = (n + 0.45) * (n + 0.45);
+  if (spec.shape === 'emanation' && (spec.bn || 1) > 1) {
+    // from a big creature: measured from the edge of its body (spec.bn squares across, top-left on ox,oy), which it doesn't catch
+    const x1 = ox + spec.bn - 1, y1 = oy + spec.bn - 1;
+    for (let y = oy - n; y <= y1 + n; y++) for (let x = ox - n; x <= x1 + n; x++) {
+      const dx = x < ox ? ox - x : x > x1 ? x - x1 : 0, dy = y < oy ? oy - y : y > y1 ? y - y1 : 0;
+      if (!dx && !dy) continue;
+      if (spec.square || dx * dx + dy * dy <= R2) add(x, y);
+    }
+    return out;
+  }
   if (spec.shape === 'emanation' || spec.shape === 'sphere') {
     const cx = spec.shape === 'emanation' ? ox : tx, cy = spec.shape === 'emanation' ? oy : ty;
     for (let y = cy - n; y <= cy + n; y++) for (let x = cx - n; x <= cx + n; x++) {
@@ -217,6 +227,13 @@ function dir8(vx, vy) {
 /* whether square (x,y) is inside the area — the same templates as areaCells, for one square */
 function inArea(spec, ox, oy, tx, ty, x, y) {
   const n = Math.round(spec.size / 5);
+  if (spec.shape === 'emanation' && (spec.bn || 1) > 1) {
+    const x1 = ox + spec.bn - 1, y1 = oy + spec.bn - 1;
+    const dx = x < ox ? ox - x : x > x1 ? x - x1 : 0, dy = y < oy ? oy - y : y > y1 ? y - y1 : 0;
+    if (!dx && !dy) return false;
+    if (spec.square) return dx <= n && dy <= n;
+    return dx * dx + dy * dy <= (n + 0.45) * (n + 0.45);
+  }
   if (spec.shape === 'emanation' || spec.shape === 'sphere') {
     if (spec.shape === 'emanation' && x === ox && y === oy) return false;
     const cx = spec.shape === 'emanation' ? ox : tx, cy = spec.shape === 'emanation' ? oy : ty;
@@ -539,7 +556,10 @@ Sim.prototype.airborne = function (u) {
 Sim.prototype.flyMap = function () {
   if (this._flyMapVer === this.posVer && this._flyMap && this._flyMap.length === this.W * this.H) return this._flyMap;
   const m = new Uint8Array(this.W * this.H);
-  for (const u of this.units || []) if (u.alt > 0 && u.onBoard && !u.dead) m[u.x + u.y * this.W] = Math.max(m[u.x + u.y * this.W], u.alt);
+  for (const u of this.units || []) if (u.alt > 0 && u.onBoard && !u.dead) {
+    const n = u.n || 1;
+    for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) { const x = u.x + i, y = u.y + j; if (x < this.W && y < this.H) m[x + y * this.W] = Math.max(m[x + y * this.W], u.alt); }
+  }
   this._flyMap = m; this._flyMapVer = this.posVer;
   return m;
 };
@@ -597,12 +617,46 @@ Sim.prototype.los = function (x0, y0, x1, y1, solid, air0, air1) {
   cache.set(key, ok);
   return ok;
 };
+/* line of sight between two bodies (side n0 with its top-left on x0,y0; side n1 on x1,y1): clear from any square of one to any
+   square of the other. The top-left pair goes first, so a Medium creature's test is the plain one */
+Sim.prototype.losB = function (x0, y0, n0, x1, y1, n1, solid, air0, air1) {
+  if (this.los(x0, y0, x1, y1, solid, air0, air1)) return true;
+  const a = n0 || 1, b = n1 || 1;
+  if (a + b === 2) return false;
+  const W = this.W, H = this.H;
+  // the answer for a big body is kept until anyone moves (who is up in the air changes the sight lines)
+  if (this._lbVer !== this.posVer || !this._lbC) { this._lbC = new Map(); this._lbVer = this.posVer; }
+  const ak = (air0 === undefined ? 0 : Math.min(127, +air0 || 0) + 1) * 130 + (air1 === undefined ? 0 : Math.min(127, +air1 || 0) + 1);
+  const key = ((((x0 + y0 * W) * 4096 + (x1 + y1 * W)) * 25 + a * 5 + b) * 2 + (solid ? 1 : 0)) * 17000 + ak;
+  const hit = this._lbC.get(key);
+  if (hit !== undefined) return hit;
+  let ok = false;
+  for (let j0 = 0; !ok && j0 < a; j0++) for (let i0 = 0; !ok && i0 < a; i0++) {
+    const p = x0 + i0, q = y0 + j0;
+    if (p >= W || q >= H) continue;
+    for (let j1 = 0; !ok && j1 < b; j1++) for (let i1 = 0; i1 < b; i1++) {
+      const r = x1 + i1, s = y1 + j1;
+      if ((!i0 && !j0 && !i1 && !j1) || r >= W || s >= H) continue;
+      if (this.los(p, q, r, s, solid, air0, air1)) { ok = true; break; }
+    }
+  }
+  this._lbC.set(key, ok);
+  return ok;
+};
+Sim.prototype.losU = function (a, b, solid) { return this.losB(a.x, a.y, a.n, b.x, b.y, b.n, solid); };
 /* half cover (+2 AC, +2 Dex saves) when something waist-high lies between: a low wall, or ground raised
    at least 5 ft above the line along the floor (a 5-ft ledge or crate). Higher ground that blocks the eye
    line is total cover instead (los). Shooting down from above clears it. */
 Sim.prototype.coverAC = function (a, t) {
   if (!this.T.any || this.dist(a, t) <= 5) return 0;
-  return this.coverBetween(a.x, a.y, t.x, t.y, a.alt || 0, t.alt || 0);
+  let v = this.coverBetween(a.x, a.y, t.x, t.y, a.alt || 0, t.alt || 0);
+  const an = a.n || 1, tn = t.n || 1;
+  // a big body: the least cover over its squares and the target's (the attacker picks its corner)
+  for (let j0 = 0; v && j0 < an; j0++) for (let i0 = 0; v && i0 < an; i0++) for (let j1 = 0; v && j1 < tn; j1++) for (let i1 = 0; v && i1 < tn; i1++) {
+    const p = a.x + i0, q = a.y + j0, r = t.x + i1, s = t.y + j1;
+    if (p < this.W && q < this.H && r < this.W && s < this.H) v = Math.min(v, this.coverBetween(p, q, r, s, a.alt || 0, t.alt || 0));
+  }
+  return v;
 };
 Sim.prototype.coverBetween = function (x0, y0, x1, y1, air0, air1) {
   const T = this.T;
@@ -627,8 +681,9 @@ Sim.prototype.coverBetween = function (x0, y0, x1, y1, air0, air1) {
 };
 Sim.prototype.canSee = function (x, y, t) {
   // a flyer planning its turn can go up to look over things
-  if (this._flyer) return this.los(x, y, t.x, t.y, false, this._flyer.alt || 0, t.alt || 0) || this.los(x, y, t.x, t.y, false, Math.max(FLY_LIFT, this._flyer.alt || 0), t.alt || 0);
-  return this.los(x, y, t.x, t.y, false, 0, t.alt || 0);
+  const n = this._mn || 1, tn = t.n || 1;
+  if (this._flyer) return this.losB(x, y, n, t.x, t.y, tn, false, this._flyer.alt || 0, t.alt || 0) || this.losB(x, y, n, t.x, t.y, tn, false, Math.max(FLY_LIFT, this._flyer.alt || 0), t.alt || 0);
+  return this.losB(x, y, n, t.x, t.y, tn, false, 0, t.alt || 0);
 };
 /* Hiding (2024): only out of every enemy's line of sight (walls, high ground, heavy obscurement).
    Blindsight within 30 ft still finds you. */
@@ -637,7 +692,7 @@ Sim.prototype.concealedAt = function (u, x, y) {
   if (!this.units.some(e => e.team !== u.team && e.onBoard && this.alive(e))) return false;    // nobody left to hide from
   for (const e of this.units) {
     if (e.team === u.team || !e.onBoard || !this.alive(e) || this.incap(e) || this.has(e, ['Blinded'])) continue;
-    if (this.los(e.x, e.y, x, y) || (e.blindsight && this.distXY(x, y, e) <= 30)) return false;
+    if (this.losB(e.x, e.y, e.n, x, y, u.n) || (e.blindsight && this.distXY(x, y, e) <= 30)) return false;
   }
   return true;
 };
@@ -760,14 +815,15 @@ Sim.prototype.cellsFor = function (spec, ox, oy, ax, ay, cx, cy) {
   const fromPoint = spec.shape === 'sphere' || (spec.shape === 'cube' && spec.placed);
   let key;
   if (fromPoint) key = spec.shape + spec.size + 'p' + ax + ',' + ay;
-  else if (spec.shape === 'emanation') key = (spec.square ? 'q' : 'e') + spec.size + ',' + ox + ',' + oy;
+  else if (spec.shape === 'emanation') key = (spec.square ? 'q' : 'e') + spec.size + ',' + ox + ',' + oy + ((spec.bn || 1) > 1 ? 'b' + spec.bn : '');
   else if (spec.shape === 'cube') key = 'c' + spec.size + ',' + ox + ',' + oy + ',' + ax + ',' + ay;
   else { const d = dir8(ax - ox, ay - oy); key = spec.shape + spec.size + 'w' + (spec.width || 5) + ',' + ox + ',' + oy + ',' + d[0] + ',' + d[1]; }
   const C = this.T.cellC || (this.T.cellC = new Map());
   let cells = C.get(key);
   if (!cells) {
     cells = areaCells(spec, ox, oy, ax, ay, this.W, this.H);
-    if (this.T.any) cells = cells.filter(([x, y]) => !this.T.wall[x + y * this.W] && this.los(cx, cy, x, y, true));
+    const bn = !fromPoint && spec.shape === 'emanation' ? spec.bn || 1 : 1;    // a big creature's emanation: from any square of its body
+    if (this.T.any) cells = cells.filter(([x, y]) => !this.T.wall[x + y * this.W] && this.losB(cx, cy, bn, x, y, 1, true));
     if (C.size > 40000) C.clear();
     C.set(key, cells);
   }
@@ -780,12 +836,12 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
   const cx = fromPoint ? ax : ox, cy = fromPoint ? ay : oy;
   let isIn, cells = null;
   if (fast) {
-    const W = this.W, inb = (x, y) => x >= 0 && y >= 0 && x < W && y < this.H;
+    const W = this.W, inb = (x, y) => x >= 0 && y >= 0 && x < W && y < this.H, bn = !fromPoint && spec.shape === 'emanation' ? spec.bn || 1 : 1;
     isIn = o => {
       const on = o.n || 1;
       for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) {
         const px = o.x + i, py = o.y + j;
-        if (inb(px, py) && inArea(spec, ox, oy, ax, ay, px, py) && (!this.T.any || (!this.T.wall[px + py * W] && this.los(cx, cy, px, py, true)))) return true;
+        if (inb(px, py) && inArea(spec, ox, oy, ax, ay, px, py) && (!this.T.any || (!this.T.wall[px + py * W] && this.losB(cx, cy, bn, px, py, 1, true)))) return true;
       }
       return false;
     };
@@ -793,15 +849,21 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
     cells = this.cellsFor(spec, ox, oy, ax, ay, cx, cy);
     const N = this.W * this.H;
     if (!this._mark || this._mark.length !== N) { this._mark = new Int32Array(N); this._stamp = 0; }
-    const st = ++this._stamp, mark = this._mark, W = this.W;
+    const st = ++this._stamp, mark = this._mark, W = this.W, H = this.H;
     for (const c of cells) mark[c[0] + c[1] * W] = st;
-    isIn = o => mark[o.x + o.y * W] === st;
+    // any square of a body counts (a big creature caught by its corner is caught)
+    isIn = o => {
+      if (mark[o.x + o.y * W] === st) return true;
+      const on = o.n || 1;
+      for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) if ((i || j) && o.x + i < W && o.y + j < H && mark[(o.x + i) + (o.y + j) * W] === st) return true;
+      return false;
+    };
   }
   // height: a burst is set off at its target's height and reaches as far up and down as out; cones and lines
   // tilt from the creature towards their target and are as thick as they are wide there
   if (this.T.anyH || this.units.some(o => o.alt > 0)) {
     const n = Math.max(1, Math.round(spec.size / 5));
-    const zO = (this.T.anyH ? this.T.h[ox + oy * this.W] : 0) + (caster && caster.x === ox && caster.y === oy ? (caster.alt || 0) : (caster && this._flyer === caster ? (caster.alt || 0) : 0));
+    const zO = (this.T.anyH ? this.T.h[ox + oy * this.W] : 0) + (caster && ((caster.x === ox && caster.y === oy) || spec.atSelf) ? (caster.alt || 0) : (caster && this._flyer === caster ? (caster.alt || 0) : 0));
     let vert;
     if (fromPoint || spec.shape === 'emanation' || spec.shape === 'cube') {
       const zC = fromPoint ? this.zOf(t) : zO;
@@ -822,7 +884,7 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
   if (caster && !(a.ext && a.ext.area && a.ext.area.selective) && !(a.ext && a.ext.zone && a.ext.zone.fog)) {
     friends = this.alliesOf(caster).filter(o => o.onBoard && !o.dead && !o.swallowedBy && isIn(o) && (o !== caster || spec.shape === 'sphere'));
   }
-  return { spec, cells, extra, friends, ax, ay };
+  return { spec, cells, extra, friends, ax, ay, ox, oy };
 };
 /* Cones and lines: try each of the 8 grid directions that reaches t and keep the one that catches the most
    enemies and the fewest allies (ties go to the direction closest to t's bearing). If none reaches t from
@@ -840,23 +902,54 @@ Sim.prototype.aimScore = function (a, caster, extra, friends, memo) {
   if (friends.length) v -= this.friendPenalty(caster, a, friends);
   return v;
 };
+/* the squares a big creature (side bn, top-left on ox,oy) can start a cone, line or cube from: the edge of its body */
+const bodyEdge = (ox, oy, bn) => {
+  const out = [];
+  for (let j = 0; j < bn; j++) for (let i = 0; i < bn; i++) if (!i || !j || i === bn - 1 || j === bn - 1) out.push([ox + i, oy + j]);
+  return out;
+};
+/* does an area from (px,py) aimed at (ax,ay) cover any square of a body (side bn, top-left on bx,by)? */
+const areaOnBody = (spec, px, py, ax, ay, bx, by, bn) => {
+  for (let j = 0; j < bn; j++) for (let i = 0; i < bn; i++) if (inArea(spec, px, py, ax, ay, bx + i, by + j)) return true;
+  return false;
+};
 Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
-  const n = Math.max(1, Math.round(spec.size / 5)), bear = Math.atan2(t.y - oy, t.x - ox);
+  const n = Math.max(1, Math.round(spec.size / 5)), bn = caster ? caster.n || 1 : 1, tn = t.n || 1;
+  // a big creature's breath starts from any square on the edge of its body, pointing out of it (it never covers its own squares)
+  const origins = bn > 1 ? bodyEdge(ox, oy, bn) : [[ox, oy]];
+  const sp = bn > 1 ? Object.assign({}, spec, { atSelf: caster.x === ox && caster.y === oy }) : spec;
   let best = null, bs = -Infinity;
   const memo = new Map();
-  for (let k = 0; k < 8; k++) {
-    const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4));
-    const ax = ox + sx * n, ay = oy + sy * n;
-    if (!inArea(spec, ox, oy, ax, ay, t.x, t.y)) continue;
-    const r = this.areaAt(a, spec, t, ox, oy, ax, ay, pool, caster, true);
+  for (const [px, py] of origins) {
+    const bear = Math.atan2(t.y - py, t.x - px);
+    for (let k = 0; k < 8; k++) {
+      const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4));
+      const ax = px + sx * n, ay = py + sy * n;
+      if (tn > 1 ? !areaOnBody(sp, px, py, ax, ay, t.x, t.y, tn) : !inArea(sp, px, py, ax, ay, t.x, t.y)) continue;
+      if (bn > 1 && areaOnBody(sp, px, py, ax, ay, ox, oy, bn)) continue;
+      const r = this.areaAt(a, sp, t, px, py, ax, ay, pool, caster, true);
+      if (!r) continue;
+      let off = Math.abs(k * Math.PI / 4 - bear) % (2 * Math.PI); if (off > Math.PI) off = 2 * Math.PI - off;
+      const sc = this.aimScore(a, caster, r.extra, r.friends, memo) - off * 0.01;
+      if (sc > bs) { best = r; bs = sc; }
+    }
+  }
+  if (best) return this.areaAt(a, sp, t, best.ox, best.oy, best.ax, best.ay, pool, caster) || best;
+  if (caster) return null;
+  return { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y, ox, oy };
+};
+/* a cube that starts next to a big creature (Thunderwave from a Large caster): any square on its body's edge, the cube clear of the body */
+Sim.prototype.aimCubeFrom = function (a, spec, t, ox, oy, pool, caster) {
+  const bn = caster.n, sp = Object.assign({}, spec, { atSelf: caster.x === ox && caster.y === oy }), memo = new Map();
+  let best = null, bs = -Infinity;
+  for (const [px, py] of bodyEdge(ox, oy, bn)) {
+    if (areaOnBody(sp, px, py, t.x, t.y, ox, oy, bn)) continue;
+    const r = this.areaAt(a, sp, t, px, py, t.x, t.y, pool, caster, true);
     if (!r) continue;
-    let off = Math.abs(k * Math.PI / 4 - bear) % (2 * Math.PI); if (off > Math.PI) off = 2 * Math.PI - off;
-    const sc = this.aimScore(a, caster, r.extra, r.friends, memo) - off * 0.01;
+    const sc = this.aimScore(a, caster, r.extra, r.friends, memo) - (Math.abs(px - t.x) + Math.abs(py - t.y)) * 0.01;
     if (sc > bs) { best = r; bs = sc; }
   }
-  if (best) return this.areaAt(a, spec, t, ox, oy, best.ax, best.ay, pool, caster) || best;
-  if (caster) return null;
-  return { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y };
+  return best ? this.areaAt(a, sp, t, best.ox, best.oy, t.x, t.y, pool, caster) || best : null;
 };
 /* Who an area aimed at t catches, besides t. With a caster given, it also looks for a better aim that still
    catches t: a sphere's point can sit anywhere within range that keeps t inside, a cone or line can swing
@@ -865,8 +958,11 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
   const spec = areaSpec(a);
   if (!spec) return null;
   if (spec.shape === 'cone' || spec.shape === 'line') return this.aimStraight(a, spec, t, ox, oy, pool, caster);
+  const bn = caster ? caster.n || 1 : 1;
+  if (bn > 1 && spec.shape === 'emanation') spec.bn = bn;                       // from the edge of a big creature's body
+  if (bn > 1 && spec.shape === 'cube' && !spec.placed) { const c = this.aimCubeFrom(a, spec, t, ox, oy, pool, caster); if (c) return c; }
   let best = this.areaAt(a, spec, t, ox, oy, t.x, t.y, pool, caster);
-  if (!best) best = { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y };   // walls in the way: just the target
+  if (!best) best = { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y, ox, oy };   // walls in the way: just the target
   if (!caster || !spec.explicit || spec.shape === 'emanation' || (spec.shape === 'cube' && !spec.placed)) return best;
   // Where a burst can be set down to keep t inside, and who each spot would catch, doesn't depend on where the
   // caster stands (only range and line of sight do): worked out once per board position, then scored per caster.
@@ -1145,7 +1241,9 @@ Sim.prototype.reachMapRaw = function (u, budgetFt) {
   const W = this.W, H = this.H;
   const dist = new Int16Array(W * H).fill(-1), prev = new Int32Array(W * H).fill(-1);
   const block = new Uint8Array(W * H);   // 1 = standing enemy (can't pass)
-  for (const o of this.units) if (o !== u && o.onBoard && !o.dead && o.team !== u.team && this.alive(o)) {
+  // a hostile creature's space can be passed if it is Tiny or two sizes apart (2024 rule); an ally's always
+  const us = sizeIdx(u.size, 2);
+  for (const o of this.units) if (o !== u && o.onBoard && !o.dead && o.team !== u.team && this.alive(o) && o.size !== 'Tiny' && Math.abs(sizeIdx(o.size, 2) - us) < 2) {
     const on = o.n || 1;
     for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) if (o.x + i < W && o.y + j < H) block[(o.x + i) + (o.y + j) * W] = 1;
   }
@@ -1241,7 +1339,7 @@ Sim.prototype.gapTo = function (x, y, n, b) {
 Sim.prototype.adjacentEnemies = function (u, x, y, alt) {
   const zm = (this.T.anyH ? this.T.h[x + y * this.W] : 0) + (alt !== undefined ? alt : (u.alt || 0));
   return this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !this.incap(e) && this.meleeReach(e) > 0 &&
-    Math.max(this.gapTo(x, y, u.n, e), Math.abs(this.zOf(e) - zm)) * 5 <= this.meleeReach(e) && this.los(e.x, e.y, x, y));   // a reach weapon can't strike round a wall corner
+    Math.max(this.gapTo(x, y, u.n, e), Math.abs(this.zOf(e) - zm)) * 5 <= this.meleeReach(e) && this.losB(e.x, e.y, e.n, x, y, u.n));   // a reach weapon can't strike round a wall corner
 };
 
 /* ----- expected outcomes, used by the tactical AI ----- */
@@ -2082,7 +2180,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
     for (const ti of threatInfo) {
       const d = this.distXY(x, y, ti.e);
       if (ti.zone) { if (ti.zone[x + y * this.W]) t += ti.dmg / (1 + ti.others); }
-      else if (d <= ti.reach) t += ti.dmg / (1 + ti.others) * (this.T.any && !this.los(ti.e.x, ti.e.y, x, y) ? 0.4 : 1);
+      else if (d <= ti.reach) t += ti.dmg / (1 + ti.others) * (this.T.any && !this.losB(ti.e.x, ti.e.y, ti.e.n, x, y, u.n) ? 0.4 : 1);
       for (const au of ti.aura) if (d <= au.r) t += au.d;
     }
     return t;
@@ -2206,7 +2304,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
   if (jumpA && (hpFrac < 0.6 || !meleeSelf)) {
     const R = Math.round(jumpA.ext.teleport / 5);
     for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(W - 1, u.x + R); x++) {
-      if ((x === u.x && y === u.y) || taken[x + y * W] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.los(u.x, u.y, x, y)) continue;
+      if ((x === u.x && y === u.y) || taken[x + y * W] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.losB(u.x, u.y, u.n, x, y, u.n)) continue;
       const off = offenseAt(x, y), danger = threatAt(x, y) * safetyW + spacingAt(x, y);
       const cost = (jumpA._spell && jumpA._spell.level ? this.slotCost(u, jumpA._spell.level) : 2) + bonusCost() * 0.5;
       options.push({ mode: 'jump', jumpA, x, y, rm: null, off, score: (off ? off.val : -nearestNeed(x, y) * 0.2) - danger - cost });
@@ -2339,7 +2437,7 @@ Sim.prototype.planInner = function (u, a, budget) {
     if (ac) {
       targets.push(...ac.extra);
       return { friends: ac.friends, dest: { x: d.x, y: d.y }, path: this.pathTo(rm, d.x, d.y), targets, why: ac.extra.length ? (why === 'cluster' || !why ? 'cluster' : why) : why,
-               area: { shape: ac.spec.shape, size: ac.spec.size, ox: d.x, oy: d.y, tx: ac.ax, ty: ac.ay, cells: ac.cells } };
+               area: { shape: ac.spec.shape, size: ac.spec.size, ox: ac.ox !== undefined ? ac.ox : d.x, oy: ac.oy !== undefined ? ac.oy : d.y, tx: ac.ax, ty: ac.ay, cells: ac.cells, bn: ac.spec.bn } };
     }
     if (n > 1 && (a.useSaves || a.type === 'debuff' || a.type === 'buff' || a.type === 'heal')) {
       // area / multi-target: extra creatures clustered near the first one (allies: anyone within range of the caster)
@@ -2564,7 +2662,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   if (hit && !opt.noReact) {
     const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
     const matters = r === 20 || avgHit >= tgt.maxHp * 0.25 || avgHit >= tgt.hp || (a.ext && (a.ext.grapple || a.ext.swallow)) || !!a.riderEffect;
-    const helper = this.alliesOf(tgt).find(h => h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.los(h.x, h.y, att.x, att.y) && (h.ai !== 'tactical' || matters) &&
+    const helper = this.alliesOf(tgt).find(h => h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.losU(h, att) && (h.ai !== 'tactical' || matters) &&
       h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && !(x.ext && x.ext.cancelAction) && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
     if (helper) {
       const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && !(y.ext && y.ext.cancelAction) && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
@@ -2839,7 +2937,7 @@ Sim.prototype.onDamaged = function (tgt, src) {
   if (!tgt.reaction || this.incap(tgt) || tgt.hp <= 0) return;
   for (const a of tgt.actions) {
     if (a.actionSlot !== 4 || !this.usable(tgt, a) || !this.condOk(tgt, a)) continue;
-    if (a.type === 'atk' && src.onBoard && this.alive(src) && this.dist(tgt, src) <= Math.max(5, a._range) && this.los(tgt.x, tgt.y, src.x, src.y)) {
+    if (a.type === 'atk' && src.onBoard && this.alive(src) && this.dist(tgt, src) <= Math.max(5, a._range) && this.losU(tgt, src)) {
       // a levelled reaction spell (Hellish Rebuke) is only worth a slot when the damage matters
       let act = a;
       if (a._spell && a._spell.level) {
@@ -3023,7 +3121,9 @@ Sim.prototype.onHitEffects = function (u, t, a, dealt) {
 /* forced movement: straight away from the source, stopping at walls, creatures and the map edge.
    No opportunity attacks; a drop of 10 ft or more means falling damage (1d6 per 10 ft) and landing prone. */
 Sim.prototype.push = function (src, t, ft) {
-  const dx = Math.sign(t.x - src.x), dy = Math.sign(t.y - src.y);
+  // straight away from the nearest part of the pusher's body (a big pusher doesn't shove sideways what stands in front of it)
+  const tn = t.n || 1, sn = src.n || 1;
+  const dx = gapAxis(t.x, tn, src.x, sn) ? Math.sign(t.x - src.x) : 0, dy = gapAxis(t.y, tn, src.y, sn) ? Math.sign(t.y - src.y) : 0;
   if (!dx && !dy) return;
   const from = { x: t.x, y: t.y }, path = [];
   for (let i = 0; i < Math.round(ft / 5); i++) {
@@ -3052,7 +3152,7 @@ Sim.prototype.leap = function (u, a, t, opt) {
   const done = (opt && opt.leapDone) || new Set([t.uid]);
   if (done.size > max) return;
   if (!opt || !opt.doubles) return;
-  const next = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !done.has(e.uid) && this.dist(e, t) <= (L.range || 30) && this.los(t.x, t.y, e.x, e.y));
+  const next = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && !done.has(e.uid) && this.dist(e, t) <= (L.range || 30) && this.losU(t, e));
   if (!next.length) return;
   const nt = this.orderBySelector(next, a.target)[0];
   done.add(nt.uid);
@@ -3154,7 +3254,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
     const zn = { zid, src: u.uid, id: a.id, cells, rough: !!a.ext.zone.difficult, fog: !!a.ext.zone.fog, conc: !!(a._spell && a._spell.conc) };
     if (a.ext.zone.dmg && a.useSaves) {
       const ar = plan.area;
-      Object.assign(zn, { dmg: true, follow: !!a.ext.zone.follow, spec: { shape: ar.shape, size: ar.size, explicit: true, square: !!ar.square }, act: a,
+      Object.assign(zn, { dmg: true, follow: !!a.ext.zone.follow, spec: { shape: ar.shape, size: ar.size, explicit: true, square: !!ar.square, bn: ar.bn }, act: a,
         spare: !!(a.ext.area && a.ext.area.selective), name: a.name.replace(/ \(L\d\)$/, ''), hit: {},
         until: a._spell && a._spell.conc && u.concentrating === a.id && u.concUntil ? u.concUntil : this.round + ((a.ext.hold) || 10) - 1 });
       for (const t of targets) zn.hit[t.uid] = this.round;
@@ -3665,7 +3765,7 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     for (const ti of info) {
       const d = this.distXY(x, y, ti.e);
       if (ti.zone) { if (ti.zone[x + y * this.W]) t += ti.dmg / (1 + ti.others); }
-      else if (d <= ti.reach) t += ti.dmg / (1 + ti.others) * (this.T.any && !this.los(ti.e.x, ti.e.y, x, y) ? 0.4 : 1);
+      else if (d <= ti.reach) t += ti.dmg / (1 + ti.others) * (this.T.any && !this.losB(ti.e.x, ti.e.y, ti.e.n, x, y, u.n) ? 0.4 : 1);
       for (const au of ti.aura) if (d <= au.r) t += au.d;
     }
     return t;
@@ -3697,7 +3797,7 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     let l = adjC.get(k);
     if (!l) {
       const zm = (this.T.anyH ? this.T.h[k] : 0) + (u.alt || 0);
-      l = oaFoes.filter(e => { const r = this.meleeReach(e); const g = this.gapTo(x, y, u.n, e); return g * 5 <= r && Math.max(g, Math.abs(this.zOf(e) - zm)) * 5 <= r && this.los(e.x, e.y, x, y); });
+      l = oaFoes.filter(e => { const r = this.meleeReach(e); const g = this.gapTo(x, y, u.n, e); return g * 5 <= r && Math.max(g, Math.abs(this.zOf(e) - zm)) * 5 <= r && this.losB(e.x, e.y, e.n, x, y, u.n); });
       adjC.set(k, l);
     }
     return l;
@@ -4553,7 +4653,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   if (jumpA && (engaged || threat(u.x, u.y) >= u.hp * 0.4)) {
     const R = Math.round(jumpA.ext.teleport / 5), jp = this.v2Pace(u, jumpA), noSlot = !!(jumpA._spell && jumpA._spell.level);
     for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(Wd - 1, u.x + R); x++) {
-      if ((x === u.x && y === u.y) || taken[x + y * Wd] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.los(u.x, u.y, x, y)) continue;
+      if ((x === u.x && y === u.y) || taken[x + y * Wd] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.losB(u.x, u.y, u.n, x, y, u.n)) continue;
       const { best } = offAt(x, y, noSlot);
       if (!best) continue;
       const th = threat(x, y), risk = th * safety + ctx.danger.spacing(x, y) * W.spacing + (caster ? reachPen(x, y) : 0) + concR(th);
@@ -4660,7 +4760,7 @@ Sim.prototype.v2Aim = function (u, a, prefer, L) {
   if (!best || (best.ac && best.v <= 0)) return null;
   const t = best.t, ac = best.ac;
   if (ac) return { friends: ac.friends, dest: { x: u.x, y: u.y }, path: [], targets: [t].concat(ac.extra), why: '', castL: L,
-                   area: { shape: ac.spec.shape, size: ac.spec.size, ox: u.x, oy: u.y, tx: ac.ax, ty: ac.ay, cells: ac.cells } };
+                   area: { shape: ac.spec.shape, size: ac.spec.size, ox: ac.ox !== undefined ? ac.ox : u.x, oy: ac.oy !== undefined ? ac.oy : u.y, tx: ac.ax, ty: ac.ay, cells: ac.cells, bn: ac.spec.bn } };
   const targets = [t], n = act.targets || 1;
   if (n > 1 && (act.useSaves || act.type === 'debuff'))
     targets.push(...live.filter(o => o !== t && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10) && this.dist(u, o) <= range).sort((p, q) => this.dist(p, t) - this.dist(q, t)).slice(0, n - 1));
@@ -4874,7 +4974,7 @@ Sim.prototype.turn = function (u) {
       const R = Math.round(j.ext.teleport / 5), foesUp = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
       let bx = null, bd = -1;
       for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(this.W - 1, u.x + R); x++) {
-        if ((x === u.x && y === u.y) || this.occupant(x, y, u.n, u) || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.los(u.x, u.y, x, y)) continue;
+        if ((x === u.x && y === u.y) || this.occupant(x, y, u.n, u) || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.losB(u.x, u.y, u.n, x, y, u.n)) continue;
         const d = Math.min(...foesUp.map(e => this.distXY(x, y, e)));
         if (d > bd) { bd = d; bx = { x, y }; }
       }
@@ -5090,12 +5190,12 @@ Sim.prototype.endTurn = function (u) {
     if ((a.actionSlot !== 5 && a.actionSlot !== 6) || a.type === 'buff' || a.type === 'heal' || !this.usable(u, a) || !this.condOk(u, a)) continue;
     if (u.dead || u.hp <= 0 || u.swallowedBy) break;
     const r = Math.max(5, a._range || 10);
-    const victims = this.orderBySelector(this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && this.dist(u, e) <= r && this.los(u.x, u.y, e.x, e.y)), a.target).slice(0, a.useSaves || a.type === 'debuff' ? (a.targets || 1) : 1);
+    const victims = this.orderBySelector(this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && this.dist(u, e) <= r && this.losU(u, e)), a.target).slice(0, a.useSaves || a.type === 'debuff' ? (a.targets || 1) : 1);
     if (!victims.length) continue;
     this.spend(u, a);
     if (this.record) {
-      const n = r / 5, cells = [];
-      for (let y = u.y - n; y <= u.y + n; y++) for (let x = u.x - n; x <= u.x + n; x++) if (x >= 0 && y >= 0 && x < this.W && y < this.H) cells.push([x, y]);
+      const n = r / 5, cells = [], un = u.n || 1;
+      for (let y = u.y - n; y <= u.y + un - 1 + n; y++) for (let x = u.x - n; x <= u.x + un - 1 + n; x++) if (x >= 0 && y >= 0 && x < this.W && y < this.H) cells.push([x, y]);   // round the whole body
       this.ev('aoe', `${u.name}'s ${a.name} lashes out (${r}-ft aura)`, { uid: u.uid, shape: 'aura', size: r, ox: u.x, oy: u.y, cells, hits: victims.map(t => t.uid), harm: a.type === 'atk' ? 'dmg' : 'cond' });
     }
     if (a.type === 'atk') this.resolveAttackAction(u, a, victims, { aura: true });
@@ -5157,7 +5257,7 @@ Sim.prototype.settleAltitude = function (u, a, p) {
     if (a && t && t !== u) {
       const R = Math.max(1, Math.round(Math.max(5, a._range || 5) / 5));
       want = Math.min(want, this.zOf(t) - g + R);
-      while (want > 0 && !this.los(u.x, u.y, t.x, t.y, false, want, t.alt || 0)) want--;
+      while (want > 0 && !this.losB(u.x, u.y, u.n, t.x, t.y, t.n, false, want, t.alt || 0)) want--;
     }
   }
   want = Math.max(0, Math.min(MAX_ALT, Math.round(want)));
@@ -5191,13 +5291,16 @@ Sim.prototype.legendary = function (after) {
     // actions that cost more than the uses left are hidden for this pick
     const hidden = u.actions.filter(a => a.actionSlot === 2 && ((a.ext && a.ext.legendaryCost) || 1) > u.legendaryLeft);
     hidden.forEach(a => { a.actionSlot = -99; });
+    const mn = this._mn;
+    this._mn = u.n || 1;     // it measures from its own body, not the creature whose turn just ended
     const c = this.choose(u, 2, 0);
     hidden.forEach(a => { a.actionSlot = 2; });
-    if (!c) continue;
+    if (!c) { this._mn = mn; continue; }
     u.legendaryLeft -= (c.a.ext && c.a.ext.legendaryCost) || 1;
     this.spend(u, c.a);
     this.ev('legendary', `${u.name} uses a legendary action: ${c.a.name}`, { uid: u.uid });
     this.doAction(u, c.a, c.p);
+    this._mn = mn;
     if (this.over()) return;
   }
 };

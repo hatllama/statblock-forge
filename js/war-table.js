@@ -115,12 +115,12 @@ function buildBoard(units){
     const altTxt = el('text', { class: 'ini', 'text-anchor': 'middle', y: r+15, fill: '#9cc3e6', 'font-size': 10 }, t);
     const title = el('title', {}, t); title.textContent = u.name;
     const circ = 2 * Math.PI * (r+2.5);
-    // passive auras: a dashed square (5e grid distances) that follows the creature
+    // passive auras: a dashed square (5e grid distances) round the creature's whole body, that follows it
     const auras = (u.auras || []).map(a=>{
-      const n = Math.round(a.r / 5), side = (2*n + 1) * CELL;
+      const an = Math.round(a.r / 5), side = (2*an + n) * CELL;
       const rect = el('rect', { width: side, height: side, rx: 6, fill: 'rgba(217,87,63,.06)', stroke: 'rgba(217,87,63,.7)', 'stroke-width': 1.5, 'stroke-dasharray': '6 5', 'pointer-events': 'none' }, layers.auras);
       const tt = el('title', {}, rect); tt.textContent = `${u.name}: ${a.name} (${a.r} ft aura)`;
-      return { rect, n };
+      return { rect, n: an };
     });
     tokenEls[u.uid] = { g: t, ring, body, txt, badge, title, r, circ, unit: u, fill, auras, altTxt, shadow };
     ring.setAttribute('stroke-dasharray', `${circ} ${circ}`);
@@ -134,7 +134,7 @@ function placeToken(uid, x, y){
   const t = tokenEls[uid]; if(!t) return;
   const n = footN(t.unit.size);
   t.g.setAttribute('transform', `translate(${(x+n/2)*CELL},${(y+n/2)*CELL})`);
-  for(const a of t.auras){ a.rect.setAttribute('x', (x + (n-1)/2 - a.n) * CELL); a.rect.setAttribute('y', (y + (n-1)/2 - a.n) * CELL); }
+  for(const a of t.auras){ a.rect.setAttribute('x', (x - a.n) * CELL); a.rect.setAttribute('y', (y - a.n) * CELL); }
 }
 /* areas of effect: the squares an area covers, coloured by what it does, with the caster's origin marked */
 function drawArea(e, strong){

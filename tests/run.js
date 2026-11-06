@@ -36,6 +36,7 @@ cells['7,3'] = { t: 'wall' }; cells['7,4'] = { t: 'wall' };
 const walled = { gapFt: 30, positions: {}, terrain: { cells } };
 const isWall = (x, y) => cells[x + ',' + y] && cells[x + ',' + y].t === 'wall';
 const INCAP = ['Incapacitated', 'Paralyzed', 'Petrified', 'Stunned', 'Unconscious'];
+const FOOT_SIDE = size => ({ Large: 2, Huge: 3, Gargantuan: 4 })[size] || 1;
 
 /* the rule checks one recorded fight must pass: no steps onto walls, no ranged attacks through them, nobody acting
    while dead, nobody hiding in plain sight on an open field (counts are added to acc) */
@@ -55,8 +56,9 @@ function scanRules(r, layout, acc) {
     if (e.kind === 'zoneEnd') zones.delete(e.zid);
     const zoneName = [...zones.values()].map(z => z.name).find(n => (e.text || '').includes(': ' + n));
     if (layout && zoneName && (e.kind === 'attack' || e.kind === 'save') && prev[e.target] && prev[e.target].onBoard !== false) {
-      const t = prev[e.target];
-      if (![...zones.values()].some(z => z.name === zoneName && z.cells.has(Math.floor(t.x + .5) + ',' + Math.floor(t.y + .5)))) throughWalls++;
+      const t = prev[e.target], tu = r.units.find(o => o.uid === e.target), tn = tu ? FOOT_SIDE(tu.size) : 1;
+      const inZ = z => { for (let j = 0; j < tn; j++) for (let i = 0; i < tn; i++) if (z.cells.has((t.x + i) + ',' + (t.y + j))) return true; return false; };   // any square of its body
+      if (![...zones.values()].some(z => z.name === zoneName && inZ(z))) { throughWalls++; if (process.env.WALLDBG) console.log('   zone miss:', e.text.slice(0, 100), t.x, t.y, tn); }
     }
     if (e.kind === 'move' && / is pushed /.test(e.text)) pushed.add(e.uid);
     // saves inside an area are rolled from the area's centre, not the caster
@@ -66,8 +68,13 @@ function scanRules(r, layout, acc) {
       const a = prev[e.uid], b = prev[e.target];
       if (a && b && a.onBoard !== false && b.onBoard !== false && !a.swallowedBy && !b.swallowedBy) {
         if (process.env.VERBOSE) { const n0 = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4; for (let j = 1; j < n0; j++) { const f = j / n0; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { console.log('   wall?', e.kind, e.text.slice(0, 100), a.x, a.y, a.conds, '->', b.x, b.y); break; } } }
-        const n = Math.max(Math.abs(a.x - b.x), Math.abs(a.y - b.y)) * 4;
-        for (let j = 1; j < n; j++) { const f = j / n; if (isWall(Math.floor(a.x + .5 + (b.x - a.x) * f), Math.floor(a.y + .5 + (b.y - a.y) * f))) { throughWalls++; break; } }
+        // a big body sees from any of its squares to any of the target's (the engine's losB)
+        const side = uid => { const u = r.units.find(o => o.uid === uid); return u ? FOOT_SIDE(u.size) : 1; };
+        const blocked = (x0, y0, x1, y1) => { const n = Math.max(Math.abs(x0 - x1), Math.abs(y0 - y1)) * 4; for (let j = 1; j < n; j++) { const f = j / n; const cx = Math.floor(x0 + .5 + (x1 - x0) * f), cy = Math.floor(y0 + .5 + (y1 - y0) * f); if ((cx !== x0 || cy !== y0) && (cx !== x1 || cy !== y1) && isWall(cx, cy)) return true; } return false; };
+        const an = side(e.uid), bn = side(e.target);
+        let clear = false;
+        for (let j0 = 0; !clear && j0 < an; j0++) for (let i0 = 0; !clear && i0 < an; i0++) for (let j1 = 0; !clear && j1 < bn; j1++) for (let i1 = 0; !clear && i1 < bn; i1++) if (!blocked(a.x + i0, a.y + j0, b.x + i1, b.y + j1)) clear = true;
+        if (!clear) { throughWalls++; if (process.env.WALLDBG) console.log("   through wall:", e.kind, e.text.slice(0, 110), a.x, a.y, an, "->", b.x, b.y, bn); }
       }
     }
     const me = prev[e.uid];
@@ -283,6 +290,111 @@ section('Creature sizes');
     }
   }
   check(steps > 200 && bad === 0, `big creatures never overlap anyone (Medium ones too), leave the map or stand in walls over ${steps} turns (${bad} bad)`);
+
+  // ---- size as a real rule (docs/ai-v2.md): one check per mechanic and size ----
+  const BIG = [['Large', 2], ['Huge', 3], ['Gargantuan', 4]];
+  const unit = (uid, team, x, y, n, size, extra) => Object.assign({ uid, name: uid, team, x, y, n, size: size || 'Medium', fly: 0, climb: 0, hover: false, alt: 0, speed: 30, athletics: 0, onBoard: true,
+    hp: 30, maxHp: 30, buffs: [], actions: [], dead: false, reaction: true, inside: [], uses: new Map(), dmgDealt: 0, dmgTaken: 0, isPC: false, _mr: 5 }, extra || {});
+  const board = (w, h, cellsIn, units) => { const s = new Tac.Sim({ width: w, height: h, seed: 5 }); s.setTerrain({ cells: cellsIn || {} }); s.units = units; s.byId = {}; for (const u of units) s.byId[u.uid] = u; s.boardChanged(); return s; };
+  // 1. line of sight: a wall hides the top-left square of the body, the rest of the body still sees and is seen
+  for (const [z, n] of BIG) {
+    const wl = {}; for (let y = 0; y <= 3; y++) wl['6,' + y] = { t: 'wall' };     // a wall in column 6 down to row 3; the big body's lower squares (row 4…) look past it
+    const big = unit('b', 'foes', 2, 3, n, z), hero = unit('h', 'party', 10, 4, 1);
+    const s = board(16, 12, wl, [big, hero]);
+    s._mn = 1;
+    const tl = s.los(hero.x, hero.y, big.x, big.y);
+    check(!tl && s.canSee(hero.x, hero.y, big) && s.losU(big, hero), `line of sight: a ${z} creature is seen past a wall that hides its top-left square (top-left line ${tl})`);
+    const lw = {}; for (let y = 0; y <= 3; y++) lw['6,' + y] = { t: 'cover' };
+    const s2 = board(16, 12, lw, [big, hero]);
+    check(s2.coverBetween(hero.x, hero.y, big.x, big.y, 0, 0) === 2 && s2.coverAC(hero, big) === 0, `cover: a low wall in front of a ${z} creature's top-left square gives no cover when another square is in the open`);
+    big.alt = 2; big.fly = 30; s.boardChanged();
+    const fm = s.flyMap(); let marked = 0; for (let j = 0; j < n; j++) for (let i = 0; i < n; i++) if (fm[(big.x + i) + (big.y + j) * s.W] === 2) marked++;
+    check(marked === n * n, `flying: a ${z} flyer is up in the air over all ${n * n} of its squares on the sight map (${marked})`);
+    check(s.occupant(big.x + n - 1, big.y + n - 1) === big, `flying: a ${z} flyer at height still holds its whole body on the ground (nobody stands under it)`);
+  }
+  // 2. areas from a big body: a breath starts on its edge and never covers its own squares; emanations from the edge of the body
+  for (const [z, n] of BIG) {
+    const breath = { id: 'br', name: 'Fire Breath', type: 'atk', useSaves: true, actionSlot: 0, targets: 9, dpr: '30', ext: { area: { shape: 'cone', size: 30 } } };
+    const dr = unit('d', 'foes', 4, 4, n, z), a1 = unit('a1', 'party', 4 + n + 1, 4 + n - 1, 1), a2 = unit('a2', 'party', 4 + n + 2, 4 + n, 1);
+    const s = board(24, 18, {}, [dr, a1, a2]); s._mn = n;
+    const ac = s.areaCatch(breath, a1, dr.x, dr.y, [a1, a2], dr);
+    let own = 0; for (const [x, y] of (ac && ac.cells) || []) if (x >= dr.x && x < dr.x + n && y >= dr.y && y < dr.y + n) own++;
+    const onEdge = ac && ac.ox >= dr.x && ac.ox < dr.x + n && ac.oy >= dr.y && ac.oy < dr.y + n && (ac.ox === dr.x || ac.oy === dr.y || ac.ox === dr.x + n - 1 || ac.oy === dr.y + n - 1);
+    check(ac && own === 0 && onEdge && ac.extra.length === 1, `a ${z} creature's cone starts on its body's edge (${ac && ac.ox},${ac && ac.oy}), covers none of its own squares (${own}) and catches both foes beside its far corner (${ac ? ac.extra.length + 1 : 0})`);
+    const em = { id: 'em', name: 'Spirit Spray', type: 'atk', useSaves: true, actionSlot: 0, targets: 9, dpr: '10', ext: { area: { shape: 'emanation', size: 10 } } };
+    const far = unit('f', 'party', dr.x + n + 1, dr.y + n + 1, 1), out = unit('o', 'party', dr.x + n + 2, dr.y + n - 1, 1);
+    const s2 = board(24, 18, {}, [dr, far, out]); s2._mn = n;
+    const e2 = s2.areaCatch(em, far, dr.x, dr.y, [far, out], dr);
+    check(e2 && e2.cells.every(([x, y]) => !(x >= dr.x && x < dr.x + n && y >= dr.y && y < dr.y + n)) && !e2.extra.includes(out), `a ${z} creature's 10-ft emanation reaches 10 ft past the far side of its body and no further`);
+    // a resolved area catches a big body by any of its squares, not just the top-left one
+    const burst = { useSaves: true, type: 'atk', actionSlot: 0, ext: { area: { shape: 'sphere', size: 5 } } };
+    const tgt = unit('t', 'foes', 10, 10, n, z), s3 = board(24, 18, {}, [tgt]);
+    const r3 = s3.areaAt(burst, Tac.areaSpec(burst), tgt, 0, 0, 10 + n, 10 + n, [tgt], null, false);
+    check(r3 !== null, `a burst touching only the far corner of a ${z} creature catches it when it resolves`);
+  }
+  // 3. opportunity attacks: leaving the reach of any square of a big attacker's body, and a big mover's body leaving reach
+  for (const [z, n] of BIG) {
+    const ogre = unit('g', 'foes', 5, 5, n, z, { _mr: 10 }), hero = unit('h', 'party', 5 + n + 1, 5 + n - 1, 1);   // 10 ft from its lower-right square
+    const s = board(20, 16, {}, [ogre, hero]); s._mn = 1;
+    const at = x => s.adjacentEnemies(hero, x, hero.y).includes(ogre);
+    check(at(hero.x) && !at(hero.x + 1), `reach: 10 ft from the far side of a ${z} creature's body is in its reach, 15 ft is not (an opportunity attack on that step)`);
+    const mover = unit('m', 'party', 2, 5, n, z), guard = unit('gd', 'foes', 2 + n, 5 + n - 1, 1);   // a Medium guard beside the mover's lower-right square
+    const s2 = board(20, 16, {}, [mover, guard]);
+    check(s2.adjacentEnemies(mover, mover.x, mover.y).includes(guard) && !s2.adjacentEnemies(mover, mover.x - 1, mover.y).includes(guard), `reach: a ${z} mover stepping away from a guard beside its far square leaves its reach`);
+  }
+  // 4. moving through creatures: an ally always; a hostile creature only if it is Tiny or two sizes apart
+  {
+    // a corridor exactly as tall as the mover, the other creature standing across it
+    const through = (mSize, mN, oSize, oN, team) => {
+      const lane = {}; for (let x = 0; x < 16; x++) for (let y = 0; y < 12; y++) if (y < 4 || y > 3 + mN) lane[x + ',' + y] = { t: 'wall' };
+      const m = unit('m', 'party', 1, 4, mN, mSize), o = unit('o', team, 6, 4, oN, oSize);
+      const s = board(16, 12, lane, [m, o]);
+      return s.reachMapRaw(m, 60).dist[12 + 4 * 16] >= 0;
+    };
+    for (const [z, n] of BIG.concat([['Small', 1], ['Tiny', 1]])) {
+      const apart = Math.abs(['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'].indexOf(z) - 2) >= 2 || z === 'Tiny';
+      check(through('Medium', 1, z, n, 'foes') === apart, `a Medium creature ${apart ? 'can' : 'cannot'} pass through a hostile ${z} creature`);
+      check(through('Medium', 1, z, n, 'party'), `a Medium creature passes through an allied ${z} creature`);
+    }
+    check(through('Huge', 3, 'Medium', 1, 'foes') && !through('Large', 2, 'Medium', 1, 'foes') && through('Gargantuan', 4, 'Small', 1, 'foes'), 'a Huge creature walks through a hostile Medium one, a Large one does not, a Gargantuan one walks through a Small one');
+  }
+  // 6. a shove goes straight away from the pusher's body
+  for (const [z, n] of BIG) {
+    const pusher = unit('p', 'foes', 5, 5, n, z), t = unit('t', 'party', 5 + Math.floor(n / 2), 5 - 1, 1);   // above the middle of its body
+    const s = board(20, 16, {}, [pusher, t]); s.events = []; s.record = false;
+    s.push(pusher, t, 10);
+    check(t.x === 5 + Math.floor(n / 2) && t.y === 2, `a ${z} pusher shoves a creature above its middle straight up (to ${t.x},${t.y})`);
+  }
+  // 7. no size change mid-fight: Enlarge/Reduce is a damage buff, the footprint stays
+  {
+    const fw = JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players.find(p => /Faithwalker/.test(p.name));
+    const en = fw && JSON.stringify(fw).match(/"name": ?"Enlarge\/Reduce[^"]*"/);
+    check(!!en && !/"size"/.test(JSON.stringify((fw.ext.spellbook.spells || []).find(x => /Enlarge/.test(x.name)) || {})), 'Enlarge/Reduce has no size in its data: footprints do not change mid-fight (docs/ai-v2.md)');
+  }
+  // 9. War Table: every replay frame puts each token on the engine's own squares, for Large, Huge and Gargantuan creatures
+  {
+    const wt = fs.readFileSync(path.join(ROOT, 'js/war-table.js'), 'utf8'), m = /FOOT_N = (\{[^}]*\})/.exec(wt);
+    const wtFoot = m ? Function('return ' + m[1])() : {};
+    const proto = Tac.Sim.prototype, ev = proto.ev;
+    let frames = 0, wrong = 0;
+    for (const [z, n] of BIG) for (const layout of [null, walled]) {
+      const live = [];
+      proto.ev = function (kind, text, data) { ev.call(this, kind, text, data); if (this.record) live.push(this.units.map(u => [u.uid, u.x, u.y, u.n || 1])); };
+      const mon = { id: 'bz', name: z + ' Brute', type: 'dragon', cr: '8', count: 2, hp: 120, AC: 15, saveBonus: 3, mode: 'custom', ext: { size: z },
+        actions: [{ id: 'bz1', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '3d8+5', toHit: 8, target: 'enemy with least HP', ext: { range: 10 } }] };
+      let res;
+      try { res = Tac.runDay({ players: JSON.parse(JSON.stringify(day.players)), encounters: [{ monsters: [mon] }] }, { seed: 41, partyAI: 'tactical', record: true, layouts: layout ? { 0: layout } : undefined }); } finally { proto.ev = ev; }
+      const r = res[0], foot = {}; for (const u of r.units) foot[u.uid] = wtFoot[u.size] || 1;
+      let cur = {};
+      r.events.forEach((e, i) => {
+        cur = Object.assign({}, cur); for (const k in e.state) cur[k] = Object.assign({}, cur[k] || {}, e.state[k]);
+        if (!live[i]) return;
+        frames++;
+        for (const [uid, x, y, un] of live[i]) { const f = cur[uid]; if (f && (f.x !== x || f.y !== y || foot[uid] !== un)) wrong++; }
+      });
+    }
+    check(frames > 300 && wrong === 0, `War Table: tokens cover the engine's squares at every replay frame with Large, Huge and Gargantuan creatures (${frames} frames, ${wrong} wrong)`);
+  }
 }
 
 section('Damage types and control spells');

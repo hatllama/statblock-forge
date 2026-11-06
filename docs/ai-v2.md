@@ -1057,6 +1057,41 @@ Dragon and 2 Ogres, 68 → 76.5. Open and blind do not move. On the Adult Red Dr
 seen fall from 0.61 a fight to none. The Library holds only 47 monsters, so most of the table is not exercised by the harness; a name it gets wrong is
 corrected the first time the kind takes that damage. Logs: no change (no fixture names a coloured dragon).
 
+## Size as a real rule (rules, not AI)
+
+Creatures have footprints (`FOOT`: Large 2×2, Huge 3×3, Gargantuan 4×4; `x,y` is the top-left square, `u.n` the side). Distance, reach,
+occupancy, movement, walls, placement and the catch of an area already used the body. This pass audits the rest. A body-to-body test of any
+kind tries the top-left pair first, so a Medium creature's test is exactly the old one: the Medium-only guard days (`medium-day` in
+`tests/flagoff-hash.js`) keep their hashes.
+
+| # | Mechanic | Before | Now |
+|---|----------|--------|-----|
+| 1 | Line of sight and line of effect | top-left square to top-left square (`los(u.x,u.y,t.x,t.y)`) | **fixed**: `losB` / `losU`, clear from any square of one body to any square of the other (seeing, reach round a corner, auras, chain attacks, reactions, hiding, a flyer's height for a shot) |
+| 1 | Cover | walls, low walls (`T.cover`) and higher ground only; creatures give none | **fixed** for bodies: the least cover over all square pairs (the attacker picks its corner). Creature cover is still not modeled (it never was) |
+| 1 | A flyer's height on the sight map | only its top-left square was in the air (`flyMap`) | **fixed**: its whole body |
+| 2 | Area caught by a resolved area | the fast search checked every square of a body, the resolved area only the top-left square, so a big creature missed by its corner was searched as caught and then not hit | **fixed**: any square of the body |
+| 2 | Cone, line or adjacent cube from a big creature | started at the top-left square, so half a breath fell inside its own body | **fixed**: starts from any square on the body's edge, pointing out of the body; `aimStraight` tries every edge square × 8 directions and keeps the best by `aimScore`. The area never covers the creature's own squares |
+| 2 | Emanations and lingering zones that follow (Spirit Guardians, Wrath of the Sea) from a big creature | measured from the top-left square | **fixed**: from the body's edge (`spec.bn`), and a following zone keeps the body |
+| 2 | Passive auras (Other 1/2 attacks) | targets by body distance already; the recorded aura squares and the War Table's dashed square were drawn round the top-left square | **fixed**: drawn round the body |
+| 3 | Opportunity attacks and reach | provoked when the mover's body leaves the reach of the attacker's body (`adjacentEnemies` uses `gapTo` both ways) | **works**; tests added for a Huge attacker and a Large mover |
+| 4 | Moving through creatures | allies always passable; every standing enemy blocks | **fixed**: a hostile creature's space can be passed if it is Tiny or two sizes apart (2024 rule); nobody stops in another's space (unchanged). **Left**: an Incapacitated creature's space is passable and another creature's space is difficult terrain (2024) — both would change every Medium log; the user's call |
+| 5 | Squeezing (a gap one size smaller, double cost, disadvantage on attacks, advantage against it) | a big creature cannot enter a gap narrower than its body | **left**: needs a body that shrinks while it squeezes (occupancy, reach maps and every `fits`) plus the attack and save modifiers; not small. "Cannot enter" stays |
+| 6 | Grapple and shove limits | `ext.grapple.maxSize` / `pushMaxSize` read against the target's real size | **works**; the statblock states the limit, so the grappler's own size is already in it |
+| 6 | Shove direction | from top-left to top-left: a big pusher could push sideways | **fixed**: straight away from the pusher's body centre |
+| 6 | A grappled creature moves with its grappler | the grappler moving away ends the grapple | **left**: dragging needs half speed for the grappler, a square for the dragged body each step, and the AI to value it; no grappler in the harness drags |
+| 6 | Swallowed / engulfed | leaves the grid (`onBoard = false`), comes back out on the swallower's death | **works** |
+| 6 | Carry limits | nothing in the engine carries anything | not applicable |
+| 7 | Size change mid-fight (Faithwalker's Enlarge/Reduce) | cannot happen: `u.n` is set once; Enlarge is a buff of +1d4 damage, no size, reach or Strength advantage | **left**: needs a buff that sets `u.size`/`u.n` (with a fit check and a nudge when there is no room), restores them on expiry, advantage on Strength checks and saves, and the replay to carry the size per frame |
+| 8 | Big flyers | the whole body stays on the grid at any height (nobody stands under a flyer), so landing always has a clear body | **works**, stricter than the rules (a flyer cannot hover over allies); hovering over others is **left** (occupancy would need height) |
+| 9 | War Table tokens | token side from the same size table as `FOOT`; positions from each event's state | **works**: a test replays fights with Large, Huge and Gargantuan creatures and checks the frame cells equal the engine cells at every event |
+| – | Legendary actions | planned with `_mn` (the side `distXY` measures from) of whoever's turn had just ended | **fixed**: the legendary creature's own body while it picks and acts |
+
+Body-to-body sight answers for a big body are cached until anyone moves (`_lbC`), so the extra squares cost little. **Results:**
+`tests/run.js` 436 → 479 checks (one per mechanic and size in "Creature sizes"; the wall and zone rule checks there now accept a line
+from any square of a body), run time 92.1 s → 93.4 s on the same machine back to back. Logs: the Medium-only guard days do not move in any arm
+(old AI, v2, v2 learn, v2 blind); every other day has a Large creature (hard-day's Ogres, Troll and Owlbears, bandit-day's Sand-Pit Worms, the
+casters' Ogres, the Young Green Dragon), so 54 / 49 / 50 / 50 of 96 hashes change (old / v2 / learn / blind). `tests/fixtures/hashes-v2-learn.txt` is regenerated.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
