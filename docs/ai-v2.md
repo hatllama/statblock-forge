@@ -1158,6 +1158,21 @@ It also ignored recharge: open read `kAreas`, which drops a spent breath until i
 - **Cost.** A Huge breather tries every edge square of its body, so the edge test is cheap: a cone or 5-ft line stays off the body exactly when
   its first square does (`offBody`, checked against the full test in 1536 cases), and a cheap "is the target ahead and in reach" test runs before
   `inArea`. A burst's catch skips bodies out of its reach before trying their squares. None of this changes a decision (hashes identical).
+  Later (the user's run-time request): a big breather's candidate squares share most of their edge squares, so whether an aim from an edge square
+  in a direction reaches the target, and whom it catches (an explicit area only: a guessed one rolls dice to order its targets), are kept until
+  anyone moves (`_afC`); the "group around this square" count is one map per area per turn instead of a distance per ally per square. Hashes
+  identical. ms per day (fastest of four passes, open, recorded) against the tip before this whole size/spacing work:
+
+  | row | before | with the size, spacing and passable-space work | + these caches |
+  |-----|--------|------------------------------------------------|----------------|
+  | K3 (Huge harness dragon) | 183 | 196 (+7%) | 180 (−2%) |
+  | E1 (Young Red Dragon) | 60 | 71 (+18%) | 65 (+8%) |
+  | E2 (Young Red Dragon + 2 Ogres) | 99 | 118 (+19%) | 112 (+13%) |
+  | S3 (Huge harness dragon vs six) | 114 | 147 (+29%) | 130 (+14%) |
+  | S6 (flying Young Red Dragon) | 76 | 87 (+14%) | 83 (+9%) |
+
+  Part of what is left is the fights playing differently (fight length, more aims tried), and the movement search, which is weighted on open maps
+  since passable spaces.
 
 **Scenarios** (`tests/ai-compare.js`, `^S[0-9]`): S1/S2 Zaki's party vs a Young Red Dragon on the ground, spread and clustered starts; S3 the
 harness Adult Red Dragon (Huge, 60-ft cone, 0.35 damage), breath after breath; S4 a melee-heavy party (Fighter, Barbarian, Monk, Paladin, Rogue);

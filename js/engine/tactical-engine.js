@@ -933,6 +933,14 @@ Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
   let best = null, bs = -Infinity;
   const memo = new Map();
   const narrow = sp.shape === 'cone' || (sp.shape === 'line' && Math.max(1, Math.round((sp.width || 5) / 5)) === 1);
+  // who an aim catches is the same for every square of a big body that shares this edge square: kept until anyone moves. Only for an
+  // explicit area (a guessed one orders its extra targets with a dice roll, which must not be skipped)
+  let fc = null, fk = '';
+  if (bn > 1 && sp.explicit) {
+    if (this._afVer !== this.posVer || !this._afC) { this._afC = new Map(); this._afVer = this.posVer; }
+    fc = this._afC;
+    fk = a.id + '|' + sp.shape + sp.size + 'w' + (sp.width || 5) + '|' + t.uid + '|' + caster.uid + ':' + (sp.atSelf ? 1 : 0) + ':' + (caster.alt || 0) + ':' + (this._flyer === caster ? 1 : 0) + '|' + pool.map(o => o.uid).join(',') + '|';
+  }
   for (const [px, py] of origins) {
     const bear = Math.atan2(t.y - py, t.x - px);
     for (let k = 0; k < 8; k++) {
@@ -941,8 +949,14 @@ Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
       if (narrow && ((sx && ((sx > 0 ? t.x + tn - 1 - px : px - t.x) < 1 || (sx > 0 ? t.x - px : px - (t.x + tn - 1)) > n)) || (sy && ((sy > 0 ? t.y + tn - 1 - py : py - t.y) < 1 || (sy > 0 ? t.y - py : py - (t.y + tn - 1)) > n)))) continue;
       const ax = px + sx * n, ay = py + sy * n;
       if (bn > 1) { const off = offBody(sp, px, py, sx, sy, ox, oy, bn); if (off === false || (off === null && areaOnBody(sp, px, py, ax, ay, ox, oy, bn))) continue; }
-      if (tn > 1 ? !areaOnBody(sp, px, py, ax, ay, t.x, t.y, tn) : !inArea(sp, px, py, ax, ay, t.x, t.y)) continue;
-      const r = this.areaAt(a, sp, t, px, py, ax, ay, pool, caster, true);
+      // does it reach t's body at all: geometry only, so a big body's other candidate squares that share this edge square reuse it
+      let hit;
+      if (fc) { const hk = 'h' + sp.shape + sp.size + 'w' + (sp.width || 5) + '|' + px + ',' + py + ',' + k + '|' + t.x + ',' + t.y + ',' + tn; hit = fc.get(hk); if (hit === undefined) { hit = tn > 1 ? areaOnBody(sp, px, py, ax, ay, t.x, t.y, tn) : inArea(sp, px, py, ax, ay, t.x, t.y); fc.set(hk, hit); } }
+      else hit = tn > 1 ? areaOnBody(sp, px, py, ax, ay, t.x, t.y, tn) : inArea(sp, px, py, ax, ay, t.x, t.y);
+      if (!hit) continue;
+      let r;
+      if (fc) { const key = fk + px + ',' + py + ',' + k; r = fc.get(key); if (r === undefined) { r = this.areaAt(a, sp, t, px, py, ax, ay, pool, caster, true); fc.set(key, r); } }
+      else r = this.areaAt(a, sp, t, px, py, ax, ay, pool, caster, true);
       if (!r) continue;
       let off = Math.abs(k * Math.PI / 4 - bear) % (2 * Math.PI); if (off > Math.PI) off = 2 * Math.PI - off;
       const sc = this.aimScore(a, caster, r.extra, r.friends, memo) - off * 0.01;
@@ -3828,7 +3842,19 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     const mv = e.grappledBy || this.has(e, ['Restrained']) ? 0 : this.speedOf(e);
     A.grp = Math.max(1, Math.round((ar.shape === 'sphere' ? ar.size : ar.shape === 'emanation' ? ar.size * 2 + 5 * (en - 1) : ar.shape === 'cube' ? ar.size : ar.shape === 'cone' ? ar.size - 5 : ar.size / 2) / 5));
     A.reach = Math.round(((ar.shape === 'sphere' || ar.placed ? ar.range : 0) + mv + ar.size + 5) / 5);
-    const grpOf = (x, y, n) => { let c = 0; for (const o of mine) if (this.gapTo(x, y, n, o) <= A.grp) c++; return c; };
+    // how many of the others are within the group's reach of u's body on each square: one map per area, built the first time it is asked
+    let gm = null;
+    const grpOf = (x, y) => {
+      if (!gm) {
+        const Wd = this.W, Hd = this.H, g = A.grp;
+        gm = new Uint8Array(Wd * Hd);
+        for (const o of mine) {
+          const on = o.n || 1;
+          for (let yy = Math.max(0, o.y - g - un + 1); yy <= Math.min(Hd - 1, o.y + on - 1 + g); yy++) for (let xx = Math.max(0, o.x - g - un + 1); xx <= Math.min(Wd - 1, o.x + on - 1 + g); xx++) gm[xx + yy * Wd]++;
+        }
+      }
+      return gm[x + y * this.W];
+    };
     A.grpOf = grpOf;
     A.N = 1;                                                           // of us in its reach, u included (u is counted only where it stands in reach)
     for (const o of mine) if (this.gapTo(o.x, o.y, o.n || 1, e) <= A.reach) A.N++;
@@ -3859,7 +3885,7 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     pen = 0;
     for (const A of areas) {
       if (this.gapTo(x, y, un, A.e) > A.reach) continue;
-      let M1 = 1 + A.grpOf(x, y, un);
+      let M1 = 1 + A.grpOf(x, y);
       for (const am of A.aims) if (am.c + 1 > M1 && areaOnBody(A.spec, am.px, am.py, am.ax, am.ay, x, y, un)) M1 = am.c + 1;
       if (A.point && this.gapTo(x, y, 1, A.e) * 5 <= A.reachFt) M1 = Math.max(M1, 1 + caughtBy(A.spec, x, y, x, y));
       // it picks a group of us in proportion to its size (N of us in reach): what u adds to our expected creatures caught, (M1² − (M1 − 1)²) / N
