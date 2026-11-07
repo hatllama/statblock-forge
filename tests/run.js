@@ -1698,5 +1698,44 @@ section('Learn: obvious immunities from a name (Adult Red Dragon log)');
   check(B.red === 1 && V1.red === 1, 'blind, and the old AI in learn, do not read names');
 }
 
+section('AI v2: breath and cone spacing, priced in damage');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const srd = name => { const s = ctx.M.find(m => m.name === name), m = cp(Parser.parse(s.text).monsters[0]); m.id = s.id; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = s.id + i; }); return m; };
+  const proto = Tac.Sim.prototype, turn = proto.turn, W = Tac.AI_BASE.w;
+  // the dragon at (12,6); the Wizard and Cleric bunched 3 squares to its right; the Fighter weighs squares
+  const probe = (monster, know, fn) => {
+    let out = null;
+    proto.turn = function (who) {
+      if (!out) {     // before the first turn of the fight, whoever's it is
+        const u = this.units.find(o => o.name === 'Fighter');
+        this._mn = 1; u.v2P = u.v2P || Tac.aiProfile();
+        const d = this.units.find(o => o.team === 'foes'), wz = this.units.find(o => o.name === 'Wizard'), cl = this.units.find(o => o.name === 'Cleric');
+        d.x = 12; d.y = 6; wz.x = 12 + d.n + 2; wz.y = 6; cl.x = 12 + d.n + 2; cl.y = 7; u.x = 2; u.y = 2; this.boardChanged();
+        out = fn(this, u, d);
+      }
+      return turn.call(this, who);
+    };
+    try { Tac.runDay({ players: [build('Fighter'), build('Wizard'), build('Cleric')], encounters: [{ monsters: [monster] }] }, { seed: 9, partyAI: 'tactical', ai: { party: 'v2' }, know: { party: know } }); } finally { proto.turn = turn; }
+    return out;
+  };
+  const costs = (S, u, d) => { const dz = S.v2Danger(u, [d], S.units.filter(o => o.team === 'party')); return { join: dz.spacing(12 + d.n + 2, 8), apart: dz.spacing(10, 7), far: dz.spacing(12 + d.n + 12, 7) }; };
+  const breath = d => d.actions.find(a => /Breath/.test(a.name));
+  const red = srd('Young Red Dragon'), full = Tac.avgDice(breath(red).dpr) * W.areaSave;
+  const open = probe(cp(red), 'open', (S, u, d) => { const a = costs(S, u, d); S.spend(d, breath(d)); const b = costs(S, u, d); const v1 = S.kAreas(u, d).length; d.recharge.set(breath(d).id, true); return { a, b, v1 }; });
+  check(Math.abs(open.a.join - full) < 0.01 && Math.abs(open.a.apart - full / 2) < 0.01, `open: joining the bunch of two in the cone costs one creature's breath (${open.a.join.toFixed(1)} of ${full.toFixed(1)} HP); alone on the far side of the dragon, half (it breathes the pair as often as not: ${open.a.apart.toFixed(1)})`);
+  check(Math.abs(open.b.join - full / 3) < 0.01 && open.v1 === 0, `open: a spent breath is priced at its recharge chance, 1/3 (${open.b.join.toFixed(1)}); the old AI's kAreas still drops it (${open.v1} areas)`);
+  const learn = probe(cp(red), 'learn', (S, u, d) => { const a = costs(S, u, d); S.learnAction(d, breath(d)); const b = costs(S, u, d); d.areaUsed = null; const c = costs(S, u, d); return { a, b, c }; });
+  check(learn.a.join === 0 && Math.abs(learn.b.join - full / 3) < 0.01 && Math.abs(learn.c.join - full) < 0.01, `learn: an unseen breath costs nothing (${learn.a.join}); seen used, its recharge chance (${learn.b.join.toFixed(1)}); seen in an earlier fight and not used in this one, all of it (${learn.c.join.toFixed(1)})`);
+  // a Huge body: the bunch on its right; a square beside its left side is out of the bunch's cones, one beside the bunch is not
+  const adult = srd('Adult Red Dragon');
+  const huge = probe(cp(adult), 'open', (S, u, d) => { const dz = S.v2Danger(u, [d], S.units.filter(o => o.team === 'party')); return { left: dz.spacing(4, 7), right: dz.spacing(12 + d.n + 2, 8), n: d.n }; });
+  check(huge.n === 3 && huge.right > 0 && Math.abs(huge.left - huge.right / 2) < 0.01, `a Huge dragon (60-ft cone): well to its left, more than half the cone's length from the bunch on its right, costs half what joining the bunch does (${huge.left.toFixed(1)} vs ${huge.right.toFixed(1)})`);
+  // the weights are plain data; the old count weight is gone
+  check(typeof W.areaRisk === 'number' && typeof W.areaSave === 'number' && typeof W.areaUse === 'number' && W.spacing === undefined, 'areaRisk, areaSave and areaUse live in AI_BASE.w; w.spacing is gone');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

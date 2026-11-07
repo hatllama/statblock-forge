@@ -1092,6 +1092,73 @@ from any square of a body), run time 92.1 s → 93.4 s on the same machine back 
 (old AI, v2, v2 learn, v2 blind); every other day has a Large creature (hard-day's Ogres, Troll and Owlbears, bandit-day's Sand-Pit Worms, the
 casters' Ogres, the Young Green Dragon), so 54 / 49 / 50 / 50 of 96 hashes change (old / v2 / learn / blind). `tests/fixtures/hashes-v2-learn.txt` is regenerated.
 
+## Breath and cone spacing: area attacks priced in damage (v2)
+
+**What was wrong** (dragon-fight audit). v2's spacing term (`v2Danger.spacing`) counted allies near a square, × a weight of
+`min(3, dmg / 10)` × `w.spacing` 1.2: about 1–3 points a turn against action values of 50–400, so the cone caught 3 of 6, then 5 of 6.
+It also ignored recharge: open read `kAreas`, which drops a spent breath until it recharges, and learn kept the cone at full weight while it was spent.
+
+**The term.** For each area attack u's side knows an enemy has, the expected HP u's square costs the side on that enemy's next turn:
+
+    P(ready on its next turn) × expected damage to one creature caught × (M1² / max(M1, M0) − (M1 − 1)² / max(M1 − 1, M0))
+
+- **P** (`kAreasNext`, a new knowledge accessor; the old `kAreas` stays for the old AI). A recharge action: ready → 1; spent → the chance it
+  recharges at the start of its turn, from the rules (`faces / 6`: 1/3 for Recharge 5–6). Open reads the real state. Learn and blind know only
+  what they saw: ready until they see it used this fight, then the recharge chance (the roll is the DM's; a spent breath that did not come back
+  looks the same as one that did and wasn't used). A limited-use area (a spell slot, uses): open 1 while it has them, 0 after; learn/blind 1. At will: 1.
+  × `w.areaUse` (1: a ready area attack is used).
+- **Expected damage to one creature caught**: its average damage × `w.areaSave` (0.75: half on a save, about half the saves made). Control areas count 8, as before.
+- **M0, M1** (the marginal number caught; the body footprints and the Part 1 origins). The aims an enemy can take from where it stands: a cone,
+  line or adjacent cube from each square on its body's edge × 8 directions (`bodyEdge`, `areaOnBody`); a sphere or placed cube centred on each of
+  our creatures and on the square itself, within its range + move; an emanation round its body. M0 = the most of our other creatures one aim catches
+  (any square of a body counts); M1 = the most one aim catches that includes u standing on this square (u + the others). The enemy's choice
+  is an estimate: it picks among its aims in proportion to how many each catches, so the group u stands in (M1 creatures) is hit with chance
+  M1 / max(M1, M0) and our expected creatures caught through it is M1² / max(M1, M0). The square's cost is what u adds to that: alone
+  beside a bigger cluster, 1 / M0 (a little); joining a pair, more than one creature (the pair now draws the breath more often).
+  *First version, rejected:* the enemy always takes its best aim (cost = max(0, M1 − M0), 0 or 1). Each creature then saw no cost in joining a
+  smaller group, groups grew until they merged, and allies caught per breath went up (S3 open 3.26 → 3.78; 9 of 333 rows worse beyond 2 SE).
+- **Weighing it.** The cost is HP, so it is × the same `safety` as every other hit a square risks (`w.risk` for melee, `w.riskRanged` × `casterRisk`
+  for the back line, more when hurt), × `w.areaRisk` (1). A martial closing on the dragon weighs one breath's share of HP at 0.45 against its
+  attack's value, so it still closes; it picks the side of the body the others are not on. No cap; `w.spacing` (the old count weight) is gone.
+  The old AI keeps its own spacing (`spacingAt`, `kAreas`), so its logs do not move.
+- **Same code, other area attackers.** It runs on every enemy area attack `kAreasNext` reports: breath weapons, Fireball and Cone of Cold from
+  casters (on either side: monsters on v2 spread from the party's Fireball the same way).
+- **It may move first.** Besides the exact aims from where it stands, the enemy can move and then aim: any group of us it can reach (its move +
+  the area's length, + range for a burst) counts as one aim, a group being the creatures within half a cone's or line's length, a burst's
+  radius, a cube's side or an emanation's width of each other (body to body, `gapTo`). M0 and M1 take the bigger of the two readings.
+  The group sizes were tried on the dragon fights, K3 and the two Mages (200 runs, 3 modes): a burst's diameter made almost any spacing one group
+  against Fireball, so the term only pushed casters apart (C-Caster monster open 76 → 63, beyond 2 SE); a third of a cone's length caught fewer
+  breaths and lost S3 open (92.5 → 85); a burst's radius with half a cone's length was clean.
+  *Second version, rejected:* aims from where it stands only. Creatures spent movement stepping just past its current reach (it moves 40 ft and
+  then breathes), and the dragon fights leaned down (E2 learn 79 → 69.5, E6 open 63.5 → 52.5, beyond 2 SE).
+- **Estimate, not lookahead.** No search of where it will move; its own share of the breath is also in `threat` (its best single action split
+  among those in reach), a small double count left in on purpose.
+- **Cost.** A Huge breather tries every edge square of its body, so the edge test is cheap: a cone or 5-ft line stays off the body exactly when
+  its first square does (`offBody`, checked against the full test in 1536 cases), and a cheap "is the target ahead and in reach" test runs before
+  `inArea`. A burst's catch skips bodies out of its reach before trying their squares. None of this changes a decision (hashes identical).
+
+**Scenarios** (`tests/ai-compare.js`, `^S[0-9]`): S1/S2 Zaki's party vs a Young Red Dragon on the ground, spread and clustered starts; S3 the
+harness Adult Red Dragon (Huge, 60-ft cone, 0.35 damage), breath after breath; S4 a melee-heavy party (Fighter, Barbarian, Monk, Paladin, Rogue);
+S5 two Hill Giants with a harness 20-ft stomp (Huge origin); S6 the flying Young Red Dragon, clustered start. Columns `caught/1st` and
+`caught/2nd+` are party creatures caught by each foe area attack, the day's first use of it and the later ones.
+
+**Results** (200 runs, same seeds, against the Part 1 tip; every family in all three modes, 111 rows each): **0 rows worse beyond 2 SE** in open,
+learn or blind; better: E6 open 63.5 → 79, F1 open 57.5 → 70, F2 open 3 → 11.5, S6 open 71 → 85, S1 learn 92 → 97, B1/B3/B7 blind 0 → 2.5–3.
+Mean win 79.5 → 80.0 (open), 76.7 → 76.7 (learn), 71.9 → 71.9 (blind). Allies caught per area attack, mean of the dragon rows (E1, E2, E6, F1, F2, S1–S6):
+
+| mode | all uses | first use | later uses |
+|------|----------|-----------|------------|
+| open | 2.79 → 2.53 | 2.97 → 2.80 | 2.45 → 2.07 |
+| learn | 2.89 → 2.88 | 3.25 → 3.25 | 2.25 → 2.22 |
+| blind | 3.01 → 2.97 | 3.45 → 3.45 | 2.28 → 2.21 |
+
+Learn and blind move little: they know nothing of the breath until they see it (the first use is unchanged by design), and once seen it is
+spent, priced at its 1/3 recharge chance, so the later breaths gain only a third of open's effect. One row went the wrong way: S5's Huge giants catch more per stomp
+(1.55 → 1.80 in open, not explained yet; the party wins 99.5–100% either way). Logs: old AI unchanged; v2 37, v2 learn 30, v2 blind 23 of 96
+change (the days whose enemies have area attacks: medium-day's Mage, hard-day's Mage and Priest, the young dragon); `hashes-v2-learn.txt`
+regenerated. `npm test` 479 → 484 checks, 121 s → 109 s back to back against the Part 1 tip (noise; the cheaper edge test also speeds Part 1's Huge
+breathers). Harness ms per day against the original tip (open, recorded): K3 251 → 295, E1 101 → 124, E2 159 → 203, S3 175 → 256, S6 128 → 138.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |

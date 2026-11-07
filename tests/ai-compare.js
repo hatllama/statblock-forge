@@ -16,7 +16,8 @@ function load(files) {
   for (const f of files) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   return ctx;
 }
-const Tac = load(['js/engine/tactical-engine.js']).TacEngine;
+// ENGINE=path: play another copy of the engine (a "before" saved from an older commit), same scenarios and seeds
+const Tac = (process.env.ENGINE ? (() => { const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx); vm.runInContext(fs.readFileSync(process.env.ENGINE, 'utf8'), ctx, { filename: 'engine' }); return ctx; })() : load(['js/engine/tactical-engine.js'])).TacEngine;
 const Parser = load(['js/spell-data.js', 'js/statblock-parser.js']).StatblockParser;
 const D = load(['data/party.js', 'data/srd-monsters.js']);
 vm.runInContext('globalThis.CB = CLASS_BUILDS; globalThis.PP = PARTY_PLAYERS; globalThis.M = SRD_MONSTERS;', D);
@@ -476,9 +477,21 @@ function downedRate(sc, N, know) {
 }
 function playDown(sc, N) {
   console.log('\n' + sc.name);
-  console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
-  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({}, sc, { know: { party: mode } }), { party: 'v2' }, N))); DOWN_NOW = null; }
+  console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(AREA_COLS.map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({ record: true }, sc, { know: { party: mode }, metrics: Object.assign({}, sc.metrics, AREA_METRICS) }), { party: 'v2' }, N))); DOWN_NOW = null; }
 }
+/* the enemy's area attacks (breaths, cones, Fireballs) against the party: party creatures caught per use, the day's first use of each and the later ones */
+const foeAreas = r => r.events.filter(e => e.kind === 'aoe' && e.shape !== 'aura' && teamOf(r, e.uid) === 'foes');
+const caughtIn = (r, e) => (e.hits || []).filter(h => teamOf(r, h) === 'party').length;
+const firstOf = r => { const seen = new Set(); return foeAreas(r).map(e => { const k = e.uid + '|' + (/unleashes (.*?) \(/.exec(e.text || '') || [])[1]; const f = !seen.has(k); seen.add(k); return { e, first: f }; }); };
+const AREA_METRICS = {
+  _breaths: r => foeAreas(r).length,
+  _b1: r => firstOf(r).filter(x => x.first).length,
+  _c1: r => firstOf(r).filter(x => x.first).reduce((s, x) => s + caughtIn(r, x.e), 0),
+  _b2: r => firstOf(r).filter(x => !x.first).length,
+  _c2: r => firstOf(r).filter(x => !x.first).reduce((s, x) => s + caughtIn(r, x.e), 0),
+};
+const AREA_COLS = ['breaths', 'caught/1st', 'caught/2nd+', 'caught/breath'];
 
 /* ---- Caustic Brew: a burn scored as a burn (step 2.12) ---- */
 const BREW_SCENARIOS = [
@@ -496,6 +509,28 @@ const noRevivify = players => { for (const p of players) if (p.ext && p.ext.spel
 let revivedSoFar = 0;
 const REVIVE_METRICS = { 'revived/day': (r, k) => { const all = r.party.reduce((t, p) => t + (p.revived || 0), 0), got = all - (k ? revivedSoFar : 0); revivedSoFar = all; return got; } };
 const lastSlots = (n, id) => players => { const p = players.find(x => x.id === id || x.name === id); p.ext.spellbook.slots[2] = n; return players; };
+/* ---- breath and cone spacing (docs/ai-v2.md): node tests/ai-compare.js 200 '^S[0-9]' ---- */
+const ZAKI_IDS = () => zaki().map(p => p.id);
+// the party's six starting squares (spread: 4 squares apart; clustered: a 2 x 3 block), the foe(s) at x 17
+const SPREAD6 = [[3, 1], [3, 5], [3, 9], [3, 13], [6, 3], [6, 11]], CLUSTER6 = [[4, 6], [4, 7], [4, 8], [5, 6], [5, 7], [5, 8]];
+const startAt = (cells, ids) => encs => {
+  const pos = {}, pl = ids();
+  pl.forEach((id, i) => { if (cells[i]) pos['party|' + id + '|0'] = { x: cells[i][0], y: cells[i][1] }; });
+  encs[0].monsters.forEach((m, k) => { for (let i = 0; i < (m.count || 1); i++) pos['foes|' + m.id + '|' + i] = { x: 17, y: 3 + (k * 2 + i) * 4 }; });
+  return { 0: { gapFt: 30, positions: pos } };
+};
+const groundDragon = name => { const m = mon(name); m.ext.fly = 0; m.ext.hover = false; return m; };
+// a Huge giant with a cone: the Hill Giant plus a 20-ft stomp first in its list (the old AI takes the first usable action) (Recharge 5-6, 6d10 bludgeoning, Dexterity save for half)
+const stompGiant = () => { const m = mon('Hill Giant'); m.actions.unshift({ id: m.id + 'st', name: 'Stomp', actionSlot: 0, freq: { reset: 'recharge', cooldownRounds: 3 }, recharge: true, condition: 'is available', targets: 6, type: 'atk', useSaves: true, halfOnSave: true, toHit: 14, dpr: '6d10', target: 'enemy with most HP', ext: { range: 20, area: { shape: 'cone', size: 20 }, saveAbility: 'dex', damageType: 'bludgeoning' } }); return m; };
+const meleeParty = () => ['Fighter', 'Barbarian', 'Monk', 'Paladin', 'Rogue'].map(pc);
+const SPACE_SCENARIOS = [
+  { name: "S1 Zaki's party vs Young Red Dragon on the ground, spread start", players: zaki, encounters: () => [{ monsters: [groundDragon('Young Red Dragon')] }], layoutFn: startAt(SPREAD6, ZAKI_IDS) },
+  { name: "S2 the same, clustered start", players: zaki, encounters: () => [{ monsters: [groundDragon('Young Red Dragon')] }], layoutFn: startAt(CLUSTER6, ZAKI_IDS) },
+  { name: "S3 Zaki's party vs the harness Adult Red Dragon (Huge, 60-ft cone, 0.35 damage): breath after breath", players: zaki, encounters: () => [{ monsters: [dragon(0, {})] }] },
+  { name: 'S4 melee-heavy: Fighter, Barbarian, Monk, Paladin, Rogue vs Young Red Dragon on the ground', players: meleeParty, encounters: () => [{ monsters: [groundDragon('Young Red Dragon')] }] },
+  { name: 'S5 Huge giants: Fighter, Barbarian, Wizard, Cleric vs 2 Hill Giants with a 20-ft stomp (Recharge 5-6, 6d10)', party: ['Fighter', 'Barbarian', 'Wizard', 'Cleric'], encounters: () => [{ monsters: [stompGiant(), stompGiant()] }] },
+  { name: "S6 Zaki's party vs Young Red Dragon (flying), clustered start", players: zaki, encounters: () => [{ monsters: [mon('Young Red Dragon')] }], layoutFn: startAt(CLUSTER6, ZAKI_IDS) },
+];
 const FLYER_SCENARIOS = [
   { name: "F1 Zaki's party vs 2 Young Green Dragons", players: zaki, encounters: () => fights('Young Green Dragon*2') },
   { name: "F2 Zaki's party vs hard-day.json, then 2 Young Green Dragons", players: zaki, encounters: () => clone(fixture('hard-day.json').encounters).concat(fights('Young Green Dragon*2')) },
@@ -560,6 +595,12 @@ function play(sc, ai, n, tweak) {
   out.ms = (Date.now() - t0) / n;
   if (sc.metrics && '_uses' in sc.metrics) out.m['damage prevented/use'] = out.m._uses ? out.m._prevented / out.m._uses * n : 0;
   if (sc.metrics && '_areas' in sc.metrics) out.m['caught/area'] = out.m._areas ? out.m._caught / out.m._areas * n : 0;
+  if (sc.metrics && '_breaths' in sc.metrics) {
+    out.m['breaths'] = out.m._breaths;
+    out.m['caught/1st'] = out.m._b1 ? out.m._c1 / out.m._b1 * n : 0;
+    out.m['caught/2nd+'] = out.m._b2 ? out.m._c2 / out.m._b2 * n : 0;
+    out.m['caught/breath'] = out.m._breaths ? (out.m._c1 + out.m._c2) / out.m._breaths * n : 0;
+  }
   return out;
 }
 const pad = (s, k) => String(s).padEnd(k);
@@ -631,6 +672,7 @@ for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N)
 for (const sc of REVIVE_SCENARIOS) if (only && only.test(sc.name)) playRevive(sc, N);
 for (const sc of BREW_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of FLYER_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
+for (const sc of SPACE_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
   const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };

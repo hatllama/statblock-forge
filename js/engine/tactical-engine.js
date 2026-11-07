@@ -225,7 +225,7 @@ function dir8(vx, vy) {
 }
 
 /* whether square (x,y) is inside the area — the same templates as areaCells, for one square */
-function inArea(spec, ox, oy, tx, ty, x, y) {
+function inArea(spec, ox, oy, tx, ty, x, y, sd0) {
   const n = Math.round(spec.size / 5);
   if (spec.shape === 'emanation' && (spec.bn || 1) > 1) {
     const x1 = ox + spec.bn - 1, y1 = oy + spec.bn - 1;
@@ -261,7 +261,7 @@ function inArea(spec, ox, oy, tx, ty, x, y) {
        cone      d squares out it covers the d-th row to floor(d/2) squares either side of centre (widths 1, 3, 3,
                  5, 5, 7…: as wide as it is far); on a diagonal, a triangle of about the same number of squares */
   if (x === ox && y === oy) return false;
-  const sd = dir8(tx - ox, ty - oy), sx = sd[0], sy = sd[1], wx = x - ox, wy = y - oy;
+  const sd = sd0 || dir8(tx - ox, ty - oy), sx = sd[0], sy = sd[1], wx = x - ox, wy = y - oy;
   const w = Math.max(1, Math.round((spec.width || 5) / 5));
   if (!sx || !sy) {
     const along = sx ? wx * sx : wy * sy, side = sx ? wy : wx;
@@ -483,7 +483,7 @@ function resetFightState(u) {
   u.dmgDealt = 0; u.dmgTaken = 0; u.healed = 0;
   u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
   u.netLost = 0; u.bloodied = u.hp > 0 && u.hp * 2 <= u.maxHp;              // the damage that got through less the healing seen; at half HP or less, and the table is told
-  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.seenCaster = false; u.seenCancel = false; u.legSeen = 0;
+  u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.areaUsed = null; u.seenCaster = false; u.seenCancel = false; u.legSeen = 0;
   u.onBoard = true;
   // Relentless & co.: rolling initiative with an empty pool gives one back
   if (u.resMax) for (const k in u.resMax) if (u.resMax[k].regainOnInit && !(u.uses.get('res:' + k) > 0)) u.uses.set('res:' + k, +u.resMax[k].regainOnInit);
@@ -837,11 +837,15 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
   let isIn, cells = null;
   if (fast) {
     const W = this.W, inb = (x, y) => x >= 0 && y >= 0 && x < W && y < this.H, bn = !fromPoint && spec.shape === 'emanation' ? spec.bn || 1 : 1;
+    // nothing past this many squares from where it starts can be in it (a body further off is skipped before its squares are tried)
+    const far = Math.round(spec.size / 5) * (spec.shape === 'cube' ? 2 : 1) + Math.max(1, Math.round((spec.width || 5) / 5)) + 1;   // a cube beside its user can slide its own width sideways
+    const sd = spec.shape === 'cone' || spec.shape === 'line' ? dir8(ax - ox, ay - oy) : undefined;
     isIn = o => {
       const on = o.n || 1;
+      if (this.gapTo(cx, cy, bn, o) > far) return false;
       for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) {
         const px = o.x + i, py = o.y + j;
-        if (inb(px, py) && inArea(spec, ox, oy, ax, ay, px, py) && (!this.T.any || (!this.T.wall[px + py * W] && this.losB(cx, cy, bn, px, py, 1, true)))) return true;
+        if (inb(px, py) && inArea(spec, ox, oy, ax, ay, px, py, sd) && (!this.T.any || (!this.T.wall[px + py * W] && this.losB(cx, cy, bn, px, py, 1, true)))) return true;
       }
       return false;
     };
@@ -902,11 +906,19 @@ Sim.prototype.aimScore = function (a, caster, extra, friends, memo) {
   if (friends.length) v -= this.friendPenalty(caster, a, friends);
   return v;
 };
+/* the 8 grid directions, in the order aimStraight has always tried them */
+const DIR8 = [0, 1, 2, 3, 4, 5, 6, 7].map(k => [Math.round(Math.cos(k * Math.PI / 4)), Math.round(Math.sin(k * Math.PI / 4))]);
 /* the squares a big creature (side bn, top-left on ox,oy) can start a cone, line or cube from: the edge of its body */
 const bodyEdge = (ox, oy, bn) => {
   const out = [];
   for (let j = 0; j < bn; j++) for (let i = 0; i < bn; i++) if (!i || !j || i === bn - 1 || j === bn - 1) out.push([ox + i, oy + j]);
   return out;
+};
+/* a cone or a 5-ft line from an edge square (px,py) of a body, one step (sx,sy) at a time: it stays off the body exactly when its first
+   square is off it (every square of it is at least that far out along the same axis); a wider line or a cube needs areaOnBody */
+const offBody = (spec, px, py, sx, sy, bx, by, bn) => {
+  const x = px + sx, y = py + sy, out = x < bx || y < by || x >= bx + bn || y >= by + bn;
+  return spec.shape === 'cone' || (spec.shape === 'line' && Math.max(1, Math.round((spec.width || 5) / 5)) === 1) ? out : null;
 };
 /* does an area from (px,py) aimed at (ax,ay) cover any square of a body (side bn, top-left on bx,by)? */
 const areaOnBody = (spec, px, py, ax, ay, bx, by, bn) => {
@@ -920,13 +932,16 @@ Sim.prototype.aimStraight = function (a, spec, t, ox, oy, pool, caster) {
   const sp = bn > 1 ? Object.assign({}, spec, { atSelf: caster.x === ox && caster.y === oy }) : spec;
   let best = null, bs = -Infinity;
   const memo = new Map();
+  const narrow = sp.shape === 'cone' || (sp.shape === 'line' && Math.max(1, Math.round((sp.width || 5) / 5)) === 1);
   for (const [px, py] of origins) {
     const bear = Math.atan2(t.y - py, t.x - px);
     for (let k = 0; k < 8; k++) {
-      const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4));
+      const sx = DIR8[k][0], sy = DIR8[k][1];
+      // a cone or 5-ft line only reaches squares 1..n steps out along each axis it moves on: t's body must have one there (cheap, before inArea)
+      if (narrow && ((sx && ((sx > 0 ? t.x + tn - 1 - px : px - t.x) < 1 || (sx > 0 ? t.x - px : px - (t.x + tn - 1)) > n)) || (sy && ((sy > 0 ? t.y + tn - 1 - py : py - t.y) < 1 || (sy > 0 ? t.y - py : py - (t.y + tn - 1)) > n)))) continue;
       const ax = px + sx * n, ay = py + sy * n;
+      if (bn > 1) { const off = offBody(sp, px, py, sx, sy, ox, oy, bn); if (off === false || (off === null && areaOnBody(sp, px, py, ax, ay, ox, oy, bn))) continue; }
       if (tn > 1 ? !areaOnBody(sp, px, py, ax, ay, t.x, t.y, tn) : !inArea(sp, px, py, ax, ay, t.x, t.y)) continue;
-      if (bn > 1 && areaOnBody(sp, px, py, ax, ay, ox, oy, bn)) continue;
       const r = this.areaAt(a, sp, t, px, py, ax, ay, pool, caster, true);
       if (!r) continue;
       let off = Math.abs(k * Math.PI / 4 - bear) % (2 * Math.PI); if (off > Math.PI) off = 2 * Math.PI - off;
@@ -1439,7 +1454,7 @@ Sim.prototype.learnAction = function (u, a) {
   if ((a.type === 'atk' || a.type === 'debuff') && a._range) u.seenRange = Math.max(u.seenRange || 0, a._range);
   const sp = areaSpec(a);
   const area = sp && (a.type === 'atk' || a.type === 'debuff') ? { id: a.id, shape: sp.shape, size: sp.size, range: Math.max(5, a._range || 5), dmg: a.type === 'atk' ? avgDice((a.ext && a.ext.wtDpr) || a.dpr) : 8 } : null;
-  if (area) { u.seenAreas = u.seenAreas || []; if (!u.seenAreas.some(x => x.id === a.id)) u.seenAreas.push(area); }
+  if (area) { u.seenAreas = u.seenAreas || []; if (!u.seenAreas.some(x => x.id === a.id)) u.seenAreas.push(area); (u.areaUsed = u.areaUsed || {})[a.id] = true; }
   const team = otherTeam(u.team);
   if (!this.learning(team)) return;
   const k = this.kind(team, u);
@@ -1665,6 +1680,30 @@ Sim.prototype.kAreas = function (u, t) {
     .map(a => { const sp = areaSpec(a) || { shape: 'sphere', size: 10 }; return { id: a.id, shape: sp.shape, size: sp.size, range: Math.max(5, a._range || 5), dmg: a.type === 'atk' ? avgDice((a.ext && a.ext.wtDpr) || a.dpr) : 8 }; });
   const seen = t.seenAreas || [];
   return m === 'learn' ? seen.concat(this.kind(u.team, t).areas.filter(x => !seen.some(y => y.id === x.id))) : seen;
+};
+/* the chance a recharge action comes back at the start of its user's turn, from the rules (Recharge 5-6: 1/3), as `turn` rolls it */
+const rechargeChance = a => Math.max(1, Math.round(6 / Math.max(1, (a.freq && a.freq.cooldownRounds) || 2))) / 6;
+/* area attacks u's side knows t has, each with the chance it is ready on t's next turn (docs/ai-v2.md, breath spacing; AI v2):
+   [{ id, shape, size, range, dmg, width, placed, ready }]. Open: the real state (ready 1; a spent recharge its recharge chance; a spent
+   limited one 0). Learn and blind: what kAreas knows, ready until it is seen used this fight, then (a recharge) its recharge chance */
+Sim.prototype.kAreasNext = function (u, t) {
+  const m = this.kOf(u, t);
+  const geo = a => { const sp = a && areaSpec(a); return sp ? { width: sp.width || 5, placed: !!sp.placed } : { width: 5, placed: false }; };
+  if (!m) {
+    const out = [];
+    for (const a of t.actions) {
+      if (!((a.type === 'atk' || a.type === 'debuff') && a.actionSlot === 0 && (areaSpec(a) || ((a.useSaves || a.type === 'debuff') && (a.targets || 1) > 1)))) continue;
+      const ok = this.usable(t, a), ready = freqKind(a.freq) === 'recharge' ? (ok ? 1 : rechargeChance(a)) : ok ? 1 : 0;
+      if (!ready) continue;
+      const sp = areaSpec(a) || { shape: 'sphere', size: 10 };
+      out.push(Object.assign({ id: a.id, shape: sp.shape, size: sp.size, range: Math.max(5, a._range || 5), dmg: a.type === 'atk' ? avgDice((a.ext && a.ext.wtDpr) || a.dpr) : 8, ready }, geo(a)));
+    }
+    return out;
+  }
+  return this.kAreas(u, t).map(x => {
+    const a = t.actions.find(o => o.id === x.id), used = !!(t.areaUsed && t.areaUsed[x.id]);
+    return Object.assign({}, x, geo(a), { ready: used && a && freqKind(a.freq) === 'recharge' ? rechargeChance(a) : 1 });
+  });
 };
 Sim.prototype.kCaster = function (u, t) {
   const m = this.kOf(u, t); if (!m) return !!t.hasSpells;
@@ -3462,7 +3501,9 @@ const AI_BASE = {
     bonus: 0.8, aim: 1,                                          // the bonus attack it could add from a square; Steady Aim
     risk: 0.45, riskRanged: 0.9, hurt: 1.6, downCap: 1.25,       // damage it would take there (melee / back line), more when hurt, capped at its HP × downCap
     retreatSafety: 2.5, retreatOffense: 0.5,
-    oa: 1, spacing: 1.2, move: 0.15, dodge: 0.45, meleeShoot: 0.6, hide: 0.3,
+    oa: 1, move: 0.15, dodge: 0.45, meleeShoot: 0.6, hide: 0.3,
+    // an enemy's area attack (breath, cone, Fireball: docs/ai-v2.md): HP it costs our side × safety × areaRisk; the share of its damage one creature caught takes; the chance a ready one is used
+    areaRisk: 1, areaSave: 0.75, areaUse: 1,
     progress: 0.5,                                               // a full move closer is worth this share of its best hit
     recover: 6, recklessRisk: 0.8, recklessDrop: 3,              // self-heal when hurt; Reckless: extra hits taken, × recklessDrop if they could drop it
     // casters (step 2) and anything that heals, buffs or controls
@@ -3770,23 +3811,62 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     }
     return t;
   };
+  /* the enemy area attacks it knows of, priced in expected HP (docs/ai-v2.md, breath and cone spacing): for each, the chance it is ready on
+     that enemy's next turn × the damage to one creature caught × whether this square makes the enemy's best aim catch one more of us.
+     Aims: a cone, line or adjacent cube from each square on the edge of the enemy's body × 8 directions; a sphere or set-down cube centred on
+     one of us (or on the square itself) within its range + move; an emanation round its body. M0 = the most of the others one aim catches. */
+  const W = (u.v2P || AI_BASE).w, un = u.n || 1;
+  const mine = myTeam.filter(o => o !== u && o.onBoard && !o.dead && o.hp > 0);
+  const caughtBy = (spec, px, py, ax, ay) => { let c = 0; for (const o of mine) if (areaOnBody(spec, px, py, ax, ay, o.x, o.y, o.n || 1)) c++; return c; };
   const areas = [];
-  for (const e of foes) if (!this.incap(e)) for (const ar of this.kAreas(u, e)) areas.push({ e, shape: ar.shape, size: ar.size, range: ar.range, w: Math.min(3, Math.max(0.6, ar.dmg / 10)) });
-  const spacing = (x, y) => {
-    let pen = 0;
-    for (const at2 of areas) {
-      let near = 0;
-      if (at2.shape === 'cone' || at2.shape === 'line') {
-        if (this.distXY(x, y, at2.e) > at2.size + 5) continue;
-        const r = Math.max(10, at2.size / 2);
-        for (const o of myTeam) if (o !== u && this.distXY(x, y, o) <= r && this.dist(o, at2.e) <= at2.size + 5) near++;
-      } else {
-        if (this.distXY(x, y, at2.e) > at2.range + at2.size * 2) continue;
-        const r = Math.min(30, at2.shape === 'sphere' ? at2.size * 2 : at2.size);
-        for (const o of myTeam) if (o !== u && this.distXY(x, y, o) <= r) near++;
+  for (const e of foes) if (!this.incap(e)) for (const ar of this.kAreasNext(u, e)) {
+    const P = Math.min(1, ar.ready * W.areaUse), per = ar.dmg * W.areaSave;
+    if (!(P * per > 0)) continue;
+    const spec = { shape: ar.shape, size: ar.size, width: ar.width || 5, placed: !!ar.placed }, n = Math.max(1, Math.round(ar.size / 5)), en = e.n || 1;
+    const A = { e, spec, P, per, aims: [], M0: 0, n, point: false, far: 0 };
+    // it can move first: a group of us anywhere it can reach is one aim (allies within half a cone's or line's length, a burst's
+    // diameter or an emanation's width, body to body); M0 also takes the biggest such group of the others
+    const mv = e.grappledBy || this.has(e, ['Restrained']) ? 0 : this.speedOf(e);
+    A.grp = Math.max(1, Math.round((ar.shape === 'sphere' ? ar.size : ar.shape === 'emanation' ? ar.size * 2 + 5 * (en - 1) : ar.shape === 'cube' ? ar.size : ar.size / 2) / 5));
+    A.reach = Math.round(((ar.shape === 'sphere' || ar.placed ? ar.range : 0) + mv + ar.size + 5) / 5);
+    const grpOf = (x, y, n) => { let c = 0; for (const o of mine) if (this.gapTo(x, y, n, o) <= A.grp) c++; return c; };
+    A.grpOf = grpOf;
+    for (const o of mine) if (this.gapTo(o.x, o.y, o.n || 1, e) <= A.reach) A.M0 = Math.max(A.M0, grpOf(o.x, o.y, o.n || 1));   // o itself counts: gap 0
+    if (ar.shape === 'cone' || ar.shape === 'line' || (ar.shape === 'cube' && !ar.placed)) {
+      for (const [px, py] of en > 1 ? bodyEdge(e.x, e.y, en) : [[e.x, e.y]]) for (let k = 0; k < 8; k++) {
+        const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4)), ax = px + sx * n, ay = py + sy * n;
+        if (en > 1) { const off = offBody(spec, px, py, sx, sy, e.x, e.y, en); if (off === false || (off === null && areaOnBody(spec, px, py, ax, ay, e.x, e.y, en))) continue; }
+        A.aims.push({ px, py, ax, ay, c: caughtBy(spec, px, py, ax, ay) });
       }
-      pen += near * at2.w;
+      A.far = (ar.size + 5) / 5;                                     // squares from its body beyond which no aim reaches
+    } else if (ar.shape === 'emanation') {
+      spec.bn = en;
+      A.aims.push({ px: e.x, py: e.y, ax: e.x, ay: e.y, c: caughtBy(spec, e.x, e.y, e.x, e.y) });
+      A.far = n + 1;
+    } else {
+      // a burst set down at a point: centred on one of us, within its range + the move to get there
+      A.point = true; A.reachFt = ar.range + (e.grappledBy || this.has(e, ['Restrained']) ? 0 : this.speedOf(e));
+      for (const o of mine) if (this.gapTo(o.x, o.y, 1, e) * 5 <= A.reachFt) A.aims.push({ px: o.x, py: o.y, ax: o.x, ay: o.y, c: caughtBy(spec, o.x, o.y, o.x, o.y) });
     }
+    for (const am of A.aims) if (am.c > A.M0) A.M0 = am.c;
+    areas.push(A);
+  }
+  const spC = new Map();
+  const spacing = (x, y) => {
+    if (!areas.length) return 0;
+    const key = x + y * this.W;
+    let pen = spC.get(key);
+    if (pen !== undefined) return pen;
+    pen = 0;
+    for (const A of areas) {
+      if (this.gapTo(x, y, un, A.e) > A.reach) continue;
+      let M1 = 1 + A.grpOf(x, y, un);
+      for (const am of A.aims) if (am.c + 1 > M1 && areaOnBody(A.spec, am.px, am.py, am.ax, am.ay, x, y, un)) M1 = am.c + 1;
+      if (A.point && this.gapTo(x, y, 1, A.e) * 5 <= A.reachFt) M1 = Math.max(M1, 1 + caughtBy(A.spec, x, y, x, y));
+      // it picks among its aims in proportion to how many each catches: what u adds to our expected creatures caught through its group
+      if (M1 > 0) pen += A.P * A.per * (M1 * M1 / Math.max(M1, A.M0) - (M1 > 1 ? (M1 - 1) * (M1 - 1) / Math.max(M1 - 1, A.M0) : 0));
+    }
+    spC.set(key, pen);
     return pen;
   };
   const adjC = new Map(), hitC = new Map();
@@ -4617,7 +4697,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   let anyOffense = false;
   consider(speed, (x, y, rm, steps) => {
     const { best, dOf, sees } = offAt(x, y, false);
-    const th = threat(x, y), sp = ctx.danger.spacing(x, y) * W.spacing;
+    const th = threat(x, y), sp = ctx.danger.spacing(x, y) * safety * W.areaRisk;
     const keep = (caster ? reachPen(x, y) : 0) + concR(th);
     const risk = th * safety + sp + keep, walk = steps * W.move;
     const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0, oa = oa0 + dropCost(oa0);
@@ -4656,14 +4736,14 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       if ((x === u.x && y === u.y) || taken[x + y * Wd] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.losB(u.x, u.y, u.n, x, y, u.n)) continue;
       const { best } = offAt(x, y, noSlot);
       if (!best) continue;
-      const th = threat(x, y), risk = th * safety + ctx.danger.spacing(x, y) * W.spacing + (caster ? reachPen(x, y) : 0) + concR(th);
+      const th = threat(x, y), risk = th * safety + ctx.danger.spacing(x, y) * safety * W.areaRisk + (caster ? reachPen(x, y) : 0) + concR(th);
       options.push({ mode: 'jump', jumpA, x, y, rm: null, off: best, steps: 0, score: best.val - risk - jp.base - jp.tax * Math.max(0, best.val) });
     }
   }
   // nothing to hit from anywhere it can walk: Dash is the other way to spend the action
   if (!onlyAct && !anyOffense && speed > 0) consider(speed * 2, (x, y, rm, steps) => {
     const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0, oa = oa0 + dropCost(oa0);
-    options.push({ mode: 'dash', x, y, rm, steps, score: (need0 - need(x, y)) * progUnit - threat(x, y) * safety - ctx.danger.spacing(x, y) * W.spacing - oa - steps * W.move * 0.5 });
+    options.push({ mode: 'dash', x, y, rm, steps, score: (need0 - need(x, y)) * progUnit - threat(x, y) * safety - ctx.danger.spacing(x, y) * safety * W.areaRisk - oa - steps * W.move * 0.5 });
   });
   if (!options.length) return null;
   options.sort((p, q) => q.score - p.score);
