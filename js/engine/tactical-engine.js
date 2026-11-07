@@ -1093,11 +1093,17 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   // Hiding (self-applied Invisible) lasts until the creature attacks or its next turn ends (2024 Hide)
   if (holder === src && data.condition === 'Invisible' && data.duration === '1 round') { b.expiry = 'hide'; b.madeOnTurn = holder.turnNo || 0; }
   holder.buffs.push(b);
+  if (b.data.condition) this._rmCache = null;   // an Incapacitated creature's space can be walked through: the movement maps change
   if (holder.fly) this._flyMapVer = -1;   // knocked out of the air, or given wings
   if (holder.alt > 0) this.fallCheck(holder);
   return b;
 };
-Sim.prototype.dropBuffs = function (u, pred) { u.buffs = u.buffs.filter(b => !pred(b)); if (u.fly) this._flyMapVer = -1; };
+Sim.prototype.dropBuffs = function (u, pred) {
+  const n = u.buffs.length;
+  u.buffs = u.buffs.filter(b => !pred(b));
+  if (u.buffs.length !== n) this._rmCache = null;     // a condition may have ended (see addBuff)
+  if (u.fly) this._flyMapVer = -1;
+};
 
 /* ----- uses ----- */
 Sim.prototype.slotFor = function (u, level) {
@@ -1256,13 +1262,15 @@ Sim.prototype.reachMapRaw = function (u, budgetFt) {
   const W = this.W, H = this.H;
   const dist = new Int16Array(W * H).fill(-1), prev = new Int32Array(W * H).fill(-1);
   const block = new Uint8Array(W * H);   // 1 = standing enemy (can't pass)
-  // a hostile creature's space can be passed if it is Tiny or two sizes apart (2024 rule); an ally's always
-  const us = sizeIdx(u.size, 2);
-  for (const o of this.units) if (o !== u && o.onBoard && !o.dead && o.team !== u.team && this.alive(o) && o.size !== 'Tiny' && Math.abs(sizeIdx(o.size, 2) - us) < 2) {
+  // a hostile creature's space can be passed if it is Tiny, two sizes apart or Incapacitated (2024 rule); an ally's always.
+  // Anyone else's space is difficult terrain (crowd: top-left squares where u's body would overlap someone)
+  const us = sizeIdx(u.size, 2), un = u.n || 1, crowd = new Uint8Array(W * H);
+  for (const o of this.units) if (o !== u && o.onBoard && !o.dead) {
     const on = o.n || 1;
+    for (let y = Math.max(0, o.y - un + 1); y < Math.min(H, o.y + on); y++) for (let x = Math.max(0, o.x - un + 1); x < Math.min(W, o.x + on); x++) crowd[x + y * W] = 1;
+    if (o.team === u.team || !this.alive(o) || o.size === 'Tiny' || Math.abs(sizeIdx(o.size, 2) - us) >= 2 || this.incap(o)) continue;
     for (let j = 0; j < on; j++) for (let i = 0; i < on; i++) if (o.x + i < W && o.y + j < H) block[(o.x + i) + (o.y + j) * W] = 1;
   }
-  const un = u.n || 1;
   if (un > 1) {   // a big creature needs its whole footprint clear: mark every square it can't stand on as blocked
     const bad = new Uint8Array(W * H);
     for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
@@ -1273,21 +1281,8 @@ Sim.prototype.reachMapRaw = function (u, budgetFt) {
     bad[u.x + u.y * W] = 0;
     for (let c = 0; c < bad.length; c++) block[c] = bad[c];
   }
-  if (this.T.any) return this.reachMapT(u, steps, dist, prev, block);
-  const q = [u.x + u.y * W]; dist[q[0]] = 0;
-  for (let qi = 0; qi < q.length; qi++) {
-    const c = q[qi], cx = c % W, cy = (c / W) | 0;
-    if (dist[c] >= steps) continue;
-    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
-      if (!dx && !dy) continue;
-      const nx = cx + dx, ny = cy + dy;
-      if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-      const n = nx + ny * W;
-      if (dist[n] >= 0 || block[n]) continue;                     // can't move through standing enemies
-      dist[n] = dist[c] + 1; prev[n] = c; q.push(n);
-    }
-  }
-  return { dist, prev, W };
+  crowd[u.x + u.y * W] = 0;
+  return this.reachMapT(u, steps, dist, prev, block, crowd);    // another's space costs double, so even an open field is a weighted search
 };
 /* movement with terrain: difficult ground costs double, climbing costs extra, walls can't be crossed
    (or squeezed past diagonally). dist[] holds the movement spent, in 5-ft units. */
@@ -1296,7 +1291,7 @@ Sim.prototype.climbChance = function (u) {
   if (this.climbDC >= 99) return 0;
   return Math.max(0, Math.min(1, (21 + (u.athletics || 0) - this.climbDC) / 20));
 };
-Sim.prototype.reachMapT = function (u, steps, dist, prev, block) {
+Sim.prototype.reachMapT = function (u, steps, dist, prev, block, crowd) {
   const W = this.W, H = this.H, T = this.T;
   const start = u.x + u.y * W;
   dist[start] = 0;
@@ -1311,18 +1306,19 @@ Sim.prototype.reachMapT = function (u, steps, dist, prev, block) {
       if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
       const n = nx + ny * W;
       if (block[n] || T.wall[n]) continue;
+      const rough = T.rough[n] || T.cover[n] || (crowd && crowd[n]);
       if (dx && dy && T.wall[cx + dx + cy * W] && T.wall[cx + (cy + dy) * W]) continue;   // no slipping between two walls
       // flyers skip rough ground and climbing. Going up costs 5 ft extra per 5 ft of height. A ledge of 10 ft or
       // more (up or down) has to be climbed: a climb speed does it at no extra cost, anyone else needs an
       // Athletics check (rolled when they try) and doesn't attempt one it would likely fail
       const rise = T.h[n] - T.h[c];
       let cost;
-      if (u.fly) cost = 1;
+      if (u.fly) cost = crowd && crowd[n] ? 2 : 1;                 // a flyer skips rough ground, not someone's space
       else if (rise >= 2 || rise <= -2) {
-        if (u.climb) cost = T.rough[n] || T.cover[n] ? 2 : 1;
+        if (u.climb) cost = rough ? 2 : 1;
         else if (this.climbChance(u) < 0.35) continue;
-        else cost = (T.rough[n] || T.cover[n] ? 2 : 1) + Math.abs(rise);
-      } else cost = (T.rough[n] || T.cover[n] ? 2 : 1) + Math.max(0, rise);
+        else cost = (rough ? 2 : 1) + Math.abs(rise);
+      } else cost = (rough ? 2 : 1) + Math.max(0, rise);
       const nd = dc + cost;
       if (nd > steps) continue;
       if (dist[n] >= 0 && dist[n] <= nd) continue;
@@ -2594,7 +2590,8 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
       try { this.counterAttack(e, u, 'brace'); } finally { this._braceCheck = false; }
       if (u.dead || u.hp <= 0) return;
     }
-    const rough = !u.fly && this.T.any && (this.T.rough[step.x + step.y * this.W] || this.T.cover[step.x + step.y * this.W]);
+    // rough ground (not for flyers), or another creature's space (2024: difficult terrain for anyone)
+    const rough = (!u.fly && this.T.any && (this.T.rough[step.x + step.y * this.W] || this.T.cover[step.x + step.y * this.W])) || !!this.occupant(step.x, step.y, u.n, u);
     u._steps = (u._steps || 0) + (rough ? 2 : 1) + (u.fly || (u.climb && Math.abs(rise) >= 2) ? 0 : (Math.abs(rise) >= 2 ? Math.abs(rise) : Math.max(0, rise)));
   }
   flush();
@@ -2839,7 +2836,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   if (tgt.hp > 0 && !tgt.dead && dmg > 0) for (const b of tgt.buffs.slice()) {
     if (!b.saveOnDamage || typeof b.dc !== 'number' || b.dc >= 99 || tgt.buffs.indexOf(b) < 0) continue;
     const s = this.saveRoll(tgt, b.dc, this.byId[b.src] || null, b.saveAbility, { adv: b.saveOnDamage === 'adv' });
-    if (s.success) { tgt.buffs = tgt.buffs.filter(x => x !== b); this._flyMapVer = -1; this.ev('save', `${tgt.name} is hurt out of ${b.name} (${s.total} vs DC ${b.dc}${b.saveOnDamage === 'adv' ? ', advantage' : ''})`, { uid: tgt.uid }); }
+    if (s.success) { tgt.buffs = tgt.buffs.filter(x => x !== b); this._flyMapVer = -1; this._rmCache = null; this.ev('save', `${tgt.name} is hurt out of ${b.name} (${s.total} vs DC ${b.dc}${b.saveOnDamage === 'adv' ? ', advantage' : ''})`, { uid: tgt.uid }); }
   }
   return dmg;
 };
@@ -2922,6 +2919,7 @@ Sim.prototype.endConcentration = function (u, why) {
   let any = false;
   this._flyMapVer = -1;
   for (const o of this.units) { const n = o.buffs.length; o.buffs = o.buffs.filter(b => !(b.src === u.uid && b.id === id)); if (o.buffs.length !== n) any = true; }
+  if (any) this._rmCache = null;
   const sp = u.actions.find(a => a.id === id);
   if (any && why && !/^casts /.test(why)) this.ev('effect', `${u.name} loses concentration on ${sp ? sp.name : 'a spell'}${why ? ' (' + why + ')' : ''}`, { uid: u.uid });
 };
@@ -5261,7 +5259,7 @@ Sim.prototype.endTurn = function (u) {
       this._saveCond = b.data && b.data.condition;
       const s = this.saveRoll(u, b.dc, null, b.saveAbility);
       this._saveCond = null;
-      if (s.success) { u.buffs = u.buffs.filter(x => x !== b); this._flyMapVer = -1; this.ev('save', `${u.name} shakes off ${b.name}`, { uid: u.uid }); }
+      if (s.success) { u.buffs = u.buffs.filter(x => x !== b); this._flyMapVer = -1; this._rmCache = null; this.ev('save', `${u.name} shakes off ${b.name}`, { uid: u.uid }); }
     }
   }
   this.dropBuffs(u, b => b.expiry === 'hide' && (u.turnNo || 0) > b.madeOnTurn);

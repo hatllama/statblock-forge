@@ -349,7 +349,7 @@ section('Creature sizes');
       const lane = {}; for (let x = 0; x < 16; x++) for (let y = 0; y < 12; y++) if (y < 4 || y > 3 + mN) lane[x + ',' + y] = { t: 'wall' };
       const m = unit('m', 'party', 1, 4, mN, mSize), o = unit('o', team, 6, 4, oN, oSize);
       const s = board(16, 12, lane, [m, o]);
-      return s.reachMapRaw(m, 60).dist[12 + 4 * 16] >= 0;
+      return s.reachMapRaw(m, 120).dist[12 + 4 * 16] >= 0;      // room for the double cost of crossing a big space
     };
     for (const [z, n] of BIG.concat([['Small', 1], ['Tiny', 1]])) {
       const apart = Math.abs(['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'].indexOf(z) - 2) >= 2 || z === 'Tiny';
@@ -357,6 +357,17 @@ section('Creature sizes');
       check(through('Medium', 1, z, n, 'party'), `a Medium creature passes through an allied ${z} creature`);
     }
     check(through('Huge', 3, 'Medium', 1, 'foes') && !through('Large', 2, 'Medium', 1, 'foes') && through('Gargantuan', 4, 'Small', 1, 'foes'), 'a Huge creature walks through a hostile Medium one, a Large one does not, a Gargantuan one walks through a Small one');
+    // an Incapacitated foe can be passed; anyone else's space is difficult terrain (2024)
+    const lane1 = {}; for (let x = 0; x < 16; x++) for (let y = 0; y < 12; y++) if (y !== 4) lane1[x + ',' + y] = { t: 'wall' };
+    const run1 = (team, buffs, fly) => { const m = unit('m', 'party', 1, 4, 1, 'Medium', { fly: fly || 0 }), o = unit('o', team, 3, 4, 1, 'Medium', { buffs: buffs || [] }); const s = board(16, 12, lane1, [m, o]); return s.reachMapRaw(m, 60).dist[5 + 4 * 16]; };
+    check(run1('foes') < 0 && run1('foes', [{ id: 'p', data: { condition: 'Paralyzed' } }]) === 5, `a Medium creature passes a Paralyzed foe in a corridor (${run1('foes', [{ id: 'p', data: { condition: 'Paralyzed' } }])} squares of movement for 4 steps), not a standing one`);
+    check(run1('party') === 5 && run1('party', null, 30) === 5, `an ally's square is difficult terrain, for a flyer too (4 steps cost ${run1('party')} and ${run1('party', null, 30)})`);
+    const lone = unit('m', 'party', 1, 4, 1, 'Medium'), sl = board(16, 12, lane1, [lone]);
+    check(sl.reachMapRaw(lone, 60).dist[5 + 4 * 16] === 4, 'with nobody in the way the same 4 steps cost 4');
+    const held = unit('o', 'foes', 3, 4, 1, 'Medium'), mv = unit('m', 'party', 1, 4, 1, 'Medium'), sh = board(16, 12, lane1, [mv, held]);
+    const before = sh.reachMap(mv, 60).dist[5 + 4 * 16];
+    sh.addBuff(held, mv, { id: 'hp', name: 'Hold Person' }, { duration: 'repeat the save each round', condition: 'Paralyzed' });
+    check(before < 0 && sh.reachMap(mv, 60).dist[5 + 4 * 16] === 5, 'a foe becoming Paralyzed opens the corridor at once (the movement maps are not kept stale)');
   }
   // 6. a shove goes straight away from the pusher's body
   for (const [z, n] of BIG) {
@@ -724,7 +735,7 @@ section('Character sheets');
       && pot(p['eldar-yollavien.txt'])[0].amount === '2d4 + 2' && p['eldar-yollavien.txt'].ext.resources['Potion of Healing'].uses === 1 && !pot(p['tacitus-roll20.txt']).length && !(p['tacitus-roll20.txt'].ext.resources && p['tacitus-roll20.txt'].ext.resources['Potion of Healing']),
       'inventory Healing potions become a pool (uses = quantity) and a bonus-action heal within 5 ft; a sheet without potions gets neither');
     let drunk = 0, fed = 0, over = 0;
-    for (let i = 0; i < 12; i++) for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify([bb, p['eldar-yollavien.txt']])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 130, AC: 11, saveBonus: 0, count: 8, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, partyAI: 'tactical', record: true })) {
+    for (let i = 0; i < 24; i++) for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify([bb, p['eldar-yollavien.txt']])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 130, AC: 11, saveBonus: 0, count: 8, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, partyAI: 'tactical', record: true })) {
       const by = {};
       for (const e of r.events) { const m = /^(.+?) → (.+?): Potion of Healing, \+\d+ HP/.exec(e.text || ''); if (m) { by[m[1]] = (by[m[1]] || 0) + 1; if (m[1] === m[2]) drunk++; else fed++; } }
       for (const k in by) if (by[k] > (/Eldar/.test(k) ? 1 : 2)) over++;

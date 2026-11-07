@@ -1074,7 +1074,7 @@ kind tries the top-left pair first, so a Medium creature's test is exactly the o
 | 2 | Emanations and lingering zones that follow (Spirit Guardians, Wrath of the Sea) from a big creature | measured from the top-left square | **fixed**: from the body's edge (`spec.bn`), and a following zone keeps the body |
 | 2 | Passive auras (Other 1/2 attacks) | targets by body distance already; the recorded aura squares and the War Table's dashed square were drawn round the top-left square | **fixed**: drawn round the body |
 | 3 | Opportunity attacks and reach | provoked when the mover's body leaves the reach of the attacker's body (`adjacentEnemies` uses `gapTo` both ways) | **works**; tests added for a Huge attacker and a Large mover |
-| 4 | Moving through creatures | allies always passable; every standing enemy blocks | **fixed**: a hostile creature's space can be passed if it is Tiny or two sizes apart (2024 rule); nobody stops in another's space (unchanged). **Left**: an Incapacitated creature's space is passable and another creature's space is difficult terrain (2024) — both would change every Medium log; the user's call |
+| 4 | Moving through creatures | allies always passable; every standing enemy blocks | **fixed**: a hostile creature's space can be passed if it is Tiny, two sizes apart or Incapacitated (2024 rule); another creature's space, ally or foe, is difficult terrain (costs double; it doesn't stack with rough ground); nobody stops in another's space (unchanged). The last two were the user's call: they change every log, Medium days included (see "Passable spaces" below) |
 | 5 | Squeezing (a gap one size smaller, double cost, disadvantage on attacks, advantage against it) | a big creature cannot enter a gap narrower than its body | **left**: needs a body that shrinks while it squeezes (occupancy, reach maps and every `fits`) plus the attack and save modifiers; not small. "Cannot enter" stays |
 | 6 | Grapple and shove limits | `ext.grapple.maxSize` / `pushMaxSize` read against the target's real size | **works**; the statblock states the limit, so the grappler's own size is already in it |
 | 6 | Shove direction | from top-left to top-left: a big pusher could push sideways | **fixed**: straight away from the pusher's body centre |
@@ -1091,6 +1091,15 @@ Body-to-body sight answers for a big body are cached until anyone moves (`_lbC`)
 from any square of a body), run time 92.1 s → 93.4 s on the same machine back to back. Logs: the Medium-only guard days do not move in any arm
 (old AI, v2, v2 learn, v2 blind); every other day has a Large creature (hard-day's Ogres, Troll and Owlbears, bandit-day's Sand-Pit Worms, the
 casters' Ogres, the Young Green Dragon), so 54 / 49 / 50 / 50 of 96 hashes change (old / v2 / learn / blind). `tests/fixtures/hashes-v2-learn.txt` is regenerated.
+
+### Passable spaces (2024 rule, the user's decision)
+
+"You can pass through the space of an ally, a creature that has the Incapacitated condition, a Tiny creature, or a creature two sizes larger or
+smaller than you. Another creature's space is Difficult Terrain for you." `reachMapRaw` blocks a hostile creature only if it is none of those
+(Incapacitated: `incap`, which includes Paralyzed, Stunned, Unconscious…; a creature at 0 HP was already passable). It marks every square
+where the mover's body would overlap another creature, of either side, at 0 HP or not (`crowd`), and the movement search (`reachMapT`, now used
+on open maps too) charges 2 for stepping there, as for rough ground (the two don't stack; a flyer pays it too, since nothing stands under a
+flyer here). `moveAlongSteps` charges the same when the move is carried out. Ending in another's space stays impossible.
 
 ## Breath and cone spacing: area attacks priced in damage (v2)
 
