@@ -1099,7 +1099,14 @@ smaller than you. Another creature's space is Difficult Terrain for you." `reach
 (Incapacitated: `incap`, which includes Paralyzed, Stunned, Unconscious…; a creature at 0 HP was already passable). It marks every square
 where the mover's body would overlap another creature, of either side, at 0 HP or not (`crowd`), and the movement search (`reachMapT`, now used
 on open maps too) charges 2 for stepping there, as for rough ground (the two don't stack; a flyer pays it too, since nothing stands under a
-flyer here). `moveAlongSteps` charges the same when the move is carried out. Ending in another's space stays impossible.
+flyer here). `moveAlongSteps` charges the same when the move is carried out. Ending in another's space stays impossible. A condition starting or
+ending clears the cached movement maps (`_rmCache`), so a foe held by Hold Person opens a corridor at once.
+
+**Results** (200 runs, same seeds, all families × open / learn / blind against the breath-spacing tip): 0 of 333 rows worse or better beyond 2 SE;
+mean win 80.0 → 80.2 (open), 76.7 → 77.2 (learn), 71.9 → 72.1 (blind); the largest moves are the three-fight day open +7.5 and E6 open −7.0,
+both inside 2 SE. Logs: every day changes, Medium-only guard days included (67 / 75 / 73 / 70 of 96 for old / v2 / learn / blind);
+`hashes-v2-learn.txt` regenerated. `npm test` 484 → 488 checks, 78.0 s → 81.6 s back to back. The potion check ("fed to a neighbour") now plays
+24 fights instead of 12: feeding still happens (14 times in 60 days against 16 before) but none fell in the first 12.
 
 ## Breath and cone spacing: area attacks priced in damage (v2)
 
