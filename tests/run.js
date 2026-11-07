@@ -1736,14 +1736,16 @@ section('AI v2: breath and cone spacing, priced in damage');
   const breath = d => d.actions.find(a => /Breath/.test(a.name));
   const red = srd('Young Red Dragon'), full = Tac.avgDice(breath(red).dpr) * W.areaSave;
   const open = probe(cp(red), 'open', (S, u, d) => { const a = costs(S, u, d); S.spend(d, breath(d)); const b = costs(S, u, d); const v1 = S.kAreas(u, d).length; d.recharge.set(breath(d).id, true); return { a, b, v1 }; });
-  check(Math.abs(open.a.join - full) < 0.01 && Math.abs(open.a.apart - full / 2) < 0.01, `open: joining the bunch of two in the cone costs one creature's breath (${open.a.join.toFixed(1)} of ${full.toFixed(1)} HP); alone on the far side of the dragon, half (it breathes the pair as often as not: ${open.a.apart.toFixed(1)})`);
-  check(Math.abs(open.b.join - full / 3) < 0.01 && open.v1 === 0, `open: a spent breath is priced at its recharge chance, 1/3 (${open.b.join.toFixed(1)}); the old AI's kAreas still drops it (${open.v1} areas)`);
+  // three of us in reach (N = 3): joining the pair makes a group of 3, adding (2·2 + 1) / 3 creatures caught; alone, 1 / 3
+  const J = 5 / 3, A1 = 1 / 3;
+  check(Math.abs(open.a.join - full * J) < 0.01 && Math.abs(open.a.apart - full * A1) < 0.01, `open: joining the bunch of two in the cone adds 5/3 of a creature caught (${open.a.join.toFixed(1)} HP, one creature ${full.toFixed(1)}); alone on the far side of the dragon, 1/3 (${open.a.apart.toFixed(1)})`);
+  check(Math.abs(open.b.join - full * J / 3) < 0.01 && open.v1 === 0, `open: a spent breath is priced at its recharge chance, 1/3 (${open.b.join.toFixed(1)}); the old AI's kAreas still drops it (${open.v1} areas)`);
   const learn = probe(cp(red), 'learn', (S, u, d) => { const a = costs(S, u, d); S.learnAction(d, breath(d)); const b = costs(S, u, d); d.areaUsed = null; const c = costs(S, u, d); return { a, b, c }; });
-  check(learn.a.join === 0 && Math.abs(learn.b.join - full / 3) < 0.01 && Math.abs(learn.c.join - full) < 0.01, `learn: an unseen breath costs nothing (${learn.a.join}); seen used, its recharge chance (${learn.b.join.toFixed(1)}); seen in an earlier fight and not used in this one, all of it (${learn.c.join.toFixed(1)})`);
+  check(learn.a.join === 0 && Math.abs(learn.b.join - full * J / 3) < 0.01 && Math.abs(learn.c.join - full * J) < 0.01, `learn: an unseen breath costs nothing (${learn.a.join}); seen used, its recharge chance (${learn.b.join.toFixed(1)}); seen in an earlier fight and not used in this one, all of it (${learn.c.join.toFixed(1)})`);
   // a Huge body: the bunch on its right; a square beside its left side is out of the bunch's cones, one beside the bunch is not
   const adult = srd('Adult Red Dragon');
   const huge = probe(cp(adult), 'open', (S, u, d) => { const dz = S.v2Danger(u, [d], S.units.filter(o => o.team === 'party')); return { left: dz.spacing(4, 7), right: dz.spacing(12 + d.n + 2, 8), n: d.n }; });
-  check(huge.n === 3 && huge.right > 0 && Math.abs(huge.left - huge.right / 2) < 0.01, `a Huge dragon (60-ft cone): well to its left, more than half the cone's length from the bunch on its right, costs half what joining the bunch does (${huge.left.toFixed(1)} vs ${huge.right.toFixed(1)})`);
+  check(huge.n === 3 && huge.right > 0 && Math.abs(huge.left - huge.right / 5) < 0.01, `a Huge dragon (60-ft cone): well to its left, more than half the cone's length from the bunch on its right, costs a fifth of joining the bunch (${huge.left.toFixed(1)} vs ${huge.right.toFixed(1)})`);
   // the weights are plain data; the old count weight is gone
   check(typeof W.areaRisk === 'number' && typeof W.areaSave === 'number' && typeof W.areaUse === 'number' && W.spacing === undefined, 'areaRisk, areaSave and areaUse live in AI_BASE.w; w.spacing is gone');
 }

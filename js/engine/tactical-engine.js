@@ -3810,9 +3810,10 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     return t;
   };
   /* the enemy area attacks it knows of, priced in expected HP (docs/ai-v2.md, breath and cone spacing): for each, the chance it is ready on
-     that enemy's next turn × the damage to one creature caught × whether this square makes the enemy's best aim catch one more of us.
+     that enemy's next turn × the damage to one creature caught × what this square adds to our creatures caught, (2 (M1 − 1) + 1) / N:
+     it picks a group of us in proportion to its size, M1 = u's group here, N = how many of us it can reach.
      Aims: a cone, line or adjacent cube from each square on the edge of the enemy's body × 8 directions; a sphere or set-down cube centred on
-     one of us (or on the square itself) within its range + move; an emanation round its body. M0 = the most of the others one aim catches. */
+     one of us (or on the square itself) within its range + move; an emanation round its body. */
   const W = (u.v2P || AI_BASE).w, un = u.n || 1;
   const mine = myTeam.filter(o => o !== u && o.onBoard && !o.dead && o.hp > 0);
   const caughtBy = (spec, px, py, ax, ay) => { let c = 0; for (const o of mine) if (areaOnBody(spec, px, py, ax, ay, o.x, o.y, o.n || 1)) c++; return c; };
@@ -3821,15 +3822,16 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
     const P = Math.min(1, ar.ready * W.areaUse), per = ar.dmg * W.areaSave;
     if (!(P * per > 0)) continue;
     const spec = { shape: ar.shape, size: ar.size, width: ar.width || 5, placed: !!ar.placed }, n = Math.max(1, Math.round(ar.size / 5)), en = e.n || 1;
-    const A = { e, spec, P, per, aims: [], M0: 0, n, point: false, far: 0 };
-    // it can move first: a group of us anywhere it can reach is one aim (allies within half a cone's or line's length, a burst's
-    // diameter or an emanation's width, body to body); M0 also takes the biggest such group of the others
+    const A = { e, spec, P, per, aims: [], n, point: false, far: 0 };
+    // it can move first: a group of us anywhere it can reach is one aim (allies within a cone's length less 5 ft, half a line's, a burst's
+    // radius or an emanation's width, body to body)
     const mv = e.grappledBy || this.has(e, ['Restrained']) ? 0 : this.speedOf(e);
-    A.grp = Math.max(1, Math.round((ar.shape === 'sphere' ? ar.size : ar.shape === 'emanation' ? ar.size * 2 + 5 * (en - 1) : ar.shape === 'cube' ? ar.size : ar.size / 2) / 5));
+    A.grp = Math.max(1, Math.round((ar.shape === 'sphere' ? ar.size : ar.shape === 'emanation' ? ar.size * 2 + 5 * (en - 1) : ar.shape === 'cube' ? ar.size : ar.shape === 'cone' ? ar.size - 5 : ar.size / 2) / 5));
     A.reach = Math.round(((ar.shape === 'sphere' || ar.placed ? ar.range : 0) + mv + ar.size + 5) / 5);
     const grpOf = (x, y, n) => { let c = 0; for (const o of mine) if (this.gapTo(x, y, n, o) <= A.grp) c++; return c; };
     A.grpOf = grpOf;
-    for (const o of mine) if (this.gapTo(o.x, o.y, o.n || 1, e) <= A.reach) A.M0 = Math.max(A.M0, grpOf(o.x, o.y, o.n || 1));   // o itself counts: gap 0
+    A.N = 1;                                                           // of us in its reach, u included (u is counted only where it stands in reach)
+    for (const o of mine) if (this.gapTo(o.x, o.y, o.n || 1, e) <= A.reach) A.N++;
     if (ar.shape === 'cone' || ar.shape === 'line' || (ar.shape === 'cube' && !ar.placed)) {
       for (const [px, py] of en > 1 ? bodyEdge(e.x, e.y, en) : [[e.x, e.y]]) for (let k = 0; k < 8; k++) {
         const sx = Math.round(Math.cos(k * Math.PI / 4)), sy = Math.round(Math.sin(k * Math.PI / 4)), ax = px + sx * n, ay = py + sy * n;
@@ -3846,7 +3848,6 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
       A.point = true; A.reachFt = ar.range + (e.grappledBy || this.has(e, ['Restrained']) ? 0 : this.speedOf(e));
       for (const o of mine) if (this.gapTo(o.x, o.y, 1, e) * 5 <= A.reachFt) A.aims.push({ px: o.x, py: o.y, ax: o.x, ay: o.y, c: caughtBy(spec, o.x, o.y, o.x, o.y) });
     }
-    for (const am of A.aims) if (am.c > A.M0) A.M0 = am.c;
     areas.push(A);
   }
   const spC = new Map();
@@ -3861,8 +3862,8 @@ Sim.prototype.v2Danger = function (u, foes, myTeam) {
       let M1 = 1 + A.grpOf(x, y, un);
       for (const am of A.aims) if (am.c + 1 > M1 && areaOnBody(A.spec, am.px, am.py, am.ax, am.ay, x, y, un)) M1 = am.c + 1;
       if (A.point && this.gapTo(x, y, 1, A.e) * 5 <= A.reachFt) M1 = Math.max(M1, 1 + caughtBy(A.spec, x, y, x, y));
-      // it picks among its aims in proportion to how many each catches: what u adds to our expected creatures caught through its group
-      if (M1 > 0) pen += A.P * A.per * (M1 * M1 / Math.max(M1, A.M0) - (M1 > 1 ? (M1 - 1) * (M1 - 1) / Math.max(M1 - 1, A.M0) : 0));
+      // it picks a group of us in proportion to its size (N of us in reach): what u adds to our expected creatures caught, (M1² − (M1 − 1)²) / N
+      pen += A.P * A.per * (2 * (M1 - 1) + 1) / A.N;
     }
     spC.set(key, pen);
     return pen;

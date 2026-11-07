@@ -1116,7 +1116,7 @@ It also ignored recharge: open read `kAreas`, which drops a spent breath until i
 
 **The term.** For each area attack u's side knows an enemy has, the expected HP u's square costs the side on that enemy's next turn:
 
-    P(ready on its next turn) × expected damage to one creature caught × (M1² / max(M1, M0) − (M1 − 1)² / max(M1 − 1, M0))
+    P(ready on its next turn) × expected damage to one creature caught × (2 × (M1 − 1) + 1) / N
 
 - **P** (`kAreasNext`, a new knowledge accessor; the old `kAreas` stays for the old AI). A recharge action: ready → 1; spent → the chance it
   recharges at the start of its turn, from the rules (`faces / 6`: 1/3 for Recharge 5–6). Open reads the real state. Learn and blind know only
@@ -1128,9 +1128,13 @@ It also ignored recharge: open read `kAreas`, which drops a spent breath until i
   line or adjacent cube from each square on its body's edge × 8 directions (`bodyEdge`, `areaOnBody`); a sphere or placed cube centred on each of
   our creatures and on the square itself, within its range + move; an emanation round its body. M0 = the most of our other creatures one aim catches
   (any square of a body counts); M1 = the most one aim catches that includes u standing on this square (u + the others). The enemy's choice
-  is an estimate: it picks among its aims in proportion to how many each catches, so the group u stands in (M1 creatures) is hit with chance
-  M1 / max(M1, M0) and our expected creatures caught through it is M1² / max(M1, M0). The square's cost is what u adds to that: alone
-  beside a bigger cluster, 1 / M0 (a little); joining a pair, more than one creature (the pair now draws the breath more often).
+  is an estimate: it picks a group of us in proportion to its size, so with N of us in its reach (u included) a group of g is hit with chance
+  g / N and catches g² / N of us on average. The square's cost is what u adds: joining a group of M1 − 1 others raises it from (M1 − 1)² / N
+  to M1² / N, so (2 (M1 − 1) + 1) / N creatures; alone, 1 / N; out of its reach, nothing.
+  *Third version, rejected* (in the commit before this one): the chance was M1 / max(M1, M0), u's group against the biggest one only.
+  With the party spread into ones and twos, standing alone still cost a whole creature, as much as joining someone, so no square was cheaper
+  than another: in a learn dragon fight after the first breath the price at the chosen square equalled the cheapest reachable one in 33 of
+  37 turns, and the same choice with the weight × 1000 picked the same squares. Learn's later breaths barely moved (2.25 → 2.22 caught).
   *First version, rejected:* the enemy always takes its best aim (cost = max(0, M1 − M0), 0 or 1). Each creature then saw no cost in joining a
   smaller group, groups grew until they merged, and allies caught per breath went up (S3 open 3.26 → 3.78; 9 of 333 rows worse beyond 2 SE).
 - **Weighing it.** The cost is HP, so it is × the same `safety` as every other hit a square risks (`w.risk` for melee, `w.riskRanged` × `casterRisk`
@@ -1140,8 +1144,10 @@ It also ignored recharge: open read `kAreas`, which drops a spent breath until i
 - **Same code, other area attackers.** It runs on every enemy area attack `kAreasNext` reports: breath weapons, Fireball and Cone of Cold from
   casters (on either side: monsters on v2 spread from the party's Fireball the same way).
 - **It may move first.** Besides the exact aims from where it stands, the enemy can move and then aim: any group of us it can reach (its move +
-  the area's length, + range for a burst) counts as one aim, a group being the creatures within half a cone's or line's length, a burst's
-  radius, a cube's side or an emanation's width of each other (body to body, `gapTo`). M0 and M1 take the bigger of the two readings.
+  the area's length, + range for a burst) counts as one aim, a group being the creatures within a cone's length less 5 ft, half a line's
+  length, a burst's radius, a cube's side or an emanation's width of each other (body to body, `gapTo`). M1 takes the bigger of the two readings.
+  Cones were half their length until the learn diagnosis below: a 30-ft cone is 30 ft wide at its end, and of 109 learn breaths that caught two or
+  more of Zaki's party, 80 caught creatures 20–25 ft apart, which the half-length group (15 ft) counted as apart.
   The group sizes were tried on the dragon fights, K3 and the two Mages (200 runs, 3 modes): a burst's diameter made almost any spacing one group
   against Fireball, so the term only pushed casters apart (C-Caster monster open 76 → 63, beyond 2 SE); a third of a cone's length caught fewer
   breaths and lost S3 open (92.5 → 85); a burst's radius with half a cone's length was clean.
@@ -1174,6 +1180,36 @@ spent, priced at its 1/3 recharge chance, so the later breaths gain only a third
 change (the days whose enemies have area attacks: medium-day's Mage, hard-day's Mage and Priest, the young dragon); `hashes-v2-learn.txt`
 regenerated. `npm test` 479 → 484 checks, 121 s → 109 s back to back against the Part 1 tip (noise; the cheaper edge test also speeds Part 1's Huge
 breathers). Harness ms per day against the original tip (open, recorded): K3 251 → 295, E1 101 → 124, E2 159 → 203, S3 175 → 256, S6 128 → 138.
+
+### Learn's later breaths, and the giants' stomp (diagnosis and fix)
+
+**What was seen.** After the first breath, learn's later breaths still caught 2.25 → 2.22 (a dragon in a user fight caught 5 of 6 after a
+recharge), and S5's stomp caught more with the term than without (1.55 → 1.80, open).
+
+**Diagnosis** (learn, Zaki's party vs the Young Red Dragon, 40 fights; for each party turn after the first breath, the price at the chosen square,
+the cheapest square it could reach, and the choice with `w.areaRisk` × 1000). Not too small, not capped, not beaten by melee: in 33 of 37 turns
+the chosen square already was the cheapest, and × 1000 chose the same squares. The price was flat. Two causes:
+1. The formula compared u's group with the biggest one only (M1 / max(M1, M0)), so with the party spread into ones and twos, standing alone cost a
+   whole creature, the same as joining someone. Fixed: the chance is the group's share of everyone in reach (above).
+2. The group for a cone was half its length, but a 30-ft cone is 30 ft wide at its end: 80 of 109 learn breaths that caught two or more caught
+   creatures 20–25 ft apart, counted as apart. Fixed: a cone's group is its length less 5 ft.
+With (1) alone the later breaths fell little (learn 2.30 → 2.17); with both, 2.30 → 1.91 on the subset, every row inside 2 SE or better.
+
+**S5.** The caught creatures were the martials beside the stomping giant (0.69 → 0.84 a stomp with the old formula): two martials on the same
+side of the giant cost no more than one, so they bunched. With the fix, 1.80 → 1.61 (open; 1.55 before any spacing): the wider cone group now
+counts a martial 15 ft from another as bunched, so a little remains.
+
+**Results** (200 runs, same seeds, all families × open / learn / blind against the passable-spaces tip): 0 of 333 rows worse beyond 2 SE; better:
+B4 open, E6 open (72 → 82), F2 open, the martials' Flyer row open and blind (+11), S6 open, K3/K5/B5 blind (8.5 → 16, one fight counted three times).
+Mean win 80.2 → 81.1 (open), 77.2 → 77.6 (learn), 72.1 → 73.0 (blind). Allies caught per area attack, dragon rows:
+
+| mode | all uses | first use | later uses |
+|------|----------|-----------|------------|
+| open | 2.63 → 2.34 | 2.91 → 2.69 | 2.14 → 1.78 |
+| learn | 2.97 → 2.79 | 3.37 → 3.35 | 2.27 → 1.89 |
+| blind | 3.11 → 2.92 | 3.61 → 3.59 | 2.26 → 1.86 |
+
+Logs: old AI unchanged; v2 38, learn 22, blind 18 of 96 change (days whose enemies have area attacks); `hashes-v2-learn.txt` regenerated.
 
 ## Existing user-facing AI options → v2 knobs
 
