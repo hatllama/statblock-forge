@@ -562,7 +562,7 @@ function classFeatures(f, pb, add, ext, used) {
     if (mo >= 2) ext.resources = Object.assign(ext.resources || {}, { 'Focus Points': { uses: mo, reset: 'sr' } });
     if (!f.attacks.some(a => /unarmed/i.test(a.name))) f.attacks.push({ name: 'Unarmed Strike', toHit: dm + pb, dmg: `1${die} + ${dm}`, type: 'bludgeoning', range: 5 });
     add({ name: 'Martial Arts (bonus strike)', actionSlot: 1, type: 'atk', dpr: `1${die} + ${dm}`, toHit: dm + pb, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } });
-    if (mo >= 3) add({ name: 'Deflect Attacks', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: `1d10 + ${M(1) + mo}` }, ext: { react: { roll: true, types: ['bludgeoning', 'piercing', 'slashing'] } } });
+    if (mo >= 3) add({ name: 'Deflect Attacks', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: `1d10 + ${M(1) + mo}` }, ext: { react: { roll: true, types: ['bludgeoning', 'piercing', 'slashing'], redirect: { resource: 'Focus Points', cost: 1, dice: `2${die} + ${M(1)}`, dc: 8 + pb + M(1) } } } });
     if (mo >= 2) add({ name: 'Patient Defense (1 Focus Point)', actionSlot: 1, condition: 'is under half HP', type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Is attacked with Disadvantage' }, ext: { resource: 'Focus Points' } });
   }
   // Goliath's Stone's Endurance: a reaction that cuts one hit's damage (dice and uses as the sheet states them)

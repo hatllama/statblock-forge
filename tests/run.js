@@ -1838,6 +1838,20 @@ section('AI v2: reactions as a layer (step 3b)');
     return { fired: evs.filter(t => /readied attack/.test(t)).length, reaction: kr.reaction, readied: !!kr.readied };
   });
   check(rd.fired === 1 && !rd.reaction && !rd.readied, 'a readied attack fires once when a foe comes into reach and spends the reaction');
+  // Deflect Attacks, redirect: a hit cut to 0 costs a Focus Point and may be sent back at the attacker
+  const dfl = (fn) => probe([zk('Kraax'), build('Fighter')], [srd('Ogre')], { know: { party: 'open' } }, fn);
+  const rdr = dfl(S => {
+    const kr = unit(S, 'Kraax'), og = S.units.find(o => o.team === 'foes'), a = og.actions.find(x => x.type === 'atk' && x.actionSlot === 0 && (x._range || 5) <= 10);
+    kr.x = 10; kr.y = 5; og.x = 11; og.y = 5; og.n = 1; S.boardChanged(); kr.reaction = true; kr.hp = kr.maxHp;
+    const fp0 = kr.uses.get('res:Focus Points'), hp0 = og.hp, evs = []; const ev = S.ev; S.ev = function (k, t) { evs.push(t); return ev.apply(this, arguments); };
+    const real = S.saveRoll; S.saveRoll = function (t, dc, src, ab) { return t === og ? { success: false, total: 1 } : real.apply(this, arguments); };
+    const took = S.damage(og, kr, 6, { attack: true, roll: true, a, type: 'slashing' });
+    S.ev = ev; S.saveRoll = real;
+    return { took, fp: fp0 - kr.uses.get('res:Focus Points'), hurt: hp0 - og.hp, line: evs.some(t => /redirects the blow at/.test(t)), data: !!kr.actions.find(x => x.name === 'Deflect Attacks').ext.react.redirect };
+  });
+  check(rdr.data && rdr.took === 0 && rdr.fp === 1 && rdr.hurt > 0 && rdr.line, `Deflect Attacks cuts a hit to 0 and redirects it for 1 Focus Point (${rdr.hurt} damage back)`);
+  const mk = build('Monk'), df = mk.actions.find(x => x.name === 'Deflect Attacks');
+  check(df && df.ext.react.redirect && df.ext.react.redirect.resource === 'Focus Points' && df.ext.react.redirect.dice === '2d8 + 4', 'the Monk build carries the redirect');
   // the whole thing is data: the weights live in AI_BASE.react
   check(typeof Tac.AI_BASE.react.base === 'number' && typeof Tac.AI_BASE.react.luck === 'number' && typeof Tac.AI_BASE.react.readyMelee === 'number', 'reaction weights are plain data in AI_BASE.react');
 }

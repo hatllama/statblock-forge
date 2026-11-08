@@ -123,7 +123,7 @@ const DEFS = [
       Object.assign(wpn('Unarmed Strike ×2 (Extra Attack)', '1d8 + 4', 7, 'bludgeoning', 5), { targets: 2 }),
       { name: 'Flurry of Blows (Open Hand: push)', actionSlot: 1, freq: { reset: 'sr', uses: 2 }, type: 'atk', dpr: '1d8 + 4', toHit: 7, targets: 2, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning', onHit: { push: 15 } } },
       Object.assign(wpn('Martial Arts (bonus strike)', '1d8 + 4', 7, 'bludgeoning', 5), { actionSlot: 1 }),
-      { name: 'Deflect Attacks', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: '1d10 + 9' }, ext: { react: { roll: true, types: ['bludgeoning', 'piercing', 'slashing'] } } },
+      { name: 'Deflect Attacks', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: '1d10 + 9' }, ext: { react: { roll: true, types: ['bludgeoning', 'piercing', 'slashing'], redirect: { resource: 'Focus Points', cost: 1, dice: '2d8 + 4', dc: 15 } } } },
     ] },
   { cls: 'paladin', name: 'Paladin', build: 'Oath of Devotion · Longsword & shield, Dueling, Sap mastery', hp: 44, ac: 18, athletics: true,
     scores: [18, 8, 14, 10, 12, 16], saves: ['wis', 'cha'],

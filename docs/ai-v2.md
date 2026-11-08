@@ -1290,6 +1290,17 @@ save that passes costs the slot and the reaction and gains nothing). A v1 creatu
 Monster spells from a statblock's Spellcasting block are plain actions, so the parser now marks them `ext.innateSpell` (inert elsewhere) and a
 creature's own spellbook actions carry `_spell` as before; either can be countered.
 
+### Deflect Attacks: the redirect (step 3b, follow-up)
+
+2024 rule: when Deflect Attacks cuts a hit to 0 damage, the monk can spend 1 Focus Point to redirect the force at a creature it can see within 5 ft (a melee
+attack) or 60 ft (a ranged one): a Dexterity save against 8 + Dex + proficiency, or two rolls of the Martial Arts die + Dex as damage. The sheet reader built only
+the reduction. It now adds `ext.react.redirect` = `{ resource: 'Focus Points', cost: 1, dice: '2d8 + 4', dc: 15 }` (dice and DC from the sheet's Martial Arts die, Dex and
+proficiency); `PARTY_FN_UPDATES[14]` fills it in for saved parties by name, and the Monk build in `tools/build-party.js` carries it. The engine tries it in `damage` when the
+cut leaves 0 (`reactRedirect`). The target is the attacker. v2 takes it when P(the attacker's Dex save fails, `kSave`) × the average damage beats the pacing price of the Focus
+Point (`v2PaceCost`); v1 takes it whenever it can. The damage is the attack's type. The redirect uses no second reaction. Old-AI hashes do not change: none of the default party
+has the data (the Monk is not in it). RC4 (Kraax, Fighter vs 4 Manticores, 400 runs): 24.0 / 20.5 / 24.3% in open / learn / blind against 25.0 / 18.5 / 21.5% without it, so no measurable change there: spikes are
+ranged, the redirect needs the Dex save to fail and the Manticores' saves are good. Tests: a hit cut to 0 spends 1 Focus Point and deals damage back; the Monk build carries it.
+
 ### Results (step 3b)
 
 Scenarios `RC1`-`RC7` in `tests/ai-compare.js` (`node tests/ai-compare.js 200 "^RC"`; Zaki's own sheets from `parties/zaki-party-level-5.json`; `ENGINE=<old engine>`
@@ -1318,9 +1329,7 @@ Zaki's party it is taken about once in 6 days (RC6 open: 0.17 readies, 0.04 stri
 `regular` runs are v1 and do not), because Silvery Barbs now gives an ally advantage and works on saves, and Shield, the damage cutters and Lucky are scored.
 `tests/fixtures/hashes-v2-learn.txt` is regenerated.
 
-**Not modelled.** Deflect Attacks' redirect (2024: with 1 Focus Point, a damage roll cut to 0 can be redirected as a Dexterity save for two Martial Arts dice + Dex at
-a creature within 5 ft, or 60 ft for a ranged attack): the sheet reader builds only the reduction (`1d10 + Dex + monk level`), so the redirect and its Focus Point are not
-there. Cutting Words and Spirit Shield are not imported at all (roadmap). Stone's Endurance keeps its old `v2ReactOk` test. A readied attack does not fire on a
+**Not modelled.** Cutting Words and Spirit Shield are not imported at all (roadmap). Stone's Endurance keeps its old `v2ReactOk` test. A readied attack does not fire on a
 flyer that drops into reach without walking (`settleAltitude`), only on a step in `moveAlongSteps`.
 
 

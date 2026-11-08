@@ -439,7 +439,13 @@
         "bludgeoning",
         "piercing",
         "slashing"
-       ]
+       ],
+       "redirect": {
+        "resource": "Focus Points",
+        "cost": 1,
+        "dice": "2d8 + 4",
+        "dc": 15
+       }
       }
      }
     },

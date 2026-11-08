@@ -3043,6 +3043,24 @@ Sim.prototype.counterCheck = function (u, a, plan) {
   return true;
 };
 
+/* Deflect Attacks, redirect (2024): a hit cut to 0 can be sent back for 1 Focus Point: the attacker (within 5 ft of a melee attack, 60 ft of a ranged one)
+   saves against the monk's DC or takes two Martial Arts dice + Dex. v2 weighs P(the save fails) x the damage against the point's pacing price; v1 always does it. */
+Sim.prototype.reactRedirect = function (u, r, src, info) {
+  const rd = r.ext.react.redirect, key = 'res:' + rd.resource;
+  if (!src || src === u || src.team === u.team || src.dead || src.hp <= 0 || !src.onBoard || (u.uses.get(key) || 0) < (rd.cost || 1)) return;
+  const melee = !info.a || (info.a._range || 5) <= 10;
+  if (this.dist(u, src) > (melee ? 5 : 60) || !this.losU(u, src)) return;
+  if (u.v2) {
+    const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(u, src, 'dex') - rd.dc) / 20)), val = pFail * avgDice(rd.dice);
+    if (val <= this.v2PaceCost(u, { id: r.id + ':redirect', ext: { resource: rd.resource, resourceCost: rd.cost || 1 } }, val, 0)) return;
+  }
+  u.uses.set(key, u.uses.get(key) - (rd.cost || 1));
+  const sv = this.saveRoll(src, rd.dc, u, 'dex');
+  if (sv.success) { this.ev('react', `${u.name} redirects the blow at ${src.name}, who dodges it (Dex save ${sv.total} vs DC ${rd.dc})`, { uid: u.uid, target: src.uid }); return; }
+  const d = this.damage(u, src, Math.max(0, Math.floor(rollDice(rd.dice, this.R, false))), { type: info.type || (info.a && info.a.ext && info.a.ext.damageType) || 'bludgeoning' });
+  this.ev('react', `${u.name} redirects the blow at ${src.name} (Dex save ${sv.total} vs DC ${rd.dc}): ${d} damage`, { uid: u.uid, target: src.uid, dmg: d });
+};
+
 /* ----- damage, healing, death ----- */
 /* a damage-cutting reaction's own limits (ext.react): roll — only an attack roll that hit (Uncanny Dodge, Deflect Attacks); types — the damage must
    include one of these (Deflect Attacks: bludgeoning, piercing, slashing). Untyped damage passes: the engine can't tell */
@@ -3078,7 +3096,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
       const red = Math.floor(Math.max(0, dmg * (typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1) - avgDice(r.buff.damageReduction || 0)));
       this.ev('react', `${tgt.name} uses ${r.name} (${dmg} → ${red})`, { uid: tgt.uid });
       dmg = red;
-      if (dmg <= 0) return 0;
+      if (dmg <= 0) { if (r.ext && r.ext.react && r.ext.react.redirect) this.reactRedirect(tgt, r, src, info); return 0; }
     }
   }
   src.dmgDealt += dmg; tgt.dmgTaken += dmg;
