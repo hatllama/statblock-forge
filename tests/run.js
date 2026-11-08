@@ -1750,5 +1750,97 @@ section('AI v2: breath and cone spacing, priced in damage');
   check(typeof W.areaRisk === 'number' && typeof W.areaSave === 'number' && typeof W.areaUse === 'number' && W.spacing === undefined, 'areaRisk, areaSave and areaUse live in AI_BASE.w; w.spacing is gone');
 }
 
+section('AI v2: reactions as a layer (step 3b)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x)), build = n => cp(ctx.CB.find(b => b.name === n));
+  const zj = JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')), Z = zj.players || zj;
+  const zk = n => cp(Z.find(c => c.name.indexOf(n) === 0));
+  const srd = (name, count) => { const s = ctx.M.find(m => m.name === name), m = cp(Parser.parse(s.text).monsters[0]); m.id = s.id; m.mode = 'custom'; m.count = count || 1; m.actions.forEach((a, i) => { a.id = s.id + i; }); if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = s.id + 's' + i; }); return m; };
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  // run fn(sim) before the first turn of a fight, then let the fight play
+  const probe = (players, monsters, opts, fn) => {
+    let out = null;
+    proto.turn = function (who) { if (out === null) { out = fn(this) || true; } return turn.call(this, who); };
+    try { Tac.runDay({ players, encounters: [{ monsters }] }, Object.assign({ seed: 9, partyAI: 'tactical', ai: { party: 'v2' } }, opts || {})); } finally { proto.turn = turn; }
+    return out;
+  };
+  const unit = (S, n) => S.units.find(o => o.name.indexOf(n) === 0);
+
+  // the limit flags are data: Uncanny Dodge needs an attack roll that hit, Deflect Attacks also bludgeoning, piercing or slashing
+  const lim = probe([zk('Eldar'), zk('Tacitus'), zk('Kraax')], [srd('Ogre')], null, S => {
+    const eld = unit(S, 'Eldar'), tac = unit(S, 'Tacitus'), kr = unit(S, 'Kraax');
+    return {
+      shield: !!S.reactFind(eld, 'ac', 'hit'), barbsHit: !!S.reactFind(eld, 'barbs', 'hit'), barbsSave: !!S.reactFind(eld, 'barbs', 'save', { roll: false }), counter: !!S.reactFind(eld, 'counter', 'spell', { roll: false }),
+      shieldOnSpell: !!S.reactFind(eld, 'ac', 'spell'),
+      uncannyRoll: !!S.reactFind(tac, 'cut', 'damage', { roll: true }), uncannySave: !!S.reactFind(tac, 'cut', 'damage', { roll: false }),
+      deflectSlash: !!S.reactFind(kr, 'cut', 'damage', { roll: true, type: 'slashing' }), deflectFire: !!S.reactFind(kr, 'cut', 'damage', { roll: true, type: 'fire' }),
+    };
+  });
+  check(lim.shield && lim.barbsHit && lim.barbsSave && lim.counter && !lim.shieldOnSpell, 'Eldar: Shield and Silvery Barbs on a hit, Barbs on a save, Counterspell on a spell, and Shield on nothing else');
+  check(lim.uncannyRoll && !lim.uncannySave, 'Uncanny Dodge needs an attack roll that hit');
+  check(lim.deflectSlash && !lim.deflectFire, 'Deflect Attacks: slashing yes, fire no');
+
+  // Shield: this hit if the margin is under 5, else only the swings still to come
+  const sv = probe([zk('Eldar'), build('Fighter')], [srd('Hill Giant')], null, S => {
+    const eld = unit(S, 'Eldar'), g = S.units.find(o => o.team === 'foes'), shield = eld.actions.find(x => x.actionSlot === 4 && x.buff && x.buff.ac !== undefined), a = g.actions.find(x => x.type === 'atk' && x.actionSlot === 0);
+    const ac = S.ac(eld), S0 = (m) => ({ att: g, tgt: eld, a, r: 14, d: 14, toHit: 0, total: ac + m, ac, hit: true, crit: false });
+    S._strikeBy = null; S._strikesLeft = 0;
+    const close = S.reactShieldValue(S0(2), eld, shield), far = S.reactShieldValue(S0(9), eld, shield);
+    S._strikeBy = g; S._strikesLeft = 2; const later = S.reactShieldValue(S0(9), eld, shield); S._strikeBy = null; S._strikesLeft = 0;
+    return { close, far, later, dmg: S.kHitDmg(eld, g, a) };
+  });
+  check(sv.close >= sv.dmg - 0.01 && sv.far < sv.dmg * 0.1 && sv.later > sv.far, `Shield is worth the hit when it turns it into a miss (${sv.close.toFixed(1)} of ${sv.dmg.toFixed(1)}), little when the hit would land anyway (${sv.far.toFixed(1)}), more with swings still to come (${sv.later.toFixed(1)})`);
+
+  // Uncanny Dodge: the last swing of a multiattack takes it, the first of three waits for a bigger one
+  const cut = probe([zk('Tacitus'), build('Fighter')], [srd('Hill Giant')], null, S => {
+    const tac = unit(S, 'Tacitus'), g = S.units.find(o => o.team === 'foes'), x = tac.actions.find(a => a.actionSlot === 4 && a.buff && a.buff.damageTakenMultiplier !== undefined);
+    tac.hp = tac.maxHp;
+    const res = {};
+    for (const left of [0, 1, 2]) { S._strikeBy = g; S._strikesLeft = left; res['l' + left] = S.reactCutNow(tac, x, 20, g, { attack: true, roll: true }); }
+    S._strikeBy = g; S._strikesLeft = 5; tac.hp = 15; res.drops = S.reactCutNow(tac, x, 20, g, { attack: true, roll: true });
+    S._strikeBy = null; S._strikesLeft = 0;
+    return res;
+  });
+  check(cut.l0 && !cut.l2 && cut.drops, `Uncanny Dodge: used on the last swing (${cut.l0}), held on the first of three (${!cut.l2}), always on a hit that would drop it (${cut.drops})`);
+
+  // Counterspell: a Mage's Fireball is countered when the Con save fails (slot kept), goes off when it passes
+  const cs = (forced) => probe([zk('Eldar'), build('Fighter')], [srd('Mage')], { know: { party: 'open' } }, S => {
+    const eld = unit(S, 'Eldar'), mage = S.units.find(o => o.team === 'foes'), fb = mage.actions.find(a => a.name.indexOf('Fireball') === 0);
+    const before = mage.slots ? mage.slots.slice() : null;
+    mage.x = eld.x + 8; mage.y = eld.y; S.boardChanged();
+    const real = S.saveRoll; S.saveRoll = function (t, dc, src, ab) { return t === mage && ab === 'con' ? { success: forced === 'pass', total: forced === 'pass' ? 30 : 1 } : real.apply(this, arguments); };
+    const slots = eld.slots.slice();
+    const done = S.counterCheck(mage, fb, { targets: [eld, unit(S, 'Fighter')] });
+    S.saveRoll = real;
+    return { done, reaction: eld.reaction, slotsUsed: slots.reduce((t, n, i) => t + n * (i + 1), 0) - eld.slots.reduce((t, n, i) => t + n * (i + 1), 0), innate: !!(fb.ext && fb.ext.innateSpell) };
+  });
+  const fail = cs('fail'), pass = cs('pass');
+  check(fail.innate && fail.done && !fail.reaction && fail.slotsUsed === 3, `Counterspell fizzles a Mage's Fireball on a failed Con save and costs the 3rd-level slot (${fail.slotsUsed})`);
+  check(!pass.done && !pass.reaction && pass.slotsUsed === 3, 'a passed save: the spell goes off, the counter still cost its slot and the reaction');
+
+  // blind: Counterspell is read from the caster's damage, not from the spell
+  const blind = probe([zk('Eldar'), build('Fighter')], [srd('Mage')], { know: { party: 'blind' } }, S => {
+    const eld = unit(S, 'Eldar'), mage = S.units.find(o => o.team === 'foes'), fb = mage.actions.find(a => a.name.indexOf('Fireball') === 0);
+    return { blind: S.counterValue(eld, mage, fb, { targets: [eld] }), expectedBlind: S.kDpr(eld, mage) * eld.v2P.react.blindRounds };
+  });
+  check(Math.abs(blind.blind - blind.expectedBlind) < 1e-9, 'blind Counterspell value = the caster\'s damage × blindRounds');
+
+  // Ready: a readied attack strikes the first foe to come into reach, once, on the reaction
+  const rd = probe([zk('Kraax'), build('Fighter')], [srd('Ogre')], null, S => {
+    const kr = unit(S, 'Kraax'), og = S.units.find(o => o.team === 'foes'), a = kr.actions.find(x => x.actionSlot === 0 && x.type === 'atk' && !x.useSaves);
+    kr.x = 10; kr.y = 5; og.x = 10 + 4; og.y = 5; og.n = 1; S.boardChanged();
+    kr.readied = { a, round: 1 }; kr.reaction = true;
+    const evs = []; const ev = S.ev; S.ev = function (k, t) { evs.push(t); return ev.apply(this, arguments); };
+    S.moveAlong(og, [{ x: 13, y: 5 }, { x: 12, y: 5 }, { x: 11, y: 5 }]);
+    S.ev = ev;
+    return { fired: evs.filter(t => /readied attack/.test(t)).length, reaction: kr.reaction, readied: !!kr.readied };
+  });
+  check(rd.fired === 1 && !rd.reaction && !rd.readied, 'a readied attack fires once when a foe comes into reach and spends the reaction');
+  // the whole thing is data: the weights live in AI_BASE.react
+  check(typeof Tac.AI_BASE.react.base === 'number' && typeof Tac.AI_BASE.react.luck === 'number' && typeof Tac.AI_BASE.react.readyMelee === 'number', 'reaction weights are plain data in AI_BASE.react');
+}
+
 console.log(`\n${checks - failures}/${checks} checks passed`);
 process.exit(failures ? 1 : 0);

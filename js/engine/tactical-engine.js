@@ -2597,11 +2597,11 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
       }
       if (this.record) { flush(); this.ev('effect', `${u.name} climbs ${rise > 0 ? 'up' : 'down'} the ${Math.abs(rise) * 5}-ft ledge (Athletics ${tot} vs DC ${dc})`, { uid: u.uid }); }
     }
-    const was = this._braceCheck ? null : this.enemiesOf(u).filter(e => e.reaction && e.onBoard && !e.dead && e.actions.some(y => y.actionSlot === 4 && y.ext && y.ext.brace) && this.dist(e, u) > this.meleeReach(e));
+    const was = this._braceCheck ? null : this.enemiesOf(u).filter(e => e.reaction && e.onBoard && !e.dead && (e.readied || e.actions.some(y => y.actionSlot === 4 && y.ext && y.ext.brace)) && this.dist(e, u) > this.meleeReach(e));
     u.x = step.x; u.y = step.y; trail.push({ x: step.x, y: step.y }); seg.push({ x: step.x, y: step.y }); u.movedThisTurn = true; this.boardChanged();
     if (was && was.length) for (const e of was) if (this.dist(e, u) <= this.meleeReach(e)) {
       flush(); this._braceCheck = true;
-      try { this.counterAttack(e, u, 'brace'); } finally { this._braceCheck = false; }
+      try { if (!this.readyStrike(e, u)) this.counterAttack(e, u, 'brace'); } finally { this._braceCheck = false; }
       if (u.dead || u.hp <= 0) return;
     }
     // rough ground (not for flyers), or another creature's space (2024: difficult terrain for anyone)
@@ -2990,6 +2990,59 @@ Sim.prototype.reactCutNow = function (u, r, dmg, src, info) {
   return now > 0 && now >= wait;
 };
 
+/* ---- Counterspell (docs/ai-v2.md): a foe casts within 60 ft; its Constitution save against the counter's spell save DC, or the spell fails and the slot comes back ---- */
+Sim.prototype.spellDcOf = function (u) {
+  if (u._spellDc) return u._spellDc;
+  let dc = 0;
+  for (const x of u.actions) {
+    if (!x._spell) continue;
+    const d = x.type === 'atk' && x.useSaves ? Number(avgDice(x.toHit)) : x.type === 'debuff' && x.saveDC !== undefined ? Number(avgDice(x.saveDC)) : 0;
+    if (d < 99 && d > dc) dc = d;
+  }
+  return (u._spellDc = dc || 13);
+};
+/* what the spell would do to the counter's side, as that side reads it: open, the spell as cast; learn, the same once this kind has been seen casting it;
+   blind (and a first sight in learn), only that a spell is coming: the caster's damage over a few rounds */
+Sim.prototype.counterValue = function (o, u, a, plan) {
+  const R = o.v2P.react, m = this.kOf(o, u);
+  const known = !m || (m === 'learn' && this.learning(o.team) && (this.kind(o.team, u).spells || {})[a.id]);
+  if (!known) return this.kDpr(o, u) * R.blindRounds;
+  let v = 0;
+  for (const t of plan.targets) {
+    if (t.team === u.team) { if (a.type === 'heal') v += avgDice(a.amount) * 0.5; continue; }
+    v += Math.max(0, this.expected(u, a, t));
+  }
+  return v * (a._spell && a._spell.conc ? R.conc : 1);
+};
+Sim.prototype.counterCheck = function (u, a, plan) {
+  let pick = null;
+  for (const o of this.enemiesOf(u)) {
+    if (!o.reaction || o.dead || o.hp <= 0 || !o.onBoard || this.dist(o, u) > 60) continue;
+    const x = this.reactFind(o, 'counter', 'spell', { roll: false });
+    if (!x || !this.losU(o, u)) continue;
+    const dc = this.spellDcOf(o);
+    let net;
+    if (o.v2) {
+      // P(its save fails) x what the spell is worth, against the slot and the reaction (paid whether or not it works)
+      const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(o, u, 'con') - dc) / 20));
+      const val = this.counterValue(o, u, a, plan);
+      net = pFail * val - this.reactPrice(o, x, val, 0);
+    } else net = (!a._spell || a._spell.level >= 1) && (a.type === 'atk' || a.type === 'debuff') ? 1 : -1;
+    if (net > 0 && (!pick || net > pick.net)) pick = { o, x, dc, net };
+  }
+  if (this.learning(otherTeam(u.team))) { const k = this.kind(otherTeam(u.team), u); (k.spells = k.spells || {})[a.id] = true; }
+  if (!pick) return false;
+  const o = pick.o, x = pick.x, dc = pick.dc;
+  this.reactTake(o, x, 0);
+  const sv = this.saveRoll(u, dc, o, 'con');
+  if (sv.success) { this.ev('react', `${o.name} casts ${x.name} on ${u.name}'s ${a.name}, but it goes off (Con save ${sv.total} vs DC ${dc})`, { uid: o.uid, target: u.uid }); return false; }
+  const lvl = a._spell && a._spell.level ? u.castLevel : 0;
+  if (lvl > 0 && u.slots && u.slots[lvl - 1] !== undefined) u.slots[lvl - 1]++;        // a countered spell's slot isn't spent (2024)
+  if (a._spell && a._spell.conc && u.concentrating === a.id) u.concentrating = null;
+  this.ev('react', `${o.name} casts ${x.name}: ${u.name}'s ${a.name} fizzles (Con save ${sv.total} vs DC ${dc}${lvl ? ', slot kept' : ''})`, { uid: o.uid, target: u.uid });
+  return true;
+};
+
 /* ----- damage, healing, death ----- */
 /* a damage-cutting reaction's own limits (ext.react): roll — only an attack roll that hit (Uncanny Dodge, Deflect Attacks); types — the damage must
    include one of these (Deflect Attacks: bludgeoning, piercing, slashing). Untyped damage passes: the engine can't tell */
@@ -3357,6 +3410,27 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
   return r;
 };
 /* Riposte / Brace: a reaction that answers with one melee attack (ext.riposte or ext.brace: { bonus: '1d10' }) */
+/* how much of e's damage is struck in melee, as u reads it: open, the best melee action against the best ranged one; otherwise only what has been seen of its reach */
+Sim.prototype.meleeShare = function (u, e) {
+  if (this.kOf(u, e)) return this.kReach(u, e) <= 10 ? 1 : 0;
+  let m = 0, r = 0;
+  for (const o of e.actions) {
+    if (o.type !== 'atk' || o.actionSlot !== 0 || (o.ext && (o.ext.swallow || o.ext.wtOnly))) continue;
+    const d = avgDice((o.ext && o.ext.wtDpr) || o.dpr) * (o.useSaves ? 1 : Math.max(1, o.targets || 1));
+    if ((o._range || 5) <= 10) m = Math.max(m, d); else r = Math.max(r, d);
+  }
+  return m + r > 0 ? m / (m + r) : 1;
+};
+/* a readied attack (the Ready action, docs/ai-v2.md): the first foe to come into reach takes one swing, on the reaction */
+Sim.prototype.readyStrike = function (e, u) {
+  const rd = e.readied;
+  if (!rd || !e.reaction || e.dead || e.hp <= 0 || this.incap(e) || !e.onBoard) return false;
+  e.readied = null; e.reaction = false;
+  const strike = Object.assign({}, rd.a, { targets: 1 });
+  this.ev('react', `${e.name}'s readied attack: ${u.name} comes into reach`, { uid: e.uid, target: u.uid });
+  this.attackOnce(e, strike, u, { counter: true });
+  return true;
+};
 Sim.prototype.counterAttack = function (t, u, kind) {
   if (!t.reaction || t.dead || t.hp <= 0 || this.incap(t) || !t.onBoard || t.team === u.team) return false;
   const x = t.actions.find(y => y.actionSlot === 4 && y.ext && y.ext[kind] && this.usable(t, y) && this.condOk(t, y));
@@ -3522,6 +3596,7 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   if (!plan) plan = this.plan(u, a, 0) || { targets: [] };
   const targets = plan.friends && plan.friends.length ? plan.targets.concat(plan.friends.filter(f => !plan.targets.includes(f) && !f.dead)) : plan.targets;
   if (!targets.length && a.target !== 'self') return false;
+  if ((a._spell || (a.ext && a.ext.innateSpell)) && !opt.inside && this.counterCheck(u, a, plan)) return true;      // a foe's Counterspell
   if ((a.type === 'atk' || a.type === 'debuff') && !plan.area && !opt.inside && this.cancelled(u, a, targets)) return true;
   if (a._spell && (a.type === 'atk' || a.type === 'debuff') && !opt.inside) a = this.spellbreak(u, a);
   if (plan.area && a.ext && a.ext.zone) {
@@ -3803,7 +3878,7 @@ const AI_BASE = {
   // against a Shield or a cut held for later; the chance a later hit lands; the damage a foe's round is split into hits; how much the best of several hits beats an average one;
   // the share of the best ally's DPR that advantage on its next attack is worth; a condition's worth when a save is rerolled; rounds a held spell is worth countering;
   // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
-  react: { base: 1.5, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.3, ally: 0.2, stakes: 12, conc: 3, blindRounds: 1.2, readyMelee: 0.8, readyRanged: 0.15 },
+  react: { base: 1.5, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.3, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, readyMelee: 0.8, readyRanged: 0.15 },
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
@@ -4953,6 +5028,21 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
 
   const options = [];
   let anyOffense = false;
+  // Ready: a melee creature with nothing in reach holds one swing for a foe that comes to it (a reaction; docs/ai-v2.md)
+  const readyA = !onlyAct && u.reaction && !u.readied && !u.grappledBy ? u.actions.filter(a => a.actionSlot === 0 && a.type === 'atk' && !a.useSaves && (a._range || 5) <= 10 && !(a.ext && (a.ext.swallow || a.ext.resource || a.ext.pool)) && this.usable(u, a) && this.condOk(u, a))
+    .sort((p, q) => avgDice((q.ext && q.ext.wtDpr) || q.dpr) - avgDice((p.ext && p.ext.wtDpr) || p.dpr))[0] : null;
+  const readyAt = (x, y) => {
+    const R = u.v2P.react, rng = Math.max(5, readyA._range || 5);
+    let miss = 1, top = 0;
+    for (const e of ctx.foes) {
+      if (e.hp <= 0 || !e.onBoard || this.incap(e)) continue;
+      const gap = this.distXY(x, y, e) - rng;
+      if (gap <= 0 || gap > this.speedOf(e)) continue;
+      miss *= 1 - (R.readyRanged + (R.readyMelee - R.readyRanged) * this.meleeShare(u, e));
+      top = Math.max(top, this.expected(u, readyA, e) / Math.max(1, readyA.targets || 1));
+    }
+    return (1 - miss) * top;
+  };
   consider(speed, (x, y, rm, steps) => {
     const { best, dOf, sees } = offAt(x, y, false);
     const th = threat(x, y), sp = ctx.danger.spacing(x, y) * safety * W.areaRisk;
@@ -4984,6 +5074,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     if (onlyAct) return;
     if (engaged && steps > 0) options.push({ mode: 'actionDis', x, y, rm, steps, score: -risk - walk + prog - 2 });
     options.push({ mode: 'dodge', x, y, rm, steps, prog, score: -th * safety * (1 - W.dodge) - sp - keep - oa - walk + prog });
+    if (readyA && !best) { const rv = readyAt(x, y); if (rv > 0) options.push({ mode: 'ready', readyA, x, y, rm, steps, prog, score: -th * safety - sp - keep - oa - walk + prog + rv - u.v2P.react.base }); }
     if (distH && distH[x + y * Wd] === 0) options.push({ mode: 'hide', x, y, rm, steps, score: -th * safety * 0.3 - sp - keep - oa - walk + prog });
   });
   // a bonus-action teleport (Misty Step): out of reach without provoking, then the action from there
@@ -5020,6 +5111,7 @@ Sim.prototype.v2Words = function (u, o, ctx, engaged) {
   if (o.mode === 'bonusDis') return { text: `${n} slips away with a bonus-action Disengage`, key: 'bdis' };
   if (o.mode === 'actionDis') return { text: post.kind === 'retreat' ? `${n} is badly hurt and disengages to get clear` : `${n} disengages to get out of reach`, key: 'adis' };
   if (o.mode === 'hide') return { text: `${n} slips out of sight to hide`, key: 'hide' };
+  if (o.mode === 'ready') return { text: `${n} holds its ground and readies an attack for whoever comes into reach`, key: 'ready' };
   if (o.mode === 'dodge') return { text: post.kind === 'retreat' ? `${n} is badly hurt and turns defensive, Dodging` : engaged ? `${n} goes on the defensive and Dodges` : o.prog > 0 ? `${n} closes in carefully, Dodging as it comes` : `${n} holds back and Dodges`, key: 'dodge' };
   if (o.mode === 'dash') return { text: `${n} has nothing in reach and dashes toward the fight`, key: 'dash' };
   if (o.mode === 'jump') return { text: `${n} teleports out of reach with ${o.jumpA.name}`, key: 'jump' };
@@ -5228,7 +5320,7 @@ Sim.prototype.turn = function (u) {
   if (this.incap(u)) this.dropBuffs(u, b => b.endsOnIncap);
   u.mauling = u.ai === 'beast' && this.R() < 0.05;
   for (const x of this.units) this.dropBuffs(x, b => b.src === u.uid && b.expiry === '1 round');
-  u.reaction = true; u.legendaryLeft = u.legendaryMax;
+  u.reaction = true; u.readied = null; u.legendaryLeft = u.legendaryMax;
   for (const a of u.actions) if (freqKind(a.freq) === 'recharge' && u.recharge.get(a.id) === false) {
     const faces = Math.max(1, Math.round(6 / Math.max(1, a.freq.cooldownRounds || 2)));
     const r = this.R.d(6);
@@ -5360,6 +5452,10 @@ Sim.prototype.turn = function (u) {
       }
       if (tp.mode === 'dash') { actionUsed = true; this.ev('dash', `${u.name} dashes`, { uid: u.uid }); }
       this.moveAlong(u, tp.path); moved = true;
+      if (tp.mode === 'ready' && !out()) {
+        actionUsed = true; u.readied = { a: tp.readyA, round: this.round };
+        this.ev('buff', `${u.name} readies ${tp.readyA.name} against the first foe to come into reach`, { uid: u.uid });
+      }
       if ((tp.mode === 'dodge' || tp.mode === 'hide') && !out()) {
         actionUsed = true;
         this.addBuff(u, u, { id: 'dodge', name: 'Dodge' }, { duration: '1 round', condition: 'Is attacked with Disadvantage' });

@@ -398,6 +398,36 @@ function playCtl(sc, N) {
   for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
 }
 
+
+/* ---- reactions as a layer (step 3b, docs/ai-v2.md): the same fight in open / learn / blind, v2 party; node tests/ai-compare.js 200 "^RC".
+   Zaki's own sheets (Eldar: Shield, Counterspell, Silvery Barbs; Tacitus: Uncanny Dodge; Kraax: Deflect Attacks). Run with ENGINE=<an older engine> for the "before". */
+const ZAKI = (() => { const j = JSON.parse(fs.readFileSync(path.join(ROOT, 'parties', 'zaki-party-level-5.json'), 'utf8')); return j.players || j; })();
+const zk = name => { const c = ZAKI.find(x => x.name.indexOf(name) === 0); if (!c) throw new Error('no Zaki sheet ' + name); return clone(c); };
+const reactCount = re => r => r.events.filter(e => e.kind === 'react' && re.test(e.text || '')).length;
+const REACT_METRICS = {
+  'shield': reactCount(/ (casts|uses) Shield/),
+  'barbs': reactCount(/Silvery Barbs/),
+  'counter': reactCount(/Counterspell/),
+  'cut': reactCount(/uses (Uncanny Dodge|Deflect Attacks)/),
+  'ready': reactCount(/readied attack/),
+  'readies': r => r.events.filter(e => /readies /.test(e.text || '')).length,
+  'dodges': r => r.events.filter(e => /Dodg/.test(e.text || '') && teamOf(r, e.uid) === 'party').length,
+};
+const REACT_SCENARIOS = [
+  { name: 'RC1 Counterspell: Eldar, Fighter vs 2 Mages', players: () => [zk('Eldar'), pc('Fighter')], encounters: () => fights('Mage*2') },
+  { name: 'RC2 Shield: Eldar, Fighter, Cleric vs 2 Hill Giants', players: () => [zk('Eldar'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Hill Giant*2') },
+  { name: 'RC3 Uncanny Dodge: Tacitus, Fighter, Cleric vs 2 Trolls', players: () => [zk('Tacitus'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Troll*2') },
+  { name: 'RC4 Deflect Attacks: Kraax, Fighter, Cleric vs 2 Manticores (spikes)', players: () => [zk('Kraax'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Manticore*2') },
+  { name: 'RC5 Ready: Kraax, Tacitus, Fighter vs Young Green Dragon, 30 ft apart', players: () => [zk('Kraax'), zk('Tacitus'), pc('Fighter')], encounters: () => fights('Young Green Dragon'), layout: { gapFt: 30 } },
+  { name: "RC6 Zaki's party on hard-day.json", players: () => ZAKI.map(clone), encounters: () => clone(fixture('hard-day.json').encounters) },
+  { name: "RC7 Zaki's party: goblins / ogres + mage / Young Green Dragon", players: () => ZAKI.map(clone), encounters: () => fights('Goblin Warrior*6/Ogre*2,Mage/Young Green Dragon') },
+];
+function playReact(sc, N) {
+  console.log(String.fromCharCode(10) + sc.name);
+  console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(REACT_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: REACT_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
+}
+
 /* ---- downed allies (step 2.12) ---- */
 // a limited-use healing potion as the sheet reader builds it
 const withPotions = (p, n) => {
@@ -669,6 +699,7 @@ if (process.env.ACCURACY === '1') {
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
+for (const sc of REACT_SCENARIOS) if (only && only.test(sc.name)) playReact(sc, N);
 for (const sc of REVIVE_SCENARIOS) if (only && only.test(sc.name)) playRevive(sc, N);
 for (const sc of BREW_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of FLYER_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
