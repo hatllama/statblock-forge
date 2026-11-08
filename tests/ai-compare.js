@@ -415,10 +415,11 @@ const REACT_METRICS = {
 };
 const REACT_SCENARIOS = [
   { name: 'RC1 Counterspell: Eldar, Fighter vs 2 Mages', players: () => [zk('Eldar'), pc('Fighter')], encounters: () => fights('Mage*2') },
-  { name: 'RC2 Shield: Eldar, Fighter, Cleric vs 2 Hill Giants', players: () => [zk('Eldar'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Hill Giant*2') },
-  { name: 'RC3 Uncanny Dodge: Tacitus, Fighter, Cleric vs 2 Trolls', players: () => [zk('Tacitus'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Troll*2') },
-  { name: 'RC4 Deflect Attacks: Kraax, Fighter, Cleric vs 2 Manticores (spikes)', players: () => [zk('Kraax'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Manticore*2') },
+  { name: 'RC2 Shield: Eldar, Fighter vs 2 Hill Giants + Ogre', players: () => [zk('Eldar'), pc('Fighter')], encounters: () => fights('Hill Giant*2,Ogre') },
+  { name: 'RC3 Uncanny Dodge: Tacitus, Fighter, Cleric vs 2 Gladiators', players: () => [zk('Tacitus'), pc('Fighter'), pc('Cleric')], encounters: () => fights('Gladiator*2') },
+  { name: 'RC4 Deflect Attacks: Kraax, Fighter vs 4 Manticores (spikes)', players: () => [zk('Kraax'), pc('Fighter')], encounters: () => fights('Manticore*4') },
   { name: 'RC5 Ready: Kraax, Tacitus, Fighter vs Young Green Dragon, 30 ft apart', players: () => [zk('Kraax'), zk('Tacitus'), pc('Fighter')], encounters: () => fights('Young Green Dragon'), layout: { gapFt: 30 } },
+  { name: 'RC5b Ready: Kraax, Fighter vs 2 Wyverns, 30 ft apart', players: () => [zk('Kraax'), pc('Fighter')], encounters: () => fights('Wyvern*2'), layout: { gapFt: 30 } },
   { name: "RC6 Zaki's party on hard-day.json", players: () => ZAKI.map(clone), encounters: () => clone(fixture('hard-day.json').encounters) },
   { name: "RC7 Zaki's party: goblins / ogres + mage / Young Green Dragon", players: () => ZAKI.map(clone), encounters: () => fights('Goblin Warrior*6/Ogre*2,Mage/Young Green Dragon') },
 ];

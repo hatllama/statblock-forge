@@ -2915,7 +2915,7 @@ Sim.prototype.reactHitV2 = function (S, opt) {
       tgt.uses.set('__luck', tgt.uses.get('__luck') - 1);
       const d2 = Math.min(S.d, this.R.d(20)), was = Math.round(S.total);
       this.reactApplyDie(S, d2);
-      this.ev('react', `${tgt.name} spends a luck point: ${S.att.name}'s ${was} rerolls to ${Math.round(S.total)}, ${S.hit ? 'still hits' : 'now misses'}`, { uid: tgt.uid, target: S.att.uid });
+      this.ev('react', `${tgt.name} spends a luck point: ${S.att.name}'s attack roll ${was} rerolls to ${Math.round(S.total)} vs AC ${Math.round(S.ac)}, ${S.hit ? 'still hits' : 'now misses'}`, { uid: tgt.uid, target: S.att.uid });
     }
   }
 };
@@ -2946,7 +2946,7 @@ Sim.prototype.reactBarbsDo = function (S, h, x) {
   if (resisted) { this.ev('react', `${h.name} uses ${x.name}, but ${att.name} resists`, { uid: h.uid, target: att.uid }); return; }
   this.reactApplyDie(S, Math.min(S.d, this.R.d(20)));
   const ally = this.reactGrantAdv(h);
-  this.ev('react', `${h.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name}'s ${was} rerolls to ${Math.round(S.total)}, ${S.hit ? 'still hits' : 'now misses'}${ally ? `; ${ally.name} gains advantage` : ''}`, { uid: h.uid, target: att.uid });
+  this.ev('react', `${h.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name}'s attack roll ${was} rerolls to ${Math.round(S.total)} vs AC ${Math.round(S.ac)}, ${S.hit ? 'still hits' : 'now misses'}${ally ? `; ${ally.name} gains advantage` : ''}`, { uid: h.uid, target: att.uid });
 };
 /* Silvery Barbs also gives one ally within 30 ft advantage on its next attack (the best hitter) */
 Sim.prototype.reactGrantAdv = function (h) {

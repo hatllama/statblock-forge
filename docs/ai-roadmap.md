@@ -37,7 +37,7 @@ Statblock Forge is a DM prep tool. The War Table simulates fights and reports od
 | Knowledge | What does this side know? | Partial: day length, priors for HP/AC/saves/damage, learn-vs-open gap |
 | Strategy | Fight or hold back, spend or save? | Partial: posture, pacing, burn plan |
 | Tactics | Where to stand, what to do, at whom? | Done for martials and full casters (`v2TurnInner`) |
-| Reactions | Shield, Counterspell, Silvery Barbs, Lucky, Uncanny Dodge, Deflect Attacks, Cutting Words, Stone's Endurance, Spirit Shield: spend now or not? | Not started. They live in `attackRoll` and the old rules; only `v2ReactOk` gates limited damage-cutters |
+| Reactions | Shield, Counterspell, Silvery Barbs, Lucky, Uncanny Dodge, Deflect Attacks, Cutting Words, Stone's Endurance, Spirit Shield: spend now or not? | Done for Zaki's party (step 3b, `docs/ai-v2.md` "Reactions as a layer"): Shield, Silvery Barbs (attack and save), Lucky, Uncanny Dodge, Deflect Attacks, Counterspell, Ready. Not done: Cutting Words, Stone's Endurance scoring beyond `v2ReactOk`, Spirit Shield, Deflect Attacks' redirect |
 | Profiles | How does this creature lean? | Data exists (`AI_PROFILES`, `ext.aiProfile`); no UI |
 | Explanation | Why did it do that? | Intent lines in v2 (`v2Words`) |
 | Evaluation | Did a change make it better? | `tests/ai-compare.js`, `tests/flagoff-hash.js`, `npm test` |

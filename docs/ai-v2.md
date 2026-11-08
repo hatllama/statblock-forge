@@ -1281,12 +1281,48 @@ sheets are 2024, so it is not modelled. P(fail) = the save from `kSave`. The val
 
 | mode | the spell's value | source |
 |------|-------------------|--------|
-| open | the real action: `expected` on each target in the plan (damage, control through `effectValue`), + `react.conc` rounds if it is held | the spell as cast |
+| open | the real action: `expected` on each target in the plan (damage, control through `effectValue`), × `react.conc` if it is held | the spell as cast |
 | learn | the real action if this kind has cast that spell before (`seenAct`), otherwise as blind | what has been seen |
 | blind | `kDpr(caster)` × `react.blindRounds`: only that a spell is being cast | the damage prior |
 
-Price: the lowest slot of level 3 or more, `react.base`, and the failed counter, which costs the slot and the reaction and gains nothing
-(P(save succeeds) × price). A v1 creature counters the first spell that damages or controls; v1 has no scorer.
+Net = P(its save fails) × value − price, the price being the lowest slot of level 3 or more plus `react.base`, paid whether or not the counter works (a
+save that passes costs the slot and the reaction and gains nothing). A v1 creature counters the first damaging or controlling spell of level 1 or more; v1 has no scorer.
+Monster spells from a statblock's Spellcasting block are plain actions, so the parser now marks them `ext.innateSpell` (inert elsewhere) and a
+creature's own spellbook actions carry `_spell` as before; either can be countered.
+
+### Results (step 3b)
+
+Scenarios `RC1`-`RC7` in `tests/ai-compare.js` (`node tests/ai-compare.js 200 "^RC"`; Zaki's own sheets from `parties/zaki-party-level-5.json`; `ENGINE=<old engine>`
+plays the same seeds on an older engine). Win rate over 200 runs, before (commit 9b9bcff) → after, with the average damage the party took in brackets; standard error
+about 1.5-3.5 points. Deaths and rounds are in the harness output.
+
+| scenario | open win (taken) | learn win (taken) | blind win (taken) |
+|---|---|---|---|
+| RC1 Counterspell: Eldar, Fighter vs 2 Mages | 15.0±2.5 → 28.5±3.2 (113 → 110) | 2.0±1.0 → 4.5±1.5 (119 → 119) | 3.0±1.2 → 3.5±1.3 (119 → 117) |
+| RC2 Shield: Eldar, Fighter vs 2 Hill Giants + Ogre | 41.0±3.5 → 39.0±3.4 (102 → 102) | 34.5±3.4 → 40.5±3.5 (112 → 106) | 23.0±3.0 → 34.0±3.3 (119 → 117) |
+| RC3 Uncanny Dodge: Tacitus, Fighter, Cleric vs 2 Gladiators | 87.5±2.3 → 88.0±2.3 (149 → 149) | 88.5±2.3 → 88.0±2.3 (150 → 152) | 86.0±2.5 → 85.5±2.5 (183 → 186) |
+| RC4 Deflect Attacks: Kraax, Fighter vs 4 Manticores (spikes) | 25.0±3.1 → 22.0±2.9 (106 → 107) | 18.5±2.7 → 17.5±2.7 (110 → 110) | 21.5±2.9 → 24.5±3.0 (108 → 108) |
+| RC5 Ready: Kraax, Tacitus, Fighter vs Young Green Dragon, 30 ft apart | 71.5±3.2 → 71.5±3.2 (89 → 90) | 62.0±3.4 → 62.0±3.4 (92 → 93) | 61.0±3.4 → 61.0±3.4 (96 → 96) |
+| RC5b Ready: Kraax, Fighter vs 2 Wyverns, 30 ft apart | 13.5±2.4 → 13.5±2.4 (117 → 117) | 18.0±2.7 → 18.0±2.7 (115 → 115) | 22.0±2.9 → 22.0±2.9 (113 → 113) |
+| RC6 Zaki's party on hard-day.json | 94.5±1.6 → 95.0±1.5 (139 → 140) | 91.0±2.0 → 93.0±1.8 (115 → 117) | 82.0±2.7 → 87.5±2.3 (192 → 180) |
+| RC7 Zaki's party: goblins / ogres + mage / Young Green Dragon | 90.5±2.1 → 93.5±1.7 (186 → 165) | 78.0±2.9 → 76.5±3.0 (308 → 292) | 82.5±2.7 → 77.5±3.0 (311 → 313) |
+
+What the table says: Counterspell is the one clear win (RC1, open: 15% → 28.5%; the Eldar counters 1.2 Fireballs a day, with learn it counters the second
+sight of a spell, blind almost never because only the caster's damage prior is on offer). Silvery Barbs on saves and Shield help the blind party on a hard
+day (RC2 blind, RC6 blind). Uncanny Dodge and Deflect Attacks are held for the hit that matters: they fire a little less often (RC3 open: 2.1 → 1.7 a day) and the
+win rate does not move. Ready is priced and, in RC5 / RC5b, beaten by Dodge or an attack every time (the numbers are identical), so those rows are unchanged; in
+Zaki's party it is taken about once in 6 days (RC6 open: 0.17 readies, 0.04 strikes a day). RC7 blind is 5 points down (82.5 → 77.5, 1.3 standard errors of the
+difference): within noise.
+
+**Hashes.** The old AI: unchanged (96 of 96, `node tests/flagoff-hash.js`). v2, in open, learn and blind: 48 of 96 logs change (every tactical-party day; the
+`regular` runs are v1 and do not), because Silvery Barbs now gives an ally advantage and works on saves, and Shield, the damage cutters and Lucky are scored.
+`tests/fixtures/hashes-v2-learn.txt` is regenerated.
+
+**Not modelled.** Deflect Attacks' redirect (2024: with 1 Focus Point, a damage roll cut to 0 can be redirected as a Dexterity save for two Martial Arts dice + Dex at
+a creature within 5 ft, or 60 ft for a ranged attack): the sheet reader builds only the reduction (`1d10 + Dex + monk level`), so the redirect and its Focus Point are not
+there. Cutting Words and Spirit Shield are not imported at all (roadmap). Stone's Endurance keeps its old `v2ReactOk` test. A readied attack does not fire on a
+flyer that drops into reach without walking (`settleAltitude`), only on a step in `moveAlongSteps`.
+
 
 ## Existing user-facing AI options → v2 knobs
 
