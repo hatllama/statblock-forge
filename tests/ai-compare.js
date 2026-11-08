@@ -590,7 +590,7 @@ function playRevive(sc, N) {
 
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
-const AI_OVER = ['w', 'pacing', 'burn'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
+const AI_OVER = ['w', 'pacing', 'burn', 'react'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
 const aiOver = spec => {
   const base = typeof spec === 'string' ? { base: spec } : Object.assign({}, spec);
   for (const k in AI_OVER) base[k] = Object.assign({}, base[k], AI_OVER[k]);

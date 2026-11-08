@@ -1268,7 +1268,7 @@ and `reactTake` spends it and writes the log line.
 - *Uncanny Dodge, Deflect Attacks* (cut the damage of an attack roll that hit; free, at will). One use a round, so it goes to the hit that matters most:
   use it now when `cut(now) >= wait`, where `wait` = P(at least one more hit before our next turn) × the cut of the biggest of the `L` hits still to come
   (`L` = strikes left in this multiattack + `react.round` × other foes still to act that reach it; the biggest of `L > 1` hits is its average ×
-  (1 + `react.spread`)). A hit that would drop it counts `pacing.reactDrop` times, as `v2ReactOk` does. Pooled ones (Stone's Endurance) keep `v2ReactOk`.
+  (1 + `react.spread`)); `L` counts at most `react.maxL` hits, because waiting only pays against a bigger hit and a swarm of equal ones (Swarm: 16 Gnoll Warriors, 96.4% → 90.8% with the first version) made the cut wait for nothing. A hit that would drop it counts `pacing.reactDrop` times, as `v2ReactOk` does. Pooled ones (Stone's Endurance) keep `v2ReactOk`.
 - *Counterspell*: below.
 - *Ready*: a melee creature that cannot reach anyone readies an attack. Value = P(a foe comes into reach this round) × one attack's expected damage on it
   − `react.base`; P is `react.readyMelee` when the foe's reach (`kReach`) is 10 ft or less and it is within move + reach, `react.readyRanged` when it is
@@ -1298,21 +1298,21 @@ about 1.5-3.5 points. Deaths and rounds are in the harness output.
 
 | scenario | open win (taken) | learn win (taken) | blind win (taken) |
 |---|---|---|---|
-| RC1 Counterspell: Eldar, Fighter vs 2 Mages | 15.0±2.5 → 28.5±3.2 (113 → 110) | 2.0±1.0 → 4.5±1.5 (119 → 119) | 3.0±1.2 → 3.5±1.3 (119 → 117) |
-| RC2 Shield: Eldar, Fighter vs 2 Hill Giants + Ogre | 41.0±3.5 → 39.0±3.4 (102 → 102) | 34.5±3.4 → 40.5±3.5 (112 → 106) | 23.0±3.0 → 34.0±3.3 (119 → 117) |
-| RC3 Uncanny Dodge: Tacitus, Fighter, Cleric vs 2 Gladiators | 87.5±2.3 → 88.0±2.3 (149 → 149) | 88.5±2.3 → 88.0±2.3 (150 → 152) | 86.0±2.5 → 85.5±2.5 (183 → 186) |
-| RC4 Deflect Attacks: Kraax, Fighter vs 4 Manticores (spikes) | 25.0±3.1 → 22.0±2.9 (106 → 107) | 18.5±2.7 → 17.5±2.7 (110 → 110) | 21.5±2.9 → 24.5±3.0 (108 → 108) |
-| RC5 Ready: Kraax, Tacitus, Fighter vs Young Green Dragon, 30 ft apart | 71.5±3.2 → 71.5±3.2 (89 → 90) | 62.0±3.4 → 62.0±3.4 (92 → 93) | 61.0±3.4 → 61.0±3.4 (96 → 96) |
+| RC1 Counterspell: Eldar, Fighter vs 2 Mages | 15.0±2.5 → 29.5±3.2 (113 → 109) | 2.0±1.0 → 5.0±1.5 (119 → 119) | 3.0±1.2 → 3.5±1.3 (119 → 117) |
+| RC2 Shield: Eldar, Fighter vs 2 Hill Giants + Ogre | 41.0±3.5 → 45.0±3.5 (102 → 101) | 34.5±3.4 → 41.5±3.5 (112 → 111) | 23.0±3.0 → 36.5±3.4 (119 → 117) |
+| RC3 Uncanny Dodge: Tacitus, Fighter, Cleric vs 2 Gladiators | 87.5±2.3 → 89.0±2.2 (149 → 148) | 88.5±2.3 → 87.5±2.3 (150 → 150) | 86.0±2.5 → 86.0±2.5 (183 → 182) |
+| RC4 Deflect Attacks: Kraax, Fighter vs 4 Manticores (spikes) | 25.0±3.1 → 23.5±3.0 (106 → 107) | 18.5±2.7 → 19.0±2.8 (110 → 109) | 21.5±2.9 → 23.5±3.0 (108 → 107) |
+| RC5 Ready: Kraax, Tacitus, Fighter vs Young Green Dragon, 30 ft apart | 71.5±3.2 → 71.5±3.2 (89 → 90) | 62.0±3.4 → 62.0±3.4 (92 → 92) | 61.0±3.4 → 61.0±3.4 (96 → 96) |
 | RC5b Ready: Kraax, Fighter vs 2 Wyverns, 30 ft apart | 13.5±2.4 → 13.5±2.4 (117 → 117) | 18.0±2.7 → 18.0±2.7 (115 → 115) | 22.0±2.9 → 22.0±2.9 (113 → 113) |
-| RC6 Zaki's party on hard-day.json | 94.5±1.6 → 95.0±1.5 (139 → 140) | 91.0±2.0 → 93.0±1.8 (115 → 117) | 82.0±2.7 → 87.5±2.3 (192 → 180) |
-| RC7 Zaki's party: goblins / ogres + mage / Young Green Dragon | 90.5±2.1 → 93.5±1.7 (186 → 165) | 78.0±2.9 → 76.5±3.0 (308 → 292) | 82.5±2.7 → 77.5±3.0 (311 → 313) |
+| RC6 Zaki's party on hard-day.json | 94.5±1.6 → 95.5±1.5 (139 → 145) | 91.0±2.0 → 93.0±1.8 (115 → 122) | 82.0±2.7 → 85.0±2.5 (192 → 203) |
+| RC7 Zaki's party: goblins / ogres + mage / Young Green Dragon | 90.5±2.1 → 91.0±2.0 (186 → 197) | 78.0±2.9 → 76.5±3.0 (308 → 308) | 82.5±2.7 → 84.5±2.6 (311 → 307) |
 
-What the table says: Counterspell is the one clear win (RC1, open: 15% → 28.5%; the Eldar counters 1.2 Fireballs a day, with learn it counters the second
-sight of a spell, blind almost never because only the caster's damage prior is on offer). Silvery Barbs on saves and Shield help the blind party on a hard
-day (RC2 blind, RC6 blind). Uncanny Dodge and Deflect Attacks are held for the hit that matters: they fire a little less often (RC3 open: 2.1 → 1.7 a day) and the
+What the table says: Counterspell is the one clear win (RC1, open: 15% → 29.5%; the Eldar counters 1.2 Fireballs a day, with learn it counters the second
+sight of a spell, blind almost never because only the caster's damage prior is on offer). Shield and Silvery Barbs on saves help most where the party knows least (RC2 blind 23% → 36.5%, RC6 blind 82% → 85%). Uncanny Dodge and Deflect Attacks are held for the hit that matters: they fire a little less often (RC3 open: 2.1 → 1.7 a day) and the
 win rate does not move. Ready is priced and, in RC5 / RC5b, beaten by Dodge or an attack every time (the numbers are identical), so those rows are unchanged; in
-Zaki's party it is taken about once in 6 days (RC6 open: 0.17 readies, 0.04 strikes a day). RC7 blind is 5 points down (82.5 → 77.5, 1.3 standard errors of the
-difference): within noise.
+Zaki's party it is taken about once in 6 days (RC6 open: 0.17 readies, 0.04 strikes a day).
+
+**The full table** (every scenario family, open / learn / blind, 200 runs, same seeds, `V2ONLY=1 KNOW=<mode> node tests/ai-compare.js 200 .`; 336 rows compared): 8 rows better and 3 worse by more than 2 standard errors of the difference, about what chance gives. The three were re-run at 600-800 runs: Swarm: 16 Gnoll Warriors was a real loss (96.4% → 90.8%) because Uncanny Dodge waited for a bigger hit among equal ones, fixed by `react.maxL` (now 95.9%); D6 (a day with a downed Fighter) lost 7 points to cheap Shield casts, fixed by pricing the reaction at `react.base` 8 instead of 1.5 (59% → 65%, before 66.7%); R7 stays within 1.5 standard errors (98.7% → 97.2%). Harness run time, all 100 scenario rows in one mode: 59-62 minutes before, 64-67 after (+8%, three modes plus other work sharing the machine); the no-replay timing rows are unchanged within noise (default party vs hard-day v2: 200 → 228 ms/day in one run, 207 → 210 in the other).
 
 **Hashes.** The old AI: unchanged (96 of 96, `node tests/flagoff-hash.js`). v2, in open, learn and blind: 48 of 96 logs change (every tactical-party day; the
 `regular` runs are v1 and do not), because Silvery Barbs now gives an ally advantage and works on saves, and Shield, the damage cutters and Lucky are scored.

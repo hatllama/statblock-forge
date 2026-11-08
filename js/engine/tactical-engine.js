@@ -2986,7 +2986,7 @@ Sim.prototype.reactCutNow = function (u, r, dmg, src, info) {
   let big = dmg;
   for (const e of foes) big = Math.max(big, this.kDpr(u, e) / R.perFoe);
   big *= 1 + R.spread;
-  const wait = (1 - Math.pow(1 - R.hitP, L)) * cutOf(big);
+  const wait = (1 - Math.pow(1 - R.hitP, Math.min(L, R.maxL))) * cutOf(big);
   return now > 0 && now >= wait;
 };
 
@@ -3878,7 +3878,7 @@ const AI_BASE = {
   // against a Shield or a cut held for later; the chance a later hit lands; the damage a foe's round is split into hits; how much the best of several hits beats an average one;
   // the share of the best ally's DPR that advantage on its next attack is worth; a condition's worth when a save is rerolled; rounds a held spell is worth countering;
   // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
-  react: { base: 1.5, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.3, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, readyMelee: 0.8, readyRanged: 0.15 },
+  react: { base: 8, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.15, maxL: 2, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, readyMelee: 0.8, readyRanged: 0.15 },
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
