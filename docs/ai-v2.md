@@ -1226,6 +1226,68 @@ Mean win 80.2 → 81.1 (open), 77.2 → 77.6 (learn), 72.1 → 73.0 (blind). All
 
 Logs: old AI unchanged; v2 38, learn 22, blind 18 of 96 change (days whose enemies have area attacks); `hashes-v2-learn.txt` regenerated.
 
+## Reactions as a layer (roadmap phase 3, step 3b)
+
+Before this step Shield, Silvery Barbs and Lucky lived inside `attackRoll` behind fixed thresholds (Shield: the attack is 30% of its HP or the
+creature is under 60%; Lucky: 30%; Barbs: 25%), the damage cutters fired on the first hit, Counterspell imported as an inert reaction, and a
+melee creature with nothing in reach could only Dash or Dodge. A reaction is now an **option offered at a trigger**, scored like any other option
+(rule 1, one currency: points of damage) by the `react*` functions below. A creature on v1 keeps its old thresholds, moved verbatim into
+`reactHitOld`, so old-AI logs do not change (`node tests/flagoff-hash.js`). One reaction per creature per round: `u.reaction` resets at the
+start of that creature's turn, as before.
+
+**Triggers and limit flags.** `reactKind(x)` reads a reaction action's shape (`ac` = Shield, `barbs` = Silvery Barbs, `cut` = Uncanny Dodge /
+Deflect Attacks / Stone's Endurance, `counter` = `ext.counterspell`) and `REACT_ON` says what each is offered at. The data can narrow it with
+`ext.react` (the field the "Reactions that need an attack roll" step added): `roll` (an attack roll that hit), `types` (the damage must include one
+of these), and now `on` (`['hit']`, `['damage']`, `['spell']`, `['save']`) to override the kind's default. Uncanny Dodge and Deflect Attacks keep
+`roll` / `types`: those limits are data, not code.
+
+| trigger | where | offered to |
+|---------|-------|-----------|
+| `hit`: an attack roll that would hit | `attackRoll`, after the roll, before Mirror Image | Shield (the target), Silvery Barbs (any ally in 60 ft with line of sight to the attacker), Lucky (the target) |
+| `save`: a foe's save that succeeded against our effect | `saveRoll` | Silvery Barbs (Lucky on a save stays the target's own) |
+| `damage`: damage about to be taken from an attack | `damage` | Uncanny Dodge, Deflect Attacks, Stone's Endurance |
+| `spell`: a foe casts within 60 ft | `doAction`, before the spell resolves | Counterspell |
+| `reach`: a foe comes within reach | `moveAlongSteps`, beside Brace | a readied attack (`u.readied`) |
+
+**The price (one function).** `reactPrice(u, x, L, val)` = `react.base` (the reaction itself: the opportunity attack or other reaction it gives up) +
+`v2PaceCost(u, x, val, L)` (the slot levels from the pacing share, the Revivify reserve through `v2KeepCost`, a pooled resource such as Focus Points).
+A luck point is `react.luck`. The hard stop stays: `usable` keeps a reaction spell off the last slot that can cast a held Revivify. A reaction is
+taken when `value - price > 0`; among several on one creature (Eldar holds Shield, Counterspell and Silvery Barbs but one reaction) the best net wins,
+and `reactTake` spends it and writes the log line.
+
+**What each one is worth** (points of damage; the attack in front of us is known, the attacker's bonus through `kToHit`):
+
+- *Shield* (+5 AC until its next turn). The hit's margin is `total - AC`; a margin under 5 on a non-crit turns it into a miss: that hit's damage.
+  Plus the later attacks before its next turn (`strikesLeft` in this multiattack + `react.round` × the other foes still to act that can reach it),
+  each of which Shield turns into a miss 5 times in 20 more often than before, times its damage. Price: the 1st-level slot.
+- *Silvery Barbs*, on a hit. The reroll keeps the lower die (as it always did here), so the hit survives only if the new die also hits:
+  P(miss after) = the faces that miss ÷ 20; × the hit's damage. Plus advantage for an ally: `react.ally` × the best ally's DPR. Price: the 1st-level slot.
+  On a save: a foe saved against our spell; value = P(the reroll fails it) × what failing is worth (`_saveDmg`, half on a save, plus `_saveStakes` for
+  a condition), the context Legendary Resistance already reads.
+- *Lucky*: the Barbs maths without the ally and without the reaction; price `react.luck` per point.
+- *Uncanny Dodge, Deflect Attacks* (cut the damage of an attack roll that hit; free, at will). One use a round, so it goes to the hit that matters most:
+  use it now when `cut(now) >= wait`, where `wait` = P(at least one more hit before our next turn) × the cut of the biggest of the `L` hits still to come
+  (`L` = strikes left in this multiattack + `react.round` × other foes still to act that reach it; the biggest of `L > 1` hits is its average ×
+  (1 + `react.spread`)). A hit that would drop it counts `pacing.reactDrop` times, as `v2ReactOk` does. Pooled ones (Stone's Endurance) keep `v2ReactOk`.
+- *Counterspell*: below.
+- *Ready*: a melee creature that cannot reach anyone readies an attack. Value = P(a foe comes into reach this round) × one attack's expected damage on it
+  − `react.base`; P is `react.readyMelee` when the foe's reach (`kReach`) is 10 ft or less and it is within move + reach, `react.readyRanged` when it is
+  known to shoot. It is an option beside Dodge (worth `W.dodge` of the threat at that square) and Dash, in the same units, and costs the reaction.
+
+**Counterspell.** Offered when a foe casts a spell (a cantrip too) within 60 ft with line of sight. 2024 rule: the caster makes a Constitution save
+against the counter's spell save DC; on a failure the spell fails and the slot is not spent (a countered cast gives the slot back); on a success the
+counter has cost a slot and a reaction for nothing. The 2014 ability check against a spell of higher level than the slot does not exist in 2024 and the
+sheets are 2024, so it is not modelled. P(fail) = the save from `kSave`. The value is what the spell would do to us, by what the side knows:
+
+| mode | the spell's value | source |
+|------|-------------------|--------|
+| open | the real action: `expected` on each target in the plan (damage, control through `effectValue`), + `react.conc` rounds if it is held | the spell as cast |
+| learn | the real action if this kind has cast that spell before (`seenAct`), otherwise as blind | what has been seen |
+| blind | `kDpr(caster)` × `react.blindRounds`: only that a spell is being cast | the damage prior |
+
+Price: the lowest slot of level 3 or more, `react.base`, and the failed counter, which costs the slot and the reaction and gains nothing
+(P(save succeeds) × price). A v1 creature counters the first spell that damages or controls; v1 has no scorer.
+
 ## Existing user-facing AI options → v2 knobs
 
 | today | where | v2 knob |
@@ -1242,7 +1304,7 @@ Logs: old AI unchanged; v2 38, learn 22, blind 18 of 96 change (days whose enemi
 | Back line keeps away, hurt creatures play safe (`safetyW` 0.45 / 0.9, ×1.6 hurt) | `tacticalTurnInner` | `w.risk`, `w.riskRanged`, `w.hurt` |
 | Only turtle under 40% HP (`canDodge`) | `tacticalTurnInner` | `posture.retreatHp` + `w.dodge` |
 | Shooting in melee ×0.6, focus fire 1.5/ally, healer +4, guard +4, finish 12 + DPR/2 | `targetValue` | `w.meleeShoot`, `w.focus`, `w.healer`, `w.guard`, `w.kill` |
-| Reaction thresholds (Shield 30% / 60%, Lucky 30%, Silvery Barbs 25%) | `attackRoll` | v1 for now; `react.*` later |
+| Reaction thresholds (Shield 30% / 60%, Lucky 30%, Silvery Barbs 25%) | `attackRoll` | v1 keeps them (`reactHitOld`); v2 scores them with `AI_BASE.react` |
 | Teleport away when hurt (regular, < 40%) | `turn` | v2: the `jump` mode, scored like any other |
 | TPK kills, surprise rules, climb DC | sim options | rules, not AI |
 

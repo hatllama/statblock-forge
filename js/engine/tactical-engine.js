@@ -2669,6 +2669,17 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
     this.ev('react', `${t.name} uses Indomitable: rerolls the save (${Math.round(total)} → ${Math.round(tot2)})`, { uid: t.uid });
     r = r2; total = tot2;
   }
+  // Silvery Barbs against a save that went our way (v2 reactors): reroll, keep the lower die
+  if (total >= dc && this.aiV2 && src && src.team && src.team !== t.team && ((this._saveDmg || 0) > 0 || (this._saveStakes || 0) >= 1)) {
+    const pk = this.reactSaveV2(t, dc, src, ab);
+    if (pk) {
+      this.reactTake(pk.h, pk.x, 0);
+      const was = Math.round(total), r2 = Math.min(r, this.R.d(20));
+      total += r2 - r; r = r2;
+      const ally = this.reactGrantAdv(pk.h);
+      this.ev('react', `${pk.h.name} ${pk.x._spell ? 'casts' : 'uses'} ${pk.x.name}: ${t.name}'s save ${was} rerolls to ${Math.round(total)} vs DC ${dc}, ${total >= dc ? 'still passes' : 'now fails'}${ally ? `; ${ally.name} gains advantage` : ''}`, { uid: pk.h.uid, target: t.uid });
+    }
+  }
   const dangerous = (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
   if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
@@ -2708,43 +2719,14 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   let crit = r === 20 || (hit && !a._spell && r >= (att.critOn || 20));
   if (r !== 20 && r !== 1 && !opt.inside) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
   this.learnAtk(att, tgt, ac, r !== 20 && r !== 1 && !adv && !dis, hit);
-  // Silvery-Barbs-style reactions from the target's side: reroll, take the lower
+  // reactions on the target's side (docs/ai-v2.md, "Reactions as a layer"): v1 creatures keep their thresholds, v2 creatures score theirs
+  const S = { att, tgt, a, r, d: r, toHit, total, hit, crit, ac };
   if (hit && !opt.noReact) {
-    const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
-    const matters = r === 20 || avgHit >= tgt.maxHp * 0.25 || avgHit >= tgt.hp || (a.ext && (a.ext.grapple || a.ext.swallow)) || !!a.riderEffect;
-    const helper = this.alliesOf(tgt).find(h => h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.losU(h, att) && (h.ai !== 'tactical' || matters) &&
-      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && !(x.ext && x.ext.cancelAction) && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
-    if (helper) {
-      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && !(y.ext && y.ext.cancelAction) && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
-      helper.reaction = false; this.spend(helper, x);
-      const xdc = Number(avgDice(x.saveDC));
-      const resisted = xdc < 99 && this.saveRoll(att, xdc, helper, x.ext && x.ext.saveAbility).success;
-      const r2 = resisted ? r : Math.min(r, this.R.d(20));
-      if (resisted) this.ev('react', `${helper.name} uses ${x.name}, but ${att.name} resists`, { uid: helper.uid, target: att.uid });
-      else this.ev('react', `${helper.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name} rerolls (${r} → ${r2})`, { uid: helper.uid, target: att.uid });
-      total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
-    }
-  }
-  // Lucky: the target spends a luck point to impose disadvantage on a hit that matters
-  if (hit && !opt.noReact && tgt.luckMax && (tgt.uses.get('__luck') || 0) > 0) {
-    const avgHit2 = avgDice((a.ext && a.ext.wtDpr) || a.dpr) * (r === 20 ? 1.6 : 1);
-    if (r === 20 || avgHit2 >= tgt.hp || avgHit2 >= tgt.maxHp * 0.3 || tgt.ai !== 'tactical') {
-      tgt.uses.set('__luck', tgt.uses.get('__luck') - 1);
-      const r2 = Math.min(r, this.R.d(20));
-      total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
-      this.ev('react', `${tgt.name} spends a luck point: ${att.name} rerolls (${r} → ${r2})`, { uid: tgt.uid, target: att.uid });
-    }
-  }
-  // Shield-style reactions on the target: an AC boost that would turn the hit into a miss
-  if (hit && !crit && !opt.noReact && tgt.reaction && !this.incap(tgt)) {
-    const sh = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac !== undefined && this.usable(tgt, x) && this.condOk(tgt, x));
-    const hurts = !sh || tgt.ai !== 'tactical' || r === 20 || avgDice(a.dpr) >= tgt.hp * 0.3 || tgt.hp < tgt.maxHp * 0.6 || freqKind(sh.freq) === 'at will';
-    if (sh && hurts && total < ac + avgDice(sh.buff.ac)) {
-      tgt.reaction = false; this.spend(tgt, sh);
-      this.addBuff(tgt, tgt, sh, sh.buff);
-      ac = this.ac(tgt) + this.coverAC(att, tgt); hit = false;
-      this.ev('react', `${tgt.name} ${sh._spell ? 'casts' : 'uses'} ${sh.name} (AC ${ac})`, { uid: tgt.uid });
-    }
+    this.reactBarbsOld(S, opt);
+    if (this.aiV2) this.reactHitV2(S, opt);
+    this.reactLuckyOld(S, opt);
+    this.reactShieldOld(S, opt);
+    total = S.total; hit = S.hit; crit = S.crit; ac = S.ac;
   }
   // Mirror Image: each duplicate left gives a d6; any 3+ means a duplicate took the hit instead
   let mirror = false;
@@ -2762,6 +2744,250 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   this.dropBuffs(att, b => b.expiry === 'until next attack made' || b.expiry === 'hide');
   this.dropBuffs(tgt, b => b.expiry === 'until next attack taken');
   return { hit, crit, total: Math.round(total * 10) / 10, ac: Math.round(ac * 10) / 10, roll: r, adv: adv && !dis, dis: dis && !adv, mirror, fa };
+};
+
+/* ----- reactions as a layer (docs/ai-v2.md, "Reactions as a layer") ----- */
+/* what a reaction action is, from its shape; REACT_ON is what each kind is offered at, ext.react.on overrides it */
+const REACT_ON = { ac: ['hit'], barbs: ['hit', 'save'], cut: ['damage'], counter: ['spell'] };
+function reactKind(x) {
+  if (!x || x.actionSlot !== 4) return '';
+  const ex = x.ext || {};
+  if (ex.counterspell) return 'counter';
+  if (x.type === 'buff' && x.target === 'self' && x.buff) {
+    if (x.buff.ac !== undefined) return 'ac';
+    if (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) return 'cut';
+  }
+  if (x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && !ex.cancelAction) return 'barbs';
+  return '';
+}
+function reactOn(x, trig) {
+  const rx = x.ext && x.ext.react, k = reactKind(x);
+  return (rx && rx.on ? rx.on : REACT_ON[k] || []).indexOf(trig) >= 0;
+}
+/* u's first reaction of this kind that this trigger offers and its limits allow (null when it has no reaction left) */
+Sim.prototype.reactFind = function (u, kind, trig, info) {
+  if (!u.reaction || u.dead || u.hp <= 0 || this.incap(u) || !u.onBoard) return null;
+  return u.actions.find(x => reactKind(x) === kind && reactOn(x, trig) && reactFits(x, info || { roll: true }) && this.usable(u, x) && this.condOk(u, x)) || null;
+};
+/* spend the reaction (and the slot, at level L when set) */
+Sim.prototype.reactTake = function (u, x, L) {
+  u.reaction = false;
+  if (L) u.castAt = L;
+  this.spend(u, x); u.castAt = 0;
+};
+/* the price of taking x for `val` points: the reaction itself, then the pacing cost of its slot, use or resource (Revivify reserve included) */
+Sim.prototype.reactPrice = function (u, x, val, L) {
+  return u.v2P.react.base + this.v2PaceCost(u, x, Math.max(0, val), L || 0);
+};
+/* the attacker's to-hit bonus as the defender reads it: open, the sheet; otherwise the total it was shown less an average die */
+Sim.prototype.kToHit = function (u, att, a, total) {
+  if (!this.kOf(u, att)) return Number(avgDice(a.toHit)) + this.sumBuff(att, 'toHit', false);
+  return total - 10.5;
+};
+/* one hit of this attack on u, as u reads it (open: the dice; otherwise the damage the attacker has been seen to deal, per swing) */
+Sim.prototype.kHitDmg = function (u, att, a) {
+  if (this.kOf(u, att)) return this.kDpr(u, att) / Math.max(1, a.targets || 1);
+  return avgDice((a.ext && a.ext.wtDpr) || a.dpr) * this.multBuff(att, 'damageMultiplier') * damageMultFor(a, u) * this.multBuff(u, 'damageTakenMultiplier');
+};
+/* the foes that still act between now (att's turn) and u's next turn and could reach u */
+Sim.prototype.foesToAct = function (u, att) {
+  const ord = this.order, n = ord ? ord.length : 0, i0 = n ? ord.indexOf(att) : -1;
+  if (i0 < 0 || this.current !== att) return [];
+  const out = [];
+  for (let k = 1; k < n; k++) {
+    const e = ord[(i0 + k) % n];
+    if (e === u) break;
+    if (e.team === u.team || !e.onBoard || !this.alive(e) || this.incap(e)) continue;
+    const reach = this.kOf(u, e) ? this.kReach(u, e) : Math.max.apply(null, [5].concat(e.actions.filter(o => o.type === 'atk' && o.actionSlot === 0).map(o => o._range || 5)));
+    if (this.dist(u, e) <= this.speedOf(e) + reach) out.push(e);
+  }
+  return out;
+};
+/* chance of a hit on a d20 with bonus b against armor class ac (nat 1 and 20 as ever) */
+const hitP = (b, ac) => Math.min(0.95, Math.max(0.05, (21 + b - ac) / 20));
+/* faces of a reroll that miss, of 20 (the new die is taken if lower, so only a miss turns a hit into one) */
+function missFaces(b, ac) { let n = 0; for (let f = 1; f <= 20; f++) if (f === 1 || (f !== 20 && f + b < ac)) n++; return n; }
+
+/* ---- the old thresholds, moved out of attackRoll unchanged; v1 creatures use them (S = the roll so far: r, total, hit, crit, ac, toHit) ---- */
+Sim.prototype.reactBarbsOld = function (S, opt) {
+  const att = S.att, tgt = S.tgt, a = S.a, r = S.r, toHit = S.toHit;
+  let total = S.total, hit = S.hit, crit = S.crit, ac = S.ac;
+  // Silvery-Barbs-style reactions from the target's side: reroll, take the lower
+  if (hit && !opt.noReact) {
+    const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
+    const matters = r === 20 || avgHit >= tgt.maxHp * 0.25 || avgHit >= tgt.hp || (a.ext && (a.ext.grapple || a.ext.swallow)) || !!a.riderEffect;
+    const helper = this.alliesOf(tgt).find(h => !h.v2 && h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.losU(h, att) && (h.ai !== 'tactical' || matters) &&
+      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && !(x.ext && x.ext.cancelAction) && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
+    if (helper) {
+      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && !(y.ext && y.ext.cancelAction) && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
+      helper.reaction = false; this.spend(helper, x);
+      const xdc = Number(avgDice(x.saveDC));
+      const resisted = xdc < 99 && this.saveRoll(att, xdc, helper, x.ext && x.ext.saveAbility).success;
+      const r2 = resisted ? r : Math.min(r, this.R.d(20));
+      if (resisted) this.ev('react', `${helper.name} uses ${x.name}, but ${att.name} resists`, { uid: helper.uid, target: att.uid });
+      else this.ev('react', `${helper.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name} rerolls (${r} → ${r2})`, { uid: helper.uid, target: att.uid });
+      total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
+    }
+  }
+  S.total = total; S.hit = hit; S.crit = crit; S.ac = ac;
+};
+
+Sim.prototype.reactLuckyOld = function (S, opt) {
+  const att = S.att, tgt = S.tgt, a = S.a, r = S.r, toHit = S.toHit;
+  let total = S.total, hit = S.hit, crit = S.crit, ac = S.ac;
+  // Lucky: the target spends a luck point to impose disadvantage on a hit that matters
+  if (hit && !opt.noReact && !tgt.v2 && tgt.luckMax && (tgt.uses.get('__luck') || 0) > 0) {
+    const avgHit2 = avgDice((a.ext && a.ext.wtDpr) || a.dpr) * (r === 20 ? 1.6 : 1);
+    if (r === 20 || avgHit2 >= tgt.hp || avgHit2 >= tgt.maxHp * 0.3 || tgt.ai !== 'tactical') {
+      tgt.uses.set('__luck', tgt.uses.get('__luck') - 1);
+      const r2 = Math.min(r, this.R.d(20));
+      total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
+      this.ev('react', `${tgt.name} spends a luck point: ${att.name} rerolls (${r} → ${r2})`, { uid: tgt.uid, target: att.uid });
+    }
+  }
+  S.total = total; S.hit = hit; S.crit = crit; S.ac = ac;
+};
+
+Sim.prototype.reactShieldOld = function (S, opt) {
+  const att = S.att, tgt = S.tgt, a = S.a, r = S.r, toHit = S.toHit;
+  let total = S.total, hit = S.hit, crit = S.crit, ac = S.ac;
+  // Shield-style reactions on the target: an AC boost that would turn the hit into a miss
+  if (hit && !crit && !opt.noReact && !tgt.v2 && tgt.reaction && !this.incap(tgt)) {
+    const sh = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac !== undefined && this.usable(tgt, x) && this.condOk(tgt, x));
+    const hurts = !sh || tgt.ai !== 'tactical' || r === 20 || avgDice(a.dpr) >= tgt.hp * 0.3 || tgt.hp < tgt.maxHp * 0.6 || freqKind(sh.freq) === 'at will';
+    if (sh && hurts && total < ac + avgDice(sh.buff.ac)) {
+      tgt.reaction = false; this.spend(tgt, sh);
+      this.addBuff(tgt, tgt, sh, sh.buff);
+      ac = this.ac(tgt) + this.coverAC(att, tgt); hit = false;
+      this.ev('react', `${tgt.name} ${sh._spell ? 'casts' : 'uses'} ${sh.name} (AC ${ac})`, { uid: tgt.uid });
+    }
+  }
+  S.total = total; S.hit = hit; S.crit = crit; S.ac = ac;
+};
+
+
+/* ---- v2: the same reactions, scored ---- */
+/* Shield: this hit if it turns it into a miss, + the attacks still to come before its next turn */
+Sim.prototype.reactShieldValue = function (S, tgt, x) {
+  const R = tgt.v2P.react, bonus = avgDice(x.buff.ac), margin = S.total - S.ac;
+  const dmg = this.kHitDmg(tgt, S.att, S.a), crit = tgt.v2P.w.critDmg;
+  let val = !S.crit && margin < bonus ? dmg : 0;
+  const bh = this.kToHit(tgt, S.att, S.a, S.total), ac = this.ac(tgt) + this.coverAC(S.att, tgt);
+  const gain = Math.max(0, hitP(bh, ac) - hitP(bh, ac + bonus));
+  val += (this._strikeBy === S.att ? this._strikesLeft : 0) * gain * dmg;
+  for (const e of this.foesToAct(tgt, S.att)) val += this.kDpr(tgt, e) * Math.min(1, (bonus / 20) / R.hitP) * R.round;
+  return val;
+};
+/* Silvery Barbs / Lucky on a hit: the chance the lower of two dice misses, × the hit */
+Sim.prototype.reactRerollValue = function (S, tgt, who) {
+  const bh = this.kToHit(tgt, S.att, S.a, S.total), ac = S.ac;
+  return missFaces(bh, ac) / 20 * this.kHitDmg(tgt, S.att, S.a) * (S.d === 20 ? who.v2P.w.critDmg : 1);
+};
+Sim.prototype.reactHitV2 = function (S, opt) {
+  for (let round = 0; round < 3 && S.hit; round++) {
+    const cands = [];
+    const tgt = S.tgt, att = S.att;
+    // Shield on the target
+    if (!S.crit) {
+      const sh = tgt.v2 ? this.reactFind(tgt, 'ac', 'hit') : null;
+      if (sh) { const val = this.reactShieldValue(S, tgt, sh), net = val - this.reactPrice(tgt, sh, val, 0); if (net > 0) cands.push({ who: tgt, x: sh, net, kind: 'ac' }); }
+    }
+    // Silvery Barbs from any v2 ally that sees the attacker
+    for (const h of this.alliesOf(tgt)) {
+      if (!h.v2 || !h.reaction || !h.onBoard || this.dist(h, att) > 60) continue;
+      const x = this.reactFind(h, 'barbs', 'hit');
+      if (!x || (x.ext && x.ext.selfOnly && h !== tgt) || !this.losU(h, att)) continue;
+      const ally = this.v2AllyGain(h);
+      const val = this.reactRerollValue(S, tgt, h) + ally, net = val - this.reactPrice(h, x, val, 0);
+      if (net > 0) cands.push({ who: h, x, net, kind: 'barbs' });
+    }
+    if (!cands.length) break;
+    cands.sort((p, q) => q.net - p.net);
+    const c = cands[0];
+    if (c.kind === 'ac') this.reactShieldDo(S, c.who, c.x);
+    else this.reactBarbsDo(S, c.who, c.x);
+  }
+  // Lucky (no reaction): a luck point against a hit
+  const tgt = S.tgt;
+  if (S.hit && tgt.v2 && tgt.luckMax && (tgt.uses.get('__luck') || 0) > 0) {
+    const val = this.reactRerollValue(S, tgt, tgt);
+    if (val > tgt.v2P.react.luck) {
+      tgt.uses.set('__luck', tgt.uses.get('__luck') - 1);
+      const d2 = Math.min(S.d, this.R.d(20)), was = Math.round(S.total);
+      this.reactApplyDie(S, d2);
+      this.ev('react', `${tgt.name} spends a luck point: ${S.att.name}'s ${was} rerolls to ${Math.round(S.total)}, ${S.hit ? 'still hits' : 'now misses'}`, { uid: tgt.uid, target: S.att.uid });
+    }
+  }
+};
+/* the best ally's DPR, a share of it for the advantage Silvery Barbs gives */
+Sim.prototype.v2AllyGain = function (h) {
+  let best = 0;
+  for (const o of this.alliesOf(h)) if (o.onBoard && this.alive(o) && !this.incap(o) && o.dpr > best) best = o.dpr;
+  return best * h.v2P.react.ally;
+};
+Sim.prototype.reactApplyDie = function (S, d) {
+  S.d = d; S.total = d + S.toHit;
+  S.hit = d === 20 || (d !== 1 && S.total >= S.ac); S.crit = d === 20;
+};
+Sim.prototype.reactShieldDo = function (S, tgt, x) {
+  const was = Math.round(S.total), acWas = Math.round(S.ac);
+  this.reactTake(tgt, x, 0);
+  this.addBuff(tgt, tgt, x, x.buff);
+  S.ac = this.ac(tgt) + this.coverAC(S.att, tgt);
+  S.hit = S.d === 20 || (S.d !== 1 && S.total >= S.ac);
+  this.ev('react', `${tgt.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${was} would hit AC ${acWas}, ${S.hit ? 'still hits' : 'now misses'} (AC ${Math.round(S.ac)})`, { uid: tgt.uid });
+};
+Sim.prototype.reactBarbsDo = function (S, h, x) {
+  const att = S.att;
+  this.reactTake(h, x, 0);
+  const xdc = Number(avgDice(x.saveDC));
+  const resisted = xdc < 99 && this.saveRoll(att, xdc, h, x.ext && x.ext.saveAbility).success;
+  const was = Math.round(S.total);
+  if (resisted) { this.ev('react', `${h.name} uses ${x.name}, but ${att.name} resists`, { uid: h.uid, target: att.uid }); return; }
+  this.reactApplyDie(S, Math.min(S.d, this.R.d(20)));
+  const ally = this.reactGrantAdv(h);
+  this.ev('react', `${h.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name}'s ${was} rerolls to ${Math.round(S.total)}, ${S.hit ? 'still hits' : 'now misses'}${ally ? `; ${ally.name} gains advantage` : ''}`, { uid: h.uid, target: att.uid });
+};
+/* Silvery Barbs also gives one ally within 30 ft advantage on its next attack (the best hitter) */
+Sim.prototype.reactGrantAdv = function (h) {
+  let best = null;
+  for (const o of this.alliesOf(h)) if (o.onBoard && this.alive(o) && !this.incap(o) && this.dist(o, h) <= 30 && (!best || o.dpr > best.dpr)) best = o;
+  if (best) this.addBuff(best, h, { id: 'barbs-adv', name: 'Silvery Barbs' }, { duration: 'until next attack made', condition: 'Attacks with Advantage' });
+  return best;
+};
+/* Silvery Barbs on a foe's save that succeeded against us: the reroll takes the lower die. The best ally that sees it and finds it worth the slot, or null */
+Sim.prototype.reactSaveV2 = function (t, dc, src, ab) {
+  const stakes = this._saveStakes || 0, dmg = (this._saveDmg || 0) * (this._saveHalf ? 0.5 : 1);
+  let pick = null;
+  for (const h of this.alliesOf(src)) {
+    if (!h.v2 || !h.reaction || !h.onBoard || this.dist(h, t) > 60) continue;
+    const x = this.reactFind(h, 'barbs', 'save', { roll: false });
+    if (!x || (x.ext && x.ext.selfOnly) || !this.losU(h, t)) continue;
+    // the new die fails the save when it is below what the save needs: faces 1 .. need - 1, of 20
+    const failFaces = Math.max(0, Math.min(20, Math.ceil(dc - this.kSave(h, t, ab)) - 1));
+    const val = (failFaces / 20) * (dmg + stakes * h.v2P.react.stakes) + this.v2AllyGain(h);
+    const net = val - this.reactPrice(h, x, val, 0);
+    if (net > 0 && (!pick || net > pick.net)) pick = { h, x, net };
+  }
+  return pick;
+};
+/* Uncanny Dodge, Deflect Attacks: at will, once a round: this hit or a bigger one still to come? */
+Sim.prototype.reactCutNow = function (u, r, dmg, src, info) {
+  const R = u.v2P.react, P = u.v2P.pacing;
+  const mult = typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1, cutAmt = avgDice(r.buff.damageReduction || 0);
+  const cutOf = d => d - Math.floor(Math.max(0, d * mult - cutAmt));
+  const drops = dmg >= u.hp && Math.floor(Math.max(0, dmg * mult - cutAmt)) < u.hp;
+  const now = cutOf(dmg) * (drops ? P.reactDrop : 1);
+  if (drops) return now > 0;
+  const left = src && this._strikeBy === src ? this._strikesLeft : 0;
+  const foes = src && info && info.attack ? this.foesToAct(u, src) : [];
+  const L = left + foes.length * R.round;
+  if (L <= 0) return now > 0;
+  let big = dmg;
+  for (const e of foes) big = Math.max(big, this.kDpr(u, e) / R.perFoe);
+  big *= 1 + R.spread;
+  const wait = (1 - Math.pow(1 - R.hitP, L)) * cutOf(big);
+  return now > 0 && now >= wait;
 };
 
 /* ----- damage, healing, death ----- */
@@ -2794,7 +3020,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   if (info.attack && tgt.reaction && !this.incap(tgt) && tgt.hp > 0) {
     const r = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac === undefined &&
       (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) && reactFits(x, info) && this.usable(tgt, x) && this.condOk(tgt, x));
-    if (r && (!tgt.v2 || this.v2ReactOk(tgt, r, dmg))) {
+    if (r && (!tgt.v2 || this.v2ReactOk(tgt, r, dmg, src, info))) {
       tgt.reaction = false; this.spend(tgt, r);
       const red = Math.floor(Math.max(0, dmg * (typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1) - avgDice(r.buff.damageReduction || 0)));
       this.ev('react', `${tgt.name} uses ${r.name} (${dmg} → ${red})`, { uid: tgt.uid });
@@ -3033,7 +3259,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     const mult = this.multBuff(u, 'damageMultiplier');
     for (const t of targets) {
       if (t.dead) continue;
-      this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1);
+      this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1); this._saveHalf = a.halfOnSave ? 1 : 0;
       if (a.riderEffect && a.riderEffect.buff && DANGER_CONDS.includes(a.riderEffect.buff.condition)) this._saveStakes = 1;
       this._saveCond = a.riderEffect && a.riderEffect.buff ? a.riderEffect.buff.condition : null;
       const s = this.saveRoll(t, Number(avgDice(a.toHit)), u, a.ext && a.ext.saveAbility);
@@ -3072,7 +3298,9 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
       if (!opts.length) break;
       cur = this.orderBySelector(opts, a.target)[0];
     }
+    this._strikeBy = u; this._strikesLeft = n - i - 1;       // reactions read how many swings are still to come
     this.attackOnce(u, a, cur, opt);
+    this._strikeBy = null; this._strikesLeft = 0;
     if (u.dead || u.hp <= 0) break;
   }
 };
@@ -3571,6 +3799,11 @@ const AI_BASE = {
     legCr: 19,
     /* threat-table:end */
   },
+  // reactions (docs/ai-v2.md, "Reactions as a layer"): the reaction itself (what it gives up) in points; a luck point; the share of the foes still to act that count
+  // against a Shield or a cut held for later; the chance a later hit lands; the damage a foe's round is split into hits; how much the best of several hits beats an average one;
+  // the share of the best ally's DPR that advantage on its next attack is worth; a condition's worth when a save is rerolled; rounds a held spell is worth countering;
+  // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
+  react: { base: 1.5, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.3, ally: 0.2, stakes: 12, conc: 3, blindRounds: 1.2, readyMelee: 0.8, readyRanged: 0.15 },
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
@@ -3772,8 +4005,8 @@ Sim.prototype.v2PaceCost = function (u, a, val, L) {
 };
 /* a limited damage-cutting reaction (Stone's Endurance): only on a hit that uses most of it, or that would drop it,
    and is worth the use (at-will ones like Uncanny Dodge keep the old rule: the first hit) */
-Sim.prototype.v2ReactOk = function (u, r, dmg) {
-  if (!this.v2Pool(u, r)) return true;
+Sim.prototype.v2ReactOk = function (u, r, dmg, src, info) {
+  if (!this.v2Pool(u, r)) return this.reactCutNow(u, r, dmg, src, info);       // at will: this hit, or a bigger one still to come
   const P = u.v2P.pacing, mult = typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1, cut = avgDice(r.buff.damageReduction || 0);
   const after = Math.floor(Math.max(0, dmg * mult - cut)), drops = dmg >= u.hp && after < u.hp;
   const full = cut ? cut : dmg * (1 - mult);                                // what a use can save at best
