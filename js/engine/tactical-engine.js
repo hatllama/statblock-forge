@@ -528,7 +528,7 @@ function Sim(opts) {
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
   // AI v2 for non-casters (docs/ai-v2.md): 'v2' for both sides, or { party: 'v2', foes: 'v1' }
   const ai = opts.ai;
-  this.aiV2 = ai === 'v2' ? { party: true, foes: true } : ai && typeof ai === 'object' && (ai.party === 'v2' || ai.foes === 'v2') ? { party: ai.party === 'v2', foes: ai.foes === 'v2' } : null;
+  this.aiV2 = ai === 'v2' ? { party: true, foes: true } : ai && typeof ai === 'object' && (ai.party === 'v2' || ai.foes === 'v2' || ai.foes === 'tiers') ? { party: ai.party === 'v2', foes: ai.foes === 'v2' || ai.foes === 'tiers', tiers: ai.foes === 'tiers' } : null;
   const kn = opts.know || {};
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
@@ -1407,10 +1407,15 @@ const SIZE_PRIOR = { Tiny: { hp: 7, dpr: 3 }, Small: { hp: 15, dpr: 6 }, Medium:
 const priorOf = t => SIZE_PRIOR[t.size] || SIZE_PRIOR.Medium;
 const otherTeam = team => team === 'party' ? 'foes' : 'party';
 Sim.prototype.kMode = function (team) { return (this.know && this.know[team]) || 'open'; };
+/* what u itself reads: its side's mode, except that a tier's profile (know: 'blind') makes a dull creature read blind even in open mode */
+Sim.prototype.kModeFor = function (u) {
+  const m = this.kMode(u.team);
+  return m === 'open' && u.v2 && u.v2P && u.v2P.know === 'blind' ? 'blind' : m;
+};
 /* null when u sees the truth about t (its own side, or open mode), else the mode */
 Sim.prototype.kOf = function (u, t) {
   if (!u || !t || u.team === t.team) return null;
-  const m = this.kMode(u.team);
+  const m = this.kModeFor(u);
   return m === 'open' ? null : m;
 };
 /* what `team` has learned about creatures of t's kind today */
@@ -3971,6 +3976,7 @@ const AI_BASE = {
   // the share of the best ally's DPR that advantage on its next attack is worth; a condition's worth when a save is rerolled; rounds a held spell is worth countering;
   // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
   react: { base: 8, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.15, maxL: 2, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, blindLevel: 3, readyMelee: 0.8, readyRanged: 0.15 },
+  morale: { fearless: false, bloodied: true, half: true, leader: true, dc: 10 },   // a creature that may lose its nerve (opts.morale on): which triggers count, and the Wisdom save DC; equal to the old rule
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
@@ -4005,13 +4011,62 @@ function aiProfile(spec) {
   if (spec && typeof spec === 'object') return mergeProfile(AI_PROFILES[spec.base] || AI_PROFILES.balanced, spec);
   return AI_PROFILES.balanced;
 }
+/* ---- monster intelligence tiers (docs/ai-v2.md "Monster intelligence tiers"): opts.ai.foes = 'tiers' ----
+   A tier is a partial profile merged over AI_BASE, picked per creature: ext.aiTier, else from its Intelligence and type.
+   rules: Int ceilings (mindless / animal) and floor (genius); types that are mindless at or under mindlessInt; wisRetreat: retreatHp per point of Wisdom modifier (tiers that retreat). */
+const AI_TIERS = {
+  tiers: ['mindless', 'animal', 'cunning', 'genius'],
+  rules: { mindlessInt: 6, mindlessTypes: ['ooze', 'plant', 'construct', 'undead'], mindlessAny: 0, animalInt: 7, geniusInt: 16, wisRetreat: 0.03 },
+  profiles: {
+    mindless: {
+      know: 'blind', morale: { fearless: true },
+      posture: { retreatHp: 0, recoverHp: 0, protectAllyHp: 0 },
+      w: { risk: 0, riskRanged: 0, hurt: 0, oa: 0, dodge: 0, hide: 0, retreatSafety: 0, casterRisk: 0, caster: 0, healer: 0, wounded: 0, pick: 0, guard: 0, focus: 0.5, areaRisk: 0.2, ffValue: 0.1, progress: 0.8 },
+      pacing: { costPerUse: 0, overTax: 0, easyTax: 0 },
+    },
+    animal: {
+      know: 'blind', morale: {},
+      posture: { retreatHp: 0.3, protectAllyHp: 0 },
+      w: { caster: 0, healer: 0, wounded: 6, pick: 2, guard: 0, focus: 1.5, oa: 0.7, dodge: 0.2, hide: 0, areaRisk: 0.4, ffValue: 0.3, casterRisk: 0.5 },
+      pacing: { costPerUse: 0.05 },
+    },
+    cunning: {},
+    genius: {
+      morale: { bloodied: false, half: false, leader: false },
+      posture: { retreatHp: 0.35, retreatDanger: 0.4 },
+      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, risk: 0.55, riskRanged: 1.1, hurt: 2, oa: 1.2 },
+      pacing: { costPerUse: 0.12, overTax: 0.65 },
+    },
+  },
+};
+const TIER_PROFILES = {};
+for (const k of AI_TIERS.tiers) TIER_PROFILES[k] = mergeProfile(AI_BASE, AI_TIERS.profiles[k]);
+/* a creature's tier: ext.aiTier, else the statblock (ext.scores from the parser; an older saved monster uses its Int save) */
+function tierOf(tpl) {
+  const ex = (tpl && tpl.ext) || {}, R = AI_TIERS.rules;
+  if (AI_TIERS.tiers.includes(ex.aiTier)) return ex.aiTier;
+  const type = String((tpl && tpl.type) || '').toLowerCase();
+  const int = ex.scores && typeof ex.scores.int === 'number' ? ex.scores.int : ex.saves && typeof ex.saves.int === 'number' ? 10 + 2 * ex.saves.int : (ex.ai === 'beast' ? 3 : ex.ai === 'tactical' ? 12 : 8);
+  if (int <= R.mindlessAny || /\bswarm\b/i.test(String((tpl && tpl.name) || '')) || (R.mindlessTypes.includes(type) && int <= R.mindlessInt)) return 'mindless';
+  if (type === 'beast' || int <= R.animalInt) return 'animal';
+  return int >= R.geniusInt ? 'genius' : 'cunning';
+}
+/* the profile of a tiered creature: its tier, a Wisdom nudge to when it retreats, then ext.aiProfile on top */
+function tierProfile(tier, spec, tpl) {
+  let p = TIER_PROFILES[tier] || TIER_PROFILES.cunning;
+  const wis = tpl && tpl.ext && tpl.ext.scores && typeof tpl.ext.scores.wis === 'number' ? tpl.ext.scores.wis : 10;
+  if (p.posture.retreatHp > 0) { p = mergeProfile(p, null); p.posture.retreatHp = Math.min(0.8, Math.max(0, p.posture.retreatHp + Math.floor((wis - 10) / 2) * AI_TIERS.rules.wisRetreat)); }
+  if (typeof spec === 'string') return AI_PRESETS[spec] ? mergeProfile(p, AI_PRESETS[spec]) : p;
+  if (spec && typeof spec === 'object') return mergeProfile(mergeProfile(p, AI_PRESETS[spec.base] || null), spec);
+  return p;
+}
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
 /* which creatures v2 drives: plays tactically (or names a profile), any caster kind (step 3a),
    and nothing it can't score yet (swallowing, dice pools other than heals) */
 Sim.prototype.v2Eligible = function (u) {
   const prof = u.tpl.ext && u.tpl.ext.aiProfile;
-  if (!this.aiV2 || !this.aiV2[u.team] || (u.ai !== 'tactical' && !prof)) return false;
+  if (!this.aiV2 || !this.aiV2[u.team] || (u.ai !== 'tactical' && !prof && !(this.aiV2.tiers && !u.isPC))) return false;
   // every caster kind plays on v2 (step 3a); casterKind now only says who stands at the back (backLine)
   return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.ext && (a.ext.swallow || (a.ext.pool && a.type !== 'heal')));
 };
@@ -4029,7 +4084,8 @@ Sim.prototype.v2Setup = function (u) {
   u._poolPick = new Map();                                  // Lay on Hands: the points v2 chose, per action and target
   u.reviver = u.isPC && u.slots ? u.actions.find(a => a.ext && a.ext.revivify && a._spell) || null : null;
   u.ai = 'tactical';
-  u.v2P = aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
+  u.tier = this.aiV2.tiers && !u.isPC ? tierOf(u.tpl) : null;      // foes: 'tiers' (docs/ai-v2.md)
+  u.v2P = u.tier ? tierProfile(u.tier, u.tpl.ext && u.tpl.ext.aiProfile, u.tpl) : aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
   u.v2Start = new Map(u.uses);      // what it had when the fight started, for pacing
   u.v2Slots0 = slotLevels(u);
 };
@@ -4192,7 +4248,7 @@ Sim.prototype.v2ReactOk = function (u, r, dmg, src, info) {
 
 /* ---- what the turn looks like from where it stands: foes, danger, the fight's length, the posture ---- */
 Sim.prototype.v2Danger = function (u, foes, myTeam) {
-  const blindTo = this.kMode(u.team) !== 'open';
+  const blindTo = this.kModeFor(u) !== 'open';
   const info = foes.filter(e => !this.incap(e) && e.hp > 0).map(e => {
     let dmg = 0, reach = 5, p = Math.min(0.95, Math.max(0.05, (21 + 5 - this.ac(u)) / 20));
     if (blindTo) { dmg = this.kDpr(u, e) * Math.min(1, Math.max(0.3, (21 + 5 - u.baseAC) / 20)) / 0.65; reach = this.kReach(u, e); }
@@ -5964,19 +6020,21 @@ const FEARLESS = ['undead', 'construct', 'ooze', 'plant'];
 Sim.prototype.moraleBreaks = function (u) {
   if (!this.morale || u.team !== 'foes' || u.isPC || u.legResMax || u.hasLegendary) return false;
   if (FEARLESS.includes(String(u.tpl.type || '').toLowerCase()) || (u.tpl.ext && u.tpl.ext.fearless)) return false;
+  const M = u.v2 && u.v2P && u.v2P.morale;      // AI v2: its profile says which triggers count (a tier's nerve); the base equals the old rule
+  if (M && M.fearless) return false;
   const side = this.units.filter(o => o.team === u.team);
   const fallen = side.filter(o => o.dead || o.hp <= 0).length;
   const leader = side.reduce((m, o) => (!m || o.maxHp > m.maxHp ? o : m), null);
   const triggers = [];
-  if (u.hp < u.maxHp / 2) triggers.push('bloodied');
-  if (side.length > 1 && fallen * 2 >= side.length) triggers.push('half');
-  if (leader && leader !== u && (leader.dead || leader.hp <= 0) && leader.maxHp > u.maxHp) triggers.push('leader');
+  if (u.hp < u.maxHp / 2 && (!M || M.bloodied)) triggers.push('bloodied');
+  if (side.length > 1 && fallen * 2 >= side.length && (!M || M.half)) triggers.push('half');
+  if (leader && leader !== u && (leader.dead || leader.hp <= 0) && leader.maxHp > u.maxHp && (!M || M.leader)) triggers.push('leader');
   u.moraleSeen = u.moraleSeen || {};
   const fresh = triggers.filter(k => !u.moraleSeen[k]);
   if (!fresh.length || !this.losing(u)) return false;
   fresh.forEach(k => { u.moraleSeen[k] = true; });
   const r = this.d20(false, false, false) + this.saveBonusFor(u, 'wis');
-  return r < 10;
+  return r < (M && M.dc || 10);
 };
 Sim.prototype.leave = function (u) {
   const caught = !!u.grappledBy || this.has(u, ['Restrained', 'Paralyzed', 'Stunned', 'Unconscious', 'Petrified']) || this.speedOf(u) <= 0 ||
@@ -6312,5 +6370,5 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, AI_BASE, AI_PROFILES, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);

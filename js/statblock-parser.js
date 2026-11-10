@@ -173,6 +173,7 @@ function parseHeader(lines, flat, notes) {
 
   // how it fights
   const int = have ? scores.int : 10;
+  if (have) h.ext.scores = { int: scores.int, wis: scores.wis };      // AI tiers (docs/ai-v2.md)
   h.ext.ai = int <= 3 || ['ooze', 'plant'].includes(h.type) ? 'beast' : int >= 10 ? 'tactical' : 'regular';
 
   // damage resistances / immunities / vulnerabilities → one passive damage-taken multiplier

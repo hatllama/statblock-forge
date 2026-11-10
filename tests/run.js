@@ -115,20 +115,20 @@ function scanRules(r, layout, acc) {
 for (const file of ['worms-day.json', 'bandit-day.json']) {
   const day = fixture(file);
   // 'v2': AI v2 on both sides for non-casters and full casters (docs/ai-v2.md), the old tactical AI for half casters
-  for (const ai of ['tactical', 'regular', 'v2']) for (const layout of [null, walled]) {
+  for (const ai of ['tactical', 'regular', 'v2', 'tiers']) for (const layout of [null, walled]) {
     section(`${file} · ${ai} AI · ${layout ? 'walled map' : 'open field'}`);
     const runs = [];
     let wallSteps = 0, throughWalls = 0, deadActs = 0, incapActs = 0, badHide = 0, events = 0;
     const t0 = Date.now();
     for (let i = 0; i < 25; i++) {
       const seed = 1000 + i * 7919;
-      const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, partyAI: ai === 'v2' ? 'tactical' : ai, ai: ai === 'v2' ? 'v2' : undefined, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
+      const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, partyAI: ai === 'v2' || ai === 'tiers' ? 'tactical' : ai, ai: ai === 'v2' ? 'v2' : ai === 'tiers' ? { party: 'v2', foes: 'tiers' } : undefined, know: ai === 'tiers' ? { party: 'learn', foes: i % 2 ? 'learn' : 'open' } : undefined, morale: ai === 'tiers' ? 'on' : undefined, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
       runs.push({ seed, res });
       const acc = { wallSteps, throughWalls, deadActs, incapActs, badHide, events };
       for (const r of res) scanRules(r, layout, acc);
       ({ wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc);
     }
-    const S = Tac.summarize(day, runs, { partyAI: ai === 'v2' ? 'tactical' : ai });
+    const S = Tac.summarize(day, runs, { partyAI: ai === 'v2' || ai === 'tiers' ? 'tactical' : ai });
     const ms = (Date.now() - t0) / runs.length;
     console.log('  ' + S.encounters.map((e, i) => `fight ${i + 1}: win ${(e.winRate * 100).toFixed(0)}% · a PC dies ${(e.anyDeath * 100).toFixed(1)}%`).join(' | ') + ` · ${ms.toFixed(0)} ms/day · ${events} events`);
     check(S.encounters.every(e => e.winRate >= 0 && e.winRate <= 1 && e.anyDeath >= 0 && e.anyDeath <= 1), 'odds are probabilities');
@@ -2036,6 +2036,86 @@ section('AI v2: reactions as a layer (step 3b)');
   check(df && df.ext.react.redirect && df.ext.react.redirect.resource === 'Focus Points' && df.ext.react.redirect.dice === '2d8 + 4', 'the Monk build carries the redirect');
   // the whole thing is data: the weights live in AI_BASE.react
   check(typeof Tac.AI_BASE.react.base === 'number' && typeof Tac.AI_BASE.react.luck === 'number' && typeof Tac.AI_BASE.react.readyMelee === 'number', 'reaction weights are plain data in AI_BASE.react');
+}
+
+section('AI v2: monster intelligence tiers (phase 4)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const pc = n => cp(ctx.CB.find(c => c.name === n));
+  const srd = (name, count, tier) => {
+    const s = ctx.M.find(m => m.name === name), m = cp(Parser.parse(s.text).monsters[0]);
+    m.id = s.id; m.mode = 'custom'; m.count = count || 1; m.actions.forEach((a, i) => { a.id = s.id + i; });
+    if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = s.id + 's' + i; });
+    if (tier) m.ext.aiTier = tier;
+    return m;
+  };
+  // derivation from the statblock
+  const tpl = (name, type, int, wis, ext) => ({ name, type, ext: Object.assign({ scores: { int, wis: wis || 10 } }, ext) });
+  const T = Tac.tierOf;
+  check(T(srd('Wolf')) === 'animal' && T(srd('Dire Wolf')) === 'animal' && T(srd('Hill Giant')) === 'animal', 'a wolf, a dire wolf and a hill giant are animals (instinct)');
+  check(T(tpl('Gelatinous Cube', 'ooze', 1)) === 'mindless' && T(srd('Zombie')) === 'mindless' && T(srd('Stone Golem')) === 'mindless' && T(tpl('Swarm of Rats', 'beast', 2)) === 'mindless', 'an ooze, a zombie, a golem and a swarm are mindless');
+  check(T(srd('Mage')) === 'genius' && T(srd('Lich')) === 'genius' && T(srd('Adult Red Dragon')) === 'genius', 'a mage, a lich and an adult dragon are geniuses');
+  check(T(srd('Goblin Warrior')) === 'cunning' && T(srd('Knight')) === 'cunning' && T(srd('Hobgoblin Captain')) === 'cunning', 'goblins, knights and hobgoblins are cunning');
+  check(T(srd('Wolf', 1, 'genius')) === 'genius' && T(tpl('X', 'beast', 3, 10, { aiTier: 'bogus' })) === 'animal', 'ext.aiTier overrides; an unknown tier is ignored');
+  check(T({ name: 'Old Ogre', type: 'giant', ext: { saves: { int: -3 }, ai: 'regular' } }) === 'animal', 'a saved monster without ability scores reads its Int save');
+  const parsed = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'mage-2014.txt'), 'utf8')).monsters[0];
+  check(parsed.ext.scores && parsed.ext.scores.int === 17, 'the parser keeps the Int and Wis scores for tiers (ext.scores)');
+  // each tier plays on v2
+  const party = () => ['Fighter', 'Rogue', 'Cleric', 'Wizard'].map(pc);
+  let err = 0;
+  const acc = { wallSteps: 0, throughWalls: 0, deadActs: 0, incapActs: 0, badHide: 0, events: 0 };
+  const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
+  const V2T = { party: 'v2', foes: 'tiers' };
+  const tiers = Tac.AI_TIERS.tiers, seenTier = {};
+  for (const tier of tiers) for (let i = 0; i < 3; i++) {
+    const res = run({ players: party(), encounters: [{ monsters: [srd('Wolf', 3, tier), srd('Ogre', 1, tier)] }] }, { seed: 30 + i, partyAI: 'tactical', ai: V2T, record: true, _keep: true });
+    for (const r of res) scanRules(r, null, acc);
+    if (res._sim) for (const u of res._sim.units) if (u.team === 'foes' && u.v2 && u.tier === tier) seenTier[tier] = (seenTier[tier] || 0) + 1;
+  }
+  check(tiers.every(t => seenTier[t] > 0) && err === 0, `each tier plays on v2 (${JSON.stringify(seenTier)}), ${err} threw`);
+  check(Tac.TIER_PROFILES.mindless.know === 'blind' && Tac.TIER_PROFILES.genius.w.caster > Tac.AI_BASE.w.caster && Tac.TIER_PROFILES.cunning.w.caster === Tac.AI_BASE.w.caster, 'a tier is a profile of plain weights over AI_BASE (nothing names a creature)');
+  // the old foes setting is untouched: v2 for the old gate only, no tier
+  const old = run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2), srd('Mage', 1)] }] }, { seed: 4, partyAI: 'tactical', ai: { party: 'v2', foes: 'v2' }, record: true, _keep: true });
+  const ou = old._sim ? old._sim.units.filter(u => u.team === 'foes') : [];
+  check(ou.length && ou.every(u => !u.tier) && ou.filter(u => u.v2).every(u => /^Mage/.test(u.name)) && ou.some(u => u.v2), 'foes: "v2" keeps the old gate (only the Int 10+ Mage) and no tiers');
+  // morale: mindless never flee; animals flee once bloodied and losing; geniuses never lose their nerve
+  const fled = (name, tier, N) => {
+    let n = 0;
+    for (let i = 0; i < N; i++) for (const r of run({ players: party(), encounters: [{ monsters: [srd(name, 4, tier)] }] }, { seed: 500 + i * 13, partyAI: 'tactical', ai: V2T, morale: 'on', record: true })) for (const e of r.events) if (e.kind === 'flee') n++;
+    return n;
+  };
+  const zf = fled('Zombie', null, 10), sf = fled('Skeleton', 'mindless', 8), wm = fled('Wolf', 'mindless', 10), wf = fled('Wolf', null, 10), gf = fled('Mage', 'genius', 6);
+  check(zf === 0 && sf === 0 && wm === 0, `mindless creatures never flee (zombies ${zf}, skeletons ${sf}, wolves forced mindless ${wm})`);
+  check(wf > 0, `animals flee when bloodied and losing (${wf} flights in 10 wolf fights)`);
+  check(gf === 0, `geniuses never lose their nerve (${gf} flights)`);
+  // knowledge: in open mode a mindless or animal creature reads the party as blind, a cunning or genius one as open
+  const mk = {}, proto = Tac.Sim.prototype, turn = proto.turn;
+  proto.turn = function (u) {
+    const f = this.units.find(o => o.team === 'foes' && o.v2);
+    if (f && !mk[f.tier]) { const t = this.units.find(o => o.team === 'party'); mk[f.tier] = { m: this.kModeFor(f), max: this.kMax(f, t), realMax: t.maxHp }; }
+    return turn.call(this, u);
+  };
+  for (const tier of tiers) run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier)] }] }, { seed: 8, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: 'open' } });
+  proto.turn = turn;
+  check(mk.mindless && mk.animal && mk.cunning && mk.genius && mk.mindless.m === 'blind' && mk.animal.m === 'blind' && mk.cunning.m === 'open' && mk.genius.m === 'open' && mk.cunning.max === mk.cunning.realMax && mk.animal.max !== mk.animal.realMax,
+    `open mode: mindless and animal read the party blind (a max HP guess of ${mk.animal && Math.round(mk.animal.max)} for ${mk.animal && mk.animal.realMax}), cunning and genius read it as it is`);
+  // blind and learn: every tier, rules intact
+  for (const mode of ['blind', 'learn']) for (const tier of tiers) for (let i = 0; i < 3; i++) {
+    for (const r of run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier), srd('Mage', 1, tier)] }] }, { seed: 60 + i, partyAI: 'tactical', ai: V2T, know: { party: mode, foes: mode }, morale: 'on', record: true })) scanRules(r, null, acc);
+  }
+  check(err === 0, `${err} tiered days threw in open, blind and learn`);
+  check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `tiered monsters: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides`);
+  // every SRD monster plays as a tiered v2 creature and finishes a fight
+  let srdErr = 0, srdFought = 0;
+  for (const s of ctx.M) {
+    try {
+      const res = Tac.runDay({ players: party(), encounters: [{ monsters: [srd(s.name, 1)] }] }, { seed: 3, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: 'blind' }, maxRounds: 6, _keep: true });
+      if (res.length && res._sim.units.some(u => u.team === 'foes' && u.tier && u.v2)) srdFought++;
+    } catch (e) { srdErr++; console.log('  ', s.name, e.stack.split('\n').slice(0, 2).join(' ')); }
+  }
+  check(srdErr === 0, `all ${ctx.M.length} SRD monsters fight with tiers and no error (${srdFought} played on v2, the rest keep the old AI: swallowers, dice pools)`);
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

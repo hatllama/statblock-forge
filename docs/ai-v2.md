@@ -1494,3 +1494,40 @@ spells that last the day. **In:** non-concentration buff spells that last 8 hour
 
 Half/third casters and Divine Smite (roadmap phase 2), reactions (phase 3), the profile editor UI and a War Table switch (phase 5), lookahead of any kind (never: odds runs
 play thousands of fights in the browser). Harness: `node tests/ai-compare.js [runs] [filter]`.
+
+## Monster intelligence tiers (phase 4)
+
+Status: design written before the code. Results are added below when the harness has run.
+
+**What the old gate did.** `v2Eligible` let a monster onto v2 only when its `ai` was `tactical` (the parser sets that for Int ≥ 10) or it named
+an `ext.aiProfile`. `regular` (Int 4-9) and `beast` (Int ≤ 3, oozes, plants) monsters always played the old AI, and every monster that did
+play v2 used the one `balanced` profile. Nothing in the engine stopped a wolf from playing v2: it was a choice. Still excluded for what v2 cannot
+score yet: a swallow action, or a dice pool that is not a heal (`v2Eligible`, unchanged).
+
+**Option.** `opts.ai = { party: 'v2', foes: 'tiers' }` (the War Table's Enemy AI select, third entry). `foes: 'v2'` and `ai: 'v2'` keep the old gate
+and the `balanced` profile exactly as before, so every existing v2 log (`hashes-v2-learn.txt`) is unchanged. `foes: 'tiers'` means: every
+monster plays v2 with the profile of its tier. Party units never take a tier.
+
+**Tier of a creature** (`tierOf`, data in `AI_TIERS.rules`): `ext.aiTier` if set (the Forge's override select), else from the statblock.
+`ext.scores = { int, wis }` is read by the parser; an older saved monster without it uses 10 + 2 × its Int save.
+
+| tier | who (default rule) | reads the party | what it changes |
+|---|---|---|---|
+| mindless | oozes, plants, constructs with Int ≤ 6; undead with Int ≤ 6; swarms; Int ≤ 2 | blind, even when the foes' mode is open | no retreat, no self-care (`risk`, `hurt`, `oa` ≈ 0), picks by reach only (no healer / caster / squishy / wounded terms), ignores enemy areas and its allies' safety, spends every ability at once, never flees (morale `fearless`) |
+| animal | beasts and anything else with Int ≤ 7 (wolves, ogres, hill giants, trolls, owlbears) | blind | pack focus (`focus`), goes for the wounded, no interest in healers or casters, little care for area spacing, flees when bloodied, half its side is down or its leader falls (morale, if the War Table's morale is on); Wis raises how early (`wisRetreat`) |
+| cunning | Int 8-15 | the mode (open / learn / blind) | the `balanced` profile: focus fire on healers and casters, areas and friendly fire priced as for the party; flees as the old morale rule says |
+| genius | Int ≥ 16 (mages, liches, adult dragons) | the mode | stronger terms for the squishy and the healer, cares more about enemy areas and its own allies, keeps its distance (`risk`, `riskRanged`), retreats earlier to fight on better terms (`posture.retreatHp`); never loses its nerve (morale off), it only retreats by position |
+
+A tier is plain data: `AI_TIERS.profiles[tier]` is a partial profile merged over `AI_BASE` like a preset. `ext.aiProfile` (a preset name or object)
+still applies on top of the tier, so "a genius assassin" is `aiTier: 'genius'` + `aiProfile: 'assassin'`. Nothing names a creature.
+
+**Knowledge.** A profile may carry `know: 'blind'`: `kOf` then reads the party as blind even when the foes' mode is open (`kModeFor`). Learn and
+blind modes are untouched (SIZE_PRIOR and the rest not edited); `know` only ever moves open to blind. `leftFor`, `kLegRes` and the burn plan
+keep reading the team's mode.
+
+**Morale.** `moraleBreaks` reads `u.v2P.morale = { fearless, bloodied, half, leader, dc }` for a v2 creature; the base profile equals the old rules,
+so a `foes: 'v2'` log does not change. Morale is still opt-in (`opts.morale`): a tier decides who flees, the War Table setting decides whether anyone does.
+
+**Left out on purpose.** Legendary and lair actions still pick through `choose` (the old picker), whatever the tier: they are one action
+with no position, and the turn itself is where the tier shows. Reactions are not tiered (no monster tier changes `AI_BASE.react`).
+Swallowers and non-heal dice pools stay on the old AI.
