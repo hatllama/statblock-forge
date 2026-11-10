@@ -4022,20 +4022,17 @@ const AI_TIERS = {
       know: 'blind', morale: { fearless: true },
       posture: { retreatHp: 0, recoverHp: 0, protectAllyHp: 0 },
       w: { risk: 0, riskRanged: 0, hurt: 0, oa: 0, dodge: 0, hide: 0, retreatSafety: 0, casterRisk: 0, caster: 0, healer: 0, wounded: 0, pick: 0, guard: 0, focus: 0.5, areaRisk: 0.2, ffValue: 0.1, progress: 0.8 },
-      pacing: { costPerUse: 0, overTax: 0, easyTax: 0 },
     },
     animal: {
       know: 'blind', morale: {},
       posture: { retreatHp: 0.3, protectAllyHp: 0 },
       w: { caster: 0, healer: 0, wounded: 6, pick: 2, guard: 0, focus: 1.5, oa: 0.7, dodge: 0.2, hide: 0, areaRisk: 0.4, ffValue: 0.3, casterRisk: 0.5 },
-      pacing: { costPerUse: 0.05 },
     },
     cunning: {},
     genius: {
       morale: { bloodied: false, half: false, leader: false },
       posture: { retreatHp: 0.35, retreatDanger: 0.4 },
-      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, risk: 0.55, riskRanged: 1.1, hurt: 2, oa: 1.2 },
-      pacing: { costPerUse: 0.12, overTax: 0.65 },
+      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2 },
     },
   },
 };

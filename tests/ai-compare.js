@@ -615,7 +615,7 @@ const TIER_SCENARIOS = [
   { name: 'TIER beasts: 5 Owlbears + 8 Dire Wolves', party: TIER_PARTY, day: 'Owlbear*5,Dire Wolf*8' },
   { name: 'TIER brutes: 2 Hill Giants + 3 Ogres', party: TIER_PARTY, day: 'Hill Giant*2,Ogre*3' },
   { name: 'TIER undead: 5 Mummies + 3 Wights + 8 Zombies', party: TIER_PARTY, day: 'Mummy*5,Wight*3,Zombie*8' },
-  { name: 'TIER swarm: 4 Swarms of Rats', party: TIER_PARTY, encounters: () => [{ monsters: [swarmOf('Swarm of Rats', 24, 4)] }] },
+  { name: 'TIER swarm: 10 Swarms of Rats (45 HP, triple damage)', party: TIER_PARTY, encounters: () => [{ monsters: [scaled(swarmOf('Swarm of Rats', 45, 10), 3)] }] },
   { name: 'TIER cunning pack: 16 Goblins + 6 Bugbears + 2 Goblin Bosses', party: TIER_PARTY, day: 'Goblin Warrior*16,Bugbear Warrior*6,Goblin Boss*2' },
   { name: 'TIER casters: a Mage + a Priest + 4 Guards', party: TIER_PARTY, day: 'Mage,Priest,Guard*4' },
   { name: 'TIER lich-style caster: a Lich with 110 HP and half damage', party: ['Fighter', 'Barbarian', 'Cleric', 'Wizard'], encounters: () => { const m = mon('Lich'); m.hp = 110; for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(avgOf(a.dpr) * 0.5)); if (m.ext.spellbook) for (const x of m.ext.spellbook.spells) if (x.dpr) x.dpr = String(Math.round(avgOf(x.dpr) * 0.5)); return [{ monsters: [m] }]; } },
@@ -628,7 +628,7 @@ function playTier(sc, N) {
   console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
   const mkEnc = () => { const base = sc.encounters ? sc.encounters() : fights(sc.day); if (TIER_FORCE) for (const e of base) for (const m of e.monsters) m.ext.aiTier = TIER_FORCE; return base; };
   const mine = Object.assign({}, sc, { encounters: mkEnc });
-  for (const know of ['open', 'learn', 'blind']) for (const [label, arm] of TIER_ARMS) {
+  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const [label, arm] of TIER_ARMS) {
     if (label === 'v1' && know !== 'open') continue;     // the old AI ignores the monsters' knowledge
     TIER_FORCE = ['mindless', 'animal', 'cunning', 'genius'].includes(arm) ? arm : null;
     const ai = typeof arm === 'string' ? { party: 'v2', foes: 'tiers' } : arm ? arm : { party: 'v2' };
