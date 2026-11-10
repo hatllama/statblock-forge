@@ -604,6 +604,39 @@ function playRevive(sc, N) {
   }
 }
 
+
+/* ---- monster tiers (docs/ai-v2.md "Monster intelligence tiers"): the same fight with the monsters on the old AI, on v2 (old gate) and on v2 by tier ----
+   node tests/ai-compare.js 200 '^TIER'   (MORALE=on lets the tiers' nerve show). The party is on v2 and learns in every arm; the monsters' knowledge is the row's mode.
+   Lower party win = stronger monsters. */
+let TIER_FORCE = null;
+const swarmOf = (name, hp, count) => { const m = mon('Giant Rat', count); m.name = name; m.id = 'swarm-' + name; m.hp = hp; m.actions.forEach((a, i) => { a.id = m.id + i; }); return m; };
+const TIER_PARTY = ['Fighter', 'Rogue', 'Cleric', 'Wizard'];
+const TIER_SCENARIOS = [
+  { name: 'TIER beasts: 5 Owlbears + 8 Dire Wolves', party: TIER_PARTY, day: 'Owlbear*5,Dire Wolf*8' },
+  { name: 'TIER brutes: 2 Hill Giants + 3 Ogres', party: TIER_PARTY, day: 'Hill Giant*2,Ogre*3' },
+  { name: 'TIER undead: 5 Mummies + 3 Wights + 8 Zombies', party: TIER_PARTY, day: 'Mummy*5,Wight*3,Zombie*8' },
+  { name: 'TIER swarm: 4 Swarms of Rats', party: TIER_PARTY, encounters: () => [{ monsters: [swarmOf('Swarm of Rats', 24, 4)] }] },
+  { name: 'TIER cunning pack: 16 Goblins + 6 Bugbears + 2 Goblin Bosses', party: TIER_PARTY, day: 'Goblin Warrior*16,Bugbear Warrior*6,Goblin Boss*2' },
+  { name: 'TIER casters: a Mage + a Priest + 4 Guards', party: TIER_PARTY, day: 'Mage,Priest,Guard*4' },
+  { name: 'TIER lich-style caster: a Lich with 110 HP and half damage', party: ['Fighter', 'Barbarian', 'Cleric', 'Wizard'], encounters: () => { const m = mon('Lich'); m.hp = 110; for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(avgOf(a.dpr) * 0.5)); if (m.ext.spellbook) for (const x of m.ext.spellbook.spells) if (x.dpr) x.dpr = String(Math.round(avgOf(x.dpr) * 0.5)); return [{ monsters: [m] }]; } },
+  { name: 'TIER legendary with a lair: the Ember Tyrant (140 HP, 0.4 damage)', party: ['Fighter', 'Barbarian', 'Cleric', 'Wizard'], encounters: () => [{ monsters: [scaled(withHp(statblock('long-homebrew-boss.txt'), 140), 0.4)] }] },
+  { name: 'TIER day: goblins / wolves + ogres / Mage + Guards', party: TIER_PARTY, day: 'Goblin Warrior*6/Wolf*4,Ogre/Mage,Guard*3' },
+];
+const TIER_ARMS = [['v1', undefined], ['v2', { party: 'v2', foes: 'v2' }], ['auto', { party: 'v2', foes: 'tiers' }], ['mindless', 'mindless'], ['animal', 'animal'], ['cunning', 'cunning'], ['genius', 'genius']];
+function playTier(sc, N) {
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
+  const mkEnc = () => { const base = sc.encounters ? sc.encounters() : fights(sc.day); if (TIER_FORCE) for (const e of base) for (const m of e.monsters) m.ext.aiTier = TIER_FORCE; return base; };
+  const mine = Object.assign({}, sc, { encounters: mkEnc });
+  for (const know of ['open', 'learn', 'blind']) for (const [label, arm] of TIER_ARMS) {
+    if (label === 'v1' && know !== 'open') continue;     // the old AI ignores the monsters' knowledge
+    TIER_FORCE = ['mindless', 'animal', 'cunning', 'genius'].includes(arm) ? arm : null;
+    const ai = typeof arm === 'string' ? { party: 'v2', foes: 'tiers' } : arm ? arm : { party: 'v2' };
+    const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), ai, N);
+    console.log(row(pad(label === 'v1' ? 'v1 (any)' : know + ' ' + label, 14), r).replace(/^ {2}(\S+)\s/, (m) => m));
+  }
+  TIER_FORCE = null;
+}
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
 const AI_OVER = ['w', 'pacing', 'burn', 'react'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
@@ -626,7 +659,7 @@ function play(sc, ai, n, tweak) {
     if (tweak) tweak(players);
     if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, rules: process.env.CS ? { counterspell: process.env.CS } : undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
+    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, rules: process.env.CS ? { counterspell: process.env.CS } : undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, morale: process.env.MORALE === 'on' ? 'on' : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);
@@ -715,6 +748,7 @@ if (process.env.ACCURACY === '1') {
   for (const sc of BURN_SCENARIOS.concat(CTL_SCENARIOS, SCENARIOS)) if (!only || only.test(sc.name)) accuracy(sc, N);
   process.exit(0);
 }
+for (const sc of TIER_SCENARIOS) if (only && only.test(sc.name)) playTier(sc, N);
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
