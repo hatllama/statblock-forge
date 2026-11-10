@@ -1513,13 +1513,15 @@ monster plays v2 with the profile of its tier. Party units never take a tier.
 
 | tier | who (default rule) | reads the party | what it changes |
 |---|---|---|---|
-| mindless | oozes, plants, constructs with Int ≤ 6; undead with Int ≤ 6; swarms; Int ≤ 2 | blind, even when the foes' mode is open | no retreat, no self-care (`risk`, `hurt`, `oa` ≈ 0), picks by reach only (no healer / caster / squishy / wounded terms), ignores enemy areas and its allies' safety, spends every ability at once, never flees (morale `fearless`) |
+| mindless | oozes, plants, constructs with Int ≤ 6; undead with Int ≤ 6; swarms; Int ≤ 2 | blind, even when the foes' mode is open | no retreat, no self-care (`risk`, `hurt`, `oa` ≈ 0), picks by reach only (no healer / caster / squishy / wounded terms), ignores enemy areas and its allies' safety, never flees (morale `fearless`) |
 | animal | beasts and anything else with Int ≤ 7 (wolves, ogres, hill giants, trolls, owlbears) | blind | pack focus (`focus`), goes for the wounded, no interest in healers or casters, little care for area spacing, flees when bloodied, half its side is down or its leader falls (morale, if the War Table's morale is on); Wis raises how early (`wisRetreat`) |
 | cunning | Int 8-15 | the mode (open / learn / blind) | the `balanced` profile: focus fire on healers and casters, areas and friendly fire priced as for the party; flees as the old morale rule says |
-| genius | Int ≥ 16 (mages, liches, adult dragons) | the mode | stronger terms for the squishy and the healer, cares more about enemy areas and its own allies, keeps its distance (`risk`, `riskRanged`), retreats earlier to fight on better terms (`posture.retreatHp`); never loses its nerve (morale off), it only retreats by position |
+| genius | Int ≥ 16 (mages, liches, adult dragons) | the mode | stronger terms for the squishy and the healer, cares more about enemy areas and its own allies, retreats earlier to fight on better terms (`posture.retreatHp` .35); never loses its nerve (morale off), it only retreats by position. A first version also raised `risk`/`hurt`: it made a boss timid and a forced genius weaker than a forced mindless one (see Results), so those stay at the base |
 
 A tier is plain data: `AI_TIERS.profiles[tier]` is a partial profile merged over `AI_BASE` like a preset. `ext.aiProfile` (a preset name or object)
 still applies on top of the tier, so "a genius assassin" is `aiTier: 'genius'` + `aiProfile: 'assassin'`. Nothing names a creature.
+
+**Pacing is not a tier knob.** A monster's day is its fight (`v2Pace`: F = 0 for the foes' side), so `pacing` weights barely move a monster; the first draft of the tiers set some and they are gone. A mindless creature "spends everything at once" because no monster saves anything for a later fight.
 
 **Knowledge.** A profile may carry `know: 'blind'`: `kOf` then reads the party as blind even when the foes' mode is open (`kModeFor`). Learn and
 blind modes are untouched (SIZE_PRIOR and the rest not edited); `know` only ever moves open to blind. `leftFor`, `kLegRes` and the burn plan
@@ -1531,3 +1533,43 @@ so a `foes: 'v2'` log does not change. Morale is still opt-in (`opts.morale`): a
 **Left out on purpose.** Legendary and lair actions still pick through `choose` (the old picker), whatever the tier: they are one action
 with no position, and the turn itself is where the tier shows. Reactions are not tiered (no monster tier changes `AI_BASE.react`).
 Swallowers and non-heal dice pools stay on the old AI.
+
+### Results (phase 4)
+
+Weights, all in `AI_TIERS.profiles` (over `AI_BASE`): mindless `know` blind, morale fearless, `posture.retreatHp/recoverHp/protectAllyHp` 0, `w.risk/riskRanged/hurt/oa/dodge/hide/retreatSafety/casterRisk/caster/healer/wounded/pick/guard` 0,
+`focus` 0.5, `areaRisk` 0.2, `ffValue` 0.1, `progress` 0.8. Animal: `know` blind, `posture.retreatHp` 0.3 (+0.03 per Wis modifier point, `AI_TIERS.rules.wisRetreat`), `protectAllyHp` 0, `caster/healer/guard/hide` 0, `wounded` 6, `pick` 2, `focus` 1.5, `oa` 0.7, `dodge` 0.2,
+`areaRisk` 0.4, `ffValue` 0.3, `casterRisk` 0.5. Cunning: the base. Genius: `morale` no bloodied / half / leader trigger, `posture.retreatHp` 0.35, `retreatDanger` 0.4, `caster` 6, `healer` 6, `wounded` 5, `pick` 6, `guard` 5, `areaRisk` 1.4, `ffValue` 1.3, `casterRisk` 1.5, `oa` 1.2.
+Rules: mindless at Int ≤ 6 for ooze / plant / construct / undead, or a "swarm" in the name; animal for beasts and Int ≤ 7; genius at Int ≥ 16. New base data: `AI_BASE.morale` (the old rule).
+
+Party win %, 200 seeded runs per cell (SE 3.1-3.5 points; the party is on v2 and learns). Lower = stronger monsters. v1 = monsters on the old AI; v2 = `foes: 'v2'` (the old gate, one profile); auto = tiers from the statblock; the four right columns force that tier on every monster of the fight.
+
+| open | v1 | v2 | auto | mindless | animal | cunning | genius |
+|---|---|---|---|---|---|---|---|
+| 5 Owlbears + 8 Dire Wolves | 55 | 55 | 42 | 61 | 42 | 27 | 24 |
+| 2 Hill Giants + 3 Ogres | 80.5 | 80.5 | 77.5 | 81 | 77.5 | 75 | 67.5 |
+| 5 Mummies + 3 Wights + 8 Zombies | 73 | 47 | 45.5 | 68.5 | 60 | 30.5 | 29.5 |
+| 10 Swarms of Rats (45 HP, ×3 damage) | 59.5 | 59.5 | 72.5 | 72.5 | 64 | 39.5 | 42.5 |
+| 16 Goblins + 6 Bugbears + 2 Bosses | 63 | 69 | 68.5 | 99 | 92 | 68.5 | 71 |
+| Mage + Priest + 4 Guards | 79.5 | 66.5 | 67.5 | 75 | 72 | 66.5 | 69.5 |
+| Lich (110 HP, half damage) | 75.5 | 63 | 57.5 | 32.5 | 46 | 63 | 57.5 |
+| Ember Tyrant, legendary + lair | 34.5 | 53 | 51.5 | 35.5 | 37.5 | 53 | 51.5 |
+| 3-fight day | 87 | 81 | 77 | 90.5 | 81.5 | 83 | 83 |
+| **mean** | 67.5 | 63.8 | 62.2 | 68.4 | 63.6 | 56.2 | 55.1 |
+
+Learn and blind (means over the nine, same layout): learn v1 67.5, v2 65.2, auto 61.9, mindless 67.1, animal 62.3, cunning 62.6, genius 62.7; blind v1 67.5, v2 64.2, auto 63.6, mindless 68.4, animal 63.6, cunning 63.3, genius 61.4.
+Per scenario rows for learn and blind are in the commit log of this step's harness runs (`node tests/ai-compare.js 200 '^TIER'`, `TIER_MODES=blind` for one mode).
+
+- **Does the tier matter, and does it match intuition?** In open mode, yes: forced on the same monsters the party's win rate goes mindless 68.4, animal 63.6, cunning 56.2, genius 55.1: smarter monsters win more, dumb ones less. The beasts row is the clearest (61 / 42 / 27 / 24). In learn and blind the monsters' own
+  knowledge limits what a smarter profile can use, so the tiers above animal sit within noise of each other (62-63).
+- **Reversals, with a cause.** The lich (mindless 32.5 against genius 57.5) and the legendary boss (35.5 against 51.5-53) go the other way. Cause: the v2 self-care terms (`risk`, `dodge`, standing off, retreat) cost a lone caster or boss turns, and a creature that zeroes them (the mindless profile) just spends its
+  best action each turn; the same gap sits between the old AI (34.5) and v2 (53) on the Tyrant, before any tier. The first draft of genius raised `risk`/`hurt` and widened it, so those were taken out. Lone bosses on v2 are a backlog item (see the roadmap).
+- **Not uniformly stronger or weaker.** Auto against the old AI: beasts 55 → 42, undead 73 → 45.5, casters 79.5 → 67.5, lich 75.5 → 57.5, day 87 → 77 (stronger); swarm 59.5 → 72.5 (weaker: a swarm is mindless); brutes, goblins and the Tyrant move within noise or by their v2 gate (the Tyrant 34.5 → 51.5 is the v2 effect above).
+- **Party-side rows.** Nothing the party plays changed: `node tests/flagoff-hash.js` and the v2-learn hashes are byte-identical to the tip before this step, so every existing ai-compare row is identical, not just within noise.
+- **Zaki's party, hard day, 600 runs (win ± SE).** Monsters on the old AI, before and after this step: blind 86.0 ± 1.4 / 86.0, learn 92.7 ± 1.1 / 92.7, open 95.0 ± 0.9 / 95.0 (identical). Monsters on tiers: blind 86.5 ± 1.4, learn 93.3 ± 1.0, open 95.2 ± 0.9 (within noise: the hard day's monsters are mostly cunning).
+- **Replay observations (60 runs of 6 Dire Wolves against Fighter, Rogue, Cleric, Wizard, morale on).** Animals spread their bites (Fighter 53%, Rogue 15%, Cleric 29%, Wizard 2%) and keep Pack Tactics up (64% of attacks with advantage); cunning wolves dive the Cleric (80%) and geniuses the Cleric and Wizard (97%), with Pack Tactics in 43% of attacks.
+  Bloodied animals flee (19 flights in 60 fights), mindless wolves and genius mages never do, cunning ones follow the old rule (43). A genius Mage's area spells caught the same number of the party as a cunning Mage's and never caught its own side in either tier (the area weights show no measurable effect on this fight).
+- **Speed.** `node tests/flagoff-hash.js` takes 23 s on the tip before and 22 s after; `node tests/run.js` took 107 s and now 125 s, the increase being the 79 new checks and a fourth AI pass over the day files, not the engine.
+
+**Gate changes.** Every monster plays v2 under `foes: 'tiers'` except swallowers and non-heal dice pools (unchanged `v2Eligible` exclusions; no SRD monster in the library hits either today, `tests/run.js` checks all 47 fight). Legendary and lair actions still pick through `choose`.
+
+**Backlog.** Lone bosses and casters on v2 hold back too much (Tyrant, Lich above); legendary and lair actions on v2; reactions per tier; a tier for the party's own companions; the War Table could show each monster's tier next to its AI line.
