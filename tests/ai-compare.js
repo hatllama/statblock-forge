@@ -2,7 +2,8 @@
      node tests/ai-compare.js [runs per scenario, default 200] [scenario name filter]
    Every scenario plays the same seeds with the party on the old AI and on v2 (`ai: { party: 'v2' }`); monsters keep
    the old AI in both, so the difference is the party's play (scenarios marked side: 'foes' switch the monsters instead).
-   Full casters use v2 with the flag (step 2); half casters (Paladin, Ranger) stay on the old AI either way.
+   Full casters use v2 with the flag (step 2), and since step 3a half and third casters (Paladin, Ranger, Artificer, Eldritch Knight,
+   Arcane Trickster) do too; scenario names that still say "the Paladin stays v1" are kept so their rows compare across commits.
    The "dumb behavior" scenarios each count one thing the old AI does that looks wrong at the table; the A scenarios
    show how a caster chooses between an area spell and a single-target one. win ± its standard error. */
 'use strict';
@@ -121,6 +122,15 @@ const CASTER_METRICS = {
   '_caught': r => casts(r).filter(c => c.aoe && c.foes.length).reduce((t, c) => t + c.foes.length, 0),
   'caught/area': null,
   'overkill': r => casts(r).reduce((t, c) => t + c.foes.reduce((s, x) => s + (x.prev.hp > 0 ? Math.max(0, x.dmg - x.prev.hp) : 0), 0), 0),
+};
+// hybrids (step 3a): Divine Smites (a v2 rider on a hit, or the old AI's bonus-action buff), the ones v2 took to finish a foe, Lay on Hands uses and points, Hunter's Marks
+const evText = (r, kind, re) => r.events.filter(e => e.kind === kind && re.test(e.text || ''));
+const HYB_METRICS = {
+  'smites': r => evText(r, 'attack', /\+ Divine Smite/).length + evText(r, 'buff', /: Divine Smite/).length,
+  'smite kills': r => evText(r, 'intent', /smites to finish/).length,
+  'LoH': r => evText(r, 'heal', /: Lay on Hands/).length,
+  'LoH pts': r => evText(r, 'heal', /: Lay on Hands/).reduce((t, e) => t + +((/\+(\d+) HP/.exec(e.text) || [0, 0])[1]), 0),
+  'marks': r => evText(r, 'buff', /: Hunter's Mark/).length,
 };
 const SPELLS = r => casts(r).map(c => c.spell + (c.L ? ' L' + c.L : '') + (c.aoe ? ' ×' + c.foes.length : ''));
 // dumb behaviors seen with the old AI
@@ -292,6 +302,12 @@ const SCENARIOS = [
   { name: 'A5: Evoker + Fighter vs 2 nearly dead goblins (3 HP) + 1 healthy Ogre', players: () => [evoker(), pc('Fighter')], encounters: () => [{ monsters: [withHp(mon('Goblin Warrior', 2), 3), mon('Ogre')] }, { monsters: [mon('Ogre')] }], only0: true, record: true, spells: true, metrics: CASTER_METRICS },
   { name: 'A6: boss and minions: Evoker + Fighter vs Gladiator + 2 Goblin Warriors', players: () => [evoker(), pc('Fighter')], encounters: () => fights('Gladiator,Goblin Warrior*2/Ogre'), only0: true, record: true, spells: true, metrics: CASTER_METRICS },
   { name: 'A7: zone vs burst: Druid (Moonbeam, Call Lightning, Entangle, Thunderwave) + Fighter vs Ogre + 4 Goblin Warriors', players: () => [pc('Druid'), pc('Fighter')], encounters: () => fights('Ogre,Goblin Warrior*4/Ogre'), only0: true, record: true, spells: true, metrics: CASTER_METRICS },
+  // ---- hybrids (step 3a): each with a Fighter and a Cleric, a mixed party, all five, undead, a downed ally ----
+  ...['Paladin', 'Ranger', 'Artificer', 'Eldritch Knight', 'Arcane Trickster'].map((c, i) => ({ name: `H${i + 1} ${c}, Fighter, Cleric vs 8 Goblin Warriors + Bandit Captain / 3 Ogres / Troll + 2 Ogres`, party: [c, 'Fighter', 'Cleric'], day: 'Goblin Warrior*8,Bandit Captain/Ogre*3/Troll,Ogre*2', record: true, metrics: HYB_METRICS })),
+  { name: 'H6 mixed: Paladin, Ranger (hybrids), Wizard, Cleric (full casters), Fighter (martial) vs hard-day.json', party: ['Paladin', 'Ranger', 'Wizard', 'Cleric', 'Fighter'], encounters: () => clone(fixture('hard-day.json').encounters), record: true, metrics: HYB_METRICS },
+  { name: 'H7 all five hybrids vs Bandit Captain + 6 Bandits / Hill Giant + 2 Ogres', party: ['Paladin', 'Ranger', 'Artificer', 'Eldritch Knight', 'Arcane Trickster'], day: 'Bandit Captain,Bandit*6/Hill Giant,Ogre*2', record: true, metrics: HYB_METRICS },
+  { name: 'H8 Paladin, Fighter, Cleric vs undead: 4 Ghouls + Wight / Mummy + 4 Zombies', party: ['Paladin', 'Fighter', 'Cleric'], day: 'Ghoul*4,Wight/Mummy,Zombie*4', record: true, metrics: HYB_METRICS },
+  { name: 'H9 Paladin, Ranger, Rogue (no other healer), the Rogue down as fight 1 starts, vs 2 Ogres + 3 Goblin Warriors / 2 Ogres', party: ['Paladin', 'Ranger', 'Rogue'], day: 'Ogre*2,Goblin Warrior*3/Ogre*2', down: ['Rogue'], record: true, metrics: HYB_METRICS },
   { name: 'A8: area control vs one big target: Bard + Fighter vs Bandit Captain + 4 Bandits', players: () => [pc('Bard'), pc('Fighter')], encounters: () => fights('Bandit Captain,Bandit*4/Ogre'), only0: true, record: true, spells: true, metrics: CASTER_METRICS },
 ];
 
@@ -601,7 +617,8 @@ if (process.env.AI_THREAT) Object.assign(Tac.AI_BASE.threat, JSON.parse(process.
 const KNOW = process.env.KNOW ? { party: process.env.KNOW } : undefined, V2ONLY = process.env.V2ONLY === '1';
 function play(sc, ai, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
-  const t0 = Date.now();
+  const t0 = Date.now(), downWas = DOWN_NOW;
+  if (sc.down) DOWN_NOW = sc.down;              // a plain scenario can start with someone down too (H9); playDown sets it itself
   for (let i = 0; i < n; i++) {
     const seed = (1000 + i * 7919) >>> 0;
     const encounters = sc.encounters ? sc.encounters() : fights(sc.day);
@@ -624,6 +641,7 @@ function play(sc, ai, n, tweak) {
     });
   }
   out.ms = (Date.now() - t0) / n;
+  DOWN_NOW = downWas;
   if (sc.metrics && '_uses' in sc.metrics) out.m['damage prevented/use'] = out.m._uses ? out.m._prevented / out.m._uses * n : 0;
   if (sc.metrics && '_areas' in sc.metrics) out.m['caught/area'] = out.m._areas ? out.m._caught / out.m._areas * n : 0;
   if (sc.metrics && '_breaths' in sc.metrics) {

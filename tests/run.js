@@ -779,10 +779,10 @@ section('Character sheets');
   let err = 0;
   const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
 
-  // one fight, both AIs: the default party's Fighter and Rogue on v2, its casters on the old AI
+  // one fight on v2: the default party, its Paladin too (step 3a)
   const mixed = run({ players: cp(ctx.PP), encounters: cp(hard.encounters) }, { seed: 77, ai: 'v2', record: true, _keep: true });
   const S = mixed._sim, by = n => S && S.units.find(u => u.name === n);
-  check(S && ['Fighter', 'Rogue', 'Wizard', 'Cleric', 'Bard'].every(n => by(n).v2) && !by('Paladin').v2, 'v2 drives the Fighter, Rogue and the full casters; the Paladin (a half caster) keeps the old AI');
+  check(S && ['Fighter', 'Rogue', 'Wizard', 'Cleric', 'Bard', 'Paladin'].every(n => by(n).v2), 'v2 drives the Fighter, Rogue, the full casters and (step 3a) the Paladin, a half caster');
   check(mixed.some(r => r.events.some(e => e.kind === 'attack' && /^Fighter →/.test(e.text))) && mixed.some(r => r.events.some(e => /^Wizard → .*(Fire Bolt|Magic Missile|Fireball|Ray of Frost|Scorching|Lightning|Burning|Shocking)/.test(e.text))), 'both act in the same fights');
   const plain = run({ players: cp(ctx.PP), encounters: cp(hard.encounters) }, { seed: 77, _keep: true });
   check(plain._sim && plain._sim.units.every(u => !u.v2), 'without the flag nobody uses v2');
@@ -870,8 +870,8 @@ section('Character sheets');
     for (const r of mix) for (const e of r.events) if (['attack', 'save', 'heal', 'buff', 'aoe'].includes(e.kind)) { const u = MS.units.find(x => x.uid === e.uid); if (u) actedBy.add(u.name.replace(/ \d+$/, '')); }
   }
   const unit = n => MS.units.find(u => u.name === n);
-  check(MS && ['Fighter', 'Wizard', 'Cleric'].every(n => unit(n).v2) && ['Paladin', 'Ranger'].every(n => !unit(n).v2) && unit('Mage 1').v2,
-    'full casters and a spellbook monster on v2, the Paladin and Ranger on the old AI, in one fight');
+  check(MS && ['Fighter', 'Wizard', 'Cleric'].every(n => unit(n).v2) && ['Paladin', 'Ranger'].every(n => unit(n).v2) && unit('Mage 1').v2,
+    'full casters and a spellbook monster on v2, and (step 3a) the Paladin and Ranger, in one fight');
   check(['Wizard', 'Cleric', 'Paladin', 'Ranger', 'Mage'].every(n => actedBy.has(n)), `they all act (${[...actedBy].join(', ')})`);
 
   // spend honours the slot level v2 picked; without it, the lowest free slot (the old rule)
@@ -1462,6 +1462,108 @@ section('AI v2: Revivify (step 2.12)');
   day([cleric(), build('Fighter'), build('Rogue')], 1);
   check(probe.react === false && probe.react2 === true, 'a reaction spell does not take the last slot that casts Revivify');
   proto.turn = turn;
+}
+
+section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, Arcane Trickster)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  const foe = (name, hp, count, dmg, extra) => Object.assign({ id: name, name, mode: 'custom', hp, AC: 12, saveBonus: 1, count, speed: 30, actions: [
+    { id: name + '1', name: 'Club', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: String(dmg || 6), toHit: 5, target: 'enemy with least HP', ext: { range: 5, damageType: 'bludgeoning' } },
+    { id: name + '2', name: 'Sling', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: String(Math.max(1, (dmg || 6) - 2)), toHit: 4, target: 'enemy with least HP', ext: { range: 60, damageType: 'bludgeoning' } }] }, extra || {});
+  const HYB = ['Paladin', 'Ranger', 'Artificer', 'Eldritch Knight', 'Arcane Trickster'];
+  const acc = { wallSteps: 0, throughWalls: 0, deadActs: 0, incapActs: 0, badHide: 0, events: 0 };
+  const on = {}, acted = {}, smite = { n: 0, kill: 0 }, hm = { turns: 0, noAtk: 0 };
+  for (const cls of HYB) for (const layout of [null, walled]) for (let i = 0; i < 6; i++) {
+    const res = Tac.runDay({ players: [build(cls), build('Fighter'), build('Cleric')], encounters: [{ monsters: [foe('Brute', 45, 2, 9), foe('Scrapper', 14, 3, 5)] }, { monsters: [foe('Brute', 45, 3, 9)] }] },
+      { seed: 300 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, _keep: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
+    const me = res._sim.units.find(u => u.name === cls);
+    on[cls] = (on[cls] === undefined ? true : on[cls]) && !!me.v2;
+    for (const r of res) {
+      scanRules(r, layout, acc);
+      let turn = null, buffHM = false, atk = false;
+      const close = () => { if (turn && buffHM) { hm.turns++; if (!atk) hm.noAtk++; } };
+      for (const e of r.events) {
+        if (e.kind === 'turn') { close(); turn = e.uid === me.uid; buffHM = false; atk = false; }
+        if (e.uid !== me.uid) continue;
+        if (['attack', 'save', 'heal', 'aoe'].includes(e.kind)) acted[cls] = (acted[cls] || 0) + 1;
+        if (['attack', 'save', 'heal', 'aoe'].includes(e.kind)) atk = true;            // the action went somewhere (an attack, or a heal on a downed ally)
+        if (e.kind === 'buff' && /Hunter's Mark/.test(e.text || '')) buffHM = true;
+        if (e.kind === 'attack' && /Divine Smite/.test(e.text || '')) smite.n++;
+        if (e.kind === 'intent' && /smites to finish/.test(e.text || '')) smite.kill++;
+      }
+      close();
+    }
+  }
+  check(HYB.every(c => on[c]), 'all five hybrids play on v2: ' + HYB.filter(c => !on[c]).join(', '));
+  check(HYB.every(c => acted[c] > 0), 'each of them acts: ' + HYB.map(c => c + ' ' + (acted[c] || 0)).join(', '));
+  check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `hybrids on v2: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides`);
+  check(smite.n > 0 && smite.kill > 0, `the Paladin smites on hits (${smite.n} smites, ${smite.kill} to finish a foe)`);
+  check(hm.turns > 0 && hm.noAtk === 0, `Hunter's Mark never costs the Ranger its action (${hm.turns} turns with a mark, ${hm.noAtk} with nothing done)`);
+
+  // probes on one Paladin turn: kill-now, knowledge, the Revivify reserve
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  const once = (fn) => { proto.turn = function (u) { if (!this._probed && u.name === 'Paladin') { this._probed = true; fn(this, u); } return turn.call(this, u); }; };
+  const pal9 = () => {
+    const p = build('Paladin');
+    p.ext.spellbook.slots = [4, 3, 1, 0, 0, 0, 0, 0, 0];
+    p.ext.spellbook.spells.push({ id: 'p9-rev', name: 'Revivify', level: 3, actionSlot: 0, targets: 1, type: 'heal', amount: '1', target: 'ally with the least HP', ext: { range: 5, revivify: true, wtOnly: true } });
+    return p;
+  };
+  const probe = {};
+  for (const know of ['open', 'blind', 'learn']) {
+    once((s, u) => {
+      const t = s.units.find(o => o.team === 'foes'), sm = u.smiteA;
+      probe.L = s.v2CastLevels(u, sm);
+      probe.kill = s.v2SmiteBest(u, sm, t, false, 6, 0).v; probe.big = s.v2SmiteBest(u, sm, t, false, 200, 0).v;
+      probe.crit = s.v2SmiteBest(u, sm, t, true, 200, 0).v;
+      probe['plain-' + know] = s.v2SmiteBest(u, sm, t, false, 30, 0).v;
+      t.dmgMods = { resist: [], immune: ['radiant'], vulnerable: [] };
+      probe['imm-' + know] = s.v2SmiteBest(u, sm, t, false, 30, 0).v;
+      probe.hold = s.v2SmiteHold(u, u.actions.find(a => /Longsword/.test(a.name)), t);
+    });
+    Tac.runDay({ players: [build('Paladin'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 5, partyAI: 'tactical', ai: { party: 'v2' }, know: { party: know } });
+  }
+  proto.turn = turn;
+  check(probe.L && probe.L.join() === '1,2', `Divine Smite can be cast at each free slot level (${probe.L})`);
+  check(probe.kill > probe.big && probe.crit > probe.big, `a smite that finishes a foe, or doubles on a crit, is worth more than one on a fresh foe (${probe.kill.toFixed(1)}, ${probe.crit.toFixed(1)} vs ${probe.big.toFixed(1)})`);
+  check(probe['imm-open'] < probe['plain-open'] - 5 && probe['imm-blind'] === probe['plain-blind'] && probe['imm-learn'] === probe['plain-learn'], `radiant immunity: open knows it (${probe['plain-open'].toFixed(1)} → ${probe['imm-open'].toFixed(1)}), blind and learn don't until they see it (${probe['imm-blind'].toFixed(1)}, ${probe['imm-learn'].toFixed(1)} unchanged)`);
+  check(probe.hold > 0, `keeping the bonus action for a smite has a value (${probe.hold.toFixed(1)})`);
+  // the reserve: with the Fighter dead, the Paladin's last 3rd-level slot keeps the ally's worth, smites leave it, and Revivify comes at the end
+  proto.turn = function (u) {
+    if (this.fightNo === 0 && !this._killed) { this._killed = true; this.kill(this.units.find(o => o.name === 'Fighter'), null, 'test'); }
+    return turn.call(this, u);
+  };
+  let keep = null;
+  const rs = [];
+  for (let i = 0; i < 6; i++) {
+    const r = Tac.runDay({ players: [pal9(), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 30, 2, 3)] }] }, { seed: 40 + i, partyAI: 'tactical', ai: { party: 'v2' }, record: true, _keep: true });
+    rs.push(r);
+  }
+  once((s, u) => { s.kill(s.units.find(o => o.name === 'Fighter'), null, 'test'); const sm = u.smiteA; keep = { l3: s.v2PaceCost(u, sm, 20, 3), l1: s.v2PaceCost(u, sm, 20, 1), res: s.v2Reserve(u) }; });
+  Tac.runDay({ players: [pal9(), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 30, 2, 3)] }] }, { seed: 9, partyAI: 'tactical', ai: { party: 'v2' } });
+  proto.turn = turn;
+  check(keep && keep.res && keep.res.n === 1 && keep.l3 > keep.l1 + 40, `a dead ally makes the Paladin keep its 3rd-level slot: a smite at L3 costs ${keep && keep.l3.toFixed(1)}, at L1 ${keep && keep.l1.toFixed(1)}`);
+  const l3 = rs.reduce((t, r) => t + r[0].events.filter(e => e.kind === 'attack' && /Divine Smite \(L3\)/.test(e.text || '')).length, 0);
+  const rev = rs.filter(r => r[0].events.some(e => e.kind === 'heal' && /Paladin → Fighter: Revivify/.test(e.text || ''))).length;
+  check(l3 === 0 && rev === rs.length, `the Paladin smites around the kept slot (${l3} smites at L3) and casts Revivify as each fight ends (${rev} of ${rs.length})`);
+
+  // Lay on Hands: a downed Fighter in fight 1 of 2; the Paladin gets it up and spends this fight's share of the pool, not all of it
+  let loh = { up: 0, pts: [], runs: 0 };
+  for (let i = 0; i < 8; i++) {
+    proto.turn = function (u) {
+      if (!this._downed) { this._downed = true; const f = this.units.find(o => o.name === 'Fighter'); f.hp = 0; this.downPC(f); }
+      return turn.call(this, u);
+    };
+    const r = Tac.runDay({ players: [build('Paladin'), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }, { monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 70 + i * 13, partyAI: 'tactical', ai: { party: 'v2' }, record: true });
+    proto.turn = turn;
+    loh.runs++;
+    const ev = r[0].events.find(e => e.kind === 'heal' && /Paladin → Fighter: Lay on Hands/.test(e.text || ''));
+    if (ev) { loh.up++; loh.pts.push(+(/\+(\d+) HP/.exec(ev.text) || [0, 0])[1]); }
+  }
+  check(loh.up >= loh.runs - 1 && loh.pts.every(n => n >= 1 && n < 25), `Lay on Hands lifts the downed Fighter (${loh.up} of ${loh.runs}), spending part of the pool (${loh.pts.join(', ')} HP)`);
 }
 
 section('AI v2: a burn is scored as a burn (Caustic Brew)');

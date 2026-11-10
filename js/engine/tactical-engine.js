@@ -362,6 +362,26 @@ function casterKind(tpl) {
   if (!cls || FULL_CASTERS.includes(cls)) return 'full';
   return HALF_CASTERS.includes(cls) ? 'half' : 'third';
 }
+/* Divine Smite (2024): a bonus-action spell cast right after a melee weapon hit (docs/ai-v2.md "Hybrids"). The spell keeps its old
+   self-buff shape for the old AI and the exports; ext.smite (or the name, for sheets read before it existed) tells v2 it is a rider */
+const SMITE_DEF = { dice: '2d8', up: 1, max: 5, type: 'radiant', foes: ['fiend', 'undead'], foeDice: 1 };
+function smiteOf(a) {
+  if (!a || !a._spell || !a._spell.level) return null;
+  const s = a.ext && a.ext.smite;
+  if (s) return typeof s === 'object' ? Object.assign({}, SMITE_DEF, s) : SMITE_DEF;
+  return /^divine smite\b/i.test(a.name || '') && a.type === 'buff' ? SMITE_DEF : null;
+}
+/* the smite's dice cast at slot level L on t (an extra die on a fiend or undead), as "Nd8" */
+function smiteDice(s, a, L, t) {
+  const g = parseDice(s.dice).dice[0] || { n: 2, d: 8 };
+  let n = Math.min(s.max, g.n + (s.up || 0) * Math.max(0, L - a._spell.level));
+  if (t && !t.isPC && s.foes && s.foes.indexOf(String((t.tpl && t.tpl.type) || '').toLowerCase()) >= 0) n += s.foeDice || 0;
+  return n + 'd' + g.d;
+}
+// the same effect doesn't stack: "Hunter's Mark (Favored Enemy, free)" and the spell Hunter's Mark
+const effectName = n => String(n || '').toLowerCase().replace(/\s*\(.*$/, '').trim();
+// a pool of hit points (Lay on Hands: ext.pool with die 1): v2 picks how many to spend (docs/ai-v2.md "Hybrids")
+const isHpPool = a => !!(a && a.type === 'heal' && a.ext && a.ext.pool && a.ext.pool.die === 1);
 function spellActions(sb) {
   return sb.spells.filter(sp => sp && sp.type).map(sp => {
     const lvl = Math.max(0, Math.min(9, parseInt(sp.level, 10) || 0));
@@ -3423,7 +3443,7 @@ Sim.prototype.sneakOk = function (u, t, a, r) {
 Sim.prototype.attackOnce = function (u, a, t, opt) {
   opt = opt || {};
   const r = this.attackRoll(u, t, a, opt);
-  let dealt = 0, sa = false;
+  let dealt = 0, sa = false, smTag = '';
   const at = this.mark();
   const ex = a.ext || {};
   const agathys = r.hit && this.dist(u, t) <= 5 ? t.buffs.find(b => b.retaliate > 0) : null;
@@ -3446,10 +3466,20 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       raw += rollDice(u.sneak.dice, this.R, r.crit);
       if (u.sneak.assassinate && this.round === 1) raw += u.sneak.assassinate;     // Assassinate: Surprising Strikes
     }
+    // Divine Smite (v2 only): decided now the hit is known, one damage instance with the weapon's, each part of its own type
+    const sm = u.v2 && u.smiteSeq === this.turnSeq ? this.v2SmiteHit(u, a, t, r.crit, raw) : null;
     raw *= this.multBuff(u, 'damageMultiplier');
+    let apart = 0;
+    if (sm) {
+      smTag = sm.tag;
+      const sR = sm.raw * this.multBuff(u, 'damageMultiplier'), tmW = damageMultFor(a, t), tmS = damageMultFor(null, t, sm.type);
+      if (sR > 0) this.learnType(t, { type: sm.type }, tmS);
+      if (tmW > 0) raw += sR * tmS / tmW; else apart = sR;
+    }
     dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, roll: true, crit: r.crit, a });
+    if (apart > 0 && !t.dead) dealt += this.damage(u, t, Math.floor(apart), { attack: true, crit: r.crit, type: sm.type });
   }
-  const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : r.fa === 'pack' ? ', Pack Tactics' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '');
+  const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : r.fa === 'pack' ? ', Pack Tactics' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '') + smTag;
   this.ev('attack', `${u.name} → ${t.name}: ${a.name}${tag}, ${r.total} vs AC ${r.ac} — ${r.crit && r.hit ? 'CRIT' : r.hit ? 'hit' : r.mirror ? 'image' : 'miss'}${r.hit ? `, ${dealt} damage` : ''}`,
     { uid: u.uid, target: t.uid, hit: r.hit, crit: r.crit && r.hit, dmg: dealt, ranged: this.dist(u, t) > 5, oa: !!opt.oa });
   this.hoist(at);
@@ -3761,7 +3791,8 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
         // spend as many dice from the pool as the wound needs, up to the per-use cap
         const avgDie = ((hx.pool.die || 6) + 1) / 2, left = u.uses.get(a.id) || 0;
         const need = t.hp <= 0 ? t.maxHp * 0.5 : t.maxHp - t.hp;
-        const n = Math.max(1, Math.min(hx.pool.maxPer || left, left, Math.ceil(need / avgDie)));
+        const pick = u.v2 && isHpPool(a) && u._poolPick ? u._poolPick.get(a.id + "|" + t.uid) : 0;      // v2 chose the points (v2HpPool)
+        const n = Math.max(1, Math.min(hx.pool.maxPer || left, left, pick || Math.ceil(need / avgDie)));
         u.uses.set(a.id, left - n);
         amt = rollDice(n + 'd' + (hx.pool.die || 6), this.R, false);
       } else amt = rollDice(a.amount, this.R, false);
@@ -3897,12 +3928,16 @@ const AI_BASE = {
     dropEdge: 1.5, dropFrom: 0.25, dropRounds: 2, dropRound: 1, dropLife: 60,
     dot: 1, dotLag: 0.5, dotMin: 0.5, dotMax: 3.5, dotHold: 1,   // a burn (Caustic Brew: ext.dot): its value; the rounds it loses because the first tick comes on the foe's turn; the fewest and most ticks counted; what a running one is worth to keep
     casterRisk: 1.2, healReach: 1.5,                             // casters keep back; a healer stays in reach of the hurt
+    // Divine Smite (docs/ai-v2.md "Hybrids"): its value on a hit (damage + the kill it makes now), × smite; with swings still to come it waits
+    // when a later hit's expected smite × smiteWait is worth more
+    smite: 1, smiteWait: 1,
   },
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
   burn: { modes: ['open'], bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
   pacing: { costPerUse: 0.1, overTax: 0.6, easyFight: 1.5, easyTax: 0.5, losing: 0.3, lastFight: 0.05, srFights: 1, reactDrop: 3, reactFull: 0.75,
             slot: 8, slotUp: 0.35, slotEasyTax: 0.7,             // a spell slot: points per slot level, each level above 1st costing slotUp more, × F/(F+1); its tax when the fight is in hand
-            reviveLife: 60, reviveDay: 6, reviveDoom: 2 },       // spending the slot kept for a dead ally's Revivify: a life, + its DPR × this many rounds per fight still to come; a fight counts as lost when the side falls in under 1/reviveDoom of the time it needs to win
+            reviveLife: 60, reviveDay: 6, reviveDoom: 2,         // spending the slot kept for a dead ally's Revivify: a life, + its DPR × this many rounds per fight still to come; a fight counts as lost when the side falls in under 1/reviveDoom of the time it needs to win
+            hpLevel: 8 },                                        // a hit-point pool (Lay on Hands): this many points cost what one slot level does
   // the threat estimate (docs/ai-v2.md): learn on v2, the party's side. prior + each signal's weight (× n / (n + half)), then the table
   threat: {
     useAc: 1, useSave: 1,                                        // AC, save bonus read from the score too (saves: each ability's own column, see the docs)
@@ -3972,19 +4007,26 @@ function aiProfile(spec) {
 }
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
-/* which creatures v2 drives: plays tactically (or names a profile), no spellbook or a full caster's (casterKind),
+/* which creatures v2 drives: plays tactically (or names a profile), any caster kind (step 3a),
    and nothing it can't score yet (swallowing, dice pools other than heals) */
 Sim.prototype.v2Eligible = function (u) {
   const prof = u.tpl.ext && u.tpl.ext.aiProfile;
   if (!this.aiV2 || !this.aiV2[u.team] || (u.ai !== 'tactical' && !prof)) return false;
-  if (u.hasSpells && u.casterKind !== 'full') return false;            // half and third casters: step 3
+  // every caster kind plays on v2 (step 3a); casterKind now only says who stands at the back (backLine)
   return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.ext && (a.ext.swallow || (a.ext.pool && a.type !== 'heal')));
+};
+/* stands at the back: a spellbook, and a full caster or no melee attack (a paladin or an Eldritch Knight is a front-liner) */
+Sim.prototype.backLine = function (o) {
+  return !!o.hasSpells && (o.casterKind === 'full' || !this.hasMelee(o));
 };
 Sim.prototype.v2Setup = function (u) {
   u.v2 = this.v2Eligible(u);
   u._v2c = null;
   u.reviver = null;
+  u.smiteA = null; u.smiteSeq = 0;
   if (!u.v2) return;
+  u.smiteA = u.actions.find(a => smiteOf(a)) || null;     // Divine Smite: a rider on a hit, not a bonus option (docs/ai-v2.md "Hybrids")
+  u._poolPick = new Map();                                  // Lay on Hands: the points v2 chose, per action and target
   u.reviver = u.isPC && u.slots ? u.actions.find(a => a.ext && a.ext.revivify && a._spell) || null : null;
   u.ai = 'tactical';
   u.v2P = aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
@@ -4014,7 +4056,7 @@ Sim.prototype.v2CastLevels = function (u, a) {
   const L0 = this.slotFor(u, a._spell.level);
   if (L0 < 0) return [];
   const out = [L0];
-  if (a._spell.upcast || a._spell.upcastTargets) for (let l = L0 + 1; l <= 9 && out.length < 3; l++) if (u.slots[l - 1] > 0) out.push(l);
+  if (a._spell.upcast || a._spell.upcastTargets || smiteOf(a)) for (let l = L0 + 1; l <= 9 && out.length < 3; l++) if (u.slots[l - 1] > 0) out.push(l);
   return out;
 };
 /* Arcane Recovery & co.: the levels it will win back on a short rest still ahead today */
@@ -4102,6 +4144,7 @@ Sim.prototype.endFightRevives = function () {
 
 /* ---- layer 3: pacing. What one use of a limited ability costs, in points of damage ---- */
 Sim.prototype.v2Pool = function (u, a, L) {
+  if (isHpPool(a)) return null;                                          // Lay on Hands: its points are priced where v2 picks them (v2HpPool)
   if (a._spell) return a._spell.level ? { key: 'slots', reset: u.slotReset === 'sr' ? 'sr' : 'lr', n: L || this.slotFor(u, a._spell.level), slots: true } : null;
   const ex = a.ext || {};
   if (ex.resource && u.resMax && u.resMax[ex.resource]) { const r = u.resMax[ex.resource]; return { key: 'res:' + ex.resource, reset: r.reset === 'sr' ? 'sr' : 'lr', n: ex.resourceCost || 1 }; }
@@ -4344,10 +4387,10 @@ Sim.prototype.v2Posture = function (u, ctx, speed) {
   const near = ctx.foes.filter(t => inReach(t).length);
   if (!near.length) return { kind: 'advance' };
   // someone in the face of our back line (a caster's dagger doesn't make it a bodyguard)
-  if (this.hasMelee(u) && !u.hasSpells) {
+  if (this.hasMelee(u) && !this.backLine(u)) {
     let best = null, bv = 0, ally = null;
     for (const o of ctx.myTeam) {
-      if (o === u || (this.hasMelee(o) && !o.hasSpells && o.hp >= o.maxHp * P.protectAllyHp)) continue;
+      if (o === u || (this.hasMelee(o) && !this.backLine(o) && o.hp >= o.maxHp * P.protectAllyHp)) continue;
       for (const e of this.adjacentEnemies(o, o.x, o.y)) if (near.includes(e) && this.kDpr(u, e) > bv) { bv = this.kDpr(u, e); best = e; ally = o; }
     }
     if (best) return { kind: 'protect', t: best, ally };
@@ -4395,6 +4438,7 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
   const W = u.v2P.w;
   if (a.type === 'heal') {
     if (!this.healNeeded(u, a, u)) return -Infinity;
+    if (isHpPool(a)) return this.v2HpPool(u, a, u, ctx);
     const amt = avgDice(a.amount);
     if (a.tempHP) {
       // Armor of Agathys: cold damage back at whoever hits it while the temporary HP last
@@ -4406,6 +4450,7 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
     return v;
   }
   if (a.type !== 'buff' || isHideAction(a) || this.alreadyHas(a, u) || u.buffs.some(b => b.id === a.id && b.src === u.uid)) return -Infinity;
+  if (u.buffs.some(b => b.id !== a.id && effectName(b.name) === effectName(a.name))) return -Infinity;     // the same effect doesn't stack
   // what it adds over the rounds it lasts
   const b = a.buff || {}, R = b.duration === 'entire encounter' ? ctx.rounds : 1;
   const m = ctx.main, hits = m ? m.n * m.p : 0, inc = ctx.incoming;
@@ -4421,6 +4466,54 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
   if (b.condition === 'Is attacked with Disadvantage' || b.condition === 'Invisible') v += inc * 0.4 * R;
   if (!v && !b.condition && !b.damage && !b.toHit) v = this.effectValue(b, u, false, u);
   return v;
+};
+/* ---- Divine Smite on a hit (docs/ai-v2.md "Hybrids"): what it is worth, when it is cast, what keeping the bonus action for it is worth ---- */
+// the smite u could add to a's hits: its spell (a slot free, this turn's slot unused), a melee weapon attack
+Sim.prototype.v2SmiteReady = function (u, a) {
+  const s = u.smiteA;
+  return s && a && a.type === 'atk' && !a._spell && !a.useSaves && (a._range || 5) <= 10 && this.usable(u, s) ? s : null;
+};
+// the best level to smite t at, net of the slot: left = what t has after this hit as u's side reckons it, f = the swings still to come on it
+Sim.prototype.v2SmiteBest = function (u, s, t, crit, left, f) {
+  const W = u.v2P.w, sd = smiteOf(s), tDpr = this.kDpr(u, t), mult = this.kMult(u, { type: 'atk', _spell: s._spell, ext: { damageType: sd.type } }, t);
+  const pk = x => 1 / (1 + Math.exp(-5 * (x - left) / Math.max(4, x)));
+  let best = null;
+  for (const L of this.v2CastLevels(u, s)) {
+    const d = avgDice(smiteDice(sd, s, L, t)) * (crit ? 2 : 1) * mult, kill = Math.max(0, pk(d + f) - pk(f));
+    const v = (Math.min(d, Math.max(0, left + W.overkill)) * (1 + tDpr / W.dprScale) * W.damage + kill * (tDpr * W.killRounds + 5) * W.kill) * W.smite;
+    const net = v - this.v2PaceCost(u, s, v, L);
+    if (!best || net > best.v) best = { L, v: net, kill };
+  }
+  return best;
+};
+// a smite on the first of k swings still to hit t (left: t's HP before them): the chance one hits × the best smite then, crit or not
+Sim.prototype.v2SmiteLater = function (u, s, a, t, left, k) {
+  const p = this.hitChance(u, t, a), per = this.expected(u, a, t) / Math.max(1, a.targets || 1), onHit = per / Math.max(0.05, p);
+  const c = Math.min(1, (21 - (u.critOn || 20)) / 20 / Math.max(0.05, p));
+  const at = crit => { const b = this.v2SmiteBest(u, s, t, crit, left - onHit, Math.max(0, k - 1) * per); return b ? Math.max(0, b.v) : 0; };
+  return (1 - Math.pow(1 - p, k)) * ((1 - c) * at(false) + (c > 0 ? c * at(true) : 0));
+};
+// keeping this turn's bonus action for a smite on a's hits on t
+Sim.prototype.v2SmiteHold = function (u, a, t) {
+  const s = t && t !== u && t.hp > 0 ? this.v2SmiteReady(u, a) : null;
+  return s ? this.v2SmiteLater(u, s, a, t, this.kHp(u, t), a.targets || 1) : 0;
+};
+// a hit has landed (rawW: its dice): smite now, at which level? Spends the slot and returns the extra dice, or null
+Sim.prototype.v2SmiteHit = function (u, a, t, crit, rawW) {
+  if (!u.v2 || u.smiteSeq !== this.turnSeq || this.current !== u || t.hp <= 0 || t.dead) return null;
+  const s = this.v2SmiteReady(u, a);
+  if (!s) return null;
+  const k = this._strikesLeft || 0, per = k ? this.expected(u, a, t) / Math.max(1, a.targets || 1) : 0;
+  const left = this.kHp(u, t) - rawW * this.kMult(u, a, t);
+  const now = this.v2SmiteBest(u, s, t, crit, left, k * per);
+  if (!now || now.v <= 0) return null;
+  // one smite a turn: a later hit that kills or crits may be the better one
+  if (k > 0 && this.v2SmiteLater(u, s, a, t, left, k) * u.v2P.w.smiteWait > now.v) return null;
+  u.castAt = now.L; this.spend(u, s); u.castAt = 0; u.smoteSeq = this.turnSeq;
+  u.smiteSeq = 0;
+  const sd = smiteOf(s), L = u.castLevel || now.L, dice = smiteDice(sd, s, L, t);
+  if (this.record) this.ev('intent', `${u.name} smites${now.kill >= 0.5 ? ' to finish ' + t.name : crit ? ' on the critical hit' : ''}`, { uid: u.uid });
+  return { raw: rollDice(dice, this.R, crit), type: sd.type, tag: ` + ${s.name}${L > s._spell.level ? ' (L' + L + ')' : ''}` };
 };
 /* bare: only what it does to t (damage, kill, control), for the extra creatures an area catches */
 Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
@@ -4490,7 +4583,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
   val += allyOn * W.focus + (1 - this.kFrac(u, t)) * W.wounded;
   // a foe in the face of our back line (casters, archers, the badly hurt) is worth more to a front-liner
   if (this.hasMelee(u)) {
-    const back = ctx.myTeam.filter(o => o !== u && this.dist(o, t) <= Math.max(5, this.meleeReach(t)) && (o.hasSpells || !this.hasMelee(o) || o.hp < o.maxHp * u.v2P.posture.protectAllyHp)).length;
+    const back = ctx.myTeam.filter(o => o !== u && this.dist(o, t) <= Math.max(5, this.meleeReach(t)) && (this.backLine(o) || !this.hasMelee(o) || o.hp < o.maxHp * u.v2P.posture.protectAllyHp)).length;
     if (back) { val += back * W.guard; why = why || 'guard'; }
   }
   if (this.kHeals(u, t)) { val += W.healer; why = why || 'healer'; }
@@ -4511,6 +4604,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
 Sim.prototype.v2AllyValue = function (u, a, t, ctx) {
   const W = u.v2P.w;
   if (a.type === 'heal') {
+    if (isHpPool(a)) return this.v2HpPool(u, a, t, ctx);                            // Lay on Hands: it picks the points, priced in
     const amt = avgDice(a.amount), hx = a.ext || {};
     if (t.hp <= 0) return this.v2BackUp(u, a, t, ctx, amt);
     if (hx.aid) return amt * 0.6 * W.heal;
@@ -4527,6 +4621,43 @@ Sim.prototype.v2AllyValue = function (u, a, t, ctx) {
     return this.effectValue(Object.assign({}, b, { duration: '1 round' }), t, false, u) * R * W.buff;
   }
   return 0;
+};
+/* Lay on Hands (docs/ai-v2.md "Hybrids"): how many of the pool's points to put into t (1, enough to stand through next round's damage,
+   all it is missing), each valued as any heal (a downed ally through v2BackUp) less the points' price; the pick is kept for doActionInner */
+Sim.prototype.v2HpPool = function (u, a, t, ctx) {
+  const W = u.v2P.w, P = u.v2P.pacing, left = u.uses.get(a.id) || 0, cap = Math.min(left, a.ext.pool.maxPer || left);
+  const down = t.hp <= 0, miss = down ? t.maxHp : Math.max(0, t.maxHp - t.hp);
+  if (cap < 1 || !miss) return 0;
+  if (!u._poolPick) u._poolPick = new Map();
+  const inc = this.v2Pressure(u, t, ctx), F = u.team === 'party' ? this.leftFor(u) : 0, hp0 = Math.max(0, t.hp);
+  // a point is priced like a slot level's worth of healing (pacing.hpLevel points to a level); with no fight ahead, like a slot's best use later in this one
+  const per = P.slot / P.hpLevel * (F ? 1 : Math.min(0.5, Math.max(P.lastFight, (ctx.rounds || 3) * 3 / Math.max(1, left / P.hpLevel))));
+  const start = u.v2Start && u.v2Start.has(a.id) ? u.v2Start.get(a.id) : left;
+  // standing again: through v2BackUp up to what keeps it up next round; past that (or for a standing ally) each point is an ordinary heal
+  const need = Math.max(1, Math.ceil(inc) + 1), plain = (from, k) => {
+    const under = Math.max(0, Math.min(k, Math.ceil(t.maxHp / 2) - from));
+    let v = (under * W.healLow + (k - under) * 0.5) * W.heal;
+    if (inc >= from && inc < from + k) v += W.healDanger * (6 + (t.dpr || 0));
+    return v;
+  };
+  let best = -Infinity, pick = 0;
+  for (const n of new Set([1, need, Math.ceil(t.maxHp / 2) - hp0, miss].map(k => Math.min(cap, miss, Math.max(1, Math.round(k)))))) {
+    let v;
+    if (down) { const up = Math.min(n, need); v = this.v2BackUp(u, a, t, ctx, up) + (n > up ? plain(up, n - up) : 0); }
+    else v = plain(hp0, n);
+    let c, tax = 0;
+    if (!F) c = per * n * (this.losing(u) ? P.losing : 1);
+    else {
+      c = per * n * F / (F + 1);
+      if (start - left + n > start / (F + 1) + 1e-9) tax = P.overTax;       // this fight has had its share of the pool
+      if (this.losing(u)) { c *= P.losing; tax *= P.losing; }
+      else if (this.fightInHand(u)) { c *= P.easyFight; tax = Math.max(tax, P.easyTax); }
+    }
+    const net = v - c - tax * Math.max(0, v);
+    if (net > best) { best = net; pick = n; }
+  }
+  u._poolPick.set(a.id + '|' + t.uid, pick);
+  return best;
 };
 /* the chance a creature at 0 HP dies within `rounds` turns, from s successes and f failures; hit2: the chance a round an attack lands two failures on it */
 function deathOdds(s, f, rounds, hit2, stable) {
@@ -4865,7 +4996,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const ctx = this.v2Ctx(u, speed);
   if (!ctx.foes.length) return null;
   if (u.reviver && this.record && !onlyAct) { const res = this.v2Reserve(u); if (res && u.saidKeep !== res.t.uid) { u.saidKeep = res.t.uid; this.ev('intent', `${u.name} keeps a slot for ${res.t.name}'s Revivify`, { uid: u.uid }); } }
-  const W = u.v2P.w, Wd = this.W, post = ctx.posture, caster = !!u.hasSpells;
+  const W = u.v2P.w, Wd = this.W, post = ctx.posture, caster = this.backLine(u), spells = !!u.hasSpells;
   const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u) && !caster;
   let safety = (meleeSelf ? W.risk : W.riskRanged * (caster ? W.casterRisk : 1)) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
   if (post.kind === 'retreat') { safety *= W.retreatSafety; if (!post.kite) offMult = W.retreatOffense; }
@@ -4878,7 +5009,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const threat = (x, y) => Math.min(ctx.danger.at(x, y), hpCap);
   const postBonus = t => post.t !== t ? 0 : W.pick * (post.kind === 'protect' ? 1 + W.protect * this.kDpr(u, t) / 5 : post.kind === 'finish' ? 1 + W.finishBoost : 1);
   // what it's concentrating on: a new concentration spell gives it up, and every hit taken risks it
-  const holding = caster ? this.v2Holding(u, ctx) : 0;
+  const holding = spells ? this.v2Holding(u, ctx) : 0;
 
   // every action-slot option, each spell at every slot level worth weighing
   const plans = [];
@@ -4941,13 +5072,13 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   // from a square. One spell slot a turn: an action that takes a slot only pairs with a bonus option that doesn't.
   const bonusOpts = [];
   if (!bonusSpent) for (const a of u.actions) {
-    if (a.actionSlot !== 1 || (a.ext && a.ext.teleport) || isHideAction(a) || !this.usable(u, a) || !this.condOk(u, a)) continue;
+    if (a.actionSlot !== 1 || (a.ext && a.ext.teleport) || isHideAction(a) || smiteOf(a) || !this.usable(u, a) || !this.condOk(u, a)) continue;
     const off = a.type === 'atk' || a.type === 'debuff', self = a.target === 'self' || a._range === 0;
     const ally = !off && !self && (a.type === 'heal' || a.type === 'buff');
     if (!off && !ally && !(self && a._spell)) continue;
     const L = this.v2CastLevels(u, a)[0];
     if (L === undefined) continue;
-    const act = castCopy(a, L), b = { a, slot: L > 0, range: Math.max(5, a._range || 5), n: ally ? act.targets || 1 : 1, pace: this.v2Pace(u, a, L), self };
+    const act = castCopy(a, L), b = { a, slot: L > 0, range: Math.max(5, a._range || 5), n: ally ? act.targets || 1 : 1, pace: this.v2Pace(u, a, L), self, conc: a._spell && a._spell.conc && u.concentrating && !this.sustaining(u, a) ? W.concSwap * holding : 0 };
     if (self) { if (!this.v2PoolFor(u, act, ctx).length) continue; b.raw = this.v2SelfValue(u, act, ctx); if (!(b.raw > 0)) continue; }
     else { b.vals = this.v2PoolFor(u, act, ctx).map(t => ({ t, v: ally ? this.v2AllyValue(u, act, t, ctx) : this.v2Value(u, act, t, ctx).val })).filter(o => o.v > 0); if (!b.vals.length) continue; }
     bonusOpts.push(b);
@@ -5078,11 +5209,13 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       if (b.self) raw = b.raw;
       else if (b.n > 1) { const ok = b.vals.filter(o => dOf(o.t) <= b.range && sees(o.t)).map(o => o.v).sort((p, q) => q - p); raw = ok.slice(0, b.n).reduce((s, v) => s + v, 0); }
       else for (const o of b.vals) if (o.v > raw && dOf(o.t) <= b.range && sees(o.t)) raw = o.v;
-      if (raw > 0) bon = Math.max(bon, raw - b.pace.base - b.pace.tax * raw);
+      if (raw > 0) bon = Math.max(bon, raw - b.pace.base - b.pace.tax * raw - b.conc);
     }
     return bon;
   };
 
+  // keeping the bonus action for a Divine Smite on the hits of the square's best attack (docs/ai-v2.md "Hybrids")
+  const smC = new Map(), smHold = o => { if (bonusSpent || !u.smiteA || !o || o.t === u || o.pl.slot) return 0; const k = o.pl.a.id + '|' + o.t.uid; let v = smC.get(k); if (v === undefined) { v = this.v2SmiteHold(u, o.pl.act, o.t); smC.set(k, v); } return v; };
   const options = [];
   let anyOffense = false;
   // Ready: a melee creature with nothing in reach holds one swing for a foe that comes to it (a reaction; docs/ai-v2.md)
@@ -5109,7 +5242,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     const prog = (need0 - need(x, y)) * progUnit;
     if (best) {
       anyOffense = true;
-      const bon = bonusAt(dOf, sees, best.pl.slot) * W.bonus;
+      const bon = Math.max(bonusAt(dOf, sees, best.pl.slot), smHold(best)) * W.bonus;
       // a touch from the air means coming level with the target
       const touch = u.alt > 0 && this.airborne(u) && best.t !== u && touchPl(best.pl);
       // coming down takes movement too: a touch it can't get level with this turn is no option from here
@@ -5125,7 +5258,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       }
       if (!short) options.push(opt);
       // the same square without coming down: the option a priced or unreachable touch would otherwise hide
-      if (alt > 0 || short) { const far = offAt(x, y, false, true).best; if (far) options.push({ mode: 'act', x, y, rm, off: far, steps, score: far.val + bonusAt(dOf, sees, far.pl.slot) * W.bonus - risk - oa - walk, aim: false }); }
+      if (alt > 0 || short) { const far = offAt(x, y, false, true).best; if (far) options.push({ mode: 'act', x, y, rm, off: far, steps, score: far.val + Math.max(bonusAt(dOf, sees, far.pl.slot), smHold(far)) * W.bonus - risk - oa - walk, aim: false }); }
       if (bonusDis && steps > 0) options.push({ mode: 'bonusDis', x, y, rm, off: best, steps, score: best.val - risk - walk });
     }
     if (onlyAct) return;
@@ -5263,13 +5396,15 @@ Sim.prototype.v2AimValue = function (u, a, p, ctx) {
   return v - this.v2PaceCost(u, a, v, p.castL);
 };
 /* the bonus action: 'pre' = a self-buff worth taking before it moves (Rage), 'post' = the best one from where it ended up */
-Sim.prototype.v2Bonus = function (u, phase) {
+Sim.prototype.v2Bonus = function (u, phase, choice) {
   const speed = (this.has(u, ['Restrained']) || u.grappledBy) ? 0 : this.speedOf(u);
   const ctx = this.v2Ctx(u, phase === 'pre' ? speed : 0);
-  const list = u.actions.filter(a => a.actionSlot === 1 && !(a.ext && a.ext.teleport) && !isHideAction(a) && !(phase === 'pre' && a._spell && a._spell.level) && this.usable(u, a) && this.condOk(u, a));
+  const list = u.actions.filter(a => a.actionSlot === 1 && !(a.ext && a.ext.teleport) && !isHideAction(a) && !smiteOf(a) && !(phase === 'pre' && a._spell && a._spell.level) && this.usable(u, a) && this.condOk(u, a));
   let best = null;
   let held = null;
-  const offer = (a, p, v) => { if (v > 0 && (!best || v > best.v)) best = { a, p, v }; };
+  // a concentration spell gives up the one it holds (docs/ai-v2.md "Hybrids": bonus-action concentration)
+  const conc = a => a._spell && a._spell.conc && u.concentrating && !this.sustaining(u, a) ? u.v2P.w.concSwap * this.v2Holding(u, ctx) : 0;
+  const offer = (a, p, v) => { v -= conc(a); if (v > 0 && (!best || v > best.v)) best = { a, p, v }; };
   for (const a of list) {
     if (a.target === 'self' || a._range === 0) {
       if (phase === 'pre' && a.type !== 'buff') continue;
@@ -5288,7 +5423,21 @@ Sim.prototype.v2Bonus = function (u, phase) {
     // a buff now takes the bonus action: worth it only over the best bonus attack it could make this turn
     let atk = 0;
     for (const a of list) if (a.type === 'atk') for (const t of this.v2PoolFor(u, a, ctx)) if (this.dist(u, t) - Math.max(5, a._range || 5) <= speed) { const v = this.v2Value(u, a, t, ctx).val; atk = Math.max(atk, v - this.v2PaceCost(u, a, v)); }
+    // or keeping it for a Divine Smite on the main attack's hits against the nearest foe
+    if (u.smiteA && ctx.main && ctx.main.melee) { const t = ctx.foes.slice().sort((p, q) => this.dist(u, p) - this.dist(u, q))[0]; atk = Math.max(atk, this.v2SmiteHold(u, ctx.main.a, t)); }
+    // or a bonus heal on an ally it can reach this turn (Lay on Hands, Healing Word on the downed: step 3a)
+    for (const a of u.actions) {
+      if (a.actionSlot !== 1 || a.type !== 'heal' || a.target === 'self' || a._range === 0 || !this.usable(u, a) || !this.condOk(u, a)) continue;
+      const L = this.v2CastLevels(u, a)[0];
+      if (L === undefined) continue;
+      for (const t of this.v2PoolFor(u, a, ctx)) if (t !== u && this.dist(u, t) - Math.max(5, a._range || 5) <= speed) { const v = this.v2AllyValue(u, castCopy(a, L), t, ctx); atk = Math.max(atk, v - this.v2PaceCost(u, a, v, L)); }
+    }
     if (best.v <= atk * u.v2P.w.bonus) return null;
+  }
+  // after moving: a smite on the planned attack's hits is worth keeping the bonus action for when it beats the best bonus option
+  if (phase === 'post' && u.smiteA && choice && choice.p && choice.p.targets && choice.p.targets[0]) {
+    const hold = this.v2SmiteHold(u, castCopy(choice.a, choice.p.castL), choice.p.targets[0]);
+    if (hold > 0 && (!best || hold >= best.v)) return null;
   }
   return best;
 };
@@ -5573,8 +5722,9 @@ Sim.prototype.turn = function (u) {
 
   // bonus action: first usable one, before or after the action depending on what it is
   u.reserveSlot = !!(choice && !actionUsed && choice.a._spell && choice.a._spell.level);
-  const bonus = bonusSpent ? null : u.v2 ? this.v2Bonus(u, 'post') : this.choose(u, 1, 0);
+  const bonus = bonusSpent ? null : u.v2 ? this.v2Bonus(u, 'post', choice && !actionUsed ? choice : null) : this.choose(u, 1, 0);
   u.reserveSlot = false;
+  if (u.v2) u.smiteSeq = !bonusSpent && !bonus && u.smiteA ? this.turnSeq : 0;     // the bonus action is free for a Divine Smite on a hit
   const after = bonus && (bonus.a.type === 'atk' || (bonus.a.buff && bonus.a.buff.condition === 'Invisible'));
   if (bonus && !after) { if (u.v2) u.castAt = bonus.p.castL || 0; this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, bonus.p); }
   if (choice && !actionUsed && !out()) {
@@ -5601,7 +5751,7 @@ Sim.prototype.turn = function (u) {
       if ((a.type === 'atk' || a.type === 'debuff') && p.targets[0] && p.targets[0] !== u) u.focus = p.targets[0].uid;
     }
   }
-  if ((hideAfter !== null || u.ai === 'regular') && !bonusSpent && !(bonus && !after) && !out()) {
+  if ((hideAfter !== null || u.ai === 'regular') && !bonusSpent && !(bonus && !after) && !(u.v2 && u.smoteSeq === this.turnSeq) && !out()) {
     const left = Math.floor(speed / 5) - (u._steps || 0);
     if (this.slipAndHide(u, hideAfter !== null ? Math.min(hideAfter, left) : left)) bonusSpent = true;
   }

@@ -36,7 +36,7 @@ Statblock Forge is a DM prep tool. The War Table simulates fights and reports od
 |-------|--------------------|--------|
 | Knowledge | What does this side know? | Partial: day length, priors for HP/AC/saves/damage, learn-vs-open gap |
 | Strategy | Fight or hold back, spend or save? | Partial: posture, pacing, burn plan |
-| Tactics | Where to stand, what to do, at whom? | Done for martials and full casters (`v2TurnInner`) |
+| Tactics | Where to stand, what to do, at whom? | Done for martials, full casters and (step 3a) half and third casters (`v2TurnInner`) |
 | Reactions | Shield, Counterspell, Silvery Barbs, Lucky, Uncanny Dodge, Deflect Attacks, Cutting Words, Stone's Endurance, Spirit Shield: spend now or not? | Done for Zaki's party (step 3b, `docs/ai-v2.md` "Reactions as a layer"): Shield, Silvery Barbs (attack and save), Lucky, Uncanny Dodge, Deflect Attacks, Counterspell, Ready. Not done: Cutting Words, Stone's Endurance scoring beyond `v2ReactOk`, Spirit Shield, Deflect Attacks' redirect |
 | Profiles | How does this creature lean? | Data exists (`AI_PROFILES`, `ext.aiProfile`); no UI |
 | Explanation | Why did it do that? | Intent lines in v2 (`v2Words`) |
@@ -62,7 +62,7 @@ The rules engine (dice, saves, damage, movement, zones) is not AI and is not cha
 | # | Model | Scope | Done when |
 |---|-------|-------|-----------|
 | 1 | Opus | **DONE (c6be6fa, 000b8c1).** **Step 2.10.** Part A: why strong control (Hold Monster, Hideous Laughter, Command, Hypnotic Pattern, Stunning Strike) is rarely cast in open mode. Diagnose the score terms (duration with repeated saves, denied actions, crit/advantage for allies, concentration cost counted once, slot price in a fight not being won fast), then calibrate with a sweep of a plain-data control weight. Part B: knowledge ablation, giving the learn/blind party the TRUE value of one thing at a time (HP, AC, saves, damage, day length) to find which gap costs most; implement the day-length decision (B2). | Control scenarios (K) improve beyond SE with nothing worse; ablation table in `docs/ai-v2.md`; day-length setting works |
-| 2 | Opus | **Step 3a: hybrids.** Paladin (Divine Smite per hit, Lay on Hands), ranger (Hunter's Mark), artificer, Eldritch Knight, Arcane Trickster: martial scoring plus spell scoring, one classification (replaces the `casterKind` full-only gate in `v2Eligible`). | Hybrids leave v1; hybrid scenarios no worse than v1 |
+| 2 | Opus | **DONE (step 3a, see `docs/ai-v2.md` "Hybrids").** **Step 3a: hybrids.** Paladin (Divine Smite per hit, Lay on Hands), ranger (Hunter's Mark), artificer, Eldritch Knight, Arcane Trickster: martial scoring plus spell scoring, one classification (replaces the `casterKind` full-only gate in `v2Eligible`). | Hybrids leave v1; hybrid scenarios no worse than v1 |
 | 3 | Opus | **Step 3b: reactions** as a layer with their own decisions and costs. | Reactions chosen by value, not threshold; scenarios no worse |
 | 4 | Sonnet | **Monster intelligence tiers**; non-tactical monsters on v2 with a simple profile; Enemy AI default decided here. | Tiers from Int/Wis, `ext.aiProfile` overrides; beast fights look like beasts |
 | 5 | Sonnet | **Seeded odds runs** (cheap, see below), then the preset and slider UI per B5, with workspace migration. | Same encounter, same number; old workspaces load |
@@ -126,7 +126,7 @@ A "back in the fight" term for healing a downed ally, Healing Light on v2, Reviv
 
 One line each: what, why, which phase takes it. Phase 7 (summons and companions) is in the table above.
 
-- **Summons and companions** (summon spells are skipped in `spell-data.js`; no companion code in the engine): Phase 7; rangers and artificers touch it in phase 2.
+- **Summons and companions** (summon spells are skipped in `spell-data.js`; no companion code in the engine): Phase 7. Step 3a left the Artillerist's Eldritch Cannon as an at-will bonus strike while it stands, not a creature.
 - **Flee and morale**: v1 has `moraleBreaks`, v2 has no `fleeHp`: phase 4.
 - **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
 - **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.
@@ -158,3 +158,10 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Big creatures: line of sight, cover and area origins**: a Large, Huge or Gargantuan creature covers its whole footprint for occupancy, movement, reach and areas, but line of sight, cover and the origin of a cone, line or aura still use its top-left square. Should use the nearest or any square of the body (5e: a square-to-square line from any corner).
 - **Squeezing**: a creature may squeeze through a space one size smaller (moving at half speed, disadvantage on attacks and Dex saves). A Large creature cannot enter a 1-square gap now; `reachMapRaw`/`fits` have no squeeze rule.
 - **Tiny creatures sharing a square**: four Tiny creatures may share one square; every creature is treated as taking its own square (`FOOT` gives Tiny 1x1 and `occupant` allows no sharing).
+- **Divine Smite under 2014 rules** (no bonus action, any number of hits a turn): step 3a models the 2024 rule only; an `opts.rules.smite` switch like Counterspell's would carry it. Next engine job.
+- **Hunter's Mark is not tied to one target**: the engine adds its die to every hit and never moves it when the marked foe drops (a bonus action). v2 prices it as the engine plays it. Next engine job.
+- **Lay on Hands' other uses** (curing poison, 5 points a condition) are not modelled; only healing is.
+- **Smite on reactions**: a readied strike or an opportunity attack cannot smite (no bonus action off its own turn, rules-correct); 2014's reaction smites would need the 2014 switch above.
+- **Eldritch Knight War Magic, Arcane Trickster Magical Ambush / Versatile Trickster**: not imported or modelled.
+- **Buffs of the same name stack on allies**: v2 now refuses a self buff whose effect it already has (the ranger's free Hunter's Mark and the spell); two Blesses on one ally are still possible (rules: they do not stack). Next engine job.
+- **Pre-move self buffs and the action**: the free Hunter's Mark is taken before moving (`v2Bonus 'pre'`) and is then wasted on a turn whose action goes to a heal; harmless (free casts) but the pre-move check only weighs bonus attacks and the smite hold.

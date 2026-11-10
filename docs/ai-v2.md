@@ -1,4 +1,4 @@
-# AI v2 — design (built so far: non-casters and full casters)
+# AI v2 — design (built so far: non-casters, full casters, and half and third casters)
 
 Naming: "step 1", "step 2" and "step 2.x" are the finished work (they match the commit names). What is still to build
 uses the phases in `docs/ai-roadmap.md` (phase 2 = hybrids, phase 3 = reactions, and so on).
@@ -17,8 +17,8 @@ decision out. Code: the "AI v2" block in `js/engine/tactical-engine.js` (`AI_PRO
   by default, and monsters the parser marks tactical: Int ≥ 10) or names a profile in `ext.aiProfile`.
   Everything else — casters, `regular`/`beast` monsters without a profile — keeps the old AI.
 - Delegated to v1 for the whole creature: bonus-action teleports (`ext.teleport`), zones/fog (`ext.zone`),
-  swallowing, healing pools (`ext.pool`, Lay on Hands), heals or buffs aimed at allies. Paladins and rangers have
-  spellbooks (Divine Smite and Hunter's Mark are spells), so they stay on v1.
+  swallowing, healing pools (`ext.pool`, Lay on Hands), heals or buffs aimed at allies. *(Step 1. Since step 2 heals, buffs and
+  heal pools are scored by v2, and since step 3a every caster kind is on v2: "Hybrids" below.)*
 - In `turn()` v2 takes these decisions: the pre-move bonus action (`v2Bonus 'pre'`: Rage…), move + action
   (`v2Turn`, same result shape as `tacticalTurnInner`: act / bonusDis / actionDis / dodge / dash / hide), Reckless
   Attack (`v2Reckless`), Steady Aim, the post-move bonus action (`v2Bonus 'post'`), re-aiming after the move
@@ -91,7 +91,7 @@ and Hide-after-attack modes, as v1's), Action Surge (slot-1 "Action Surge" attac
 `ext.extraAction` surges), Stunning Strike, Flurry of Blows, Martial Arts, Focus Points and any `ext.resource` pool,
 Patient Defense, Second Wind, Stone's Endurance-style limited reactions.
 Kept on the old rule: at-will damage-cutting reactions (Uncanny Dodge, Deflect Attacks: first hit, as before),
-Shield/Silvery-Barbs-style reactions and Lucky (decided inside `attackRoll`), Divine Smite (paladins are casters).
+Shield/Silvery-Barbs-style reactions and Lucky (decided inside `attackRoll`; step 3b scores them). Divine Smite: a rider on a hit since step 3a ("Hybrids").
 
 ## Casters (step 2)
 
@@ -103,13 +103,13 @@ Shield/Silvery-Barbs-style reactions and Lucky (decided inside `attackRoll`), Di
 |------|-----|---------------------|
 | `none` | no spellbook (martials; monsters whose spells are plain X/day actions, like SRD 5.2 Mages and Priests) | v2 |
 | `full` | a spellbook and `class.type` wizard, sorcerer, warlock, cleric, druid or bard; any **monster** with a spellbook (2014-style "1st level (4 slots)" statblocks); a PC with a spellbook and no class | v2 (caster terms on) |
-| `half` | a spellbook and paladin, ranger or artificer | v1 (roadmap phase 2) |
-| `third` | a spellbook and any other class (Eldritch Knight, Arcane Trickster, a multiclass whose main class is a martial) | v1 (roadmap phase 2) |
+| `half` | a spellbook and paladin, ranger or artificer | v2 (step 3a, "Hybrids" below) |
+| `third` | a spellbook and any other class (Eldritch Knight, Arcane Trickster, a multiclass whose main class is a martial) | v2 (step 3a) |
 
 `ext.casterKind` overrides the guess (`'full' | 'half' | 'third' | 'none'`). Multiclass sheets use the main class the
 sheet reader picked. `kCaster` is unchanged: it is what the *other* side knows, not who v2 drives.
 
-Still delegated to v1, for the whole creature: swallowing (`ext.swallow`) and dice pools that are not heals (`ext.pool`; Lay on Hands stays on v1 because paladins are half casters).
+Still delegated to v1, for the whole creature: swallowing (`ext.swallow`) and dice pools that are not heals (`ext.pool`). Lay on Hands is a heal pool and plays on v2 since step 3a.
 Everything step 1 kept on v1 for want of scoring (heals and buffs aimed at allies, bonus-action teleports, zones and
 fog) is now scored by v2, for every creature v2 drives. Reactions (Shield, Hellish Rebuke, Cutting Words,
 Counterspell-style cancels) keep v1's rules inside `attackRoll`/`cancelled`, as in step 1.
@@ -1350,6 +1350,65 @@ Zaki's party it is taken about once in 6 days (RC6 open: 0.17 readies, 0.04 stri
 
 **Not modelled.** Cutting Words and Spirit Shield are not imported at all (roadmap). Stone's Endurance keeps its old `v2ReactOk` test. A readied attack does not fire on a
 flyer that drops into reach without walking (`settleAltitude`), only on a step in `moveAlongSteps`.
+
+
+## Hybrids: paladin, ranger, artificer, Eldritch Knight, Arcane Trickster (roadmap phase 2, step 3a)
+
+Half and third casters (`casterKind` `half` / `third`) were sent to v1 by `v2Eligible`. They now play on v2 like everyone else. Nothing
+here changes the rules the old AI plays by: every new piece is behind `u.v2`.
+
+**Who is a back-liner.** `casterKind` no longer decides who v2 drives; it decides who stands at the back. `backLine(o)` is a spellbook and
+either a full caster or no melee attack (an artificer with a crossbow). A paladin, an Eldritch Knight, an Arcane Trickster with a rapier
+and a ranger with a sword are front-liners: they take the melee risk weight, can take the `protect` posture, and a Fighter does not
+`guard` them. Their spells still go through the caster path: `v2CastLevels`, `castCopy`, `v2Pace` (slots as one pool of slot levels),
+concentration through `v2Holding`, Revivify's reserve (`v2Reserve`), heal reach.
+
+**Divine Smite is a rider on a hit** (2024 rules: a bonus-action spell cast right after a melee weapon hit, 2d8 radiant + 1d8 a slot
+level above 1st, 5d8 at most, +1d8 against a fiend or undead, doubled on a crit). The spell keeps its old shape (a self buff, `buff.damage`
+2d8) so the old AI and the exports are unchanged; `ext.smite` (or the name, for sheets read before) marks it. On v2:
+
+- It is never a bonus option of its own and never cast before the attack. Instead the turn keeps its bonus action for it.
+- **At the hit** (`v2SmiteHit`, from `attackOnce`, own turn only, bonus action and this turn's spell slot unused, melee weapon attack):
+  for each castable level `L` (`v2CastLevels`) the rider is worth
+  ```
+  d      = smite dice at L (× 2 on a crit) × kMult(radiant)             // what it does, as this side knows the target
+  left   = kHp − this hit's dice × kMult(weapon)                        // what the target has left after the hit, as this side reckons it
+  f      = the expected damage of the swings still to come this turn on it
+  value  = (min(d, left + overkill) × (1 + kDpr / dprScale) × damage
+            + (pk(d + f) − pk(f)) × (kDpr × killRounds + 5) × kill) × smite   // pk: the same smooth kill chance as v2Value
+  net    = value − v2PaceCost(slot at L)                                // the slot through the pacing share, Revivify's keep cost included
+  ```
+  and the best `net > 0` is cast. With swings still to come it waits when the expected net of smiting a later hit (its hit chance, its
+  crit chance, the target's estimated HP after this hit) × `smiteWait` beats this one: one smite a turn should go where it kills or crits.
+- **The hold** (`v2SmiteHold`): in the square search and in `v2Bonus 'post'`, a melee weapon attack's bonus value is the larger of the
+  best real bonus option and `P(a hit) × E[net of the best smite on a hit]` (crit or not), so Shield of Faith, Lay on Hands or a
+  bonus attack compete with keeping the bonus action for the smite in one currency. When the hold wins, the turn's bonus action waits.
+- Knowledge: only `kHp`, `kMult`, `kDpr`, `kAc` (through `hitChance`); the hit's own dice and whether it crit are this side's own
+  numbers. An immune or resistant target the side does not know about is smitten as if it were not, and learn mode learns the type
+  from the hit (`learnType`), as for any damage.
+- Damage: one instance with the weapon's, each part with its own type (`damageMultFor`), so one concentration save and one reaction cut.
+
+**Bonus-action concentration** (Hunter's Mark, Shield of Faith, Hex, Divine Favor): a bonus option that would end the running
+concentration pays `w.concSwap × v2Holding` like an action spell does (it did not before, for full casters too). The same effect does
+not stack: a self buff whose name (before any bracket) matches one it already has is no option (the ranger's free Hunter's Mark and the spell).
+
+**Lay on Hands** is a hit-point pool (`ext.pool` with `die: 1`). v2 chooses how many points (`v2HpPool`): for each candidate amount (1,
+what keeps it up through next round's expected damage (`v2Pressure` + 1), up to half its maximum, all it is missing; never more than the
+pool) the heal is valued and the best net is spent (`u._poolPick`, read by `doActionInner`; the old AI's amount is untouched):
+- a downed ally: `v2BackUp` for the points that stand it up through next round, and every point past that as an ordinary heal on an ally
+  at that HP. `v2BackUp`'s turns term grows with every point (more HP, more turns up), which made the first version pour all 25 points
+  into a pick-up; points past what keeps it standing are a top-up like any other.
+- a standing ally: `w.heal × w.healLow` a point up to half its maximum, `0.5 × w.heal` past it, + `w.healDanger` when it keeps it standing.
+- the price, a point: `pacing.slot / pacing.hpLevel` (8 points cost what a slot level does), × F/(F+1); with no fight ahead, × the slot
+  rule's `min(0.5, max(lastFight, rounds × 3 / (points left / hpLevel)))`; the pacing share's tax once this fight has had its share
+  (`overTax`), `easyFight` / `easyTax` and `losing` as for any limited use.
+
+Dice pools (Healing Light) keep their per-use price and their old amount, so Zaki's party is untouched.
+
+**Not built (backlog):** Divine Smite under 2014 rules (no bonus action, any number of hits a turn); Hunter's Mark moved to a new target
+when the marked one drops (the engine's mark adds its die to every hit); Eldritch Knight War Magic, Arcane Trickster Magical Ambush;
+Divine Smite on an opportunity attack or a readied strike (no bonus action off its own turn); the artificer's Eldritch Cannon as a creature
+(it is an at-will bonus strike while up, as before).
 
 
 ## Existing user-facing AI options → v2 knobs
