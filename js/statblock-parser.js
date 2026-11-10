@@ -545,7 +545,7 @@ function parseSpellcasting(entry, h, notes, slotKind) {
     const spells = book.map(b => make(b.n, { level: b.lvl })).filter(Boolean);
     if (spells.length) out.spellbook = { slots, slotReset: /pact magic|warlock/i.test(t) ? 'sr' : 'lr', spells };
   } else book.forEach(b => innate.push({ n: b.n, freq: b.lvl ? '1/day' : 'at will' }));
-  innate.forEach(s => { const a = make(s.n, { freq: s.freq }); if (a) { a.ext = Object.assign({}, a.ext, { innateSpell: true }); out.actions.push(a); } });   // innateSpell: a spell, for Counterspell
+  innate.forEach(s => { const a = make(s.n, { freq: s.freq }); if (a) { const isp = root.SpellData && root.SpellData[s.n.replace(/(.*?)/g, '').trim()]; a.ext = Object.assign({}, a.ext, { innateSpell: true }, isp && isp.L ? { innateLevel: isp.L } : {}); out.actions.push(a); } });   // innateSpell: a spell, for Counterspell
   if (skipped.length) notes.push(`Spells skipped (no combat effect the simulator models, or not in the spell list): ${skipped.join(', ')}.`);
   return out;
 }

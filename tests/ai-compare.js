@@ -609,7 +609,7 @@ function play(sc, ai, n, tweak) {
     if (tweak) tweak(players);
     if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
+    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, rules: process.env.CS ? { counterspell: process.env.CS } : undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);

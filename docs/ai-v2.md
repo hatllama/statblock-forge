@@ -1290,6 +1290,25 @@ save that passes costs the slot and the reaction and gains nothing). A v1 creatu
 Monster spells from a statblock's Spellcasting block are plain actions, so the parser now marks them `ext.innateSpell` (inert elsewhere) and a
 creature's own spellbook actions carry `_spell` as before; either can be countered.
 
+### Counterspell rules option (2024 save / 2014 check)
+
+`opts.rules = { counterspell: '2024' | '2014' }` (default `'2024'`; an object so more variants can join later; `Sim.rules`). War Table: "Rules → Counterspell" in the sim settings, saved with them (anything saved before reads as 2024). Both sides follow it, innate-spell monsters too.
+
+- **2024** (unchanged, every log and hash identical): the caster saves Con against the counter's spell DC; on a failure the spell fails and the caster's slot is kept. The counter's slot is spent either way.
+- **2014** (SRD 5.1, 5e-database `src/2014/en/5e-SRD-Spells.json`, index `counterspell`): "If the creature is casting a spell of 3rd level or lower, its spell fails and has no effect. If it is casting a spell of 4th level or higher, make an ability check using your spellcasting ability. The DC equals 10 + the spell's level. On a success, the creature's spell fails and has no effect." Higher level: "When you cast this spell using a spell slot of 4th level or higher, the interrupted spell has no effect if its level is less than or equal to the level of the spell slot you used." No save; the interrupted caster's slot **is** spent (nothing is refunded); the counter's slot is spent whether or not it works. The level of the spell is the slot it was cast at (`castLevel`; an innate-spell monster: `ext.innateLevel`, 3 when unknown).
+- The engine has no ability scores, so the spellcasting-ability bonus is `spell DC - 8 - proficiency`, with proficiency read off the counter's highest spell slot (`COUNTER_PROF`: top slot 1-2 → +2, 3-4 → +3, 5-6 → +4, 7-8 → +5, 9 → +6; no slots → +2). An approximation, stated here.
+
+**AI, 2014.** Same net = P(works) × value − price. Options for a spell at level SL: a 3rd-level slot (P = 1 if SL ≤ 3, else P(d20 + bonus ≥ 10 + SL)), or, for SL ≥ 4, any free slot of level ≥ SL (P = 1, priced at that slot by `reactPrice`); the best net wins. What the counter knows of SL follows the knowledge mode as the value does: open sees it, learn sees it once that spell has been seen, blind assumes `react.blindLevel` (3). The Revivify hard stop applies to each slot level tried (`v2Eats`). v1 casts at 3rd level, as before. Knowledge modes are otherwise untouched.
+
+**Evaluation** (`CS=2014 KNOW=<mode> node tests/ai-compare.js 200 '^RC1|^Zaki'`, 200 runs, same seeds; 2024 is identical to the numbers before the option existed, and the flag-off hashes, v2 and v2-learn included, are unchanged):
+
+| | RC1 open | RC1 learn | RC1 blind | Zaki hard day v2 (open / learn / blind) |
+|---|---|---|---|---|
+| 2024 | 29.5±3.2 | 5.0±1.5 | 3.5±1.3 | 95.5±1.5 / 93.5±1.7 / 85.0±2.5 |
+| 2014 | 41.0±3.5 | 6.5±1.7 | 4.0±1.4 | 96.5±1.3 / 94.0±1.7 / 85.0±2.5 |
+
+2014 is kinder to the counter (a Fireball, 3rd level, fails with no save), so RC1 rises. The Mage never casts above 3rd level, so upcasting and the 4th-level check are covered by tests, not by these scenarios.
+
 ### Deflect Attacks: the redirect (step 3b, follow-up)
 
 2024 rule: when Deflect Attacks cuts a hit to 0 damage, the monk can spend 1 Focus Point to redirect the force at a creature it can see within 5 ft (a melee

@@ -1827,6 +1827,35 @@ section('AI v2: reactions as a layer (step 3b)');
   });
   check(Math.abs(blind.blind - blind.expectedBlind) < 1e-9, 'blind Counterspell value = the caster\'s damage × blindRounds');
 
+  // Counterspell rules option (docs/ai-v2.md): 2024 Con save (slot kept) vs 2014 SRD 5.1 (auto-fail to 3rd level, a check above, upcast, slot spent)
+  check(new Tac.Sim({ seed: 1 }).rules.counterspell === '2024' && new Tac.Sim({ seed: 1, rules: {} }).rules.counterspell === '2024' && new Tac.Sim({ seed: 1, rules: { counterspell: 'junk' } }).rules.counterspell === '2024' && new Tac.Sim({ seed: 1, rules: { counterspell: '2014' } }).rules.counterspell === '2014', 'rules.counterspell defaults to 2024 (unset, empty, unknown value); 2014 when asked');
+  const c14 = (setup) => probe([zk('Eldar'), build('Fighter')], [srd('Mage')], { know: { party: 'open' }, rules: { counterspell: setup.rule } }, S => {
+    const eld = unit(S, 'Eldar'), mage = S.units.find(o => o.team === 'foes'), fb = mage.actions.find(a => a.name.indexOf('Fireball') === 0);
+    mage.x = eld.x + 8; mage.y = eld.y; S.boardChanged();
+    if (setup.level) { fb.ext = Object.assign({}, fb.ext, { innateLevel: setup.level }); }
+    if (setup.book) { fb._spell = { level: 3 }; mage.slots = [0, 0, 0, 0, 0, 0, 0, 0, 0]; mage.castLevel = 3; }
+    if (setup.fourth) { eld.slots[3] = 1; eld.slotsMax[3] = 1; }
+    const bonus = S.counterBonus(eld);
+    if (setup.free) S.reactPrice = () => 0;       // the pacing price is its own test; here the rule alone
+    if (setup.total !== undefined) S.d20 = function () { return Math.max(1, Math.min(20, setup.total - bonus)); };
+    const real = S.saveRoll; S.saveRoll = function (t, dc, src, ab) { return t === mage && ab === 'con' ? { success: setup.save === 'pass', total: setup.save === 'pass' ? 30 : 1 } : real.apply(this, arguments); };
+    const slots = eld.slots.slice(), evs = []; const ev = S.ev; S.ev = function (k, tx) { evs.push(tx); return ev.apply(this, arguments); };
+    const done = S.counterCheck(mage, fb, { targets: [eld, unit(S, 'Fighter')] });
+    S.saveRoll = real; S.ev = ev;
+    return { done, reaction: eld.reaction, used: slots.map((n, i) => n - eld.slots[i]), mageSlot3: mage.slots && mage.slots[2], bonus, evs: evs.join(' | ') };
+  });
+  const k24f = c14({ rule: '2024', save: 'fail', book: true }), k24p = c14({ rule: '2024', save: 'pass' });
+  check(k24f.done && k24f.mageSlot3 === 1 && k24f.used[2] === 1, `2024: a failed Con save fizzles the spell and gives the caster's slot back (${k24f.mageSlot3}); the counter's 3rd-level slot is spent`);
+  check(!k24p.done && k24p.used[2] === 1, '2024: a passed Con save: the spell goes off, the counter still cost its slot');
+  const a14 = c14({ rule: '2014', book: true });
+  check(a14.done && a14.used[2] === 1 && a14.mageSlot3 === 0 && /fizzles/.test(a14.evs) && !/check/.test(a14.evs), `2014: a 3rd-level spell fails automatically (no check), the caster's slot is not refunded (${a14.mageSlot3}), the counter's slot is spent`);
+  const dc14 = 14, bon = a14.bonus;
+  const hit = c14({ rule: '2014', level: 4, total: dc14, free: true }), miss = c14({ rule: '2014', level: 4, total: dc14 - 1, free: true });
+  check(hit.done && hit.used[2] === 1 && hit.evs.indexOf('check ' + dc14 + ' vs DC 14') >= 0, `2014: a 4th-level spell, check ${dc14} vs DC 14 (10 + 4) succeeds (bonus ${bon}): ${hit.evs}`);
+  check(!miss.done && miss.used[2] === 1 && miss.evs.indexOf('check ' + (dc14 - 1) + ' vs DC 14') >= 0, `2014: check ${dc14 - 1} vs DC 14 fails: the spell goes off and the counter's slot is spent: ${miss.evs}`);
+  const up = c14({ rule: '2014', level: 4, total: 2, fourth: true, free: true });
+  check(up.done && up.used[3] === 1 && up.used[2] === 0 && /at level 4/.test(up.evs) && !/check/.test(up.evs), `2014: upcast Counterspell at 4th level stops a 4th-level spell with no check (${up.evs})`);
+
   // Ready: a readied attack strikes the first foe to come into reach, once, on the reaction
   const rd = probe([zk('Kraax'), build('Fighter')], [srd('Ogre')], null, S => {
     const kr = unit(S, 'Kraax'), og = S.units.find(o => o.team === 'foes'), a = kr.actions.find(x => x.actionSlot === 0 && x.type === 'atk' && !x.useSaves);

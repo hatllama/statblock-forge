@@ -504,6 +504,7 @@ function Sim(opts) {
   this.climbDC = typeof opts.climbDC === 'number' ? opts.climbDC : 10;    // Athletics DC to scale a ledge 10 ft or higher (99: climb speed only)
   this.tpkKills = !!opts.tpkKills;     // the whole party down with foes still standing: nobody is left to save them
   this.maxRounds = opts.maxRounds || 40;
+  this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024' };      // rule variants (docs/ai-v2.md, "Counterspell rules option")
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
   // AI v2 for non-casters (docs/ai-v2.md): 'v2' for both sides, or { party: 'v2', foes: 'v1' }
   const ai = opts.ai;
@@ -3001,6 +3002,30 @@ Sim.prototype.spellDcOf = function (u) {
   }
   return (u._spellDc = dc || 13);
 };
+/* 2014 Counterspell: the proficiency bonus read off the counter's highest spell slot (no ability scores in the engine: ability bonus = DC - 8 - proficiency) */
+const COUNTER_PROF = [2, 2, 3, 3, 4, 4, 5, 5, 6];
+Sim.prototype.counterBonus = function (o) {
+  let top = 0;
+  if (o.slotsMax) o.slotsMax.forEach((n, i) => { if (n) top = i + 1; });
+  return this.spellDcOf(o) - 8 - (top ? COUNTER_PROF[top - 1] : 2);
+};
+/* the level a cast spell counts as (2014): the slot it was cast at; an innate-spell monster's own level, 3 when unknown */
+Sim.prototype.castSpellLevel = function (u, a) {
+  return a._spell ? (a._spell.level ? (u.castLevel || a._spell.level) : 0) : (a.ext && a.ext.innateLevel) || 3;
+};
+/* does the counter know what it is facing? (open: yes; learn: once this kind has cast it; blind: only that a spell is coming) */
+Sim.prototype.counterKnown = function (o, u, a) {
+  const m = this.kOf(o, u);
+  return !m || (m === 'learn' && this.learning(o.team) && !!(this.kind(o.team, u).spells || {})[a.id]);
+};
+/* 2014 options for countering a spell of level SL: slot level L (0 = the lowest, a 3rd) and the chance it works */
+Sim.prototype.counterOptions2014 = function (o, SL, bonus, check) {
+  const base = this.slotFor(o, 3), out = [];
+  const pCheck = Math.min(1, Math.max(0, (21 + bonus - (10 + SL)) / 20));
+  out.push({ L: 0, slot: base, p: SL <= 3 || base >= SL ? 1 : pCheck });
+  if (SL >= 4 && check) for (let l = Math.max(SL, base + 1); l <= 9; l++) if (o.slots[l - 1] > 0 && !this.v2Eats(o, l)) out.push({ L: l, slot: l, p: 1 });
+  return out;
+};
 /* what the spell would do to the counter's side, as that side reads it: open, the spell as cast; learn, the same once this kind has been seen casting it;
    blind (and a first sight in learn), only that a spell is coming: the caster's damage over a few rounds */
 Sim.prototype.counterValue = function (o, u, a, plan) {
@@ -3021,19 +3046,33 @@ Sim.prototype.counterCheck = function (u, a, plan) {
     const x = this.reactFind(o, 'counter', 'spell', { roll: false });
     if (!x || !this.losU(o, u)) continue;
     const dc = this.spellDcOf(o);
-    let net;
-    if (o.v2) {
+    let net, L = 0;
+    if (o.v2 && this.rules.counterspell === '2014') {
+      const R = o.v2P.react, SL = this.counterKnown(o, u, a) ? this.castSpellLevel(u, a) : R.blindLevel, val = this.counterValue(o, u, a, plan);
+      net = -Infinity;
+      for (const op of this.counterOptions2014(o, SL, this.counterBonus(o), true)) { const n = op.p * val - this.reactPrice(o, x, val, op.L); if (n > net) { net = n; L = op.L; } }
+    } else if (o.v2) {
       // P(its save fails) x what the spell is worth, against the slot and the reaction (paid whether or not it works)
       const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(o, u, 'con') - dc) / 20));
       const val = this.counterValue(o, u, a, plan);
       net = pFail * val - this.reactPrice(o, x, val, 0);
     } else net = (!a._spell || a._spell.level >= 1) && (a.type === 'atk' || a.type === 'debuff') ? 1 : -1;
-    if (net > 0 && (!pick || net > pick.net)) pick = { o, x, dc, net };
+    if (net > 0 && (!pick || net > pick.net)) pick = { o, x, dc, net, L };
   }
   if (this.learning(otherTeam(u.team))) { const k = this.kind(otherTeam(u.team), u); (k.spells = k.spells || {})[a.id] = true; }
   if (!pick) return false;
   const o = pick.o, x = pick.x, dc = pick.dc;
-  this.reactTake(o, x, 0);
+  this.reactTake(o, x, pick.L);
+  if (this.rules.counterspell === '2014') {
+    // SRD 5.1: 3rd level or lower fails; 4th or higher needs an ability check against 10 + its level, unless the slot used is at least its level; the slot of the spell is spent either way
+    const SL = this.castSpellLevel(u, a), used = o.castLevel || 3, bonus = this.counterBonus(o);
+    let how = '', ok = SL <= 3 || used >= SL;
+    if (!ok) { const r = this.d20(false, false, false); ok = r + bonus >= 10 + SL; how = ' (check ' + (r + bonus) + ' vs DC ' + (10 + SL) + ')'; }
+    if (!ok) { this.ev('react', `${o.name} casts ${x.name} on ${u.name}'s ${a.name}, but it goes off${how}`, { uid: o.uid, target: u.uid }); return false; }
+    if (a._spell && a._spell.conc && u.concentrating === a.id) u.concentrating = null;
+    this.ev('react', `${o.name} casts ${x.name}${used > 3 ? ' at level ' + used : ''}: ${u.name}'s ${a.name} fizzles${how}`, { uid: o.uid, target: u.uid });
+    return true;
+  }
   const sv = this.saveRoll(u, dc, o, 'con');
   if (sv.success) { this.ev('react', `${o.name} casts ${x.name} on ${u.name}'s ${a.name}, but it goes off (Con save ${sv.total} vs DC ${dc})`, { uid: o.uid, target: u.uid }); return false; }
   const lvl = a._spell && a._spell.level ? u.castLevel : 0;
@@ -3896,7 +3935,7 @@ const AI_BASE = {
   // against a Shield or a cut held for later; the chance a later hit lands; the damage a foe's round is split into hits; how much the best of several hits beats an average one;
   // the share of the best ally's DPR that advantage on its next attack is worth; a condition's worth when a save is rerolled; rounds a held spell is worth countering;
   // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
-  react: { base: 8, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.15, maxL: 2, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, readyMelee: 0.8, readyRanged: 0.15 },
+  react: { base: 8, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.15, maxL: 2, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, blindLevel: 3, readyMelee: 0.8, readyRanged: 0.15 },
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
