@@ -1530,7 +1530,7 @@ keep reading the team's mode.
 **Morale.** `moraleBreaks` reads `u.v2P.morale = { fearless, bloodied, half, leader, dc }` for a v2 creature; the base profile equals the old rules,
 so a `foes: 'v2'` log does not change. Morale is still opt-in (`opts.morale`): a tier decides who flees, the War Table setting decides whether anyone does.
 
-**Left out on purpose.** Legendary and lair actions still pick through `choose` (the old picker), whatever the tier: they are one action
+**Left out on purpose.** Legendary and lair actions still pick through `choose` (the old picker) on these tiers (phase 4b: the boss tier weighs them): they are one action
 with no position, and the turn itself is where the tier shows. Reactions are not tiered (no monster tier changes `AI_BASE.react`).
 Swallowers and non-heal dice pools stay on the old AI.
 
@@ -1599,4 +1599,189 @@ mean            67.5     64.2     63.6     68.4     63.6     63.3     61.4
 
 **Gate changes.** Every monster plays v2 under `foes: 'tiers'` except swallowers and non-heal dice pools (unchanged `v2Eligible` exclusions; all 47 SRD monsters play on v2 under `tiers`; `tests/run.js` checks they fight). Legendary and lair actions still pick through `choose`.
 
-**Backlog.** Lone bosses and casters on v2 hold back too much (Tyrant, Lich above); legendary and lair actions on v2; reactions per tier; a tier for the party's own companions; the War Table could show each monster's tier next to its AI line.
+**Backlog.** Lone bosses and casters on v2 hold back too much (Tyrant, Lich above; done for bosses in phase 4b, "Boss tier" below); legendary and lair actions on v2 (the boss tier weighs them); reactions per tier; a tier for the party's own companions; the War Table could show each monster's tier next to its AI line.
+
+## Boss tier (phase 4b)
+
+Status: built (opt-in, `opts.ai.foes = 'tiers'`). The design was written before the code; the parts marked *(found while building)* came out of the harness, and the results follow.
+
+**Why.** Phase 4 found lone bosses and casters playing worse on v2 than on the old AI (Ember Tyrant: party 34.5 on the old AI, 51.5 on
+v2; a mindless Lich 32.5 against a genius one 57.5). Diagnosis on the tip (100 seeded runs, open): the genius Tyrant ends 75% of its turns
+with no foe adjacent, standing off at its 10-ft reach, and leaves the Wizard alone (the Wizard takes 36 damage a fight and deals 66; against
+the mindless Tyrant 63 and 47). Cutting `risk`/`riskRanged`/`hurt` to a tenth brings the genius Tyrant from 47 to 35 (the old AI 32).
+Self-care pays when allies can finish the fight while you hang back; a lone boss that hangs back only gives the party free rounds.
+The Lich also lost to two things that are not self-care: a parser bug (its Eldritch Burst, "Melee or Ranged… reach 5 ft. or range 120 ft.", was read as a
+5-ft melee attack, so it walked into melee to use it; the SRD Mage's Arcane Burst too: fixed in its own commit, see Results) and, like every v2
+monster in open mode, a wrong reading of the party's damage (below, `dprSeen`).
+
+**Tier.** `boss` is a fifth tier in `AI_TIERS` (above genius). Default rule (`tierOf`, `AI_TIERS.rules.boss`): any creature with legendary
+actions (`ext.legendaryActions` or an action in slot 2), lair actions (slot 3), Legendary Resistance (`ext.legendaryResistance`), or a
+boss-style reaction (a slot-4 action that acts on a foe: a cancel, a debuff, Counterspell; Parry and other self buffs do not count).
+`ext.aiTier` still wins, and the Forge's Smartness select has the value. Opt-in as before (`opts.ai.foes = 'tiers'`); nothing else changes.
+
+**The profile** is genius plus an `AI_BASE.boss` block. Every key in `AI_BASE.boss` is neutral in the base (1 for a factor, 0 for a
+weight, `'rule'` for a picker), so no other tier or the party changes.
+
+| key | base | boss | what it measures |
+|---|---|---|---|
+| `solo` | 1 | 0.25 | self-care (`risk`, dodge, spacing, hiding: the `safety` factor) × `solo + (1 − solo) × share`, `share` = the DPR of its standing allies ÷ its side's DPR (its own side: real numbers). A lone boss keeps a quarter of its self-care; with an escort that does most of the damage, nearly all of it |
+| `soloOa` | 1 | 0.5 | the same for opportunity attacks along its path |
+| `legendary` | `'rule'` | `'weigh'` | `'rule'`: `choose` as before. `'weigh'`: each legendary action it can pay for is aimed and valued by v2 (`v2Aim` / `v2AimValue`, from where it stands now, at whoever is best now), against waiting |
+| `legKeep` | 0.8 | 0.8 | a point kept for a later turn is worth this share of the best value per point seen this fight (its own running estimate, `u.legPer`) |
+| `lair` | `'rule'` | `'weigh'` | the same for lair actions (`lair`, start of each round) |
+| `legRes` | `'rule'` | `'weigh'` | `'rule'`: the old "dangerous" test in `saveRoll`. `'weigh'`: spend when what failing costs beats what one more use is worth later (below) |
+| `lrKeep` | 1 | 1 | the price of a use: the worst effect the party has shown it (learn and blind: saves forced on it this day; open: also the party's actions) × `lrKeep` × `lrSpare`^(uses left − 1) |
+| `lrSpare` | 0.6 | 0.6 | the second, third use held back are each worth less |
+| `lrFloor` | 1.5 | 1.5 | until something worse has been shown, the price is at least `lrFloor` of its own turns (discounted by `lrSpare` like the rest: undiscounted, the boss kept uses for control that never came) |
+| `lrHorizon` | 3 | 3 | *(found while building)* a use kept is worth something only if the fight lasts: the price × min(1, its rounds left ÷ `lrHorizon`), rounds left = its HP ÷ the party's DPR (`kDpr`) |
+| `lrDmg` | 1 | 1 | damage a use avoids (full instead of half, or all of it), in its own HP × its DPR ÷ the party's DPR (HP buys rounds, a round is worth its DPR) |
+| `lrDrop` | 3 | 3 | failing would drop it: its HP's worth × this |
+| `lrCond` | table | table | a turn lost to the condition, per round it lasts: Incapacitated, Stunned, Paralyzed, Unconscious, Petrified 1 (+0.5 for auto-crits); Restrained, Blinded 0.4; Attacks and saves with Disadvantage 0.35; Frightened 0.25; anything else 0.1 |
+| `recharge` | 0 | 1 | a recharge ability used now gives up using it next turn with chance 1 − p (p = its recharge chance): price `recharge × (1 − p) × max(0, typical − alternative)`; typical = its value on the best `max(1, round(rechargeCatch × foes))` targets, alternative = the best at-will option. So a breath that catches one waits, one that catches three goes |
+| `rechargeCatch` | 0.5 | 0.5 | the share of the foes a typical use catches |
+| `planOpen` / `planSave` | 0.5 / 0.8 | same | `ext.aiPlan` (below): a share of the option's value, added to its pacing tax (so a hint scales with what it is weighed against) |
+| `planTarget` | 6 | 6 | `ext.aiPlan.target`, in points |
+| `lrLeg` / `lrTurns` / `legRate` | 0.15 / 3 / 0.3 | same | a turn's worth includes this share per legendary action; the most rounds a condition counts; how fast `u.legPer` follows what it sees |
+| `w.dprSeen` | 0 | 1 | *(found while building)* open mode: read an enemy's DPR as its best action it can still use, blended with what it has dealt (`kDprOpen`), instead of the sheet's first attack (below) |
+
+A boss's turn, legendary and lair actions all run through v2 scoring, so an unusual toolkit plays by what its parsed actions do (damage,
+areas, control, debuffs, heals, buffs): nothing is scripted by name.
+
+**Legendary actions, which and when (`bossLegendary`).** After each enemy turn: `L` points left, `K` enemy turns left before its own (this
+one included). keep(L, K) = min(L, K) × `u.legPer` × `legKeep`. Each action it can pay for scores value + keep(L − cost, K − 1); waiting scores
+keep(L, K − 1). Best wins. With more turns ahead than points it waits for a turn where a sweep catches several or a foe stands in reach; with as
+many points as turns left it spends. `u.legPer` starts at the first value per point it sees, then follows the best value per point it sees (a
+running mean: estimates, not lookahead). *(found while building)* Off its own turn a one-round effect from it ends when its next turn starts, so
+a one-round debuff from a legendary or lair action counts only for the foes that still act before then (`bossBefore`): a legendary Command on a
+foe who has already acted holds nothing back (the Adult Red Dragon spent 5.7 legendary actions a fight on it before this; 2.5 after).
+
+**Legendary Resistance (`bossLR`).** On a failed save: loss = turns lost (duration: one round 1; "repeat the save" 1 ÷ its chance to pass,
+at most 3; longer 3) × `lrCond` × (its DPR + its legendary actions' share) + damage avoided × `lrDmg` × its DPR ÷ the party's DPR (`kDpr`
+summed) + `lrDrop` × its HP if the failure would drop it. Spend when loss ≥ price (× the `lrHorizon` factor). The worst effect seen is remembered per creature
+(`u.lrSeen`, from saves forced on it, passed or failed), so in learn it learns the party's save-or-suck spells as they are cast. A half-damage
+save costs half the damage, so it is rarely worth a use; Hold Monster is. The old rule (any disabling condition, or a big bite of damage) stays
+for every other creature.
+
+**`ext.aiPlan` (authored hints, optional, War Table only).** `{ open: 'Action name', save: [{ action: 'Action name', until: 'bloodied' | round }], target: 'caster' | 'healer' | 'melee' | 'ranged' | 'wounded' }`. `open`: the
+named action gets `planOpen` points on its first turn. `save`: the named action costs `planSave` points until it is bloodied or the round
+comes. `target`: foes of that type (read through `kCaster`, `kHeals`, `kReach`, `kFrac`) get `planTarget` points. Terms, not vetoes: a
+strong enough option still wins. Data only, under `ext`; `exportCreature` leaves it out of the day file like `ext.scores` (it is War Table
+only); no Forge UI (JSON). Names match from the start, case-insensitive (`'Cinder'` matches Cinder Storm).
+
+**Knowledge.** A boss reads the party only through the `k*` accessors and its mode; learn learns within the fight through the existing code
+(`learnSave`, `learnDc` and the rest), plus `u.lrSeen` above. Blind is not edited.
+
+*(found while building)* **Open mode read the party's damage wrong, for every v2 monster.** `kDpr` in open returns `t.dpr`, the average of a
+creature's first attack action (`avgPerTurn`). For a caster that is its cantrip: the level-5 Wizard reads as 4.5 a round and the Cleric as 5.5,
+while the Wizard deals 55-63 a fight to the Tyrant. So an open-mode monster thinks the casters are harmless, and plays worse with the truth than
+blind does (the Tyrant boss: open 42.5, the same boss reading blind 22.5; with each accessor read blind in turn, only `kDpr` moved it, 34.5 →
+18.0 with self-care off). The boss reads it through `kDprOpen` (`w.dprSeen` 1): the best action the foe can still use (a spell while it has the
+slot), blended with what it has dealt this fight, as learn blends its prior. `t.dpr` itself is not changed (the old AI and the rules use it), and
+no other tier reads it this way yet (backlog: it is likely part of why v2 monsters are weaker in open than in learn in the phase 4 tables).
+
+**Left out (decided before the code).** Legendary moves (the parser drops "movement only" legendary actions); damage reactions such as
+Searing Retort (no engine rule fires slot-4 attacks; Shield-, Barbs- and cut-style reactions already go through the reaction layer with
+the boss's knowledge, and cancels are a rule); summoners (phase 7); phases beyond what the rules already gate (`condition: 'is under half
+HP'` actions become usable when bloodied, and v2 scores them then; `aiPlan.save` with `until: 'bloodied'` lets an author hold one back).
+
+### Results (phase 4b)
+
+**Baseline (tip 606c08e).** `npm test` 602/602 (89 s); `node tests/flagoff-hash.js` 16 s; the TIER family reproduced the phase 4 table exactly
+(beasts, brutes, undead checked row by row: the engine is deterministic), so the phase 4 table is the "before". Tyrant: old AI 34.5, genius
+51.5; Lich: old AI 75.5, genius 57.5.
+
+**What the gap was, and what closed it** (party win %, 200 seeded runs, open unless said):
+
+| cause | evidence | fix |
+|---|---|---|
+| self-care with no one else holding the line | genius Tyrant stood off at reach 75% of its turns; `risk` cut to a tenth: 47 → 35 | `solo` 0.25: 51.5 → 43 |
+| a parser bug: "Melee or Ranged… reach 5 ft. or range 120 ft." read as 5-ft melee (the SRD Lich's Eldritch Burst, the SRD Mage's Arcane Burst) | the open-mode Lich walked into melee for its main attack | own commit (74c2de5): the range is 120 ft, `ext.anyRange` keeps it a melee attack up close. Changes the old AI and every tier for those two monsters |
+| open mode read a caster's damage as its cantrip (`kDpr` = `t.dpr`, the first attack: Wizard 4.5, Cleric 5.5) | the same boss reading blind won 22.5 against 42.5 open; reading only `kDpr` blind: 34.5 → 18.0 | `kDprOpen` (`w.dprSeen` 1): Tyrant 42.5 → 26.5, dragon 26 → 21, Lich 46.5 → 40.5 |
+| a legendary Command on a foe who had already acted (a one-round effect off its turn ends when its next turn starts) | the dragon spent 5.7 legendary actions a fight on it | `bossBefore`: dragon 33 → 26 |
+| the recharge price on legendary actions (the parser gives a 2- or 3-cost action a recharge) | Tyrant: Ember Burst 0.6 a fight against the old AI's 2.2; greedy legendary picker 18.0 against weighed 26.5 | price on main-turn actions only: weighed legendary now ahead of greedy on every boss but the Tyrant in open (21.5 vs 18.0, ~1 SE) |
+| Legendary Resistance kept to the end | the boss died with uses left (Zaki's boss day, learn) | `lrHorizon` 3: Zaki learn 65.0 → 60.5, Lich learn 27 → 24 |
+
+Tried and dropped: an explicit "surrounded" term (each melee foe past the second that can reach the square, × its DPR): no gain against Zaki's
+six PCs (92 vs 94.5), a loss on the four-PC Tyrant (learn 21.5 → 31.5-34). An undiscounted Legendary Resistance floor (spend only on effects
+worth 1.5 of its turns): Zaki's boss day in learn 62.2 → 69.7 (kept for control that never came).
+
+**The boss table** (`node tests/ai-compare.js 200 '^BOSS'`; party Fighter, Barbarian, Cleric, Wizard on v2, learning; the boss's knowledge is
+the mode; party win %, SE 1.5-3.5; lower = a stronger boss). Old AI = the monsters on the old AI (it reads the knowledge mode too).
+
+| boss | mode | old AI | genius | boss | shift vs old AI | vs genius |
+|---|---|---|---|---|---|---|
+| dragon (Adult Red Dragon + lair, 160 HP, 0.35 dmg) | open | 21.0 | 33.0 | 21.0 | 0 | −12 |
+| | learn | 23.5 | 30.5 | 16.5 | −7 | −14 |
+| | blind | 24.0 | 29.0 | 28.0 | +4 (1.2 SE) | −1 |
+| lich (SRD Lich, 110 HP, half dmg) | open | 74.0 | 61.0 | 37.0 | −37 | −24 |
+| | learn | 52.5 | 36.5 | 24.0 | −28.5 | −12.5 |
+| | blind | 55.0 | 36.5 | 23.0 | −32 | −13.5 |
+| brute (Grukk, legendary, no spells, Int 7, 260 HP) | open | 91.0 | 90.5 | 70.0 | −21 | −20.5 |
+| | learn | 91.0 | 94.5 | 77.0 | −14 | −17.5 |
+| | blind | 91.0 | 95.0 | 75.0 | −16 | −20 |
+| tyrant (Ember Tyrant, 140 HP, 0.4 dmg) | open | 34.5 | 51.5 | 21.5 | −13 | −30 |
+| | learn | 32.5 | 28.5 | 23.0 | −9.5 | −5.5 |
+| | blind | 35.0 | 30.0 | 21.0 | −14 | −9 |
+| escort (Osric + lair, 4 Bandits) | open | 82.0 | 77.5 | 49.5 | −32.5 | −28 |
+| | learn | 91.0 | 95.5 | 88.5 | −2.5 | −7 |
+| | blind | 91.0 | 93.0 | 89.5 | −1.5 | −3.5 |
+
+The boss tier is the strongest of the three on every boss and mode, except the dragon in blind, where it sits 4 points above the old AI (1.2 SE,
+noise; it is 1 under genius). In the escort rows only the boss is forced; the Bandits keep their tier.
+
+**TIER rows.** No non-boss row moved from the boss tier (the hashes below, and by construction: every boss key is neutral outside the boss
+profile). The parser fix moved the rows with the SRD Mage or Lich for every arm: casters (old AI 79.5 → 76.0, v2 66.5 → 62.0, genius 69.5 → 62.0),
+the 3-fight day (old AI 87 → 78.5, genius 83 → 78.0): the Mage now attacks from range, so those monsters got stronger. "auto" on the Tyrant
+row is now the boss: open 51.5 → 21.5, learn 28.5 → 23.0, blind 30.0 → 21.0; on the Lich row 57.5 → 37.0, 38 → 24.0, 34 → 23.0. A forced
+mindless Lich (29.5 open) still beats the boss Lich in open (37.0); in learn and blind the boss is ahead (24 vs 31, 23 vs 29.5). Cause: the rest
+of open mode (true HP, AC, saves) still reads worse than the blind priors for v2 monsters; only `kDpr` was fixed, and only for bosses (backlog).
+
+**Hashes.** `node tests/flagoff-hash.js`, `AI=v2 KNOW=learn` (`tests/fixtures/hashes-v2-learn.txt`) and `AI=v2 FOES=tiers KNOW=learn` are
+identical before and after the boss work. The parser commit changed them on purpose for the one hash day with the SRD Mage (medium-day: 9 of
+96 flag-off hashes, 6 v2-learn lines; the fixture was regenerated in that commit). `tests/flagoff-hash.js` gained `FOES=` (unset = as before).
+
+**Zaki's party** (`parties/zaki-party-level-5.json`, 600 runs, both sides reading the mode, party win % ± SE). Hard day (no boss), tip → now:
+old AI blind 87.7 / 87.7, learn 94.8 / 94.8, open 95.0 / 95.0; tiers blind 91.0 / 91.0, learn 93.8 / 93.8, open 94.8 / 94.8 (identical).
+Boss day (hard-day fights 1-2, then the Ember Tyrant at 140 HP and 0.4 damage):
+
+| mode | old AI | tiers on the tip (Tyrant genius) | tiers now (Tyrant boss) |
+|---|---|---|---|
+| blind | 65.3 ± 1.9 | 63.5 ± 2.0 | 63.3 ± 2.0 |
+| learn | 55.8 ± 2.0 | 56.7 ± 2.0 | 60.5 ± 2.0 |
+| open | 77.7 ± 1.7 | 85.5 ± 1.4 | 85.8 ± 1.4 |
+
+The one place the boss tier is not ahead: against Zaki's six PCs, five of them melee, arriving after two fights. Blind is level, learn is 4.7
+points weaker than the old AI (1.7 SE) and open 8 weaker (3.6 SE), level with the old genius Tyrant. Cause (ablations, 600 runs): every boss knob
+costs a little here (all off: learn 56.7, open 79.7), the largest being low self-care (`solo` 1: open 81.2) and weighed Legendary Resistance
+(the old rule: learn 60.5 before `lrHorizon`). The four-PC bosses want the opposite settings, so the profile follows the five-boss table; this
+day is in the backlog.
+
+**Replays** (`learn`, 50 fights each and one fight read through; the script prints the boss's own events):
+- *Legendary actions.* Spent between turns, spread over the round (after each party member's turn, roughly evenly), with 0.3-0.8 holds a fight
+  ("holds its legendary actions for a better moment") when the points outnumber the turns left. The dragon: Command after the Barbarian (who acts
+  after it), Scorching Ray after the others; the brute: Ground Slam when two or three stand within 10 ft (2.5 caught per Slam against 1.8 on the
+  old AI, 47 Slams against 100), Club otherwise; the Lich: Disrupt Life after each turn (as the old AI). Never more points than it has.
+- *Legendary Resistance.* The escort's Osric: 29 uses on Hold Person, 9 on Fireball (the old AI: 16 and 37). The brute (2 uses): at 1-15 HP every
+  time, as the end nears, never on a full-HP half-damage save. The dragon: Lightning Bolt 13 times, half of them at 128-160 HP: a 20-30 damage
+  save is worth a use when three are left and nothing worse has been seen (the discounted floor, kept on purpose: see above). The Lich: Fireball,
+  as the old AI.
+- *Positioning.* Against four PCs the bosses end a turn with 0.3 foes adjacent on average (the old AI 0.2); the brute 1.0 (old AI 1.45, it stands
+  off at its 10-ft reach more). A lone boss does walk into melee for its best target: the Tyrant reaches the Wizard as often as its speed allows.
+- *Breath.* The dragon breathes on 2.4 of the party a breath, the old AI 2.9: v2's area aim (genius the same) catches four less often
+  (22 of 110 breaths against 51). The recharge price cut one-target breaths only a little (33 against 36 on genius). Area aim is a v2 job, not a
+  boss one (backlog). Cinder Storm: 2.9 caught (old AI 2.8); Osric's Ruinous Fortune 3.5 (old AI 2.8).
+- *Lair.* The dragon's Fire Geyser every round with a 1-in-270 Choking Smoke (Poisoned is worth little); Osric alternates The Wards Wake
+  (Incapacitated, 66) and Shattering Display (84), where the old AI took the first in its list (136 Displays).
+
+**Area and friendly fire at full strength.** `ffValue` works and is not inert: the boss dragon with four Bandits caught 88 of its own escort
+in 200 fights with `ffValue` 0 and none at 1.3 or 3; the win rate moved within noise (13.0 / 11.5 / 11.5). `areaRisk` (spacing against the
+party's areas) matters for a boss with an escort: 60.0 at 0, 50.5 at 1.4 (the genius value, kept), 39.5 at 3, mostly by keeping Osric where the
+party's areas are fewer (348 → 265 a 200 fights). Not raised to 3: one scenario, and calibrating it is a cross-tier job.
+
+**Speed.** `node tests/flagoff-hash.js` 16.3 s → 15.8 s; `node tests/run.js` 89 s → 97 s (+9%, the 26 new checks). Per fight, the boss arm
+against the genius arm in the same harness: dragon 220 / 235 ms, Lich 54 / 62, Tyrant 103 / 103, escort 81 / 106, brute 84 / 71 (+18%: each
+legendary option is aimed after every enemy turn).
+
+**Left out on purpose.** Legendary moves (dropped by the parser), damage reactions (Searing Retort: no engine rule), summoners (phase 7), phases
+beyond `condition` (none of the test bosses has phase data), a Forge UI for `ext.aiPlan`, the open-mode reading fix for the other tiers and the
+party (it changes their logs: backlog), v2's area aim.
