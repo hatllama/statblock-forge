@@ -889,7 +889,8 @@ function compileSpellbook(c){
 function exportCreature(m){
   let c = stripInternal(m);
   // ext.scores (Int and Wis, read by the War Table's monster tiers) is not part of the save-file format: a plain export is the same as before tiers
-  if(c.ext && c.ext.scores){ const { scores, ...rest } = c.ext; c = Object.assign({}, c, { ext: rest }); if(!Object.keys(rest).length) delete c.ext; }
+  // ext.aiPlan (a boss's authored hints, War Table only) is not part of it either
+  if(c.ext && (c.ext.scores || c.ext.aiPlan)){ const { scores, aiPlan, ...rest } = c.ext; c = Object.assign({}, c, { ext: rest }); if(!Object.keys(rest).length) delete c.ext; }
   if((c.actions || []).some(a=>a.ext && a.ext.wtOnly)) c = Object.assign({}, c, { actions: c.actions.filter(a=>!(a.ext && a.ext.wtOnly)) });
   if(!(c.ext && c.ext.spellbook) && !(c.actions || []).some(a=>a.ext && a.ext.fromSpellbook)) return c;
   return Object.assign({}, c, { actions: compileSpellbook(c) });
@@ -1575,7 +1576,7 @@ function sheetHtml(key, c){
         ${exInput(key, 'sneakDice', 'Sneak Attack', xv(c,'sneakAttack') && c.ext.sneakAttack.dice, 'placeholder="e.g. 2d6"', 'Once per turn, on a hit with a finesse or ranged weapon, with advantage or an ally next to the target.')}
         ${exInput(key, 'legendaryActions', 'Legendary actions / round', xv(c,'legendaryActions'), 'type="number" min="0" placeholder="3"', 'Only matters if it has legendary actions.')}
         <label class="sf"><span>Fights like</span><select data-ext="ai" data-owner="${key}">${[['auto', pc ? 'Party setting' : `Auto: ${aiOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { ai: undefined }) }))}`],['tactical','Tactical'],['regular','Regular'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${ai===v?'selected':''}>${l}</option>`).join('')}</select></label>
-        ${pc ? '' : `<label class="sf" title="Used when the War Table's Enemy AI is Smart by intelligence: who it targets, whether it flees, how much it knows of the party. Auto reads the Intelligence score and creature type."><span>Smartness</span><select data-ext="aiTier" data-owner="${key}">${[['auto', 'Auto: ' + tierOfSafe(c)],['mindless','Mindless'],['animal','Animal instinct'],['cunning','Cunning'],['genius','Genius']].map(([v,l])=>`<option value="${v}" ${((c.ext&&c.ext.aiTier)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label>`}
+        ${pc ? '' : `<label class="sf" title="Used when the War Table's Enemy AI is Smart by intelligence: who it targets, whether it flees, how much it knows of the party. Auto reads the Intelligence score and creature type; legendary or lair actions, Legendary Resistance or a reaction that acts on a foe make it a Boss."><span>Smartness</span><select data-ext="aiTier" data-owner="${key}">${[['auto', 'Auto: ' + tierOfSafe(c)],['mindless','Mindless'],['animal','Animal instinct'],['cunning','Cunning'],['genius','Genius'],['boss','Boss']].map(([v,l])=>`<option value="${v}" ${((c.ext&&c.ext.aiTier)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label>`}
       </div>
     </section>
 

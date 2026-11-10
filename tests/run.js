@@ -2064,7 +2064,7 @@ section('AI v2: monster intelligence tiers (phase 4)');
   const T = Tac.tierOf;
   check(T(srd('Wolf')) === 'animal' && T(srd('Dire Wolf')) === 'animal' && T(srd('Hill Giant')) === 'animal', 'a wolf, a dire wolf and a hill giant are animals (instinct)');
   check(T(tpl('Gelatinous Cube', 'ooze', 1)) === 'mindless' && T(srd('Zombie')) === 'mindless' && T(srd('Stone Golem')) === 'mindless' && T(tpl('Swarm of Rats', 'beast', 2)) === 'mindless', 'an ooze, a zombie, a golem and a swarm are mindless');
-  check(T(srd('Mage')) === 'genius' && T(srd('Lich')) === 'genius' && T(srd('Adult Red Dragon')) === 'genius', 'a mage, a lich and an adult dragon are geniuses');
+  check(T(srd('Mage')) === 'genius' && T(srd('Assassin')) !== 'boss', 'a mage is a genius (a lich and an adult dragon are bosses: see the boss tier)');
   check(T(srd('Goblin Warrior')) === 'cunning' && T(srd('Knight')) === 'cunning' && T(srd('Hobgoblin Captain')) === 'cunning', 'goblins, knights and hobgoblins are cunning');
   check(T(srd('Wolf', 1, 'genius')) === 'genius' && T(tpl('X', 'beast', 3, 10, { aiTier: 'bogus' })) === 'animal', 'ext.aiTier overrides; an unknown tier is ignored');
   check(T({ name: 'Old Ogre', type: 'giant', ext: { saves: { int: -3 }, ai: 'regular' } }) === 'animal', 'a saved monster without ability scores reads its Int save');
@@ -2124,6 +2124,151 @@ section('AI v2: monster intelligence tiers (phase 4)');
     } catch (e) { srdErr++; console.log('  ', s.name, e.stack.split('\n').slice(0, 2).join(' ')); }
   }
   check(srdErr === 0, `all ${ctx.M.length} SRD monsters fight with tiers and no error (${srdFought} played on v2, the rest keep the old AI: swallowers, dice pools)`);
+}
+
+section('AI v2: the boss tier (phase 4b)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const pc = n => cp(ctx.CB.find(c => c.name === n));
+  const prep = (m, id, count, tier) => { m.id = id; m.mode = 'custom'; m.count = count || 1; m.actions.forEach((a, i) => { a.id = id + i; }); if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = id + 's' + i; }); if (tier) m.ext.aiTier = tier; return m; };
+  const srd = (name, count, tier) => { const s = ctx.M.find(m => m.name === name); return prep(cp(Parser.parse(s.text).monsters[0]), s.id, count, tier); };
+  const file = (f, tier, hp) => { const m = prep(cp(Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', f), 'utf8')).monsters[0]), f, 1, tier); if (hp) m.hp = hp; return m; };
+  const LAIR = '\nLair Actions\nOn initiative count 20 (losing initiative ties), the dragon takes one lair action.\n' +
+    'Fire Geyser. Fire bursts from the ground in a 10-foot-radius sphere centered on a point the dragon can see within 120 feet of it. Each creature there must make a DC 15 Dexterity saving throw, taking 14 (4d6) fire damage on a failed save, or half as much damage on a successful one.\n' +
+    'Choking Smoke. Smoke fills a 20-foot-radius sphere centered on a point the dragon can see within 120 feet of it. Each creature in it must succeed on a DC 15 Constitution saving throw or be poisoned until the end of its next turn.\n';
+  const lairDragon = hp => { const s = ctx.M.find(m => m.name === 'Adult Red Dragon'), m = prep(cp(Parser.parse(s.text + LAIR).monsters[0]), s.id + '-lair'); m.hp = hp || m.hp; for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.35)); return m; };
+  const T = Tac.tierOf;
+  // the tier from the statblock
+  check(T(srd('Lich')) === 'boss' && T(srd('Adult Red Dragon')) === 'boss', 'the SRD Lich and Adult Red Dragon (legendary actions, Legendary Resistance) are bosses');
+  check(T(file('long-homebrew-boss.txt')) === 'boss' && T(file('osric-homebrew.txt')) === 'boss' && T(file('brute-legendary-homebrew.txt')) === 'boss' && T(file('dragon-legendary-2024.txt')) === 'boss', 'the Ember Tyrant, Osric (lair), Grukk (legendary, Int 7) and an Adult Blue Dragon are bosses');
+  check(T(file('elparin-homebrew.txt')) === 'boss', 'a creature whose only boss trait is a reaction that acts on a foe (Elparin\'s Procedural Nullification) is a boss');
+  check(T({ name: 'Lair keeper', type: 'humanoid', ext: { scores: { int: 10 } }, actions: [{ actionSlot: 3, type: 'atk', name: 'Falling Rocks' }] }) === 'boss' && T({ name: 'Warded', type: 'humanoid', ext: { scores: { int: 10 }, legendaryResistance: 1 }, actions: [] }) === 'boss', 'lair actions alone, or Legendary Resistance alone, make a boss');
+  check(['Bandit Captain', 'Knight', 'Gladiator', 'Warrior Veteran', 'Mage', 'Hill Giant', 'Owlbear', 'Young Red Dragon', 'Goblin Boss'].every(n => T(srd(n)) !== 'boss'), 'ordinary monsters are not bosses (Parry is a self buff, not a boss reaction; young dragons have no legendary actions)');
+  const nonBoss = ctx.M.filter(s => T(srd(s.name)) === 'boss').map(s => s.name);
+  check(nonBoss.join() === 'Adult Red Dragon,Lich', `of the SRD monsters only the Adult Red Dragon and the Lich are bosses (${nonBoss.join(', ')})`);
+  check(T(srd('Lich', 1, 'genius')) === 'genius' && T(srd('Wolf', 1, 'boss')) === 'boss', 'ext.aiTier overrides the boss rule both ways');
+  check(Tac.TIER_PROFILES.boss.boss.legendary === 'weigh' && Tac.AI_BASE.boss.legendary === 'rule' && Tac.AI_BASE.boss.solo === 1 && Tac.AI_BASE.boss.recharge === 0 && ['mindless', 'animal', 'cunning', 'genius'].every(k => Tac.TIER_PROFILES[k].boss.solo === 1 && Tac.TIER_PROFILES[k].boss.legRes === 'rule'),
+    'the boss block is neutral in AI_BASE and every other tier (factors 1, weight 0, old pickers); only the boss profile changes it');
+
+  const party = () => ['Fighter', 'Barbarian', 'Cleric', 'Wizard'].map(pc);
+  const V2T = { party: 'v2', foes: 'tiers' };
+  let err = 0;
+  const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
+  // legendary actions: only after another side's turn, never more points than it has between its own turns; it waits as well as spends
+  const legCheck = (mk, N, opts) => {
+    const out = { uses: 0, holds: 0, badTiming: 0, overspent: 0, lairs: 0, lairNames: new Set(), lairOff: 0 };
+    for (let i = 0; i < N; i++) {
+      const boss = mk(), cost = {}, max = boss.ext.legendaryActions || 3;
+      for (const a of boss.actions) if (a.actionSlot === 2) cost[a.name] = (a.ext && a.ext.legendaryCost) || 1;
+      for (const r of run({ players: party(), encounters: [{ monsters: [boss] }] }, Object.assign({ seed: 70 + i * 31, partyAI: 'tactical', ai: V2T, record: true }, opts))) {
+        const team = {}; for (const u of r.units) team[u.uid] = u.team;
+        let lastTurn = null, spent = 0, prevKind = null;
+        for (const e of r.events) {
+          if (e.kind === 'turn') { lastTurn = e.uid; if (team[e.uid] === 'foes') spent = 0; }
+          if (e.kind === 'legendary') {
+            out.uses++;
+            const nm = (/legendary action: (.*)$/.exec(e.text) || [])[1];
+            spent += cost[nm] || 1;
+            if (spent > max) out.overspent++;
+            if (!lastTurn || team[lastTurn] === team[e.uid]) out.badTiming++;
+          }
+          if (e.kind === 'intent' && /holds its legendary actions/.test(e.text)) out.holds++;
+          if (e.kind === 'lair') { out.lairs++; out.lairNames.add((/: (.*)$/.exec(e.text) || [])[1]); if (prevKind !== 'round' && prevKind !== 'lair' && prevKind !== 'save' && prevKind !== 'aoe' && prevKind !== 'effect' && prevKind !== 'attack' && prevKind !== 'react' && prevKind !== 'down') out.lairOff++; }
+          prevKind = e.kind;
+        }
+      }
+    }
+    return out;
+  };
+  const tyr = legCheck(() => { const m = file('long-homebrew-boss.txt', null, 140); for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.4)); return m; }, 6);
+  const gru = legCheck(() => file('brute-legendary-homebrew.txt', null, 260), 6);
+  check(tyr.uses > 0 && gru.uses > 0 && tyr.badTiming === 0 && gru.badTiming === 0, `legendary actions come only after an enemy's turn (Tyrant ${tyr.uses} uses, Grukk ${gru.uses}; ${tyr.badTiming + gru.badTiming} at a wrong moment)`);
+  check(tyr.overspent === 0 && gru.overspent === 0, `legendary actions never spend more points than it has between its own turns (${tyr.overspent + gru.overspent} over)`);
+  check(tyr.holds + gru.holds > 0, `a boss sometimes holds its legendary actions for a better moment (${tyr.holds + gru.holds} holds)`);
+  // lair actions: used at the top of the round, chosen by value
+  const drg = legCheck(() => lairDragon(160), 5);
+  check(drg.lairs > 0 && drg.lairOff === 0, `a boss with a lair uses its lair actions at the start of a round (${drg.lairs} uses: ${[...drg.lairNames].join(', ')})`);
+  // Legendary Resistance: spent on control, not on a save for half damage (unless failing would drop it); the old rule spends on both
+  const lrLog = (legRes, N, fireballs) => {
+    const got = { ctl: 0, half: 0, halfLate: 0, drop: 0 }, proto = Tac.Sim.prototype, sr = proto.saveRoll;
+    proto.saveRoll = function (t, dc, src, ab, sopt) {
+      const s = sr.call(this, t, dc, src, ab, sopt);
+      if (s.legendary && t.team === 'foes') {
+        const a = this._saveA, b = a && (a.type === 'debuff' ? a.buff : a.riderEffect && a.riderEffect.buff);
+        if (b && b.condition && ['Paralyzed', 'Stunned', 'Incapacitated', 'Restrained'].includes(b.condition)) got.ctl++;
+        else if ((this._saveDmg || 0) >= t.hp) got.drop++;
+        else if (a && a.useSaves && a.halfOnSave) { if (t.hp >= t.maxHp / 2) got.half++; else got.halfLate++; }   // near its end a use kept is worth little (lrHorizon)
+      }
+      return s;
+    };
+    for (let i = 0; i < N; i++) {
+      // Grukk (Wisdom +0) draws Hold Monster; Osric (Wisdom +8) draws Fireballs from the full spell lists
+      const os = fireballs ? file('osric-homebrew.txt', null, 157) : file('brute-legendary-homebrew.txt', null, 260); os.ext.aiProfile = { boss: { legRes } };
+      for (const a of os.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * (fireballs ? 0.3 : 0.4)));
+      // the Wizard and the Sorcerer keep Hold Monster (Hold Person for any creature) and their cantrips; the Cleric's Spirit Guardians brings the half-damage saves
+      const pl = ['Fighter', 'Wizard', 'Cleric', 'Sorcerer'].map(pc);
+      if (!fireballs) for (const p of [pl[1], pl[3]]) {
+        p.ext.spellbook.spells = p.ext.spellbook.spells.filter(x => !x.level || /^(Hold Person|Shield)/.test(x.name));
+        for (const x of p.ext.spellbook.spells) if (x.name === 'Hold Person') { x.name = 'Hold Monster'; if (x.ext) delete x.ext.targetTypes; }
+      }
+      run({ players: pl, encounters: [{ monsters: [os] }] }, { seed: 90 + i * 17, partyAI: 'tactical', ai: V2T, record: false });
+    }
+    proto.saveRoll = sr;
+    return got;
+  };
+  const lw = lrLog('weigh', 12), fw = lrLog('weigh', 12, true), fo = lrLog('rule', 12, true);
+  check(lw.ctl > 0 && lw.half === 0, `the boss spends Legendary Resistance on control (Hold Monster: ${lw.ctl}) and not on a save for half damage while above half HP (${lw.half}; ${lw.halfLate} later, ${lw.drop} when failing would drop it)`);
+  check(fw.half === 0 && fo.half > 0, `against Fireballs the boss keeps it while above half HP (${fw.half}; ${fw.halfLate} near its end); the old rule spends it there at any HP (${fo.half} above half, ${fo.halfLate} below)`);
+  // knowledge: in blind and learn a boss reads the party through k* (a guess, not the sheet)
+  const mk = {}, proto = Tac.Sim.prototype, turn = proto.turn;
+  proto.turn = function (u) {
+    const f = this.units.find(o => o.team === 'foes' && o.v2 && o.tier === 'boss'), t = this.units.find(o => o.team === 'party' && o.hp > 0);
+    if (f && t) { const m = this.kModeFor(f); mk[m] = mk[m] || { n: 0, offMax: 0, offAc: 0 }; mk[m].n++; if (this.kMax(f, t) !== t.maxHp) mk[m].offMax++; if (this.kAc(f, t) !== t.ac && this.kAc(f, t) !== this.ac(t)) mk[m].offAc++; }
+    return turn.call(this, u);
+  };
+  for (const mode of ['open', 'learn', 'blind']) run({ players: party(), encounters: [{ monsters: [lairDragon(160)] }] }, { seed: 12, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: mode } });
+  proto.turn = turn;
+  check(mk.open && mk.learn && mk.blind && mk.open.offMax === 0 && mk.blind.offMax > 0 && mk.learn.offMax > 0, `a boss reads the party as its mode allows: open the sheet, learn and blind a guess (max HP off the sheet on ${mk.learn && mk.learn.offMax}/${mk.learn && mk.learn.n} learn and ${mk.blind && mk.blind.offMax}/${mk.blind && mk.blind.n} blind turns)`);
+  // rules intact: no acts by the dead, no steps into walls, no shots through them; open, learn and blind; with walls
+  const acc = { wallSteps: 0, throughWalls: 0, deadActs: 0, incapActs: 0, badHide: 0, events: 0 };
+  const bosses = [() => lairDragon(160), () => { const m = srd('Lich'); m.hp = 110; return m; }, () => file('brute-legendary-homebrew.txt', null, 260), () => file('long-homebrew-boss.txt', null, 140), () => file('osric-homebrew.txt', null, 120)];
+  for (const mode of ['open', 'learn', 'blind']) for (let b = 0; b < bosses.length; b++) for (const lay of [null, walled]) {
+    const monsters = [bosses[b]()]; if (b === 4) monsters.push(srd('Bandit', 3));
+    for (const r of run({ players: party(), encounters: [{ monsters }] }, { seed: 40 + b, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: mode }, record: true, layout: lay || undefined, maxRounds: 8 })) scanRules(r, lay, acc);
+  }
+  check(err === 0, `${err} boss days threw`);
+  check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `bosses: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides (${acc.events} events)`);
+  // every boss we ship a statblock for (SRD and test files) parses and fights on the boss tier
+  let bErr = 0, bOk = 0;
+  const all = ctx.M.filter(s => T(srd(s.name)) === 'boss').map(s => () => srd(s.name)).concat(['long-homebrew-boss.txt', 'osric-homebrew.txt', 'elparin-homebrew.txt', 'brute-legendary-homebrew.txt', 'dragon-legendary-2024.txt', 'adult-red-dragon-2014.txt'].map(f => () => file(f)));
+  for (const mk2 of all) {
+    try {
+      const res = Tac.runDay({ players: party(), encounters: [{ monsters: [mk2()] }] }, { seed: 5, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: 'learn' }, maxRounds: 6, _keep: true });
+      if (res.length && res._sim.units.some(u => u.team === 'foes' && u.tier === 'boss' && u.v2)) bOk++;
+    } catch (e) { bErr++; console.log('  ', e.stack.split('\n').slice(0, 2).join(' ')); }
+  }
+  check(bErr === 0 && bOk === all.length, `every boss statblock (${all.length}: the SRD ones and the test files) parses and fights on the boss tier (${bOk} on v2, ${bErr} errors)`);
+  // ext.aiPlan: authored hints are terms. save: Cinder Storm held until bloodied; open: Terrify (a legendary action is not its turn: Cinder Storm) taken on the first turn
+  const planRun = (plan, N) => {
+    const got = { early: 0, late: 0, first: 0 }, proto = Tac.Sim.prototype, ev = proto.ev;
+    proto.ev = function (kind, text, d) {
+      const u = d && this.byId && this.byId[d.uid];
+      if (u && u.team === 'foes' && kind === 'aoe' && /Cinder Storm/.test(text || '')) { if (u.hp >= u.maxHp / 2) got.early++; else got.late++; if ((u.fightTurns || 0) <= 1) got.first++; }
+      return ev.call(this, kind, text, d);
+    };
+    for (let i = 0; i < N; i++) {
+      const m = file('long-homebrew-boss.txt', null, 140); for (const x of m.actions) if (x.dpr) x.dpr = String(Math.round(Tac.avgDice(x.dpr) * 0.4));
+      if (plan) m.ext.aiPlan = plan;
+      run({ players: party(), encounters: [{ monsters: [m] }] }, { seed: 300 + i, partyAI: 'tactical', ai: V2T, record: true });
+    }
+    proto.ev = ev;
+    return got;
+  };
+  const p0 = planRun(null, 8), ps = planRun({ save: [{ action: 'Cinder Storm', until: 'bloodied' }] }, 8);
+  check(ps.early < p0.early && ps.late > 0, `ext.aiPlan.save holds Cinder Storm back until bloodied (${ps.early} storms while unhurt with the hint, ${p0.early} without; ${ps.late} after)`);
+  check(/scores, aiPlan, \.\.\.rest/.test(fs.readFileSync(path.join(ROOT, 'js/forge.js'), 'utf8')), 'the day export (exportCreature) leaves ext.aiPlan out, like ext.scores');
 }
 
 console.log(`\n${checks - failures}/${checks} checks passed`);

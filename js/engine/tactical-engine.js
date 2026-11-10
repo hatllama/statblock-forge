@@ -1645,11 +1645,22 @@ Sim.prototype.kBossHp = function (u, t) {
 };
 Sim.prototype.kFrac = function (u, t) { return this.kOf(u, t) ? Math.max(0, Math.min(1, this.kHp(u, t) / this.kMax(u, t))) : Math.max(0, t.hp / t.maxHp); };
 Sim.prototype.kDpr = function (u, t) {
-  const m = this.kOf(u, t); if (!m) return t.dpr;
+  const m = this.kOf(u, t);
+  if (!m && u && t && u.team !== t.team && u.v2 && u.v2P && u.v2P.w.dprSeen) return this.kDprOpen(u, t);
+  if (!m) return t.dpr;
   const pr = priorOf(t).dpr;
   let dealt = t.dmgDealt || 0, turns = t.fightTurns || 0;
   if (m === 'learn') { const k = this.kind(u.team, t); dealt += k.dealt; turns += k.turns; }
   return (dealt + pr * 1.5) / (turns + 1.5);
+};
+/* open mode, read better (w.dprSeen > 0; the boss tier): t.dpr is its first attack's average, which leaves out a caster's spells. Its best single action it
+   can still use (spells while it has the slot), blended with what it has dealt this fight, as learn blends its prior (docs/ai-v2.md "Boss tier") */
+Sim.prototype.kDprOpen = function (u, t) {
+  let best = t.dpr || 0;
+  for (const a of t.actions) if (a.actionSlot === 0 && a.type === 'atk' && !(a.ext && a.ext.swallow) && this.usable(t, a))
+    best = Math.max(best, avgDice((a.ext && a.ext.wtDpr) || a.dpr) * (a.useSaves ? 1 : (a.targets || 1)));
+  const w = u.v2P.w.dprSeen;
+  return ((t.dmgDealt || 0) + best * 1.5 * w) / ((t.fightTurns || 0) + 1.5 * w);
 };
 Sim.prototype.kAc = function (u, t) {
   const m = this.kOf(u, t); if (!m) return this.ac(t);
@@ -2706,7 +2717,12 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
       this.ev('react', `${pk.h.name} ${pk.x._spell ? 'casts' : 'uses'} ${pk.x.name}: ${t.name}'s save ${was} rerolls to ${Math.round(total)} vs DC ${dc}, ${total >= dc ? 'still passes' : 'now fails'}${ally ? `; ${ally.name} gains advantage` : ''}`, { uid: pk.h.uid, target: t.uid });
     }
   }
-  const dangerous = (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
+  // the boss tier weighs the use (bossLR) and remembers the worst effect it has been shown (learn learns the party's save-or-suck spells)
+  const weighLR = t.legResMax && t.v2 && t.v2P.boss.legRes === 'weigh' && dc < 99 && src && src.team && src.team !== t.team;
+  let seenLR = 0;
+  if (weighLR) { seenLR = t.lrSeen || 0; t.lrSeen = Math.max(seenLR, this.bossEffectOf(t, dc, ab)); }
+  const dangerous = weighLR ? total < dc && (t.uses.get('__legres') || 0) > 0 && this.bossLR(t, dc, ab, failDmg, seenLR)
+    : (this._saveStakes || 0) >= 1 || failDmg >= t.hp || failDmg >= Math.max(t.maxHp * 0.1, t.hp * 0.25);
   if (total < dc && t.legResMax && (t.uses.get('__legres') || 0) > 0 && dc < 99 && dangerous) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
     t.legSeen = (t.legSeen || 0) + 1;
@@ -3394,11 +3410,11 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     const mult = this.multBuff(u, 'damageMultiplier');
     for (const t of targets) {
       if (t.dead) continue;
-      this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1); this._saveHalf = a.halfOnSave ? 1 : 0;
+      this._saveDmg = dmgRoll * (a.ext && a.ext.dot ? 3 : 1); this._saveHalf = a.halfOnSave ? 1 : 0; this._saveA = a;
       if (a.riderEffect && a.riderEffect.buff && DANGER_CONDS.includes(a.riderEffect.buff.condition)) this._saveStakes = 1;
       this._saveCond = a.riderEffect && a.riderEffect.buff ? a.riderEffect.buff.condition : null;
       const s = this.saveRoll(t, Number(avgDice(a.toHit)), u, a.ext && a.ext.saveAbility);
-      this._saveDmg = 0; this._saveStakes = 0; this._saveCond = null;
+      this._saveDmg = 0; this._saveStakes = 0; this._saveCond = null; this._saveA = null;
       const at = this.mark();
       const roll = (a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? rollDice(a.ext.dprIfHurt, this.R, false) + this.sumBuff(u, 'damage', true) : dmgRoll;
       let dmg = s.success ? (a.halfOnSave ? Math.floor(roll * mult / 2) : 0) : Math.floor(roll * mult);
@@ -3614,10 +3630,10 @@ Sim.prototype.applyRider = function (u, t, a) {
   const re = a.riderEffect;
   const rab = a.ext && (a.ext.riderSave || a.ext.saveAbility);
   if (re.dc < 99) {
-    this._saveStakes = re.buff && DANGER_CONDS.includes(re.buff.condition) ? 1 : 0;
+    this._saveStakes = re.buff && DANGER_CONDS.includes(re.buff.condition) ? 1 : 0; this._saveA = a;
     this._saveCond = re.buff && re.buff.condition;
     const s = this.saveRoll(t, re.dc, u, rab);
-    this._saveStakes = 0; this._saveCond = null;
+    this._saveStakes = 0; this._saveCond = null; this._saveA = null;
     if (s.success) { this.ev('save', `${t.name} resists ${a.name}'s effect (${s.total} vs DC ${re.dc})`, { uid: t.uid }); return; }
   }
   this.addBuff(t, u, a, re.buff, { dc: re.dc, saveAbility: rab });
@@ -3830,10 +3846,10 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
     for (const t of targets) {
       const dc = Number(avgDice(a.saveDC));
       const sab = a.ext && a.ext.saveAbility;
-      this._saveStakes = a.buff && DANGER_CONDS.includes(a.buff.condition) ? 1 : 0;
+      this._saveStakes = a.buff && DANGER_CONDS.includes(a.buff.condition) ? 1 : 0; this._saveA = a;
       this._saveCond = a.buff && a.buff.condition;
       const s = this.saveRoll(t, dc, u, sab);
-      this._saveStakes = 0; this._saveCond = null;
+      this._saveStakes = 0; this._saveCond = null; this._saveA = null;
       if (!s.success) { this.addBuff(t, u, a, a.buff, { dc, saveAbility: sab }); if (a.ext && a.ext.onHit) this.onHitEffects(u, t, a, 0); }
       this.ev('save', `${u.name} → ${t.name}: ${a.name}, DC ${dc >= 99 ? '—' : dc}${sab && sab !== 'strdex' && dc < 99 ? ' ' + sab.toUpperCase() : ''} — ${s.autoFail ? 'auto-fails, ' : ''}${s.success ? 'saved' : 'affected' + (a.buff.condition ? ' (' + a.buff.condition + ')' : '')}`,
         { uid: u.uid, target: t.uid, hit: !s.success, dmg: 0, ranged: this.dist(u, t) > 5 });
@@ -3936,6 +3952,8 @@ const AI_BASE = {
     // Divine Smite (docs/ai-v2.md "Hybrids"): its value on a hit (damage + the kill it makes now), × smite; with swings still to come it waits
     // when a later hit's expected smite × smiteWait is worth more
     smite: 1, smiteWait: 1,
+    // open mode: 0 reads an enemy's DPR off its sheet (its first attack); > 0 reads its best action it can still use, blended with what it has dealt at this weight (kDprOpen; the boss tier)
+    dprSeen: 0,
   },
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
   burn: { modes: ['open'], bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
@@ -3977,6 +3995,17 @@ const AI_BASE = {
   // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
   react: { base: 8, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.15, maxL: 2, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, blindLevel: 3, readyMelee: 0.8, readyRanged: 0.15 },
   morale: { fearless: false, bloodied: true, half: true, leader: true, dc: 10 },   // a creature that may lose its nerve (opts.morale on): which triggers count, and the Wisdom save DC; equal to the old rule
+  // the boss tier (docs/ai-v2.md "Boss tier"); neutral here (factors 1, weights 0, pickers 'rule'), so only the boss profile changes play.
+  // solo/soloOa: self-care and opportunity attacks × solo + (1 − solo) × the share of its side's DPR its allies bring; legendary/lair/legRes: 'rule' (old pickers) or 'weigh' (v2 values);
+  // legKeep: a legendary point kept is worth this share of the value per point it has been seeing (legRate: how fast that estimate moves);
+  // Legendary Resistance: the price of a use = the worst effect shown × lrKeep × lrSpare^(uses left − 1), at least its own turn × lrFloor; damage it avoids in
+  // its HP × its DPR ÷ the party's (× lrDmg), × lrDrop of its HP when failing would drop it; a turn's worth is its DPR × (1 + lrLeg × legendary actions);
+  // lrCond: a turn lost per round of the condition, lrTurns the most rounds counted; recharge: the next turn's use a recharge ability gives up now
+  // (rechargeCatch: the share of foes a typical use catches); ext.aiPlan hints: planOpen/planSave a share of the option's value (through its pacing tax), planTarget points
+  boss: { solo: 1, soloOa: 1, legendary: 'rule', lair: 'rule', legRes: 'rule', legKeep: 0.8, legRate: 0.3,
+          lrKeep: 1, lrSpare: 0.6, lrFloor: 1.5, lrDmg: 1, lrDrop: 3, lrLeg: 0.15, lrTurns: 3, lrHorizon: 3,
+          lrCond: { Incapacitated: 1, Stunned: 1.5, Paralyzed: 1.5, Unconscious: 1.5, Petrified: 1.5, Restrained: 0.4, Blinded: 0.4, 'Attacks and saves with Disadvantage': 0.35, Frightened: 0.25, other: 0.1 },
+          recharge: 0, rechargeCatch: 0.5, planOpen: 0.5, planSave: 0.8, planTarget: 6 },
   finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
@@ -4015,8 +4044,10 @@ function aiProfile(spec) {
    A tier is a partial profile merged over AI_BASE, picked per creature: ext.aiTier, else from its Intelligence and type.
    rules: Int ceilings (mindless / animal) and floor (genius); types that are mindless at or under mindlessInt; wisRetreat: retreatHp per point of Wisdom modifier (tiers that retreat). */
 const AI_TIERS = {
-  tiers: ['mindless', 'animal', 'cunning', 'genius'],
-  rules: { mindlessInt: 6, mindlessTypes: ['ooze', 'plant', 'construct', 'undead'], mindlessAny: 0, animalInt: 7, geniusInt: 16, wisRetreat: 0.03 },
+  tiers: ['mindless', 'animal', 'cunning', 'genius', 'boss'],
+  // boss: what makes a creature a boss (legendary actions, lair actions, Legendary Resistance, a reaction that acts on a foe)
+  rules: { mindlessInt: 6, mindlessTypes: ['ooze', 'plant', 'construct', 'undead'], mindlessAny: 0, animalInt: 7, geniusInt: 16, wisRetreat: 0.03,
+           boss: { legendary: true, lair: true, legRes: true, react: true } },
   profiles: {
     mindless: {
       know: 'blind', morale: { fearless: true },
@@ -4034,14 +4065,26 @@ const AI_TIERS = {
       posture: { retreatHp: 0.35, retreatDanger: 0.4 },
       w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2 },
     },
+    // genius, plus the boss block: little self-care when alone, legendary and lair actions and Legendary Resistance weighed, recharge priced
+    boss: {
+      morale: { bloodied: false, half: false, leader: false },
+      posture: { retreatHp: 0.35, retreatDanger: 0.4 },
+      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2, dprSeen: 1 },
+      boss: { solo: 0.25, soloOa: 0.5, legendary: 'weigh', lair: 'weigh', legRes: 'weigh', recharge: 1 },
+    },
   },
 };
+/* a reaction that acts on a foe (a cancel, a debuff, Counterspell): a boss's; Parry and other self buffs are not */
+const bossReact = a => a.actionSlot === 4 && !(a.type === 'buff' && a.target === 'self');
 const TIER_PROFILES = {};
 for (const k of AI_TIERS.tiers) TIER_PROFILES[k] = mergeProfile(AI_BASE, AI_TIERS.profiles[k]);
 /* a creature's tier: ext.aiTier, else the statblock (ext.scores from the parser; an older saved monster uses its Int save) */
 function tierOf(tpl) {
   const ex = (tpl && tpl.ext) || {}, R = AI_TIERS.rules;
   if (AI_TIERS.tiers.includes(ex.aiTier)) return ex.aiTier;
+  const B = R.boss, acts = (tpl && tpl.actions) || [];
+  if (B && ((B.legendary && (ex.legendaryActions > 0 || acts.some(a => a.actionSlot === 2))) || (B.lair && acts.some(a => a.actionSlot === 3)) ||
+            (B.legRes && ex.legendaryResistance > 0) || (B.react && acts.some(bossReact)))) return 'boss';
   const type = String((tpl && tpl.type) || '').toLowerCase();
   const int = ex.scores && typeof ex.scores.int === 'number' ? ex.scores.int : ex.saves && typeof ex.saves.int === 'number' ? 10 + 2 * ex.saves.int : (ex.ai === 'beast' ? 3 : ex.ai === 'tactical' ? 12 : 8);
   if (int <= R.mindlessAny || /\bswarm\b/i.test(String((tpl && tpl.name) || '')) || (R.mindlessTypes.includes(type) && int <= R.mindlessInt)) return 'mindless';
@@ -5041,6 +5084,146 @@ Sim.prototype.v2FF = function (u, a, friends) {
 };
 
 /* ---- the turn: every square it could end on × every way to spend it ---- */
+/* ---- the boss tier (docs/ai-v2.md "Boss tier") ---- */
+/* the share of its side's damage its standing allies bring (its own side: real numbers); 0 for a boss alone */
+Sim.prototype.bossShare = function (u, ctx) {
+  const mine = Math.max(1, u.dpr || 0);
+  let others = 0;
+  for (const o of ctx.myTeam) if (o !== u && !this.incap(o) && o.hp > 0) others += Math.max(0, o.dpr || 0);
+  return others / (others + mine);
+};
+/* what an option costs on top of its pacing, in points: the recharge price (ext.aiPlan's hints are a tax: bossPlan) */
+Sim.prototype.bossAdj = function (u, a, ctx) {
+  return this.bossRecharge(u, a, ctx);
+};
+/* a recharge ability used now gives up using it next turn with chance 1 − p: (1 − p) × what a typical use beats the best at-will option by.
+   Main-turn actions only: the parser gives a legendary action that costs 2 or 3 a recharge as its way of limiting it, and pricing that too cost the Tyrant 5 points */
+Sim.prototype.bossRecharge = function (u, a, ctx) {
+  const B = u.v2P.boss;
+  if (!B.recharge || a.actionSlot !== 0 || freqKind(a.freq) !== 'recharge') return 0;
+  ctx.bossRc = ctx.bossRc || new Map();
+  if (ctx.bossRc.has(a.id)) return ctx.bossRc.get(a.id);
+  const foes = ctx.foes.filter(e => e.hp > 0), W = u.v2P.w, sp = areaSpec(a);
+  let price = 0;
+  if (foes.length) {
+    const p = Math.max(1, Math.round(6 / Math.max(1, a.freq.cooldownRounds || 2))) / 6;
+    const k = sp ? Math.max(1, Math.round(B.rechargeCatch * foes.length)) : Math.min(a.targets || 1, foes.length);
+    const full = foes.map(t => this.v2Value(u, a, t, ctx).val).sort((x, y) => y - x);
+    const rest = sp ? foes.map(t => this.v2Value(u, a, t, ctx, true).val).sort((x, y) => y - x).slice(1, k) : full.slice(1, k);
+    const typical = Math.max(0, full[0]) + rest.reduce((t, v) => t + Math.max(0, v), 0) * (sp ? W.area : 1);
+    let alt = 0;
+    for (const b of u.actions) {
+      if (b === a || b.actionSlot !== a.actionSlot || freqKind(b.freq) !== 'at will' || (b.type !== 'atk' && b.type !== 'debuff') || !this.usable(u, b) || !this.condOk(u, b)) continue;
+      for (const t of foes) alt = Math.max(alt, this.v2Value(u, b, t, ctx).val);
+    }
+    price = B.recharge * (1 - p) * Math.max(0, typical - alt);
+  }
+  ctx.bossRc.set(a.id, price);
+  return price;
+};
+/* ext.aiPlan's hints on one action, as a share of its value (added to its pacing tax): open −planOpen on its first turn, save +planSave until bloodied or the round */
+Sim.prototype.bossPlan = function (u, a) {
+  const P = u.tpl.ext && u.tpl.ext.aiPlan;
+  if (!P) return 0;
+  const B = u.v2P.boss, nm = String(a.name || '').toLowerCase(), is = s => !!s && nm.indexOf(String(s).toLowerCase()) === 0;
+  let d = 0;
+  if (is(P.open) && (u.fightTurns || 0) <= 1) d -= B.planOpen;
+  for (const s of P.save || []) if (s && is(s.action) && !(s.until === 'bloodied' ? u.hp < u.maxHp / 2 : typeof s.until === 'number' ? this.round >= s.until : false)) d += B.planSave;
+  return d;
+};
+/* ext.aiPlan.target: foes of that kind (read through k*) are worth planTarget points more */
+Sim.prototype.bossPlanTarget = function (u, t) {
+  const P = u.tpl.ext && u.tpl.ext.aiPlan, kind = P && P.target;
+  if (!kind || t.team === u.team) return 0;
+  const r = this.kReach(u, t), melee = r === null ? this.hasMelee(t) && !this.backLine(t) : r <= 10;
+  const hit = kind === 'caster' ? this.kCaster(u, t) : kind === 'healer' ? this.kHeals(u, t) : kind === 'melee' ? melee : kind === 'ranged' ? !melee : kind === 'wounded' ? this.kFrac(u, t) < 0.5 : false;
+  return hit ? u.v2P.boss.planTarget : 0;
+};
+/* the enemies that still take a turn before u's next one: after `after`'s turn (a legendary action), or from the top of the round (a lair action) */
+Sim.prototype.bossBefore = function (u, after) {
+  const ord = this.order || [], out = new Set();
+  const i = after ? ord.indexOf(after) : -1;
+  for (let k = 1; k <= ord.length; k++) { const o = ord[(i + k + ord.length) % ord.length]; if (o === u) break; if (o.team !== u.team && this.alive(o) && o.onBoard) out.add(o); }
+  return out;
+};
+/* the uses of one slot's actions (2 legendary, 3 lair) from where it stands: v2 aims and values each one; maxCost limits legendary costs.
+   Off its own turn a one-round effect from it ends when its next turn starts, so it only holds back the foes that act before then (before) */
+Sim.prototype.bossOptions = function (u, slot, maxCost, before) {
+  const ctx = this.v2Ctx(u, 0), out = [];
+  for (const a of u.actions) {
+    if (a.actionSlot !== slot || (a.ext && a.ext.teleport)) continue;
+    const c = slot === 2 ? (a.ext && a.ext.legendaryCost) || 1 : 1;
+    if (c > maxCost || !this.usable(u, a) || !this.condOk(u, a)) continue;
+    const p = this.v2Aim(u, a);
+    if (!p || !p.targets[0]) continue;
+    let v = this.v2AimValue(u, a, p, ctx);
+    if (before && a.type === 'debuff' && a.buff && a.buff.duration === '1 round') { const foes = p.targets.filter(t => t.team !== u.team); if (foes.length) v *= foes.filter(t => before.has(t)).length / foes.length; }
+    v = v * (1 - this.bossPlan(u, a)) + (p.targets[0].team !== u.team ? this.bossPlanTarget(u, p.targets[0]) : 0) - this.bossAdj(u, a, ctx);
+    if (v > 0) out.push({ a, p, v, c });
+  }
+  return out;
+};
+/* a lair action: the best one by value (a lair action unused is lost) */
+Sim.prototype.bossLair = function (u) {
+  let best = null;
+  for (const o of this.bossOptions(u, 3, 1, this.bossBefore(u, null))) if (!best || o.v > best.v) best = o;
+  return best;
+};
+/* legendary actions, which and when: each one it can pay for = its value + what the points left are worth later; waiting = the points kept.
+   keep(L, K) = min(L, K) × its running value per point × legKeep, K = enemy turns before its own (this one included) */
+Sim.prototype.bossLegendary = function (u, after) {
+  const B = u.v2P.boss, L = u.legendaryLeft, before = this.bossBefore(u, after), K = 1 + before.size;
+  const opts = this.bossOptions(u, 2, L, before);
+  const top = opts.reduce((m, o) => Math.max(m, o.v / o.c), 0);
+  if (top > 0) u.legPer = u.legPer ? u.legPer + (top - u.legPer) * B.legRate : top;
+  const keep = (l, k) => Math.min(l, Math.max(0, k)) * (u.legPer || 0) * B.legKeep;
+  const wait = keep(L, K - 1);
+  let best = null;
+  for (const o of opts) { const s = o.v + keep(L - o.c, K - 1); if (!best || s > best.s) best = Object.assign(o, { s }); }
+  if (!best || best.s <= wait) {
+    if (best && this.record && u.legSaid !== this.round) { u.legSaid = this.round; this.ev('intent', `${u.name} holds its legendary actions for a better moment`, { uid: u.uid }); }
+    return null;
+  }
+  return best;
+};
+/* Legendary Resistance, weighed (bossLR): what failing costs (turns lost to the condition, damage it avoids, being dropped) against what one more use is worth later.
+   A condition's cost: lrCond × the rounds it lasts (one round 1; repeat the save: 1 ÷ its chance to pass, at most lrTurns; longer lrTurns) × a turn of its own */
+Sim.prototype.bossEffect = function (t, cond, dur, dc, ab) {
+  const B = t.v2P.boss;
+  if (!cond) return 0;
+  const sev = B.lrCond[cond] !== undefined ? B.lrCond[cond] : B.lrCond.other;
+  let turns = 1;
+  if (dur === 'repeat the save each round') { const pass = Math.min(0.95, Math.max(0.05, (21 + this.saveBonusFor(t, ab) - dc) / 20)); turns = Math.min(B.lrTurns, 1 / pass); }
+  else if (dur && dur !== '1 round' && !/^until/.test(dur)) turns = B.lrTurns;
+  return sev * turns * this.bossTurnWorth(t);
+};
+Sim.prototype.bossTurnWorth = function (t) {
+  return Math.max(4, t.dpr || 0) * (1 + t.v2P.boss.lrLeg * (t.hasLegendary ? t.legendaryMax : 0));
+};
+/* the effect a save is against: its condition and duration (this._saveA, the action being resolved) */
+Sim.prototype.bossEffectOf = function (t, dc, ab) {
+  const a = this._saveA, b = a && (a.type === 'debuff' ? a.buff : a.riderEffect && a.riderEffect.buff);
+  return this.bossEffect(t, this._saveCond || (b && b.condition), b && b.duration, dc, ab);
+};
+Sim.prototype.bossLR = function (t, dc, ab, failDmg, seenBefore) {
+  const B = t.v2P.boss, worth = this.bossTurnWorth(t);
+  const foes = this.enemiesOf(t).filter(e => e.onBoard && this.alive(e));
+  const incoming = Math.max(1, foes.reduce((s, e) => s + (this.kDpr(t, e) || 0), 0)), ratio = worth / incoming;
+  const saved = failDmg * (this._saveHalf ? 0.5 : 1);
+  const loss = this.bossEffectOf(t, dc, ab) + saved * B.lrDmg * ratio + (failDmg >= t.hp ? B.lrDrop * t.hp * ratio : 0);
+  // the price: the worst it has been shown before this save (open: also what the party carries), at least lrFloor of its own turns, × lrSpare^(uses left − 1).
+  // The floor is discounted too: kept for control that never comes, a use is wasted (an undiscounted floor cost the boss 7 points on Zaki's boss day in learn)
+  let shown = Math.max(seenBefore || 0, B.lrFloor * worth);
+  if (this.kModeFor(t) === 'open') for (const e of foes) for (const x of e.actions) {
+    const b = x.type === 'debuff' ? x.buff : x.riderEffect && x.riderEffect.buff;
+    if (b && b.condition && B.lrCond[b.condition] !== undefined)
+      shown = Math.max(shown, this.bossEffect(t, b.condition, b.duration, Number(avgDice(x.type === 'debuff' ? x.saveDC : x.riderEffect.dc)) || 10, x.ext && (x.ext.saveAbility || x.ext.riderSave)));
+  }
+  const n = t.uses.get('__legres') || 0;
+  // a use kept is only worth something if the fight lasts: × min(1, its rounds left (HP ÷ the party's DPR) ÷ lrHorizon)
+  const life = B.lrHorizon ? Math.min(1, t.hp / incoming / B.lrHorizon) : 1;
+  return loss >= B.lrKeep * shown * Math.pow(B.lrSpare, Math.max(0, n - 1)) * life;
+};
 Sim.prototype.v2Turn = function (u, speed, bonusSpent, onlyAct) {
   const prevF = this._flyer; this._flyer = u.fly && this.airborne(u) ? u : null;
   try { return this.v2TurnInner(u, speed, bonusSpent, onlyAct); } finally { this._flyer = prevF; }
@@ -5053,6 +5236,10 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const hpFrac = Math.max(0, u.hp / u.maxHp), meleeSelf = this.hasMelee(u) && !caster;
   let safety = (meleeSelf ? W.risk : W.riskRanged * (caster ? W.casterRisk : 1)) * (1 + W.hurt * (1 - hpFrac)), offMult = 1;
   if (post.kind === 'retreat') { safety *= W.retreatSafety; if (!post.kite) offMult = W.retreatOffense; }
+  // a boss alone (docs/ai-v2.md "Boss tier"): self-care only pays while someone else holds the line
+  const B = u.v2P.boss, share = B.solo !== 1 || B.soloOa !== 1 ? this.bossShare(u, ctx) : 1;
+  if (B.solo !== 1) safety *= B.solo + (1 - B.solo) * share;
+  const Woa = B.soloOa !== 1 ? W.oa * (B.soloOa + (1 - B.soloOa) * share) : W.oa;
   // what an opportunity attack costs: its damage, and the chance it drops it (docs/ai-v2.md)
   let ownWorth = null;
   const dropCost = d => { const p = this.v2DropChance(u, d); if (!p) return 0; if (ownWorth === null) ownWorth = this.v2OwnWorth(u, ctx); return p * ownWorth; };
@@ -5060,7 +5247,8 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   // it can't lose more than it has: past that, more incoming damage only means going down (a bit worse than its HP)
   const hpCap = Math.max(1, u.hp) * W.downCap;
   const threat = (x, y) => Math.min(ctx.danger.at(x, y), hpCap);
-  const postBonus = t => post.t !== t ? 0 : W.pick * (post.kind === 'protect' ? 1 + W.protect * this.kDpr(u, t) / 5 : post.kind === 'finish' ? 1 + W.finishBoost : 1);
+  const aiPlan = u.tpl.ext && u.tpl.ext.aiPlan, planT = aiPlan && aiPlan.target ? t => this.bossPlanTarget(u, t) : null;
+  const postBonus = t => (post.t !== t ? 0 : W.pick * (post.kind === 'protect' ? 1 + W.protect * this.kDpr(u, t) / 5 : post.kind === 'finish' ? 1 + W.finishBoost : 1)) + (planT ? planT(t) : 0);
   // what it's concentrating on: a new concentration spell gives it up, and every hit taken risks it
   const holding = spells ? this.v2Holding(u, ctx) : 0;
 
@@ -5088,6 +5276,8 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       plans.push(pl);
     }
   }
+  // a boss's recharge price and authored hints (docs/ai-v2.md "Boss tier"): added to what the option spends
+  if (B.recharge || aiPlan) for (const pl of plans) { const d = this.bossAdj(u, pl.a, ctx), dt = this.bossPlan(u, pl.a); if (d || dt) pl.pace = { base: pl.pace.base + d, tax: pl.pace.tax + dt }; }
   // a burner (docs/ai-v2.md, Legendary Resistance): the cheap effect the plan picked for it is worth what it gives up, the best
   // other option, plus its progress toward emptying LR (the plan already weighed the cost of burning against racing)
   const burn = u.hasSpells ? this.v2Burn(u, ctx) : null, mine = burn && burn.on ? burn.burners.get(u.uid) : null, probe = burn && !burn.on && burn.probers ? burn.probers.get(u.uid) : null;
@@ -5291,7 +5481,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     const th = threat(x, y), sp = ctx.danger.spacing(x, y) * safety * W.areaRisk;
     const keep = (caster ? reachPen(x, y) : 0) + concR(th);
     const risk = th * safety + sp + keep, walk = steps * W.move;
-    const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0, oa = oa0 + dropCost(oa0);
+    const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * Woa : 0, oa = oa0 + dropCost(oa0);
     const prog = (need0 - need(x, y)) * progUnit;
     if (best) {
       anyOffense = true;
@@ -5300,7 +5490,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       const touch = u.alt > 0 && this.airborne(u) && best.t !== u && touchPl(best.pl);
       // coming down takes movement too: a touch it can't get level with this turn is no option from here
       const short = touch && steps + Math.abs(this.zOf(best.t) - zHere(x, y) - u.alt) > spSteps;
-      const alt0 = touch ? ctx.danger.altOa(x, y, this.zOf(best.t) - zHere(x, y)) * W.oa : 0, alt = alt0 ? alt0 + dropCost(oa0 + alt0) - dropCost(oa0) : 0;
+      const alt0 = touch ? ctx.danger.altOa(x, y, this.zOf(best.t) - zHere(x, y)) * Woa : 0, alt = alt0 ? alt0 + dropCost(oa0 + alt0) - dropCost(oa0) : 0;
       let aim = 0;
       if (canAim && steps === 0 && best.pl.a.type === 'atk' && !best.pl.a.useSaves && best.t !== u) aim = this.v2AdvGain(u, best.pl.a, best.t) * W.aim;
       const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - alt - walk, aim: aim > bon && aim > 0 };
@@ -5334,7 +5524,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   }
   // nothing to hit from anywhere it can walk: Dash is the other way to spend the action
   if (!onlyAct && !anyOffense && speed > 0) consider(speed * 2, (x, y, rm, steps) => {
-    const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * W.oa : 0, oa = oa0 + dropCost(oa0);
+    const oa0 = oaNear && steps > 0 ? ctx.danger.oa(this.pathTo(rm, x, y)) * Woa : 0, oa = oa0 + dropCost(oa0);
     options.push({ mode: 'dash', x, y, rm, steps, score: (need0 - need(x, y)) * progUnit - threat(x, y) * safety - ctx.danger.spacing(x, y) * safety * W.areaRisk - oa - steps * W.move * 0.5 });
   });
   if (!options.length) return null;
@@ -5987,7 +6177,7 @@ Sim.prototype.legendary = function (after) {
     hidden.forEach(a => { a.actionSlot = -99; });
     const mn = this._mn;
     this._mn = u.n || 1;     // it measures from its own body, not the creature whose turn just ended
-    const c = this.choose(u, 2, 0);
+    const c = u.v2 && u.v2P.boss.legendary === 'weigh' ? this.bossLegendary(u, after) : this.choose(u, 2, 0);   // the boss tier weighs which and when
     hidden.forEach(a => { a.actionSlot = 2; });
     if (!c) { this._mn = mn; continue; }
     u.legendaryLeft -= (c.a.ext && c.a.ext.legendaryCost) || 1;
@@ -6001,7 +6191,11 @@ Sim.prototype.legendary = function (after) {
 Sim.prototype.lair = function () {
   for (const u of this.units) {
     if (!this.alive(u) || !u.onBoard) continue;
-    const c = this.choose(u, 3, 0);
+    let c;
+    if (u.v2 && u.v2P.boss.lair === 'weigh') {     // the boss tier: the lair action worth most now, measured from its own body
+      if (!u.actions.some(a => a.actionSlot === 3)) continue;
+      const mn = this._mn; this._mn = u.n || 1; c = this.bossLair(u); this._mn = mn;
+    } else c = this.choose(u, 3, 0);
     if (!c) continue;
     this.spend(u, c.a);
     this.ev('lair', `Lair action (${u.name}): ${c.a.name}`, { uid: u.uid });
