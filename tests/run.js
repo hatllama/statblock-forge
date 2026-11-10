@@ -27,6 +27,27 @@ let failures = 0, checks = 0;
 function check(ok, msg) { checks++; if (!ok) { failures++; console.log('  FAIL', msg); } else if (process.env.VERBOSE) console.log('  ok', msg); }
 function section(name) { console.log('\n' + name); }
 
+section('Shipped scripts: they load, and use only syntax older Safari/iOS can run');
+{
+  // forge.js once failed to load in the browser for several commits (a regex lost its backslashes) and no test loaded it: check every script index.html ships
+  const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
+  const scripts = [...html.matchAll(/<script[^>]*\bsrc="([^"?]+)/g)].map(m => m[1]).filter(f => !/^https?:/.test(f));
+  const need = ['data/party.js', 'data/srd-monsters.js', 'js/spell-data.js', 'js/statblock-parser.js', 'js/sheet-reader.js', 'js/forge.js', 'js/engine/tactical-engine.js', 'js/war-table.js'];
+  check(need.every(f => scripts.includes(f)), 'index.html lists every shipped script: ' + need.filter(f => !scripts.includes(f)).join(', '));
+  const cp = require('child_process');
+  const BAD = [[/\(\?<[=!]/, 'regex lookbehind'], [/\?\?=/, '??='], [/\|\|=/, '||='], [/\bstructuredClone\b/, 'structuredClone']];
+  for (const f of scripts) {
+    const r = cp.spawnSync(process.execPath, ['--check', path.join(ROOT, f)], { encoding: 'utf8' });
+    check(r.status === 0, f + ' passes node --check' + (r.status ? ': ' + String(r.stderr).split('\n').slice(0, 4).join(' | ') : ''));
+    // strip nothing: a mention in a comment is allowed to trip this, reword it
+    const src = fs.readFileSync(path.join(ROOT, f), 'utf8').split('\n');
+    for (const [re, name] of BAD) {
+      const hit = src.findIndex(l => re.test(l));
+      check(hit < 0, f + ' has no ' + name + (hit >= 0 ? ' (line ' + (hit + 1) + ')' : ''));
+    }
+  }
+}
+
 // a map with walls, high ground and difficult terrain
 const cells = {};
 for (let y = 0; y < 16; y++) if (y < 6 || y > 9) cells['11,' + y] = { t: 'wall' };
