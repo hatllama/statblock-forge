@@ -73,16 +73,16 @@ default party vs medium-day | open | regular | 24257 | 576d63bfdfd0
 default party vs medium-day | walled | tactical | 500 | 0e59144e20df
 default party vs medium-day | walled | tactical | 8419 | 377141c62e6e
 default party vs medium-day | walled | tactical | 16338 | e885032b9194
-default party vs medium-day | walled | tactical | 24257 | ae07cd4f0018
+default party vs medium-day | walled | tactical | 24257 | 9c26dbad180b
 default party vs medium-day | walled | regular | 500 | 82cacfa32183
-default party vs medium-day | walled | regular | 8419 | 0b1159110e17
-default party vs medium-day | walled | regular | 16338 | 1a9e5a472318
+default party vs medium-day | walled | regular | 8419 | 552754138651
+default party vs medium-day | walled | regular | 16338 | f7ab2750a1b7
 default party vs medium-day | walled | regular | 24257 | a16d160b75df
-casters vs medium-day | open | tactical | 500 | f87052104afa
+casters vs medium-day | open | tactical | 500 | 64521c66b89d
 casters vs medium-day | open | tactical | 8419 | 5a528f6dc50a
 casters vs medium-day | open | tactical | 16338 | 5c6a946f6df0
 casters vs medium-day | open | tactical | 24257 | 1f0ba6d4e4ea
-casters vs medium-day | open | regular | 500 | e766e80012fb
+casters vs medium-day | open | regular | 500 | 4e05f2129842
 casters vs medium-day | open | regular | 8419 | b7d315abdf3f
 casters vs medium-day | open | regular | 16338 | 7e6bfc110a45
 casters vs medium-day | open | regular | 24257 | 59c6fbd7521d
@@ -90,7 +90,7 @@ casters vs medium-day | walled | tactical | 500 | 917aa41201d3
 casters vs medium-day | walled | tactical | 8419 | 2e62fefb7f1e
 casters vs medium-day | walled | tactical | 16338 | c9fdc12f79c4
 casters vs medium-day | walled | tactical | 24257 | c3429fbb68be
-casters vs medium-day | walled | regular | 500 | ceb3ccd54749
+casters vs medium-day | walled | regular | 500 | 4611d3c0dcf8
 casters vs medium-day | walled | regular | 8419 | e68205c8a384
 casters vs medium-day | walled | regular | 16338 | dfad5bbe0c70
 casters vs medium-day | walled | regular | 24257 | f6c9fa34ef13

@@ -641,6 +641,14 @@ section('Statblock parser (no AI)');
   check(ctx.M.length >= 40 && bad === 0, `${ctx.M.length} official monsters read with their real name, AC, HP and CR (${bad} off)`);
   check(empty === 0 && err === 0, `every official monster has an attack and fights (${empty} without, ${err} errors)`);
   check(/System Reference Document 5\.2/.test(ctx.A) && /creativecommons\.org\/licenses\/by\/4\.0/.test(ctx.A), 'the SRD attribution statement ships with them');
+  // "Melee or Ranged Attack Roll: +12, reach 5 ft. or range 120 ft." (a spell attack: one range, no long range) reaches 120 ft, and is a melee attack up close
+  for (const [nm, atk] of [['Mage', 'Arcane Burst'], ['Lich', 'Eldritch Burst']]) {
+    const m = Parser.parse(ctx.M.find(x => x.name === nm).text).monsters[0], a = m.actions.find(x => x.actionSlot === 0 && x.name.indexOf(atk) >= 0);
+    check(a && a.ext.range === 120 && a.ext.anyRange === true, `${nm}: ${atk} reaches 120 ft and counts as melee up close (${a && a.ext.range} ft)`);
+  }
+  const spear = Parser.parse('Guard\nMedium Humanoid, Neutral\nAC 16\nHP 11 (2d8 + 2)\nSpeed 30 ft.\nCR 1/8\nActions\nSpear. Melee or Ranged Attack Roll: +3, reach 5 ft. or range 20/60 ft. Hit: 4 (1d6 + 1) Piercing damage.').monsters[0];
+  const sa = spear && spear.actions.find(x => x.name === 'Spear');
+  check(sa && sa.ext.range === 5 && !sa.ext.anyRange, `a thrown weapon (range 20/60) keeps its 5-ft reach (${sa && sa.ext.range})`);
 }
 
 section('Character sheets');

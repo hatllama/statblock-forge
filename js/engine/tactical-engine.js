@@ -2205,7 +2205,7 @@ Sim.prototype.tacticalTurnInner = function (u, speed) {
           else tv = this.targetValue(u, pl.act, t, pl.pool, x, y);
           v = tv.val; why = tv.why;
         }
-        if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere) v *= 0.6;     // shooting in melee
+        if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere && !(pl.a.ext && pl.a.ext.anyRange)) v *= 0.6;     // shooting in melee
         if (pl.limited && pl.aoe && !catches && !weigh) continue;   // no single-target fireballs (casters weigh it against the slot instead)
         if (!best || v > best.val) best = { pl, t, val: v, why };
       }
@@ -5244,7 +5244,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
           if (pl.act.ext && pl.act.ext.zone && pl.act.ext.zone.difficult) v += W.zone;
         } else if (pl.multi.has(t.uid)) v += pl.multi.get(t.uid);
         if (t.hp <= 0 && pl.a.type === 'atk' && !pl.a.useSaves && dOf(t) > 5) v *= 0.5;            // a downed foe is crit only up close
-        if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere) v *= W.meleeShoot;  // shooting in melee
+        if (pl.range > 10 && !pl.a.useSaves && pl.a.type === 'atk' && engagedHere && !(pl.a.ext && pl.a.ext.anyRange)) v *= W.meleeShoot;  // shooting in melee
         const raw = v * offMult + postBonus(t);
         v = net(pl, raw);
         if (pl.slot && raw > slotRaw) slotRaw = raw;

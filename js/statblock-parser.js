@@ -397,6 +397,8 @@ function readAttack(entry, nm, notes) {
   const kind = am[1].toLowerCase();
   const a = { name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: 1, type: 'atk', dpr, toHit, target: 'enemy with most HP', ext: {} };
   a.ext.range = kind === 'ranged' ? (rg.ranged || 60) : (rg.melee || 5);
+  // "Melee or Ranged" with one range and no long range (Arcane Burst, Eldritch Burst: a spell, not a thrown weapon): usable at that range, and up close as a melee attack
+  if (kind === 'melee or ranged' && rg.ranged && !/range\s*\d+\s*\/\s*\d+/i.test(t)) { a.ext.range = rg.ranged; a.ext.anyRange = true; a._either = true; }
   a._melee = kind !== 'ranged';
   a._ranged = kind !== 'melee' ? (rg.ranged || 20) : 0;
   a._avg = parts.reduce((s, p) => s + p.avg, 0) || avgDice(dpr);
@@ -773,6 +775,7 @@ function comboAction(name, combo) {
   }
   const melee = !forceRanged && combo.every(c => c.a._melee);
   a.ext.range = melee ? Math.min(...combo.map(c => c.a.ext.range)) : Math.min(...combo.map(c => c.a._ranged || c.a.ext.range));
+  if (combo.every(c => c.a._either)) a.ext.anyRange = true;
   // riders and grapples from the attack that makes up most of the routine
   const lead = combo.slice().sort((p, q) => q.n - p.n)[0].a;
   if (lead.riderEffect) a.riderEffect = JSON.parse(JSON.stringify(lead.riderEffect));
