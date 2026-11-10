@@ -64,7 +64,7 @@ The rules engine (dice, saves, damage, movement, zones) is not AI and is not cha
 | 1 | Opus | **DONE (c6be6fa, 000b8c1).** **Step 2.10.** Part A: why strong control (Hold Monster, Hideous Laughter, Command, Hypnotic Pattern, Stunning Strike) is rarely cast in open mode. Diagnose the score terms (duration with repeated saves, denied actions, crit/advantage for allies, concentration cost counted once, slot price in a fight not being won fast), then calibrate with a sweep of a plain-data control weight. Part B: knowledge ablation, giving the learn/blind party the TRUE value of one thing at a time (HP, AC, saves, damage, day length) to find which gap costs most; implement the day-length decision (B2). | Control scenarios (K) improve beyond SE with nothing worse; ablation table in `docs/ai-v2.md`; day-length setting works |
 | 2 | Opus | **DONE (step 3a, see `docs/ai-v2.md` "Hybrids").** **Step 3a: hybrids.** Paladin (Divine Smite per hit, Lay on Hands), ranger (Hunter's Mark), artificer, Eldritch Knight, Arcane Trickster: martial scoring plus spell scoring, one classification (replaces the `casterKind` full-only gate in `v2Eligible`). | Hybrids leave v1; hybrid scenarios no worse than v1 |
 | 3 | Opus | **Step 3b: reactions** as a layer with their own decisions and costs. | Reactions chosen by value, not threshold; scenarios no worse |
-| 4 | Sonnet | **Monster intelligence tiers**; non-tactical monsters on v2 with a simple profile; Enemy AI default decided here. | Tiers from Int/Wis, `ext.aiProfile` overrides; beast fights look like beasts |
+| 4 | Sonnet | **DONE (opt-in: `opts.ai.foes = 'tiers'`, War Table Enemy AI "Smart, by intelligence"; see `docs/ai-v2.md` "Monster intelligence tiers").** **Monster intelligence tiers**; non-tactical monsters on v2 with a simple profile; Enemy AI default decided here. | Tiers from Int/Wis, `ext.aiProfile` overrides; beast fights look like beasts |
 | 5 | Sonnet | **Seeded odds runs** (cheap, see below), then the preset and slider UI per B5, with workspace migration. | Same encounter, same number; old workspaces load |
 | 6 | Sonnet | **Default switch to v2**, then removal of the old AI. | Gate below |
 | 7 | Opus | **Summons and companions.** Summon spells (skipped in `spell-data.js`) and a companion/summoned-creature model in the engine and spell data; rangers and artificers use it. | Summon spells cast and fought with by v2; companions act on their own turns; scenarios no worse |
@@ -127,7 +127,8 @@ A "back in the fight" term for healing a downed ally, Healing Light on v2, Reviv
 One line each: what, why, which phase takes it. Phase 7 (summons and companions) is in the table above.
 
 - **Summons and companions** (summon spells are skipped in `spell-data.js`; no companion code in the engine): Phase 7. Step 3a left the Artillerist's Eldritch Cannon as an at-will bonus strike while it stands, not a creature.
-- **Flee and morale**: v1 has `moraleBreaks`, v2 has no `fleeHp`: phase 4.
+- **Flee and morale**: tiers read `profile.morale` inside `moraleBreaks` (phase 4); morale itself stays opt-in. v2 still has no `fleeHp`.
+- **Lone bosses and casters on v2** hold back too much (a mindless Lich beat a genius one, the Ember Tyrant lost 20 points on v2 against the old AI): next job for the boss/legendary work, with legendary and lair actions on v2 (still picked by `choose`) and per-tier reactions.
 - **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
 - **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.
 - **Relentless Rage DC counter** never resets on rests: small rules fix, bundle with the next engine job.
