@@ -1585,6 +1585,26 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
     if (ev) { loh.up++; loh.pts.push(+(/\+(\d+) HP/.exec(ev.text) || [0, 0])[1]); }
   }
   check(loh.up >= loh.runs - 1 && loh.pts.every(n => n >= 1 && n < 25), `Lay on Hands lifts the downed Fighter (${loh.up} of ${loh.runs}), spending part of the pool (${loh.pts.join(', ')} HP)`);
+  // Lay on Hands never spends more points than the target is missing (a downed ally counts as missing all its HP: a few points stand it up)
+  {
+    const heal0 = proto.heal, act0 = proto.doAction, rec = [];
+    proto.doAction = function (u, a, p) { this._actName = a && a.name; return act0.apply(this, arguments); };
+    proto.heal = function (src, tgt, amt, temp) {
+      if (this._actName === 'Lay on Hands' && !temp) rec.push({ amt: Math.round(amt), missing: tgt.maxHp - Math.max(0, tgt.hp), down: tgt.hp <= 0, maxHp: tgt.maxHp });
+      return heal0.apply(this, arguments);
+    };
+    for (let i = 0; i < 12; i++) {
+      proto.turn = function (u) {
+        if (!this._downed) { this._downed = true; const f = this.units.find(o => o.name === 'Fighter'), r = this.units.find(o => o.name === 'Rogue'); r.hp = Math.ceil(r.maxHp * 0.6); if (i % 2) { f.hp = 0; this.downPC(f); } else f.hp = Math.ceil(f.maxHp * 0.3); }
+        return turn.call(this, u);
+      };
+      Tac.runDay({ players: [build('Paladin'), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }, { monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 300 + i * 11, partyAI: 'tactical', ai: { party: 'v2' } });
+      proto.turn = turn;
+    }
+    proto.heal = heal0; proto.doAction = act0;
+    const over = rec.filter(r => r.amt > r.missing), bigDown = rec.filter(r => r.down && r.amt > r.maxHp * 0.5);
+    check(rec.length > 0 && over.length === 0 && bigDown.length === 0, `Lay on Hands never spends more than the target is missing (${rec.length} uses, ${over.length} over, ${bigDown.length} past half a downed ally's HP; points ${rec.map(r => r.amt).join(',')})`);
+  }
 }
 
 section('AI v2: a burn is scored as a burn (Caustic Brew)');
