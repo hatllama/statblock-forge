@@ -888,6 +888,8 @@ function compileSpellbook(c){
 }
 function exportCreature(m){
   let c = stripInternal(m);
+  // ext.scores (Int and Wis, read by the War Table's monster tiers) is not part of the save-file format: a plain export is the same as before tiers
+  if(c.ext && c.ext.scores){ const { scores, ...rest } = c.ext; c = Object.assign({}, c, { ext: rest }); if(!Object.keys(rest).length) delete c.ext; }
   if((c.actions || []).some(a=>a.ext && a.ext.wtOnly)) c = Object.assign({}, c, { actions: c.actions.filter(a=>!(a.ext && a.ext.wtOnly)) });
   if(!(c.ext && c.ext.spellbook) && !(c.actions || []).some(a=>a.ext && a.ext.fromSpellbook)) return c;
   return Object.assign({}, c, { actions: compileSpellbook(c) });
