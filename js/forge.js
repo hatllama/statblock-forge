@@ -1320,7 +1320,7 @@ function setCreatureExt(c, key, val){
       const list = el.value.split(/[,;]/).map(x=>x.trim()).filter(Boolean).map(x=> k === 'condImmune' ? x.charAt(0).toUpperCase() + x.slice(1).toLowerCase() : x.toLowerCase());
       setCreatureExt(c, k, list.length ? list : undefined);
     }
-    else if(k === 'ai') setCreatureExt(c, k, el.value === 'auto' ? undefined : el.value);
+    else if(k === 'ai' || k === 'aiTier') setCreatureExt(c, k, el.value === 'auto' ? undefined : el.value);
     else setCreatureExt(c, k, el.value === 'Medium' ? undefined : el.value);   // Medium is the default
     c._warnings = validateMonster(c);
     refreshPreview();
@@ -1396,6 +1396,11 @@ function aiOf(c){
   if(a && a !== 'auto') return a.charAt(0).toUpperCase() + a.slice(1);
   try{ if(window.TacEngine && TacEngine.autoAI){ const v = TacEngine.autoAI(c); return v.charAt(0).toUpperCase() + v.slice(1); } }catch(e){}
   return 'Auto';
+}
+/* the tier the War Table gives a monster when Enemy AI is Smart by intelligence */
+function tierOfSafe(c){
+  try{ if(window.TacEngine && TacEngine.tierOf){ const t = TacEngine.tierOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { aiTier: undefined }) })); return t.charAt(0).toUpperCase() + t.slice(1); } }catch(e){}
+  return '?';
 }
 function crText(c){ return c.cr !== undefined && c.cr !== '' && c.cr !== '—' ? 'CR ' + c.cr : ''; }
 function renderSide(){
@@ -1568,6 +1573,7 @@ function sheetHtml(key, c){
         ${exInput(key, 'sneakDice', 'Sneak Attack', xv(c,'sneakAttack') && c.ext.sneakAttack.dice, 'placeholder="e.g. 2d6"', 'Once per turn, on a hit with a finesse or ranged weapon, with advantage or an ally next to the target.')}
         ${exInput(key, 'legendaryActions', 'Legendary actions / round', xv(c,'legendaryActions'), 'type="number" min="0" placeholder="3"', 'Only matters if it has legendary actions.')}
         <label class="sf"><span>Fights like</span><select data-ext="ai" data-owner="${key}">${[['auto', pc ? 'Party setting' : `Auto: ${aiOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { ai: undefined }) }))}`],['tactical','Tactical'],['regular','Regular'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${ai===v?'selected':''}>${l}</option>`).join('')}</select></label>
+        ${pc ? '' : `<label class="sf" title="Used when the War Table's Enemy AI is Smart by intelligence: who it targets, whether it flees, how much it knows of the party. Auto reads the Intelligence score and creature type."><span>Smartness</span><select data-ext="aiTier" data-owner="${key}">${[['auto', 'Auto: ' + tierOfSafe(c)],['mindless','Mindless'],['animal','Animal instinct'],['cunning','Cunning'],['genius','Genius']].map(([v,l])=>`<option value="${v}" ${((c.ext&&c.ext.aiTier)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label>`}
       </div>
     </section>
 
