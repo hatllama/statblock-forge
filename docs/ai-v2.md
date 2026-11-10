@@ -1405,6 +1405,43 @@ pool) the heal is valued and the best net is spent (`u._poolPick`, read by `doAc
 
 Dice pools (Healing Light) keep their per-use price and their old amount, so Zaki's party is untouched.
 
+**Seen on the War Table, fixed.** A Paladin spent its bonus action before moving on Sacred Weapon while an ally lay at 0 HP, then walked
+through two opportunity attacks to Cure Wounds it. The pre-move check (`v2Bonus 'pre'`) weighed a self buff only against bonus attacks; it
+now also weighs the smite hold and the best bonus heal it can reach this turn (Lay on Hands, Healing Word), and the same fight gives Lay on
+Hands as a bonus action plus an action.
+
+**Weights added.** `w.smite` 1, `w.smiteWait` 1, `pacing.hpLevel` 8. No sweep: each is the plain conversion into the existing currency
+(a smite is damage and a kill like any attack; a pool point costs what a slot level's worth of healing costs).
+
+**Results** (200 runs, same seeds; before = the tip when the step started, ed0827f, with its own data and harness).
+- Every existing family, v2 rows, `V2ONLY=1 KNOW=<mode>` (`runs/3a/run.js`): 120 rows a mode compared. open: 42 moved, 0 worse, 0
+  better beyond 2 SE; learn: 42 moved, 0 / 0; blind: 35 moved, 1 worse (D7 Zaki, Kraax down: 98.5 → 94.0, −2.3 SE), 0 better. D7 blind
+  re-run at 800 runs: 94.4 → 94.6, noise (it was a "better" row at 98.5 in step 3b's check).
+- Zaki's party, hard day (D9), 600 runs: learn 92.0 → 92.7, open 94.7 → 95.0, blind 85.8 → 86.0 (±0.9–1.4). Unchanged, as it should be: no hybrids.
+- New families H1–H9 (`node tests/ai-compare.js 200 "^H[0-9]"`), old AI (whole party v1) vs v2:
+
+  | scenario | open v1 → v2 | learn | blind |
+  |---|---|---|---|
+  | H1 Paladin, Fighter, Cleric vs goblins + captain / ogres / troll | 30.5 → 91.5 | 37.0 → 86.5 | 39.0 → 83.5 |
+  | H2 Ranger, … | 28.5 → 75.5 | 50.0 → 79.0 | 42.5 → 75.5 |
+  | H3 Artificer, … | 24.0 → 66.0 | 21.5 → 52.5 | 22.5 → 48.0 |
+  | H4 Eldritch Knight, … | 34.0 → 76.5 | 45.5 → 69.5 | 41.5 → 64.5 |
+  | H5 Arcane Trickster, … | 17.5 → 67.5 | 21.5 → 60.0 | 23.0 → 60.5 |
+  | H6 Paladin, Ranger, Wizard, Cleric, Fighter vs hard-day | 61.5 → 81.0 | 56.5 → 76.5 | 52.0 → 67.5 |
+  | H7 all five hybrids vs bandits / giant + ogres | 100 → 100 | 100 → 100 | 100 → 100 |
+  | H8 Paladin, Fighter, Cleric vs undead | 93.5 → 100 | 99.5 → 100 | 98.5 → 100 |
+  | H9 Paladin, Ranger, Rogue; the Rogue down at the start | 96.5 → 99.0 | 99.0 → 98.0 | 98.0 → 99.5 |
+
+  19 of 27 rows better beyond 2 SE, none worse. That arm moves the whole party, so the hybrid alone was isolated with the old engine
+  (`ENGINE=` the step's start, `V2ONLY=1`: the hybrid on v1, everyone else on v2) → this step: H1 82.0 → 91.5 / 80.0 → 86.5 / 75.0 → 83.5,
+  H5 54.0 → 67.5 / 52.0 → 60.0 / 49.0 → 60.5, H9 open 93.5 → 99.0; 5 rows better beyond 2 SE, none worse. The Artificer gains nothing
+  (H3 at 600 runs: learn 56.5 → 54.7, blind 47.8 → 51.0, both noise): its play was already Shatter, the cannon and Fire Bolt.
+- Smites a day (v2): 4.5 / 3.9 / 4.1 in H1 (v1's buff: 1.9 / 3.3 / 2.7), about a fifth of them to finish a foe; Lay on Hands 0.8–1.1 uses,
+  17–22 points a day where v1 spent 19–24; Hunter's Mark 3.2–3.5 casts against v1's 5 (it no longer stacks the free mark and the spell).
+- Hashes: the old AI unchanged (96 of 96). v2 learn: 48 of 96 change, every tactical-party day (each has the Paladin or the Ranger), on
+  purpose; `tests/fixtures/hashes-v2-learn.txt` is regenerated. Run time, the whole table in three modes: summed process time
+  186.9 → 196.3 min (+5%), wall 10.6 → 10.8 min; no-replay timing rows unchanged within noise.
+
 **Not built (backlog):** Divine Smite under 2014 rules (no bonus action, any number of hits a turn); Hunter's Mark moved to a new target
 when the marked one drops (the engine's mark adds its die to every hit); Eldritch Knight War Magic, Arcane Trickster Magical Ambush;
 Divine Smite on an opportunity attack or a readied strike (no bonus action off its own turn); the artificer's Eldritch Cannon as a creature

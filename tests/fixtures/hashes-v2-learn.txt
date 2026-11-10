@@ -1,95 +1,95 @@
-default party vs hard-day | open | tactical | 500 | 4ab92283175a
-default party vs hard-day | open | tactical | 8419 | db20d5e75afc
-default party vs hard-day | open | tactical | 16338 | fab4d595614c
-default party vs hard-day | open | tactical | 24257 | 7dd66c196578
+default party vs hard-day | open | tactical | 500 | 1886f1046639
+default party vs hard-day | open | tactical | 8419 | ae41c8842c96
+default party vs hard-day | open | tactical | 16338 | b456a3088991
+default party vs hard-day | open | tactical | 24257 | d9d8e7695d91
 default party vs hard-day | open | regular | 500 | dcafadfbcbef
 default party vs hard-day | open | regular | 8419 | 86b013b39e7c
 default party vs hard-day | open | regular | 16338 | 353b5427f60e
 default party vs hard-day | open | regular | 24257 | b0789591d98a
-default party vs hard-day | walled | tactical | 500 | 8f30b299c0b1
-default party vs hard-day | walled | tactical | 8419 | 6ee607b74c76
-default party vs hard-day | walled | tactical | 16338 | d8e6db4356a1
-default party vs hard-day | walled | tactical | 24257 | 22baf24d8f75
+default party vs hard-day | walled | tactical | 500 | d064ceb92849
+default party vs hard-day | walled | tactical | 8419 | 7808d81d485c
+default party vs hard-day | walled | tactical | 16338 | 9bab87c9d746
+default party vs hard-day | walled | tactical | 24257 | 437105275fd6
 default party vs hard-day | walled | regular | 500 | 0cc72dd01007
 default party vs hard-day | walled | regular | 8419 | 53b9032541f3
 default party vs hard-day | walled | regular | 16338 | dd0130c38d43
 default party vs hard-day | walled | regular | 24257 | f21933cf290a
-default party vs bandit-day | open | tactical | 500 | e98d8f4212eb
-default party vs bandit-day | open | tactical | 8419 | 12559c90a1f7
-default party vs bandit-day | open | tactical | 16338 | 74210fd91a0f
-default party vs bandit-day | open | tactical | 24257 | d6313248c4e7
+default party vs bandit-day | open | tactical | 500 | 8601bb917788
+default party vs bandit-day | open | tactical | 8419 | 446882f86804
+default party vs bandit-day | open | tactical | 16338 | 7456f0c4e94c
+default party vs bandit-day | open | tactical | 24257 | 83256080c35a
 default party vs bandit-day | open | regular | 500 | bd2c45b4e738
 default party vs bandit-day | open | regular | 8419 | d9427a938c5f
 default party vs bandit-day | open | regular | 16338 | fbea554e75f1
 default party vs bandit-day | open | regular | 24257 | 4e2bb03329b5
-default party vs bandit-day | walled | tactical | 500 | 58d033ad70e4
-default party vs bandit-day | walled | tactical | 8419 | c193063641d5
-default party vs bandit-day | walled | tactical | 16338 | bc0ddd2ae366
-default party vs bandit-day | walled | tactical | 24257 | 0d661e87db83
+default party vs bandit-day | walled | tactical | 500 | 7ccaaef50bea
+default party vs bandit-day | walled | tactical | 8419 | 3a048b277962
+default party vs bandit-day | walled | tactical | 16338 | eeb2c8f340f2
+default party vs bandit-day | walled | tactical | 24257 | 96f4059cb30a
 default party vs bandit-day | walled | regular | 500 | 56884c5dc800
 default party vs bandit-day | walled | regular | 8419 | 04aa717eba38
 default party vs bandit-day | walled | regular | 16338 | c2dfc2568a70
 default party vs bandit-day | walled | regular | 24257 | 85aa69c3c695
-casters vs goblins / ogres / mage | open | tactical | 500 | a42ac4882f4a
-casters vs goblins / ogres / mage | open | tactical | 8419 | 800e4de7b7d9
-casters vs goblins / ogres / mage | open | tactical | 16338 | df385971715e
-casters vs goblins / ogres / mage | open | tactical | 24257 | 79d5459293c8
+casters vs goblins / ogres / mage | open | tactical | 500 | 623c90c76a57
+casters vs goblins / ogres / mage | open | tactical | 8419 | 037b9b4cfffa
+casters vs goblins / ogres / mage | open | tactical | 16338 | a6f4c42a6b27
+casters vs goblins / ogres / mage | open | tactical | 24257 | 646d769f7d1d
 casters vs goblins / ogres / mage | open | regular | 500 | 6687d6b2c61e
 casters vs goblins / ogres / mage | open | regular | 8419 | 6eecb88feecb
 casters vs goblins / ogres / mage | open | regular | 16338 | a7a508c7ab49
 casters vs goblins / ogres / mage | open | regular | 24257 | b06f71089879
-casters vs goblins / ogres / mage | walled | tactical | 500 | 41c4aa6927f0
-casters vs goblins / ogres / mage | walled | tactical | 8419 | bfbd43a9a3b9
-casters vs goblins / ogres / mage | walled | tactical | 16338 | 660250af5fcc
-casters vs goblins / ogres / mage | walled | tactical | 24257 | e14eda119aad
+casters vs goblins / ogres / mage | walled | tactical | 500 | 7dc3ec716d35
+casters vs goblins / ogres / mage | walled | tactical | 8419 | cd5cd41921de
+casters vs goblins / ogres / mage | walled | tactical | 16338 | d20d15bbbf2f
+casters vs goblins / ogres / mage | walled | tactical | 24257 | 1094c6151657
 casters vs goblins / ogres / mage | walled | regular | 500 | ee86c9c5d896
 casters vs goblins / ogres / mage | walled | regular | 8419 | b6dcc850062f
 casters vs goblins / ogres / mage | walled | regular | 16338 | 91e979019d47
 casters vs goblins / ogres / mage | walled | regular | 24257 | b1c1166998dc
-casters vs priests + young dragon | open | tactical | 500 | 778f1b6b54cb
-casters vs priests + young dragon | open | tactical | 8419 | ea6ae33776d8
-casters vs priests + young dragon | open | tactical | 16338 | d4b319413311
-casters vs priests + young dragon | open | tactical | 24257 | 78396395b09e
+casters vs priests + young dragon | open | tactical | 500 | 45b05f13a948
+casters vs priests + young dragon | open | tactical | 8419 | d3a4a2b38bc3
+casters vs priests + young dragon | open | tactical | 16338 | 1749038e9ad1
+casters vs priests + young dragon | open | tactical | 24257 | 8d3cadb367d4
 casters vs priests + young dragon | open | regular | 500 | 389222563ec2
 casters vs priests + young dragon | open | regular | 8419 | 2c9ec486fd6a
 casters vs priests + young dragon | open | regular | 16338 | 17c348f5d1cd
 casters vs priests + young dragon | open | regular | 24257 | 54b961dc487f
-casters vs priests + young dragon | walled | tactical | 500 | 1ecda997066f
-casters vs priests + young dragon | walled | tactical | 8419 | 5fce5d829f66
-casters vs priests + young dragon | walled | tactical | 16338 | dfe8b7645511
-casters vs priests + young dragon | walled | tactical | 24257 | 8695f361be82
+casters vs priests + young dragon | walled | tactical | 500 | e482b6bb0ba0
+casters vs priests + young dragon | walled | tactical | 8419 | 4c9ee41dffd2
+casters vs priests + young dragon | walled | tactical | 16338 | bfd6c4e7acd0
+casters vs priests + young dragon | walled | tactical | 24257 | 7d4aa64d5ca0
 casters vs priests + young dragon | walled | regular | 500 | 36034a43e467
 casters vs priests + young dragon | walled | regular | 8419 | c5ec182c08b3
 casters vs priests + young dragon | walled | regular | 16338 | 743db6a5e19a
 casters vs priests + young dragon | walled | regular | 24257 | 1288dfff5344
-default party vs medium-day | open | tactical | 500 | 98324e794d3a
-default party vs medium-day | open | tactical | 8419 | be18768a83ab
-default party vs medium-day | open | tactical | 16338 | 7e2bd693c7f8
-default party vs medium-day | open | tactical | 24257 | bd066e0b90f8
+default party vs medium-day | open | tactical | 500 | 2d87ac6be8b5
+default party vs medium-day | open | tactical | 8419 | a115df06063f
+default party vs medium-day | open | tactical | 16338 | 321ee3522c5f
+default party vs medium-day | open | tactical | 24257 | 21adb5881f81
 default party vs medium-day | open | regular | 500 | eec29ce2c7d2
 default party vs medium-day | open | regular | 8419 | d260207e671f
 default party vs medium-day | open | regular | 16338 | 0e42ccbf498d
 default party vs medium-day | open | regular | 24257 | 576d63bfdfd0
-default party vs medium-day | walled | tactical | 500 | ce89c264bd2e
-default party vs medium-day | walled | tactical | 8419 | 180c30d6dd7f
-default party vs medium-day | walled | tactical | 16338 | 95bf352ae398
-default party vs medium-day | walled | tactical | 24257 | cf42865c9ab0
+default party vs medium-day | walled | tactical | 500 | 0e59144e20df
+default party vs medium-day | walled | tactical | 8419 | 377141c62e6e
+default party vs medium-day | walled | tactical | 16338 | e885032b9194
+default party vs medium-day | walled | tactical | 24257 | ae07cd4f0018
 default party vs medium-day | walled | regular | 500 | 82cacfa32183
 default party vs medium-day | walled | regular | 8419 | 0b1159110e17
 default party vs medium-day | walled | regular | 16338 | 1a9e5a472318
 default party vs medium-day | walled | regular | 24257 | a16d160b75df
-casters vs medium-day | open | tactical | 500 | e3c9a996134e
-casters vs medium-day | open | tactical | 8419 | 36b45628edd3
-casters vs medium-day | open | tactical | 16338 | dd871ca960db
-casters vs medium-day | open | tactical | 24257 | 532848cc1459
+casters vs medium-day | open | tactical | 500 | f87052104afa
+casters vs medium-day | open | tactical | 8419 | 5a528f6dc50a
+casters vs medium-day | open | tactical | 16338 | 5c6a946f6df0
+casters vs medium-day | open | tactical | 24257 | 1f0ba6d4e4ea
 casters vs medium-day | open | regular | 500 | e766e80012fb
 casters vs medium-day | open | regular | 8419 | b7d315abdf3f
 casters vs medium-day | open | regular | 16338 | 7e6bfc110a45
 casters vs medium-day | open | regular | 24257 | 59c6fbd7521d
-casters vs medium-day | walled | tactical | 500 | 0fc5d405efd4
-casters vs medium-day | walled | tactical | 8419 | dc30a0d0b4a4
-casters vs medium-day | walled | tactical | 16338 | cc10efa58378
-casters vs medium-day | walled | tactical | 24257 | 1bbd084992e5
+casters vs medium-day | walled | tactical | 500 | 917aa41201d3
+casters vs medium-day | walled | tactical | 8419 | 2e62fefb7f1e
+casters vs medium-day | walled | tactical | 16338 | c9fdc12f79c4
+casters vs medium-day | walled | tactical | 24257 | c3429fbb68be
 casters vs medium-day | walled | regular | 500 | ceb3ccd54749
 casters vs medium-day | walled | regular | 8419 | e68205c8a384
 casters vs medium-day | walled | regular | 16338 | dfad5bbe0c70
