@@ -2614,7 +2614,7 @@ const PARTY_FN_UPDATES = { 14: p => {
   let changed = false;
   const ma = (p.actions || []).find(a=>/^Martial Arts/.test(a.name) && a.dpr);
   (p.actions || []).forEach(a=>{ if(a.actionSlot === 4 && a.name === 'Deflect Attacks' && ma && !(a.ext && a.ext.react && a.ext.react.redirect)){
-    const m = /^1(dd+)s*+s*(-?d+)/.exec(String(ma.dpr)); if(!m) return;
+    const m = /^1(d\d+)\s*\+\s*(-?\d+)/.exec(String(ma.dpr)); if(!m) return;
     const react = Object.assign({}, a.ext && a.ext.react || {}, { redirect: { resource: 'Focus Points', cost: 1, dice: `2${m[1]} + ${m[2]}`, dc: 8 + Number(ma.toHit) } });
     a.ext = Object.assign({}, a.ext || {}, { react }); changed = true; } });
   return changed;
