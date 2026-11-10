@@ -637,6 +637,40 @@ function playTier(sc, N) {
   }
   TIER_FORCE = null;
 }
+/* ---- the boss tier (docs/ai-v2.md "Boss tier"): the same fight with the boss on the old AI, on v2 genius and on the boss tier ----
+   node tests/ai-compare.js 200 '^BOSS'   (TIER_MODES=open picks the modes). Only the boss is forced; an escort keeps its own tier.
+   The party is on v2 and learns; the monsters' knowledge is the row's mode. Lower party win = a stronger boss. */
+const DRAGON_LAIR = '\nLair Actions\nOn initiative count 20 (losing initiative ties), the dragon takes one lair action.\n' +
+  'Fire Geyser. Fire bursts from the ground in a 10-foot-radius sphere centered on a point the dragon can see within 120 feet of it. Each creature there must make a DC 15 Dexterity saving throw, taking 14 (4d6) fire damage on a failed save, or half as much damage on a successful one.\n' +
+  'Choking Smoke. Smoke fills a 20-foot-radius sphere centered on a point the dragon can see within 120 feet of it. Each creature in it must succeed on a DC 15 Constitution saving throw or be poisoned until the end of its next turn.\n';
+const lairDragon = () => { const s = D.M.find(m => m.name === 'Adult Red Dragon'), m = clone(Parser.parse(s.text + DRAGON_LAIR).monsters[0]); m.id = s.id + '-lair'; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = m.id + i; }); return m; };
+const halfLich = () => { const m = mon('Lich'); m.hp = 110; for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(avgOf(a.dpr) * 0.5)); return m; };
+const BOSS_PARTY = ['Fighter', 'Barbarian', 'Cleric', 'Wizard'];
+const BOSS_SCENARIOS = [
+  { name: 'BOSS dragon: Adult Red Dragon with a lair (160 HP, 0.35 damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [scaled(withHp(lairDragon(), 160), 0.35)] }] },
+  { name: 'BOSS lich: a Lich with 110 HP and half damage', party: BOSS_PARTY, encounters: () => [{ monsters: [halfLich()] }] },
+  { name: 'BOSS brute: Grukk, legendary actions and no spells (260 HP, full damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [withHp(statblock('brute-legendary-homebrew.txt'), 260)] }] },
+  { name: 'BOSS tyrant: the Ember Tyrant (140 HP, 0.4 damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [scaled(withHp(statblock('long-homebrew-boss.txt'), 140), 0.4)] }] },
+  { name: 'BOSS escort: Osric with a lair and 4 Bandits (120 HP, 0.4 damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [scaled(withHp(statblock('osric-homebrew.txt'), 120), 0.4), mon('Bandit', 4)] }] },
+];
+const BOSS_METRICS = {
+  'leg/fight': r => r.events.filter(e => e.kind === 'legendary').length,
+  'lair/fight': r => r.events.filter(e => e.kind === 'lair').length,
+  'LR used': r => r.events.filter(e => e.kind === 'react' && /Legendary Resistance/.test(e.text || '')).length,
+};
+let BOSS_FORCE = null;
+function playBoss(sc, N) {
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BOSS_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+  const mkEnc = () => { const base = sc.encounters(); for (const e of base) for (const m of e.monsters) if (BOSS_FORCE && Tac.tierOf(m) === 'boss') m.ext.aiTier = BOSS_FORCE; return base; };
+  const mine = Object.assign({}, sc, { encounters: mkEnc, metrics: BOSS_METRICS, record: true });
+  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['v1', 'genius', 'boss']) {
+    BOSS_FORCE = arm === 'genius' ? 'genius' : null;
+    const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), arm === 'v1' ? { party: 'v2' } : { party: 'v2', foes: 'tiers' }, N);
+    console.log(row(pad(know + ' ' + arm, 14), r));
+  }
+  BOSS_FORCE = null;
+}
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
 const AI_OVER = ['w', 'pacing', 'burn', 'react'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
@@ -749,6 +783,7 @@ if (process.env.ACCURACY === '1') {
   process.exit(0);
 }
 for (const sc of TIER_SCENARIOS) if (only && only.test(sc.name)) playTier(sc, N);
+for (const sc of BOSS_SCENARIOS) if (only && only.test(sc.name)) playBoss(sc, N);
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
