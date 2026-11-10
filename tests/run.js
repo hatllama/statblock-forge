@@ -536,7 +536,7 @@ section('Statblock parser (no AI)');
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
   vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.PP = PARTY_PLAYERS;', ctx);
   const CB = ctx.CB;
-  check(CB.length === 13 && ctx.PP.length === 6 && new Set(ctx.PP.map(p => p.name)).size === 6, 'thirteen class builds and a six-class default party');
+  check(CB.length === 15 && ctx.PP.length === 6 && new Set(ctx.PP.map(p => p.name)).size === 6, 'fifteen class builds (with the Eldritch Knight and Arcane Trickster) and a six-class default party');
   const fx = fixture('bandit-day.json');
   const seen = {}; let err = 0;
   for (const group of [CB.slice(0, 7), CB.slice(7)]) for (let i = 0; i < 12; i++) {
@@ -631,6 +631,16 @@ section('Character sheets');
   for (const f of fs.readdirSync(dir)) { try { got[f] = SR.read(fs.readFileSync(path.join(dir, f), 'utf8')).player; } catch (e) { console.log('  ', f, e.message); } }
   const p = got, sp = c => ((c && c.ext.spellbook && c.ext.spellbook.spells) || []).map(s => s.name);
   check(p['typed.txt'] && p['typed.txt'].AC === 18 && p['typed.txt'].hp === 58 && p['typed.txt'].class.level === 6 && p['typed.txt'].actions.some(a => /Longsword ×2/.test(a.name) && a.toHit === 7) && p['typed.txt'].actions.some(a => /Action Surge/.test(a.name)), 'a typed fighter sheet: AC, HP, level, Extra Attack, Action Surge');
+  // the hybrids (step 3a): subclass in brackets, third-caster slots, always-prepared smite and mark, the Artillerist's cannon
+  const ek = p['eldritch-knight.txt'], at = p['arcane-trickster.txt'], af = p['artificer.txt'], pdd = p['ddb.json'], rf = p['foundry.json'];
+  check(ek && /Eldritch Knight/.test(ek.ext.build) && ek.ext.spellbook.slots.slice(0, 2).join() === '3,0' && ['Shocking Grasp', 'Shield', 'Magic Missile', 'Burning Hands'].every(n => sp(ek).includes(n)) && ek.actions.some(a => /Action Surge/.test(a.name)),
+    'an Eldritch Knight: subclass from "Fighter (Eldritch Knight)", three 1st-level slots (its own table), its spells, Action Surge');
+  check(at && /Arcane Trickster/.test(at.ext.build) && at.ext.spellbook.slots.slice(0, 2).join() === '3,0' && ['Mind Sliver', 'Shield', "Tasha's Hideous Laughter"].every(n => sp(at).includes(n)) && at.actions.some(a => /Uncanny Dodge/.test(a.name)),
+    'an Arcane Trickster: three 1st-level slots, its spells, Uncanny Dodge');
+  check(af && /Artillerist/.test(af.ext.build) && af.ext.spellbook.slots.slice(0, 2).join() === '4,2' && sp(af).includes('Shatter') && af.actions.some(a => /Eldritch Cannon/.test(a.name) && a.ext.grantsBuff) && af.actions.some(a => a.name === 'Force Ballista' && a.ext.requiresBuff),
+    'an Artillerist: half-caster slots, Shatter (a name ending in r), the Eldritch Cannon and its Force Ballista');
+  check(pdd && pdd.ext.spellbook.spells.some(s => s.name === 'Divine Smite' && s.ext.smite) && pdd.actions.some(a => a.name === 'Lay on Hands' && a.ext.pool.dice === 25 && a.ext.pool.die === 1 && a.actionSlot === 1) && rf && sp(rf).includes("Hunter's Mark"),
+    "a Paladin's Divine Smite is a rider (ext.smite) and Lay on Hands a 25-point bonus-action pool; a Ranger has Hunter's Mark");
   check(p['pdf.txt'] && p['pdf.txt'].name === 'Lyra Vane' && p['pdf.txt'].ext.spellbook.slots.slice(0, 3).join() === '4,3,2' && sp(p['pdf.txt']).includes('Fireball') && sp(p['pdf.txt']).includes('Misty Step'), 'fillable PDF fields: name, wizard slots and spells');
   const rl = p['russianllama.txt'];
   check(rl && rl.name === 'Baruba Ran' && rl.class.type === 'barbarian' && rl.class.level === 7 && rl.AC === 15 && rl.hp === 93 && rl.ext.speed === 40 && rl.ext.saves.str === 8 && rl.ext.saves.con === 6 && rl.ext.saves.int === -1 && rl.ext.resist.includes('cold') && rl.actions.some(a => /Greataxe/.test(a.name) && a.toHit === 8 && /1d12 \+ 5/.test(JSON.stringify(a))), 'a D&D Beyond PDF (form widgets, no AcroForm): name, level, AC, HP, speed, saves, greataxe');

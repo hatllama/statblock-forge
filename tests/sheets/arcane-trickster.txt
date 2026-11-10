@@ -1,0 +1,11 @@
+Pip Underbough
+Level 5 Halfling Rogue (Arcane Trickster)
+Armor Class 15   Hit Points 38   Speed 25 ft.
+STR 8 (-1)  DEX 18 (+4)  CON 14 (+2)  INT 14 (+2)  WIS 12 (+1)  CHA 10 (+0)
+Saving Throws: Dex +7, Int +5
+Attacks
+Rapier | +7 | 1d8+4 piercing
+Shortbow | +7 | 1d6+4 piercing
+Spells
+Cantrips: Mind Sliver, Mage Hand
+1st level: Shield, Tasha's Hideous Laughter

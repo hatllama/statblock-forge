@@ -1,0 +1,11 @@
+Brindle Cogsworth
+Level 5 Gnome Artificer (Artillerist)
+Armor Class 18   Hit Points 38   Speed 25 ft.
+STR 10 (+0)  DEX 14 (+2)  CON 14 (+2)  INT 18 (+4)  WIS 12 (+1)  CHA 8 (-1)
+Saving Throws: Con +5, Int +7
+Attacks
+Light Crossbow | +5 | 1d8+2 piercing
+Spells
+Cantrips: Fire Bolt
+1st level: Cure Wounds, Faerie Fire, Shield
+2nd level: Scorching Ray, Shatter

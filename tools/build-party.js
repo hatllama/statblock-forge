@@ -20,7 +20,7 @@ function build(def) {
   const sc = def.scores, saveProf = def.saves;
   const saves = {}; ABS.forEach((k, i) => { saves[k] = mod(sc[i]) + (saveProf.includes(k) ? PB : 0); });
   const avgSave = Math.round(ABS.reduce((t, k) => t + saves[k], 0) / 6 * 100) / 100;
-  const id = 'c5-' + def.cls;
+  const id = 'c5-' + (def.id || def.cls);
   let n = 0;
   const aid = () => `${id}-a${++n}`;
   const actions = def.actions.map(a => Object.assign({ id: aid(), freq: 'at will', condition: 'default', targets: 1 }, a));
@@ -135,7 +135,7 @@ const DEFS = [
       { name: 'Sacred Weapon (Channel Divinity)', actionSlot: 1, freq: { reset: 'sr', uses: 1 }, condition: 'not used yet', type: 'buff', target: 'self', buff: { duration: 'entire encounter', toHit: 3 } },
     ],
     spells: { ability: 'cha', slots: [4, 2, 0, 0, 0, 0, 0, 0, 0], list: [
-      { name: 'divine smite', custom: { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0 } } },
+      { name: 'divine smite', custom: { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0, smite: true } } },
       'bless', 'cure wounds', 'shield of faith', 'command',
       { name: 'aid', custom: { level: 2, actionSlot: 0, targets: 3, type: 'heal', amount: '5', upcast: '5', target: 'ally with the least HP', ext: { range: 30, aid: true } } },
     ] } },
@@ -198,6 +198,25 @@ const DEFS = [
     spells: { ability: 'int', slots: [4, 2, 0, 0, 0, 0, 0, 0, 0], list: [
       { name: 'fire bolt', patch: sp => { sp.dpr = '2d10 + 1d8'; sp.name = 'Fire Bolt (Arcane Firearm)'; } },
       'cure wounds', 'faerie fire', 'shield', 'thunderwave', 'scorching ray', 'shatter'] } },
+  // third casters (subclasses, so their own ids): a small, honest spell list, cast through the same spell path as everyone else
+  { cls: 'fighter', id: 'eldritch-knight', name: 'Eldritch Knight', build: 'Fighter (Eldritch Knight) · Longsword & shield, Dueling, Sap mastery · 3 first-level slots', hp: 49, ac: 18, athletics: true,
+    scores: [16, 12, 16, 14, 12, 8], saves: ['str', 'con'],
+    actions: [
+      Object.assign(wpn('Longsword ×2 (Extra Attack)', '1d8 + 5', 6, 'slashing', 5), { targets: 2 }, sap),
+      Object.assign(wpn('Heavy Crossbow ×2', '1d10 + 1', 4, 'piercing', 100, { wtOnly: true }), { targets: 2 }),
+      Object.assign({ name: 'Action Surge (two more attacks)', actionSlot: 1, freq: { reset: 'sr', uses: 1 }, type: 'atk', dpr: '1d8 + 5', toHit: 6, targets: 2, target: 'enemy with least HP', ext: { range: 5, damageType: 'slashing' } }, sap),
+      { name: 'Second Wind', actionSlot: 1, freq: { reset: 'lr', uses: 3 }, condition: 'is under half HP', type: 'heal', amount: '1d10 + 5', target: 'self' },
+    ],
+    spells: { ability: 'int', slots: [3, 0, 0, 0, 0, 0, 0, 0, 0], list: ['shocking grasp', 'shield', 'magic missile', 'burning hands'] } },
+  { cls: 'rogue', id: 'arcane-trickster', name: 'Arcane Trickster', build: 'Rogue (Arcane Trickster) · Rapier & Shortbow (Vex), Sneak Attack 3d6 · 3 first-level slots', hp: 38, ac: 15, acrobatics: true,
+    scores: [8, 18, 14, 14, 12, 10], saves: ['dex', 'int'], ext: { sneakAttack: { dice: '3d6' }, steadyAim: true, bonusDisengage: true },
+    actions: [
+      wpn('Rapier', '1d8 + 4 + 3d6', 7, 'piercing', 5, { wtDpr: '1d8 + 4', sneak: true, onHit: { vex: true } }),
+      wpn('Shortbow', '1d6 + 4 + 3d6', 7, 'piercing', 80, { wtDpr: '1d6 + 4', sneak: true, onHit: { vex: true }, wtOnly: true }),
+      { name: 'Cunning Action: Hide', actionSlot: 1, type: 'buff', target: 'self', buff: { duration: '1 round', condition: 'Invisible' }, ext: { successChance: 0.75 } },
+      { name: 'Uncanny Dodge', actionSlot: 4, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageTakenMultiplier: 0.5 }, ext: { react: { roll: true } } },
+    ],
+    spells: { ability: 'int', slots: [3, 0, 0, 0, 0, 0, 0, 0, 0], list: ['mind sliver', 'shield', "tasha's hideous laughter"] } },
 ];
 
 const builds = DEFS.map(build);

@@ -37,6 +37,8 @@ const THIRD = /eldritch knight|arcane trickster/i;
 // spell slots by caster level (the multiclass table)
 const SLOTS = [[], [2], [3], [4, 2], [4, 3], [4, 3, 2], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 2], [4, 3, 3, 3, 1], [4, 3, 3, 3, 2], [4, 3, 3, 3, 2, 1], [4, 3, 3, 3, 2, 1],
   [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 2, 1, 1, 1, 1], [4, 3, 3, 3, 3, 1, 1, 1, 1], [4, 3, 3, 3, 3, 2, 1, 1, 1], [4, 3, 3, 3, 3, 2, 2, 1, 1]];
+// Eldritch Knight and Arcane Trickster (single class), by class level
+const THIRD_SLOTS = [[], [], [], [2], [3], [3], [3], [4, 2], [4, 2], [4, 2], [4, 3], [4, 3], [4, 3], [4, 3, 2], [4, 3, 2], [4, 3, 2], [4, 3, 3], [4, 3, 3], [4, 3, 3], [4, 3, 3, 1], [4, 3, 3, 1]];
 const PACT = l => ({ n: l >= 17 ? 4 : l >= 11 ? 3 : l >= 2 ? 2 : 1, lvl: Math.min(5, Math.ceil(l / 2)) });
 
 // weapons: [dice, damage type, range (melee reach or ranged normal range), finesse/ranged]
@@ -53,7 +55,7 @@ const WEAPONS = {
 };
 // spells the spell data has no entry for but a party member often relies on (built the way tools/build-party.js builds them)
 const CUSTOM = {
-  'divine smite': { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0 } },
+  'divine smite': { level: 1, actionSlot: 1, targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack made', damage: '2d8' }, ext: { range: 0, smite: true } },   // v2: a rider on a hit (ext.smite)
   'mage armor': { level: 1, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'mageArmor', wtOnly: true } },
   'death ward': { level: 4, actionSlot: 0, targets: 1, type: 'buff', target: 'ally', buff: { duration: 'entire encounter' }, ext: { range: 5, prefight: 'deathWard', wtOnly: true } },
   'silvery barbs': { level: 1, actionSlot: 4, targets: 1, type: 'debuff', target: 'enemy with highest DPR', saveDC: 99, buff: { duration: 'until next attack made', condition: 'Attacks with Disadvantage' }, ext: { range: 60 } },
@@ -227,8 +229,8 @@ function fromText(raw) {
   const re1 = new RegExp(`\\b(${cn})\\b\\s*(?:\\(([^)]{2,40})\\)\\s*)?(?:lvl\\.?|level)?\\s*(\\d{1,2})\\b`, 'gi');
   while ((m = re1.exec(t))) if (!classes.some(c => c.name === m[1].toLowerCase()) && +m[3] >= 1 && +m[3] <= 20) classes.push({ name: m[1].toLowerCase(), level: +m[3], sub: m[2] || '' });
   if (!classes.length) {
-    const re2 = new RegExp(`\\b(?:level|lvl\\.?)\\s*(\\d{1,2})\\s+(?:[A-Za-z-]+\\s+){0,3}?(${cn})\\b`, 'i');
-    if ((m = t.match(re2))) classes.push({ name: m[2].toLowerCase(), level: +m[1], sub: '' });
+    const re2 = new RegExp(`\\b(?:level|lvl\\.?)\\s*(\\d{1,2})\\s+(?:[A-Za-z-]+\\s+){0,3}?(${cn})\\b(?:[ \\t]*\\(([^)\\n]{2,40})\\))?`, 'i');
+    if ((m = t.match(re2))) classes.push({ name: m[2].toLowerCase(), level: +m[1], sub: m[3] ? m[3].trim() : '' });   // "Level 5 Human Fighter (Eldritch Knight)"
   }
   if (!classes.length) {
     const c = t.match(new RegExp(`\\b(${cn})\\b`, 'i')), l = num(/\b(?:character\s*)?level\s*[:=]?\s*(\d{1,2})\b/i);
@@ -321,7 +323,7 @@ function fromText(raw) {
   // spells: names from the spell list that stand alone on a line or in a comma list
   const SD = root.SpellData || {};
   const spells = [];
-  const items = t.toLowerCase().split(/\n|,|;|•|\|/).map(s => s.replace(/\([^)]*\)|\[[^\]]*\]|^[\s*\-–o◯●○✓x]+|\s*(?:\d+(?:st|nd|rd|th)?\s*(?:level)?|cantrip|ritual|concentration|[cr]\b)\s*$/gi, '').replace(/^\s*(?:spell\s*name\s*\d*|spells?|cantrips?|prepared|known|\d+(?:st|nd|rd|th)\s*level|level\s*\d)\s*[:=]?\s*/i, '').trim());
+  const items = t.toLowerCase().split(/\n|,|;|•|\|/).map(s => s.replace(/\([^)]*\)|\[[^\]]*\]|^[\s*\-–o◯●○✓x]+|\s*(?:\d+(?:st|nd|rd|th)?\s*(?:level)?|cantrip|ritual|concentration)\s*$|\s+[cr]\s*$/gi, '').replace(/^\s*(?:spell\s*name\s*\d*|spells?|cantrips?|prepared|known|\d+(?:st|nd|rd|th)\s*level|level\s*\d)\s*[:=]?\s*/i, '').trim());
   items.forEach(s => { const c = s && !/\s{2}/.test(s) ? canonSpell(s) : null; if (c && c.key === s && !spells.includes(s)) spells.push(s); });
   // a spell table ("0  Sacred Flame  Action  60 feet  C R M") is the character's list: only its rows count, unknown spells too (they become notes)
   const rowsOf = lines.map(l => l.match(/^(\d)\s+([A-Za-z][A-Za-z'’\/ ()…,.-]{1,50}?)\s+(?:Action|Bonus Action|Reaction(?:, which)?|Free Action|Special|\d+ (?:minutes?|hours?|rounds?|actions?))\b/)).filter(Boolean);
@@ -575,6 +577,14 @@ function classFeatures(f, pb, add, ext, used) {
   const tr = (f.traits || []).join('|') + '|' + (f.featuresText || '');
   if (/nimble escape|cunning action/i.test(tr)) ext.bonusDisengage = true;
   if (pa) add({ name: 'Lay on Hands', actionSlot: 1, freq: { reset: 'lr', uses: 5 * pa }, condition: 'ally under half HP', type: 'heal', amount: '1', target: 'ally with the least HP', ext: { range: 5, pool: { dice: 5 * pa, die: 1, maxPer: 5 * pa } } });
+  // Artificer (Artillerist): the Eldritch Cannon, made with a bonus action once a long rest (or a slot), then a Force Ballista bolt as a bonus action while it stands
+  const ar = lv('artificer');
+  if (ar >= 3 && /artillerist/i.test(sub('artificer'))) {
+    const hit = pb + M(3), cannon = 'artillerist-cannon';
+    add({ name: 'Eldritch Cannon (create) + Force Ballista', actionSlot: 1, freq: { reset: 'lr', uses: 1 }, condition: 'not used yet', type: 'atk', dpr: '2d8', toHit: hit, target: 'enemy with least HP', ext: { range: 120, damageType: 'force', magical: true, onHit: { push: 5 }, grantsBuff: { id: cannon, name: 'Eldritch Cannon' } } });
+    add({ name: 'Force Ballista', actionSlot: 1, type: 'atk', dpr: '2d8', toHit: hit, target: 'enemy with least HP', ext: { range: 120, damageType: 'force', requiresBuff: cannon, onHit: { push: 5 }, magical: true } });
+    used.push('eldritch cannon');
+  }
   if (ba) {
     const die = ba >= 15 ? 'd12' : ba >= 10 ? 'd10' : ba >= 5 ? 'd8' : 'd6';
     add({ name: 'Bardic Inspiration', actionSlot: 1, freq: { reset: ba >= 5 ? 'sr' : 'lr', uses: Math.max(1, M(5)) }, type: 'buff', target: 'ally with the highest DPR', buff: { duration: 'until next attack made', toHit: '1' + die }, ext: { range: 60 } });
@@ -683,6 +693,12 @@ function build(f, opts) {
   // spells
   const SD = root.SpellData || {}, spellAction = root.StatblockParser && root.StatblockParser._internals.spellAction;
   const casters = f.classes.filter(c => CLASSES[c.name] && CLASSES[c.name].cast);
+  // 2024: always prepared, whether or not the sheet lists them (Paladin's Smite from level 2, Favored Enemy from level 1)
+  const always = [];
+  const clv = n => (f.classes.find(c => c.name === n) || {}).level || 0;
+  if (clv('paladin') >= 2) always.push('divine smite');
+  if (clv('ranger') >= 1) always.push("hunter's mark");
+  for (const s of always) if (!(f.spells || []).some(x => { const c = canonSpell(x); return (c ? c.key : String(x).toLowerCase().trim()) === s; })) f.spells = (f.spells || []).concat([s]);
   if (f.spells && f.spells.length && spellAction) {
     const ab = (CLASSES[(casters.slice().sort((a, b) => b.level - a.level)[0] || main).name] || {}).ab || 'int';
     const m = M(ABS.indexOf(ab));
@@ -695,7 +711,9 @@ function build(f, opts) {
       casters.forEach(c => { const k = CLASSES[c.name].cast; if (k === 1) cl += c.level; else if (k === 0.5) cl += CLASSES[c.name].roundUp ? Math.ceil(c.level / 2) : Math.floor(c.level / 2); });
       f.classes.forEach(c => { if (THIRD.test(c.sub) && (c.name === 'fighter' || c.name === 'rogue')) cl += Math.floor(c.level / 3); });
       if (casters.length === 1 && CLASSES[casters[0].name].cast === 0.5) cl = Math.ceil(casters[0].level / 2);   // a single-class paladin, ranger or artificer
-      slots = (SLOTS[Math.min(20, cl)] || []).slice();
+      const third = f.classes.length === 1 && THIRD.test(f.classes[0].sub || '') ? f.classes[0].level : 0;   // a single-class Eldritch Knight or Arcane Trickster: its own table
+      if (third >= 3) slots = THIRD_SLOTS[Math.min(20, third)].slice();
+      else slots = (SLOTS[Math.min(20, cl)] || []).slice();
       if (wl) { const p = PACT(wl.level); if (!cl) reset = 'sr'; slots[p.lvl - 1] = (slots[p.lvl - 1] || 0) + p.n; if (cl) notes.push('Pact slots are added to the regular slots and come back on a long rest.'); }
     }
     slots = Array.from({ length: 9 }, (x, i) => +(slots[i] || 0));
