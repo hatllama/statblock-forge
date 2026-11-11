@@ -1,9 +1,11 @@
-/* TACTICAL ENGINE: the parts not split out yet (file list and how the parts share names: js/engine/base.js).
-   Still here, to be moved one module per commit: day.js. */
+/* TACTICAL ENGINE, part 12, the last: a whole adventuring day (file list and how the parts share names: js/engine/base.js).
+   expandTeam, pre-fight buffs (morningCasts), runDay, monteCarlo, summarize, the War Table's previews, and the
+   public TacEngine object. */
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
 const { makeRng, parseDice, rollDice, avgDice, finalizeAction, inferRange, damageMultFor, AI_TYPES, autoAI, casterKind, recoverSlots, makeUnit, freqKind, resetFightState, Sim, areaSpec, areaCells, inArea, AI_BASE, AI_PROFILES, aiProfile, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, hitP, castCopy, deathOdds } = ENG;
+
 /* ---------------- a whole adventuring day ---------------- */
 function expandTeam(list, team, isPC) {
   const out = [];

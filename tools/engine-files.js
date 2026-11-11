@@ -17,7 +17,7 @@ const ENGINE_FILES = [
   'js/engine/ai-boss.js',
   'js/engine/ai-v2-turn.js',
   'js/engine/encounter.js',
-  'js/engine/tactical-engine.js',
+  'js/engine/day.js',
 ];
 
 /* Runs the engine in a fresh vm context, the way the browser runs the script tags, and returns TacEngine.
