@@ -14,6 +14,7 @@ const ENGINE_FILES = [
   'js/engine/reactions.js',
   'js/engine/ai-v1.js',
   'js/engine/ai-v2.js',
+  'js/engine/ai-boss.js',
   'js/engine/tactical-engine.js',
 ];
 
