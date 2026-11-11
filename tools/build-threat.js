@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/* Builds the threat table of learn mode (AI_BASE.threat.table in js/engine/tactical-engine.js, docs/ai-v2.md "The
+/* Builds the threat table of learn mode (AI_BASE.threat.table in js/engine/ai-v2-data.js, docs/ai-v2.md "The
    threat estimate"): median HP, AC, damage per round, attack bonus, save DC, save bonus (all six, and each ability's), attacks and actions by CR, plus the
    XP of a CR and the CR that typically inflicts a condition. Everything is measured from the SRD 5.2 monsters in
    data/srd-monsters.js, read by the site's own statblock parser; no other table is used.
