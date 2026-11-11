@@ -74,8 +74,31 @@ function normalize(text) {
 /* several statblocks in one paste: split on lines of dashes, or at each name line that sits
    right above a "Size type, alignment" line */
 const META_RE = /^(?:Tiny|Small|Medium|Large|Huge|Gargantuan|TINY|SMALL|MEDIUM|LARGE|HUGE|GARGANTUAN)\b(?:\s+or\s+\w+)?\s+(?:swarm of \w+ )?[A-Za-z]+/;
+/* a statblock pasted with its line breaks lost (copied from a web page or a chat): put them back at the
+   field labels, the section headings and the "Name." / "Name (Recharge 5-6)." starts of each feature.
+   Only when no line starts with Armor Class / Hit Points, so a normal block is never touched. */
+const FLAT_LABELS = 'Armor Class(?=\\s*:?\\s*\\d)|Hit Points(?=\\s*:?\\s*\\d)|Speed(?=\\s*:?\\s*\\d)|Saving Throws(?=\\s+[A-Z][a-z]+\\s+[+-]\\d)|Skills(?=\\s+[A-Z][a-z]+\\s+[+-]\\d)|Damage Vulnerabilities|Damage Resistances|Damage Immunities|Condition Immunities|Senses(?=\\s+[a-z]|\\s+passive)|Languages(?=\\s+[A-Z\\u2014-])|Challenge(?=\\s+\\d)|(?:STR|DEX|CON|INT|WIS|CHA)(?=\\s+\\d+\\s*\\()';
+const FLAT_NAME_WORD = "[A-Z][A-Za-z'-]*";
+const FLAT_NAME = '(?:' + FLAT_NAME_WORD + '(?: (?:of|the|and|in|to|a|on|for|or|with|' + FLAT_NAME_WORD + ')){0,5})(?: \\([^()]{1,60}\\))?';
+function isFlat(p) {
+  const rows = p.split('\n').filter(l => l.trim()).length;
+  return p.length > 400 && p.length / rows > 300 && !/^[\s\u0007]*(?:Armor Class|AC|Hit Points|HP)\b/m.test(p) && /Armor Class\s*:?\s*\d/.test(p) && /Hit Points\s*:?\s*\d/.test(p);
+}
+function reflow(p) {
+  if (!isFlat(p)) return p;
+  let t = p.replace(/\n+/g, ' ');
+  // the name runs straight into "Medium humanoid (…), alignment"
+  if (!/^\s*(?:Tiny|Small|Medium|Large|Huge|Gargantuan)\b/i.test(t)) t = t.replace(/^(.{1,80}?)\s*(?=(?:Tiny|Small|Medium|Large|Huge|Gargantuan)(?: or \w+)? (?:swarm of \w+ )?[a-z]+[^,.]{0,40},)/, '$1\n');
+  t = t.replace(new RegExp('\\s*(' + FLAT_LABELS + ')', 'g'), '\n$1');
+  t = t.replace(/\s*\b(BONUS ACTIONS|LEGENDARY ACTIONS|LAIR ACTIONS|MYTHIC ACTIONS|REGIONAL EFFECTS|REACTIONS|ACTIONS|TRAITS)(?=[A-Z\s])\s*/g, '\n$1\n');
+  t = t.replace(/([.)])\s*(Bonus Actions|Legendary Actions|Lair Actions|Mythic Actions|Reactions|Actions)\s+(?=[A-Z])/g, '$1\n$2\n');
+  // a feature starts where a sentence has just ended and "Name." or "Name (tag)." follows
+  t = t.replace(new RegExp('([.!?)])[ ]*(?=' + FLAT_NAME + '\\.(?:\\s|$))', 'g'), (m, c, off, whole) => whole.charAt(off - 1) === '\n' ? m : c + '\n');
+  return t.replace(/\n[ ]+/g, '\n').replace(/\n{2,}/g, '\n');
+}
+
 function splitBlocks(text) {
-  const parts = normalize(text).split(/\n\s*-{3,}\s*\n/);
+  const parts = normalize(text).split(/\n\s*-{3,}\s*\n/).map(reflow);
   const out = [];
   for (const p of parts) {
     const lines = p.split('\n');
@@ -456,10 +479,14 @@ function readSaveEffect(entry, nm, notes, h) {
   let targets = area ? areaTargets(area) : 1;
   const upTo = t.match(/(?:up to|choose up to)\s*(\w+)\s*(?:creatures|targets)/i);
   if (upTo && !isNaN(num(upTo[1]))) targets = num(upTo[1]);
+  // "three different points … each creature in a 10-foot radius of each point": one area per point
+  const pts = area && !upTo && t.match(/\b(two|three|four|five|six)\s+(?:different\s+)?(?:points|spots|locations)\b/i);
+  if (pts && !isNaN(num(pts[1]))) { targets *= num(pts[1]); }
   if (/each creature of [^.]{0,30}choice/i.test(t) && !area) targets = 4;
   const nCreat = !area && !upTo && t.match(/\b(two|three|four|five|six)\s+(?:other\s+)?creatures\b/i);
   if (nCreat) targets = num(nCreat[1]);
   const a = { name: nm.name, actionSlot: 0, freq: nm.freq, condition: 'default', targets: Math.max(1, targets), target: 'enemy with most HP', ext: { range: area && (['cone', 'line', 'emanation'].includes(area.shape) || (area.shape === 'cube' && !/can see|a point|centered|centred|within \d+/i.test(t))) ? area.size : (area ? (rangeOf(t).ranged || 120) : (rg.ranged || rg.melee || 60)), saveAbility: sv.ab } };
+  if (pts && !isNaN(num(pts[1]))) a.ext.areaCount = num(pts[1]);
   if (area) a.ext.area = area.square ? { shape: area.shape, size: area.size, square: true } : { shape: area.shape, size: area.size };
   if (/difficult terrain/i.test(t) && area) a.ext.zone = { difficult: true };
   const mv = movementEffect(t);
@@ -1067,7 +1094,7 @@ function parseOne(block) {
     list = list.map((a, i) => ({ a, i })).sort((p, q) => rank(p.a) - rank(q.a) || p.i - q.i).map(x => x.a);
     out.push(...list);
   }
-  const lam = flat.match(/can take (\d+) legendary actions|Legendary Action Uses:\s*(\d+)/i);
+  const lam = flat.match(/can take (\d+) legendary action(?:s|\(s\))|Legendary Action Uses:\s*(\d+)/i);
   if (lam) h.ext.legendaryActions = +(lam[1] || lam[2]);
   const mon = { name: h.name, type: h.type, cr: h.cr, src: 'Custom', count: 1, hp: h.hp, AC: h.AC, saveBonus: h.saveBonus, ext: h.ext, actions: out.map(stripPriv) };
   if (spellbook) mon.ext.spellbook = spellbook;

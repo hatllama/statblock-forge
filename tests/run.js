@@ -549,6 +549,27 @@ section('Statblock parser (no AI)');
       for (const e of r.events) { if (/is cancelled/.test(e.text)) cancels++; if (e.kind === 'oa' && e.uid && e.uid.indexOf('elp') >= 0) elOA++; }
     check(cancels > 0 && elOA === 0, `Elparin voids attacks aimed at him (${cancels}) and never takes opportunity attacks (${elOA})`);
   }
+  {
+    // Malenia: a long mythic/legendary 2014-style block; the same text on one line must give the same creature
+    const M = parsed['malenia.txt'], F = parsed['malenia-flat.txt'];
+    expect(M.AC === 22 && M.hp === 287 && M.cr === '25' && M.type === 'humanoid' && M.name === 'Malenia, Blade of Miquella', 'Malenia: name, type, AC 22, HP 287, CR 25');
+    expect(M.ext.saves.dex === 16 && M.ext.saves.con === 15 && M.ext.saves.wis === 12, 'Malenia: saves');
+    expect(['necrotic', 'poison'].every(x => M.ext.resist.includes(x)) && M.ext.resist.includes('nonmagical slashing') && ['Charmed', 'Exhaustion', 'Frightened', 'Poisoned'].every(x => M.ext.condImmune.includes(x)), 'Malenia: resistances and condition immunities');
+    expect(M.ext.legendaryResistance === 3 && M.ext.legendaryActions === 3, 'Malenia: Legendary Resistance 3, 3 legendary actions');
+    const mm = act('malenia.txt', /^Multiattack/), ls = act('malenia.txt', /^Longsword/);
+    expect(mm && mm.targets === 3 && ls && ls.toHit === 16 && ls.ext.damageMix.some(d => d[0] === 'slashing' && d[1] === 12) && ls.ext.damageMix.some(d => d[0] === 'force' && d[1] === 7), 'Malenia: Multiattack x3, Longsword +16 (12 slashing + 7 force)');
+    const wd = act('malenia.txt', /Waterfowl/);
+    expect(wd && wd.freq.reset === 'recharge' && wd.toHit === 24 && wd.ext.saveAbility === 'dex' && wd.targets === 6 && wd.ext.area.size === 10 && wd.ext.areaCount === 3, 'Malenia: Waterfowl Dance (recharge, DC 24 Dex, areas, 10 ft)');
+    expect(act('malenia.txt', /Parry/).actionSlot === 4, 'Malenia: Parry is a reaction');
+    const leg = M.actions.filter(a => a.actionSlot === 2);
+    expect(leg.some(a => a.name === 'Longsword') && leg.some(a => a.name === 'Scarlet Aeonia' && a.ext.legendaryCost === 3), 'Malenia: legendary Longsword and Scarlet Aeonia (cost 3)');
+    expect(M.actions.filter(a => a.name === 'Scarlet Aeonia').length === 1, 'Malenia: Scarlet Aeonia once');
+    expect(JSON.stringify(F) === JSON.stringify(M) || JSON.stringify(F.actions) === JSON.stringify(M.actions) && F.AC === 22 && F.hp === 287 && F.cr === '25' && F.name === M.name, 'Malenia: the one-line paste parses like the normal one');
+    expect(JSON.stringify(F.actions) === JSON.stringify(M.actions) && JSON.stringify(F.ext) === JSON.stringify(M.ext), 'Malenia: flat paste gives identical actions and ext');
+    // a one-line paste with spaces between the parts reads the same
+    const spaced = Parser.parse(fs.readFileSync(path.join(dir, 'malenia.txt'), 'utf8').split('\n').join(' ')).monsters[0];
+    expect(spaced && spaced.AC === 22 && JSON.stringify(spaced.actions) === JSON.stringify(M.actions), 'Malenia: one line with spaces reads the same');
+  }
   console.log(`  ${Object.keys(parsed).length} statblocks parsed`);
 }
 
