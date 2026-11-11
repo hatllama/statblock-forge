@@ -6,6 +6,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm');
 const ROOT = path.join(__dirname, '..');
 const ENGINE_FILES = [
+  'js/engine/base.js',
   'js/engine/tactical-engine.js',
 ];
 
