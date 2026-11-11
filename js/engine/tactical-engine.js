@@ -1646,7 +1646,7 @@ Sim.prototype.kBossHp = function (u, t) {
 Sim.prototype.kFrac = function (u, t) { return this.kOf(u, t) ? Math.max(0, Math.min(1, this.kHp(u, t) / this.kMax(u, t))) : Math.max(0, t.hp / t.maxHp); };
 Sim.prototype.kDpr = function (u, t) {
   const m = this.kOf(u, t);
-  if (!m && u && t && u.team !== t.team && u.v2 && u.v2P && u.v2P.w.dprSeen) return this.kDprOpen(u, t);
+  if (!m && this.dprSeenBy(u, t)) return this.kDprOpen(u, t);
   if (!m) return t.dpr;
   const pr = priorOf(t).dpr;
   let dealt = t.dmgDealt || 0, turns = t.fightTurns || 0;
@@ -1655,11 +1655,24 @@ Sim.prototype.kDpr = function (u, t) {
 };
 /* open mode, read better (w.dprSeen > 0; the boss tier): t.dpr is its first attack's average, which leaves out a caster's spells. Its best single action it
    can still use (spells while it has the slot), blended with what it has dealt this fight, as learn blends its prior (docs/ai-v2.md "Boss tier") */
+/* u reads t's DPR through kDprOpen: open mode, the other side, a v2 reader whose profile asks for it (dprSeenPC for the party, dprSeen for monsters) */
+Sim.prototype.dprSeenBy = function (u, t) {
+  return !!(u && t && u.team !== t.team && u.v2 && u.v2P && (u.isPC ? u.v2P.w.dprSeenPC : u.v2P.w.dprSeen) && !this.kOf(u, t));
+};
+/* the DPR an option's worth in v2Value is weighed by (the damage weight and the kill): on kDprOpen's reading, the sheet's figure plus dprSeenGap of what
+   the better reading adds. A martial foe the sheet already reads right keeps its weight; a caster's or a boss's rises partway (docs/ai-v2.md) */
+Sim.prototype.kDprW = function (u, t) {
+  const d = this.kDpr(u, t);
+  if (!this.dprSeenBy(u, t)) return d;
+  const sheet = t.dpr || 0;
+  return d > sheet ? sheet + (d - sheet) * u.v2P.w.dprSeenGap : d;
+};
 Sim.prototype.kDprOpen = function (u, t) {
   let best = t.dpr || 0;
   for (const a of t.actions) if (a.actionSlot === 0 && a.type === 'atk' && !(a.ext && a.ext.swallow) && this.usable(t, a))
     best = Math.max(best, avgDice((a.ext && a.ext.wtDpr) || a.dpr) * (a.useSaves ? 1 : (a.targets || 1)));
-  const w = u.v2P.w.dprSeen;
+  if (!u.v2P.w.dprSeenDealt) return best;
+  const w = u.isPC ? u.v2P.w.dprSeenPC : u.v2P.w.dprSeen;
   return ((t.dmgDealt || 0) + best * 1.5 * w) / ((t.fightTurns || 0) + 1.5 * w);
 };
 Sim.prototype.kAc = function (u, t) {
@@ -3917,6 +3930,7 @@ const AI_BASE = {
   posture: { retreatHp: 0.3, retreatDanger: 0.5, recoverHp: 0.5, protectAllyHp: 0.35, squishyHp: 0.6, finishAt: 0.9 },
   w: {
     damage: 1, dprScale: 20, overkill: 4, spill: 0.4,           // expected damage (capped near what it has left), × how dangerous the target is
+    dprSeenGap: 0,                                               // on kDprOpen's reading, v2Value weighs by the sheet's DPR + this share of what the better reading adds (kDprW); 0.3 cost Zaki's boss day 1 more point
     kill: 1, killRounds: 1.5,                                    // dropping it: its damage for this many rounds, + 5
     control: 1,                                                  // all control: riders (Stunning Strike, Sap, push) and debuff spells (Hold Monster…)
     focus: 1.5, wounded: 4, healer: 4, caster: 4, conc: 1,       // focus fire: per ally on it, how hurt it looks, healers, casters, concentration
@@ -3952,8 +3966,10 @@ const AI_BASE = {
     // Divine Smite (docs/ai-v2.md "Hybrids"): its value on a hit (damage + the kill it makes now), × smite; with swings still to come it waits
     // when a later hit's expected smite × smiteWait is worth more
     smite: 1, smiteWait: 1,
-    // open mode: 0 reads an enemy's DPR off its sheet (its first attack); > 0 reads its best action it can still use, blended with what it has dealt at this weight (kDprOpen; the boss tier)
-    dprSeen: 0,
+    // open mode: 0 reads an enemy's DPR off its sheet (its first attack); > 0 reads its best action it can still use, blended with what it has dealt at this weight (kDprOpen).
+    // dprSeenPC for the party, dprSeen for monsters (the boss tier sets 1; ordinary tiers stay 0: the true reading made undead and the 3-fight day dive the casters and lose, docs/ai-v2.md)
+    dprSeen: 0, dprSeenPC: 1,
+    dprSeenDealt: 0,                                             // 1: blend that reading with what the foe has dealt this fight (the boss tier); 0: its best usable action alone (luck in a martial's rolls cost the party)
   },
   // Legendary Resistance (docs/ai-v2.md): burn it with cheap control, or race the boss's HP. bias: burn when racing costs more than bias × (burning + margin)
   burn: { modes: ['open'], bias: 1, margin: 4, minFail: 0.25, hold: 12, slotW: 0.5, value: 1, share: 0.6, eff: 0.75, cap: 6, probe: 3, minFollow: 0.2, probeBias: 1, probeP: 0.35, probeMax: 2, probeSlack: 0 },
@@ -4069,7 +4085,7 @@ const AI_TIERS = {
     boss: {
       morale: { bloodied: false, half: false, leader: false },
       posture: { retreatHp: 0.35, retreatDanger: 0.4 },
-      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2, dprSeen: 1 },
+      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2, dprSeen: 1, dprSeenGap: 1, dprSeenDealt: 1 },
       boss: { solo: 0.25, soloOa: 0.5, legendary: 'weigh', lair: 'weigh', legRes: 'weigh', recharge: 1 },
     },
   },
@@ -4623,7 +4639,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
     return { val: pKill * (10 + this.kDpr(u, t)) * (healers ? 1.4 : 0.8) * W.kill, why: 'execute', pKill };
   }
   // a burn (ext.dot) deals nothing now: what counts is the tick, on the foe's turns
-  const dot = a.ext && a.ext.dot, exp = this.expected(u, dot ? Object.assign({}, a, { dpr: a.ext.dotAt || dot.dice, ext: Object.assign({}, a.ext, { wtDpr: null }) }) : a, t), tHp = this.kHp(u, t), tDpr = this.kDpr(u, t);
+  const dot = a.ext && a.ext.dot, exp = this.expected(u, dot ? Object.assign({}, a, { dpr: a.ext.dotAt || dot.dice, ext: Object.assign({}, a.ext, { wtDpr: null }) }) : a, t), tHp = this.kHp(u, t), tDpr = this.kDprW(u, t);
   let val, why = '', pKill = 0;
   if (a.type === 'debuff') { val = this.v2Control(u, a, t, ctx, false, bare); if (bare) return { val, why: '', pKill: 0 }; }
   else {

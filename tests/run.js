@@ -63,7 +63,7 @@ const FOOT_SIDE = size => ({ Large: 2, Huge: 3, Gargantuan: 4 })[size] || 1;
    while dead, nobody hiding in plain sight on an open field (counts are added to acc) */
 function scanRules(r, layout, acc) {
   let { wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc;
-  let cur = {}, turnOf = null, inArea = false;
+  let cur = {}, turnOf = null, inArea = false, areaBy = null;
   const dmgZones = [];          // lingering zones hurt from the zone's cells, not along a line from the caster
   const zones = new Map();      // lingering damage zones now up: zid -> { name, cells }. Their damage comes from the zone's cells (already cut by walls), not a line from the caster
   const pushed = new Set();     // a later beam of the same attack follows a creature the first one pushed
@@ -83,7 +83,7 @@ function scanRules(r, layout, acc) {
     }
     if (e.kind === 'move' && / is pushed /.test(e.text)) pushed.add(e.uid);
     // saves inside an area are rolled from the area's centre, not the caster
-    if (e.kind === 'aoe') inArea = true; else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal', 'expel'].includes(e.kind)) inArea = false;
+    if (e.kind === 'aoe') { inArea = true; areaBy = e.uid; } else if (!['save', 'effect', 'react', 'down', 'death', 'deathsave', 'zone', 'zoneEnd', 'trigger', 'heal', 'expel'].includes(e.kind)) inArea = false;
     if (layout && e.kind === 'move' && e.path) for (const q of e.path) if (isWall(q.x, q.y)) wallSteps++;
     if (layout && !inArea && (e.kind === 'attack' || e.kind === 'save') && e.ranged && !zoneName && !pushed.has(e.target) && !/leap|bites back|drains/.test(e.text) && !dmgZones.some(n => (e.text || '').includes(': ' + n))) {
       const a = prev[e.uid], b = prev[e.target];
@@ -100,7 +100,8 @@ function scanRules(r, layout, acc) {
     }
     const me = prev[e.uid];
     if (me && e.uid === turnOf && ['attack', 'save', 'heal'].includes(e.kind) && !/drains|bites back|leaps|reacts|shakes off|rerolls|lashes|Agathys/.test(e.text)) {
-      if (me.dead) deadActs++;
+      // an area its caster began alive finishes resolving even if a reaction (Hellish Rebuke) kills the caster partway: one effect, not a new act
+      if (me.dead && !(inArea && areaBy === e.uid && e.kind === 'save')) deadActs++;
       else if ((me.conds || []).some(c => INCAP.includes(c))) incapActs++;
     }
     const foeUp = Object.keys(prev).some(k => k.startsWith('foes') || !k.includes('-') ? false : false) || r.units.some(u => u.team !== 'party' && prev[u.uid] && !prev[u.uid].dead && prev[u.uid].hp > 0 && prev[u.uid].onBoard !== false && !(prev[u.uid].conds || []).some(c => INCAP.includes(c)));
