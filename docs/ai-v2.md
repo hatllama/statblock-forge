@@ -1785,3 +1785,53 @@ legendary option is aimed after every enemy turn).
 **Left out on purpose.** Legendary moves (dropped by the parser), damage reactions (Searing Retort: no engine rule), summoners (phase 7), phases
 beyond `condition` (none of the test bosses has phase data), a Forge UI for `ext.aiPlan`, the open-mode reading fix for the other tiers and the
 party (it changes their logs: backlog), v2's area aim.
+
+## Open mode reads a caster's damage (after phase 4b)
+
+Status: built for the party on v2. The design was written first and changed as it was measured; what was tried and dropped is listed.
+
+**The problem.** In open mode `kDpr` returns `t.dpr`, the average of a creature's first attack action (`avgPerTurn`): a caster reads as its
+cantrip (a level-5 Wizard 4.5 a round). The boss tier already read better (`kDprOpen`); this step was to give every v2 reader the better reading.
+
+**What is built.** `kDprOpen` reads an enemy's DPR as the best attack it can still use (a spell while it has the slot), never under `t.dpr`.
+Who reads it that way is data (`w`):
+
+| key | base | boss | what it does |
+|---|---|---|---|
+| `dprSeenPC` | 1 | 1 | the party reads `kDprOpen` in open mode |
+| `dprSeen` | 0 | 1 | monsters read it (only the boss tier) |
+| `dprSeenDealt` | 0 | 1 | blend that reading with what the foe has dealt this fight (prior weight 1.5 turns × `dprSeen`/`dprSeenPC`), as learn does |
+| `dprSeenGap` | 0 | 1 | in `v2Value` (the damage weight × (1 + DPR ÷ `dprScale`) and the kill term), weigh by the sheet's DPR plus this share of what the better reading adds (`kDprW`) |
+
+So for the party the better reading drives targeting, posture, focus, threat and danger, while a point of damage is still weighed by the sheet's
+DPR. The boss tier keeps exactly what phase 4b calibrated. The old AI never reads any of it (the gate is `u.v2`), and learn and blind do not go
+through `kDprOpen`: `node tests/flagoff-hash.js`, `hashes-v2-learn.txt` and `AI=v2 FOES=tiers KNOW=learn` are identical.
+
+**How it was measured, and what was dropped** (party win %; every harness family before and after, 200 runs, same seeds; 600 runs to confirm):
+
+1. *Everyone on, blended* (`dprSeen` 1 in `AI_BASE`). Monsters: big gains where casters matter (the Tyrant on plain v2 53 → 25, the Lich 66 → 45.5)
+   but real losses in undead and the 3-fight day (600 runs: undead plain v2 42.8 → 55.2, cunning 28.5 → 40.0, genius 26.3 → 42.0; day cunning
+   74.5 → 80.5, genius 74.3 → 80.0; higher = weaker monsters). With the casters read right, slow melee monsters dive the back line and lose: a
+   targeting weakness the better input exposes. **Monsters stay off** (`dprSeen` 0) outside the boss tier.
+2. *The party alone, blended.* 81 rows moved, 51 up, mean +1.2, none worse beyond 2 SE; but Zaki's boss day (hard-day fights 1-2, then the
+   Ember Tyrant; tiered monsters, open) fell 85.8 → 78.7 (−3.2 SE). Not pacing (fights 1-2 spent the same slots); the Tyrant fight was lost more
+   often after a depleted start. Ablation (the old reading inside one function at a time, party only) put it in `v2Value`: the damage weight
+   grows with the foe's DPR and heals do not, so the higher, truer reading of the Tyrant pulled a worn-down party from healing to damage.
+3. *A larger scale for the new reading* (`dprScale` 30 on it): the boss day recovered (83.5) but RC2 (Eldar and a Fighter against two Hill
+   Giants and an Ogre) fell 45.7 → 35.5 at 600 runs: the scale cut the weight of martial foes the sheet already read right. Dropped.
+4. *The sheet's DPR in `v2Value`* (`dprSeenGap` 0; 0.3 cost the boss day another point): boss day 82.5, RC2 42.0, both within 2 SE, but DUMB 5
+   (a Goliath Fighter and a Rogue against goblins, then Ogres) 20.3 → 15.0 at 600 runs. The blend with damage dealt adds luck (an Ogre that missed
+   reads harmless) and no information the sheet lacked. `dprSeenDealt` 0 for the party: DUMB 5 17.7, RC2 45.5, boss day 84.7.
+
+**Results (final).** Party families: 343 rows, 315 identical, 28 moved (14 up, 14 down, mean +0.25), **none beyond 1.5 SE either way** (the
+worst: −1.0, 0.5 SE). Largest gains: H6 mixed hybrids and casters 81 → 85, the mixed party on the hard day 93.5 → 96, F2 Zaki + two green
+dragons 24 → 27. Boss rows identical. Zaki's party in open, 600 runs: hard day 95.0 → 95.7 (old-AI monsters), 94.8 → 97.3 (tiered); boss day
+77.7 → 77.2 and 85.8 → 84.5 (noise). The bigger gains of the first two arms (B1/B7 dragon +9.5, Mages + Guards +9) came with the losses above.
+
+`tests/run.js`: a rules scanner fix found on the way. A Warlock's Hellish Rebuke can kill a Mage partway through its Fireball; the rest of the
+Fireball's saves are logged after the death, which the scanner counted as acts by the dead. One area effect lands on everyone at once, so the
+scanner now accepts saves inside an area its caster began alive (the engine is unchanged).
+
+**Backlog.** The monsters' targeting once casters are read right (undead, the 3-fight day); healing against a big hitter is not weighed by its
+DPR the way damage is (why the better reading in `v2Value` hurt a worn-down party); the B1/B7 and Mage gains are there to win back if those two
+are fixed.
