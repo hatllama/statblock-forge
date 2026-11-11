@@ -10,6 +10,7 @@ const ENGINE_FILES = [
   'js/engine/grid.js',
   'js/engine/ai-v2-data.js',
   'js/engine/knowledge.js',
+  'js/engine/core.js',
   'js/engine/tactical-engine.js',
 ];
 
