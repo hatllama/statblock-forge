@@ -1,6 +1,6 @@
 /* =====================================================================
    FORGE — the workshop view: party and encounters, creature sheets, library, importers, validation, export, autosave.
-   Load order: after js/sheet-reader.js, before js/engine/tactical-engine.js. Uses the DOM; not loaded by the Node tests.
+   Load order: after js/sheet-reader.js, before the engine files (js/engine/). Uses the DOM; the Node tests only load it in a stub page (tests/run.js, "Browser smoke test").
    Contents (grep the banner text, in file order):
      - System prompt for the AI conversion call
      - Validation (mirrors the day save-file enums), Visual action editor, Spellcasting editor

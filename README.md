@@ -42,7 +42,18 @@ js/spell-data.js               combat spells the parser knows (damage, saves, ar
 js/statblock-parser.js         statblock text → Forge creatures, no AI (exposes StatblockParser)
 js/sheet-reader.js             character sheets (D&D Beyond, Foundry, text/PDF) → party members
 js/forge.js                    Forge view: workshop UI (sidebar, sheet, statblock, encounter page, quick odds, library), editor, validation, export, autosave, migrations
-js/engine/tactical-engine.js   War Table engine (pure JS, no DOM) — exposes TacEngine
+js/engine/                     War Table engine (pure JS, no DOM) — exposes TacEngine. Twelve files, loaded in the order of tools/engine-files.js:
+  base.js                        dice, constants, damage types, unit construction, spellbooks, the Sim constructor
+  grid.js                        areas of effect, terrain, line of sight, cover, distances, movement maps
+  ai-v2-data.js                  every AI v2 weight and threshold (AI_BASE, AI_PROFILES, AI_TIERS)
+  knowledge.js                   what each side knows (the k* accessors, learning) and the estimates both AIs use
+  core.js                        the rules: buffs, uses, rolling, damage, zones, executing actions
+  reactions.js                   Shield, Silvery Barbs, Lucky, damage cutters, Counterspell, Ready
+  ai-v1.js                       the old AI (tacticalTurnInner, plan, choose)
+  ai-v2.js, ai-boss.js, ai-v2-turn.js   AI v2: scoring, the boss tier, the turn search
+  encounter.js                   a creature's turn, flying, legendary and lair actions, morale, running a fight
+  day.js                         a whole adventuring day, odds runs, summaries, the TacEngine export
+tools/engine-files.js          the engine's file list and loadEngine() for Node scripts
 js/war-table.js                War Table UI: board, terrain painting, odds, replay
 tests/run.js                   engine and parser checks (wall/LoS violations, dead or hidden-in-plain-sight actors, odds sanity)
 tests/ai-compare.js            old AI vs v2 win-rate tables (not part of npm test)
@@ -54,7 +65,7 @@ tests/parse-dump.js            `node tests/parse-dump.js [name]` shows what the 
 ```
 
 The scripts are plain classic scripts that share globals, and the load order in `index.html` matters:
-party data → SRD monsters → spell data → statblock parser → sheet reader → forge → tactical engine → war table.
+party data → SRD monsters → spell data → statblock parser → sheet reader → forge → the engine files (in the order of `tools/engine-files.js`) → war table.
 
 For contributors and AI work: [CLAUDE.md](CLAUDE.md) (working notes and where things live), [docs/ai-v2.md](docs/ai-v2.md) (how the v2 AI decides) and [docs/ai-roadmap.md](docs/ai-roadmap.md) (plan, phases, backlog).
 
@@ -67,8 +78,8 @@ For contributors and AI work: [CLAUDE.md](CLAUDE.md) (working notes and where th
 | The Forge layout and pages | `js/forge.js`: `renderSide` (sidebar), `sheetHtml` (creature sheet), `statblockHtml` (read-only statblock), `encounterHtml` + `runQuickOdds`, `libraryHtml`. The selection lives in `sel` |
 | Editor fields for actions and creatures | `js/forge.js`, around `actionEditor`, `mechanicsPanel` (War Table fields) and `handleFieldChange`; creature fields in `sheetHtml`, `onCoreField` and the `data-ext` handler |
 | Validation and export | `js/forge.js`, around `validateMonster`, `checkRealSchema`, `exportCreature`, `compileSpellbook` |
-| How War Table creatures choose what to do | `js/engine/tactical-engine.js`, especially `tacticalTurnInner` (where to stand), `optionValue` / `rankSpells` (which spell), `targetValue` (who to hit) |
-| Rules: attacks, saves, damage, conditions | `js/engine/tactical-engine.js`: `attackRoll`, `saveRoll`, `damage`, `addBuff` |
+| How War Table creatures choose what to do | The old AI: `js/engine/ai-v1.js`, especially `tacticalTurnInner` (where to stand), `optionValue` / `rankSpells` (which spell), and `targetValue` in `js/engine/knowledge.js` (who to hit). AI v2: `js/engine/ai-v2.js`, `ai-v2-turn.js`, weights in `ai-v2-data.js` |
+| Rules: attacks, saves, damage, conditions | `js/engine/core.js`: `attackRoll`, `saveRoll`, `damage`, `addBuff` |
 | Board drawing and replay | `js/war-table.js` |
 
 Extra data beyond the base save format goes in an `ext` object on creatures and actions, such as ranges, areas, saves, spellbooks and on-hit effects. `exportCreature` strips or compiles it for the export.

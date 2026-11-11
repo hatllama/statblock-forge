@@ -1,7 +1,7 @@
 /* =====================================================================
    WAR TABLE UI — the tactical grid view: board, terrain painting, token inspector, odds runs, replay.
-   Load order: last, after js/engine/tactical-engine.js; uses the Forge's renderParty/renderMonsters/renderPartyBar
-   and the TacEngine global. Uses the DOM, so it is not loaded by the Node tests.
+   Load order: last, after the engine files (js/engine/); uses the Forge's renderParty/renderMonsters/renderPartyBar
+   and the TacEngine global. Uses the DOM; the Node tests only load it in a stub page (tests/run.js, "Browser smoke test").
    Contents (grep the banner text, in file order):
      - persistence (Claude storage, or the browser), state, encounter tabs
      - board, token inspector, setup mode, terrain

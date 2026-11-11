@@ -102,14 +102,14 @@ report win ±SE, rounds, deaths, slots spent.**
 | Flee and morale | **Works, v1 rule** | `moraleBreaks` (`morale` option) is a rule independent of the AI; v2 has `posture.retreatHp` but no `fleeHp` yet |
 | Hiding and ambush in v2 | **Unknown** | `slipAndHide` and the `hide` mode live in `turn` / `tacticalTurnInner` (v1 code); v2 has a `w.hide` weight but whether a v2 creature hides was not confirmed by a scripted fight |
 | Spirit Shield, Ancestral Protectors | **Doesn't work** | no trace in engine, spell data or sheet reader; needs an ally damage-reduction reaction and a "disadvantage on attacks against others" effect |
-| Relentless Rage DC counter | **Doesn't work as intended** | counter is `u.uses '__relentless'` (DC 10 +5 each use), nothing resets it on a rest (`tactical-engine.js` ~2406) |
+| Relentless Rage DC counter | **Doesn't work as intended** | counter is `u.uses '__relentless'` (DC 10 +5 each use), nothing resets it on a rest (`damage` in `js/engine/core.js`) |
 | Stone's Endurance and similar | **Works in v2 only** | `v2ReactOk` fires a limited cutter by value; the old AI fires by threshold (`attackRoll`); at-will ones (Uncanny Dodge) use the first-hit rule in both |
 
 ## Seeding check: can odds runs be seeded?
 
 **Yes, the engine is already deterministic; only the War Table's choice of seed varies.**
 
-- RNG: `makeRng(seed)` in `js/engine/tactical-engine.js` (mulberry32; `R()`, `R.d(n)`, `R.pick(arr)`), made once per `Sim` from `opts.seed` (`this.R`). There is **no `Math.random` in the engine** (the only two in the repo are id generators in `forge.js` and `sheet-reader.js`).
+- RNG: `makeRng(seed)` in `js/engine/base.js` (mulberry32; `R()`, `R.d(n)`, `R.pick(arr)`), made once per `Sim` from `opts.seed` (`this.R`). There is **no `Math.random` in the engine** (the only two in the repo are id generators in `forge.js` and `sheet-reader.js`).
 - `monteCarlo(day, opts, n, baseSeed)` uses `seed = baseSeed + i * 7919` per run; the test harness and the War Table's replay (`startReplay(seed)`) already rely on this.
 - The War Table's `runOdds` (`js/war-table.js`) does the same but takes `base = (Date.now() & 0xffffff) + 1`, so each click gives different numbers.
 - A seeded run needs: (1) a setting (for example `S.settings.seed`, plus a "fixed seed" switch, default off or on as the user decides) that replaces `Date.now()` in `runOdds`; (2) persisting it in the saved settings (`store.set`); (3) showing the seed next to the odds so a number can be reproduced; (4) nothing in the engine. Per-run seeds come from the run index, so chunking does not matter.
