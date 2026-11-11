@@ -569,6 +569,34 @@ section('Statblock parser (no AI)');
     // a one-line paste with spaces between the parts reads the same
     const spaced = Parser.parse(fs.readFileSync(path.join(dir, 'malenia.txt'), 'utf8').split('\n').join(' ')).monsters[0];
     expect(spaced && spaced.AC === 22 && JSON.stringify(spaced.actions) === JSON.stringify(M.actions), 'Malenia: one line with spaces reads the same');
+    // mixed mangled pastes: some breaks kept, some lost with no space (labels stuck to the word before)
+    const raw = fs.readFileSync(path.join(dir, 'malenia.txt'), 'utf8').replace(/\r/g, '');
+    const same = (txt, what) => {
+      const r = Parser.parse(txt).monsters;
+      expect(r.length === 1 && r[0].AC === 22 && r[0].hp === 287 && r[0].cr === '25' && r[0].ext.legendaryResistance === 3 && r[0].ext.legendaryActions === 3 && r[0].actions.length === M.actions.length &&
+        JSON.stringify(r[0].actions) === JSON.stringify(M.actions) && JSON.stringify(r[0].ext) === JSON.stringify(M.ext) && r[0].name === M.name && r[0].type === 'humanoid', `Malenia: ${what} reads like the normal one`);
+    };
+    same(fs.readFileSync(path.join(dir, 'malenia-mangled.txt'), 'utf8'), 'the browser-mangled paste (labels stuck, one 2,800-character line)');
+    same(raw.split('\n').join(' '), 'U+2028 line separators');
+    same(raw.split('\n').join(' '), 'U+2029 paragraph separators');
+    same(raw.replace(/ /g, ' '), 'non-breaking spaces');
+    same(raw.replace(/\n/g, '\n\n'), 'double newlines');
+    same(raw.replace(/\n/g, '\r\n'), 'CRLF line breaks');
+    for (const seed of [1, 2, 3, 4, 5, 6]) {
+      let x = seed * 7919; const rnd = () => (x = (x * 1103515245 + 12345) % 2147483648) / 2147483648;
+      const ls = raw.split('\n'); let o = ls[0];
+      for (let i = 1; i < ls.length; i++) o += (rnd() < 0.4 && !/^(?:[A-Z ]{6,})$/.test(ls[i]) && !/^(?:[A-Z ]{6,})$/.test(ls[i - 1]) ? '' : '\n') + ls[i];
+      same(o, `random lines joined with no space (seed ${seed})`);
+    }
+    // name and "Size type, alignment" on one line; a name that holds a size word stays a name
+    const t1 = Parser.parse(raw.replace('MALENIA, BLADE OF MIQUELLA\nMedium', 'MALENIA, BLADE OF MIQUELLA Medium')).monsters[0];
+    expect(t1.name === 'Malenia, Blade of Miquella' && t1.type === 'humanoid' && t1.ext.size === 'Medium', `title on one line: name "${t1.name}", type ${t1.type}`);
+    const t2 = Parser.parse('Tiny Dragon Hatchling\nTiny dragon, unaligned\nArmor Class 14\nHit Points 10 (3d4 + 3)\nSpeed 30 ft.\nSTR 6 (-2) DEX 12 (+1) CON 12 (+1) INT 8 (-1) WIS 10 (+0) CHA 8 (-1)\nChallenge 1/4 (50 XP)\nActions\nBite. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d4+2) piercing damage.').monsters[0];
+    expect(t2.name === 'Tiny Dragon Hatchling' && t2.type === 'dragon', `a name with a size word stays whole: "${t2.name}" (${t2.type})`);
+    const t3 = Parser.parse('Tiny Dragon Hatchling Tiny dragon, unaligned\nArmor Class 14\nHit Points 10 (3d4 + 3)\nSpeed 30 ft.\nChallenge 1/4 (50 XP)\nActions\nBite. Melee Weapon Attack: +3 to hit, reach 5 ft., one target. Hit: 4 (1d4+2) piercing damage.').monsters[0];
+    expect(t3.name === 'Tiny Dragon Hatchling' && t3.type === 'dragon', `size word in the name, on one line with the type: "${t3.name}" (${t3.type})`);
+    const t4 = Parser.parse('Bandit\nMedium or Small Humanoid, Neutral\nAC 12 Initiative +1 (11)\nHP 11 (2d8 + 2)\nSpeed 30 ft.\nCR 1/8 (XP 25)\nActions\nScimitar. Melee Attack Roll: +3, reach 5 ft. Hit: 4 (1d6 + 1) Slashing damage.').monsters[0];
+    expect(t4.name === 'Bandit' && t4.type === 'humanoid', 'a "Medium or Small" meta line is not read as a name');
   }
   console.log(`  ${Object.keys(parsed).length} statblocks parsed`);
 }

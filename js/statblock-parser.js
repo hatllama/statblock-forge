@@ -59,7 +59,7 @@ const profByCR = cr => { const v = cr.includes('/') ? 0 : +cr; return v >= 29 ? 
 /* ---------- text clean-up ---------- */
 function normalize(text) {
   return String(text)
-    .replace(/\r/g, '')
+    .replace(/\r\n?/g, '\n').replace(/[\u2028\u2029\u0085\u000b\u000c]/g, '\n')   // some page copies use line/paragraph separators
     // markdown from Homebrewery / GM Binder / 5etools exports
     .replace(/^\s*>\s?/gm, '').replace(/^\s*#{1,6}\s*/gm, '').replace(/^\s*_{3,}\s*$/gm, '').replace(/^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)*\|?\s*$/gm, '')
     .replace(/\*\*\*?|__/g, '').replace(/(^|\s)\*(?=\S)/gm, '$1').replace(/(\S)\*(?=\s|[.,:;]|$)/gm, '$1').replace(/\|/g, ' ')
@@ -84,9 +84,29 @@ function isFlat(p) {
   const rows = p.split('\n').filter(l => l.trim()).length;
   return p.length > 400 && p.length / rows > 300 && !/^[\s\u0007]*(?:Armor Class|AC|Hit Points|HP)\b/m.test(p) && /Armor Class\s*:?\s*\d/.test(p) && /Hit Points\s*:?\s*\d/.test(p);
 }
+/* a block where SOME line breaks were lost (a copy from a rendered page): a known label, section heading or
+   feature start stuck to the word before it with no space, or a very long line holding several labels.
+   A normal statblock has neither, so it is never touched. */
+const FLAT_HEADS = 'BONUS ACTIONS|LEGENDARY ACTIONS|LAIR ACTIONS|MYTHIC ACTIONS|REGIONAL EFFECTS|REACTIONS|ACTIONS|TRAITS';
+const GLUED_RES = [
+  new RegExp('[A-Za-z0-9.,;:)](?:' + FLAT_LABELS + ')'),
+  new RegExp('[a-z.!?)\\d](?:' + FLAT_HEADS + ')(?![a-z])'),
+  new RegExp('(?:' + FLAT_HEADS + ')(?=[A-Z][a-z])'),
+  new RegExp('[a-z0-9)][.!?](?=' + FLAT_NAME + '\\.(?:\\s|$))'),
+  /[A-Za-z](?:Tiny|Small|Medium|Large|Huge|Gargantuan)(?: or \w+)? (?:swarm of \w+ )?[a-z]+(?: \([^()]{1,40}\))?,/
+];
+const MIDLINE_RE = new RegExp('\\S[ ]+(?:' + FLAT_LABELS + '|' + FLAT_HEADS + ')', 'g');
+const LONG_LINE = 400;
+function isMangled(p) {
+  if (p.length < 60) return false;
+  if (!/Armor Class\s*:?\s*\d|Hit Points\s*:?\s*\d/.test(p) && !/(?:ACTIONS|REACTIONS)/.test(p)) return false;
+  if (GLUED_RES.some(re => re.test(p))) return true;
+  return p.split('\n').some(l => l.length > LONG_LINE && (l.match(MIDLINE_RE) || []).length >= 2);
+}
 function reflow(p) {
-  if (!isFlat(p)) return p;
-  let t = p.replace(/\n+/g, ' ');
+  const old = isFlat(p);
+  if (!old && !isMangled(p)) return splitTitle(p);
+  let t = old ? p.replace(/\n+/g, ' ') : p;   // a mixed paste keeps the breaks it still has
   // the name runs straight into "Medium humanoid (…), alignment"
   if (!/^\s*(?:Tiny|Small|Medium|Large|Huge|Gargantuan)\b/i.test(t)) t = t.replace(/^(.{1,80}?)\s*(?=(?:Tiny|Small|Medium|Large|Huge|Gargantuan)(?: or \w+)? (?:swarm of \w+ )?[a-z]+[^,.]{0,40},)/, '$1\n');
   t = t.replace(new RegExp('\\s*(' + FLAT_LABELS + ')', 'g'), '\n$1');
@@ -94,7 +114,13 @@ function reflow(p) {
   t = t.replace(/([.)])\s*(Bonus Actions|Legendary Actions|Lair Actions|Mythic Actions|Reactions|Actions)\s+(?=[A-Z])/g, '$1\n$2\n');
   // a feature starts where a sentence has just ended and "Name." or "Name (tag)." follows
   t = t.replace(new RegExp('([.!?)])[ ]*(?=' + FLAT_NAME + '\\.(?:\\s|$))', 'g'), (m, c, off, whole) => whole.charAt(off - 1) === '\n' ? m : c + '\n');
-  return t.replace(/\n[ ]+/g, '\n').replace(/\n{2,}/g, '\n');
+  return splitTitle(t.replace(/\n[ ]+/g, '\n').replace(/\n{2,}/g, '\n'));
+}
+/* "NAME Medium humanoid (titan), lawful neutral" on one line: the name and the size/type/alignment are two lines.
+   Needs a size word, a creature type and an alignment after it, so "Tiny Dragon Hatchling" stays a name. */
+const TITLE_RE = /^(.{1,80}?)[ ]+((?:Tiny|Small|Medium|Large|Huge|Gargantuan)(?: or \w+)? (?:swarm of \w+ )?(?:aberration|beast|celestial|construct|dragon|elemental|fey|fiend|giant|humanoid|monstrosity|ooze|plant|undead)s?(?: \([^()]{1,40}\))?, ?[a-z][a-z ,'-]{2,40})$/i;
+function splitTitle(p) {
+  return p.split('\n').map(l => { const m = TITLE_RE.exec(l.trim()); return m && !/[.:]$|\bor$/i.test(m[1]) && !/^(?:Tiny|Small|Medium|Large|Huge|Gargantuan)$/i.test(m[1]) ? m[1] + '\n' + m[2] : l; }).join('\n');
 }
 
 function splitBlocks(text) {
@@ -114,10 +140,11 @@ function splitBlocks(text) {
 function parseHeader(lines, flat, notes) {
   const h = { ext: {} };
   // name: the first line that isn't the size/type line
-  h.name = lines[0] && !META_RE.test(lines[0]) ? lines[0].replace(/[*_#]/g, '').trim() : 'Unnamed creature';
+  const nameIsMeta = META_RE.test(lines[0] || '') && !(lines[1] && META_RE.test(lines[1]));   // "Tiny Dragon Hatchling" above its own size line is a name
+  h.name = lines[0] && !nameIsMeta ? lines[0].replace(/[*_#]/g, '').trim() : 'Unnamed creature';
   if (h.name === h.name.toUpperCase() && /[A-Z]{3}/.test(h.name)) h.name = h.name.toLowerCase().replace(/(^|[\s'-])([a-z])/g, (m, a, b) => a + b.toUpperCase())
     .replace(/(\S\s+)(The|Of|And|A|An|In|On|To|For|At|By|From|With)(?=\s)/g, (m, a, w) => a + w.toLowerCase());
-  const meta = lines.find(l => META_RE.test(l)) || '';
+  const meta = lines.find((l, i) => META_RE.test(l) && !(i === 0 && !nameIsMeta)) || '';
   const sm = meta.match(/^(Tiny|Small|Medium|Large|Huge|Gargantuan)/i);
   h.ext.size = sm ? cap(sm[1].toLowerCase()) : 'Medium';
   const tm = meta.toLowerCase().match(/\b(aberration|beast|celestial|construct|dragon|elemental|fey|fiend|giant|humanoid|monstrosity|ooze|plant|undead)s?\b/);
