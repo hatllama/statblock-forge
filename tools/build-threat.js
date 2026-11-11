@@ -13,10 +13,13 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
-const ENGINE = path.join(ROOT, 'js/engine/tactical-engine.js');
+const { ENGINE_FILES, loadEngine } = require('./engine-files.js');
+const MARKERS = /\/\* threat-table:start[\s\S]*?threat-table:end \*\//;
+// the engine file that holds the table: the one with the markers
+const ENGINE_FILE = ENGINE_FILES.find(f => MARKERS.test(fs.readFileSync(path.join(ROOT, f), 'utf8')));
 function load(files) { const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx); for (const f of files) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); return ctx; }
 const Parser = load(['js/spell-data.js', 'js/statblock-parser.js']).StatblockParser;
-const Tac = load(['js/engine/tactical-engine.js']).TacEngine;
+const Tac = loadEngine();
 const Data = load(['data/srd-monsters.js']);
 vm.runInContext('globalThis.M = SRD_MONSTERS;', Data);
 
@@ -81,8 +84,8 @@ ${rows.map(line).join('\n')}
     /* threat-table:end */`;
 console.log(block);
 if (process.argv.indexOf('--dry') < 0) {
-  const src = fs.readFileSync(ENGINE, 'utf8'), re = /\/\* threat-table:start[\s\S]*?threat-table:end \*\//;
-  if (!re.test(src)) { console.error('no threat-table markers in the engine'); process.exit(1); }
-  fs.writeFileSync(ENGINE, src.replace(re, block));
-  console.log('rewrote the table in js/engine/tactical-engine.js');
+  if (!ENGINE_FILE) { console.error('no threat-table markers in the engine'); process.exit(1); }
+  const file = path.join(ROOT, ENGINE_FILE), src = fs.readFileSync(file, 'utf8');
+  fs.writeFileSync(file, src.replace(MARKERS, () => block));
+  console.log('rewrote the table in ' + ENGINE_FILE);
 }

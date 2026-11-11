@@ -6,7 +6,7 @@
 const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
 function load(files) { const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx); for (const f of files) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f }); return ctx; }
-const Tac = load(['js/engine/tactical-engine.js']).TacEngine;
+const Tac = require('../tools/engine-files.js').loadEngine();
 const Parser = load(['js/spell-data.js', 'js/statblock-parser.js']).StatblockParser;
 const D = load(['data/party.js', 'data/srd-monsters.js']);
 vm.runInContext('globalThis.CB = CLASS_BUILDS; globalThis.PP = PARTY_PLAYERS; globalThis.M = SRD_MONSTERS;', D);

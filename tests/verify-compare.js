@@ -17,8 +17,8 @@ function load(files) {
   for (const f of files) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
   return ctx;
 }
-// ENGINE=path: play another copy of the engine (a "before" saved from an older commit), same scenarios and seeds
-const Tac = (process.env.ENGINE ? (() => { const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx); vm.runInContext(fs.readFileSync(process.env.ENGINE, 'utf8'), ctx, { filename: 'engine' }); return ctx; })() : load(['js/engine/tactical-engine.js'])).TacEngine;
+// ENGINE=path: play another copy of the engine (a "before" from an older commit: a checkout folder, or one engine file from before the split), same scenarios and seeds
+const Tac = require('../tools/engine-files.js').loadEngine(process.env.ENGINE);
 const Parser = load(['js/spell-data.js', 'js/statblock-parser.js']).StatblockParser;
 const D = load(['data/party.js', 'data/srd-monsters.js']);
 vm.runInContext('globalThis.CB = CLASS_BUILDS; globalThis.PP = PARTY_PLAYERS; globalThis.M = SRD_MONSTERS;', D);

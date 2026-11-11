@@ -7,15 +7,8 @@ const path = require('path');
 const vm = require('vm');
 
 const ROOT = path.join(__dirname, '..');
-function loadGlobal(file, name) {
-  const ctx = { console, globalThis: null };
-  ctx.globalThis = ctx;
-  vm.createContext(ctx);
-  vm.runInContext(fs.readFileSync(path.join(ROOT, file), 'utf8'), ctx, { filename: file });
-  if (!ctx[name]) throw new Error(`${file} did not define ${name}`);
-  return ctx[name];
-}
-const Tac = loadGlobal('js/engine/tactical-engine.js', 'TacEngine');
+const { ENGINE_FILES, loadEngine } = require('../tools/engine-files.js');
+const Tac = loadEngine();
 const Parser = (() => {
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
   for (const f of ['js/spell-data.js', 'js/statblock-parser.js']) vm.runInContext(fs.readFileSync(path.join(ROOT, f), 'utf8'), ctx, { filename: f });
@@ -32,8 +25,9 @@ section('Shipped scripts: they load, and use only syntax older Safari/iOS can ru
   // forge.js once failed to load in the browser for several commits (a regex lost its backslashes) and no test loaded it: check every script index.html ships
   const html = fs.readFileSync(path.join(ROOT, 'index.html'), 'utf8');
   const scripts = [...html.matchAll(/<script[^>]*\bsrc="([^"?]+)/g)].map(m => m[1]).filter(f => !/^https?:/.test(f));
-  const need = ['data/party.js', 'data/srd-monsters.js', 'js/spell-data.js', 'js/statblock-parser.js', 'js/sheet-reader.js', 'js/forge.js', 'js/engine/tactical-engine.js', 'js/war-table.js'];
+  const need = ['data/party.js', 'data/srd-monsters.js', 'js/spell-data.js', 'js/statblock-parser.js', 'js/sheet-reader.js', 'js/forge.js'].concat(ENGINE_FILES, ['js/war-table.js']);
   check(need.every(f => scripts.includes(f)), 'index.html lists every shipped script: ' + need.filter(f => !scripts.includes(f)).join(', '));
+  check(JSON.stringify(scripts) === JSON.stringify(need), 'index.html loads the scripts in the documented order, the engine files as tools/engine-files.js lists them: ' + scripts.join(' → '));
   const cp = require('child_process');
   const BAD = [[/\(\?<[=!]/, 'regex lookbehind'], [/\?\?=/, '??='], [/\|\|=/, '||='], [/\bstructuredClone\b/, 'structuredClone']];
   for (const f of scripts) {
@@ -46,6 +40,79 @@ section('Shipped scripts: they load, and use only syntax older Safari/iOS can ru
       check(hit < 0, f + ' has no ' + name + (hit >= 0 ? ' (line ' + (hit + 1) + ')' : ''));
     }
   }
+}
+
+section('Engine modules: every shared name a file uses is imported from an earlier file');
+{
+  /* The engine files are separate closures that hand their free helpers and constants on through ENG (see js/engine/base.js):
+     `const { … } = ENG;` at the top, `Object.assign(ENG, { … });` at the end. A name used but not imported would only fail
+     when that line runs, so the lists are checked against the code here. Top-level names are the ones declared in column 0. */
+  const BS = String.fromCharCode(92);
+  const declared = lines => {
+    const out = [];
+    for (const l of lines) {
+      const fn = /^(?:async )?function\s+([A-Za-z_$][\w$]*)/.exec(l), decl = /^(?:const|let|var)\s+(.*)$/.exec(l);
+      if (fn) out.push(fn[1]);
+      if (!decl) continue;
+      let depth = 0, expectName = true; const s = decl[1];
+      for (let k = 0; k < s.length; k++) {
+        const c = s[k];
+        if (expectName) {
+          const m = /^\s*([A-Za-z_$][\w$]*)\s*=/.exec(s.slice(k));
+          if (m) { out.push(m[1]); k += m[0].length - 1; expectName = false; continue; }
+          if (/\s/.test(c)) continue;
+          break;      // a destructuring: the import line, read below
+        }
+        if ('([{'.includes(c)) depth++; else if (')]}'.includes(c)) depth--; else if (c === ',' && depth === 0) expectName = true;
+        else if (c === '"' || c === "'" || c === '`') { k++; while (k < s.length && s[k] !== c) { if (s[k] === BS) k++; k++; } }
+        else if (c === '/' && s[k + 1] === '/') break;
+      }
+    }
+    return out;
+  };
+  // words in code: comments and quoted strings are dropped; a property access (.name) and an object key (name:) do not count
+  const usedIn = (lines, names) => {
+    const used = new Set(); let inBlock = false;
+    for (const l of lines) {
+      let t = l;
+      if (inBlock) { const e = t.indexOf('*/'); if (e < 0) continue; t = t.slice(e + 2); inBlock = false; }
+      t = t.replace(/\/\*.*?\*\//g, '');
+      if (/^\s*\/\*/.test(t)) { inBlock = true; continue; }
+      let code = '';
+      for (let k = 0; k < t.length;) {
+        const c = t[k];
+        if (c === '"' || c === "'") { k++; while (k < t.length && t[k] !== c) { if (t[k] === BS) k++; k++; } k++; code += '""'; continue; }
+        if (c === '/' && t[k + 1] === '/') break;
+        code += c; k++;
+      }
+      const re = /(^|[^.\w$])([A-Za-z_$][\w$]*)/g; let m;
+      while ((m = re.exec(code))) {
+        if (!names.has(m[2])) continue;
+        const after = code.slice(m.index + m[0].length), before = code.slice(0, m.index + m[1].length);
+        if (/^\s*:(?!:)/.test(after) && /[{,]\s*$/.test(before)) continue;
+        used.add(m[2]);
+      }
+    }
+    return used;
+  };
+  const names = (text, re) => { const m = re.exec(text); return m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : []; };
+  const mods = ENGINE_FILES.map(f => {
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8'), lines = text.split('\n');
+    const body = lines.filter(l => !/^const \{[^}]*\} = ENG;$/.test(l) && !/^Object\.assign\(ENG, /.test(l));
+    return { f, lines: body, decl: declared(body), imports: names(text, /^const \{([^}]*)\} = ENG;$/m), exports: names(text, /^Object\.assign\(ENG, \{([^}]*)\}\);$/m) };
+  });
+  const shared = new Set(); mods.forEach(m => m.decl.forEach(n => shared.add(n)));
+  const handed = new Set();
+  for (const m of mods) {
+    const used = usedIn(m.lines, shared), mine = new Set(m.decl);
+    const missing = [...used].filter(n => !mine.has(n) && !m.imports.includes(n));
+    const unknown = m.imports.filter(n => !handed.has(n)), idle = m.imports.filter(n => !used.has(n)), notMine = m.exports.filter(n => !mine.has(n));
+    check(!missing.length && !unknown.length && !idle.length && !notMine.length, m.f + ': imports and exports match its code'
+      + (missing.length ? '; used but not imported: ' + missing.join(', ') : '') + (unknown.length ? '; imported but no earlier file hands it on: ' + unknown.join(', ') : '')
+      + (idle.length ? '; imported but not used: ' + idle.join(', ') : '') + (notMine.length ? '; exported but not declared here: ' + notMine.join(', ') : ''));
+    m.exports.forEach(n => handed.add(n));
+  }
+  check(Object.keys(Tac).length >= 28 && !Tac._, 'the public TacEngine has its ' + Object.keys(Tac).length + ' entries and no internals');
 }
 
 // a map with walls, high ground and difficult terrain
