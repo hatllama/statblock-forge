@@ -102,7 +102,7 @@ report win ±SE, rounds, deaths, slots spent.**
 | Flee and morale | **Works, v1 rule** | `moraleBreaks` (`morale` option) is a rule independent of the AI; v2 has `posture.retreatHp` but no `fleeHp` yet |
 | Hiding and ambush in v2 | **Unknown** | `slipAndHide` and the `hide` mode live in `turn` / `tacticalTurnInner` (v1 code); v2 has a `w.hide` weight but whether a v2 creature hides was not confirmed by a scripted fight |
 | Spirit Shield, Ancestral Protectors | **Doesn't work** | no trace in engine, spell data or sheet reader; needs an ally damage-reduction reaction and a "disadvantage on attacks against others" effect |
-| Relentless Rage DC counter | **Doesn't work as intended** | counter is `u.uses '__relentless'` (DC 10 +5 each use), nothing resets it on a rest (`damage` in `js/engine/core.js`) |
+| Relentless Rage DC counter | **Fixed (cleanup pass)** | counter is `u.uses '__relentless'` (DC 10 +5 each use, `damage` in `js/engine/core.js`); a short rest now clears it (`runDay` in `js/engine/day.js`) |
 | Stone's Endurance and similar | **Works in v2 only** | `v2ReactOk` fires a limited cutter by value; the old AI fires by threshold (`attackRoll`); at-will ones (Uncanny Dodge) use the first-hit rule in both |
 
 ## Seeding check: can odds runs be seeded?
@@ -138,7 +138,6 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Harness note**: the old AI's monsters do read the knowledge mode (`kAc`, `kHp`… in learn and blind); the TIER family's "v1 (any)" row is its open row only. The BOSS family runs v1 in every mode.
 - **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
 - **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.
-- **Relentless Rage DC counter** never resets on rests: small rules fix, bundle with the next engine job.
 - **Rising out of reach**: `settleAltitude` at the end of a turn can draw an opportunity attack the search does not price (`altOa` covers touch options only): next AI job on flyers.
 - **Lingering-zone gaps**: Flaming Sphere's bonus-action move and ram, Wall of Fire's side damage, Cloudkill drift, foes avoiding a damage zone; the cast-time hit counts as a round's zone hit (a small over-credit): next engine job, foe avoidance with phase 4.
 - **Spell data gaps, zones**: Cloud of Daggers, Hunger of Hadar, Create Bonfire, Spike Growth, Sleet Storm: next spell-data job (phase 2 for the casters that use them).

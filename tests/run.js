@@ -1769,6 +1769,28 @@ section('AI v2: a burn is scored as a burn (Caustic Brew)');
   u.concentrating = null;
 }
 
+section('Relentless Rage: the DC starts again at 10 after a short rest');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const brute = (id, n, dpr) => ({ id, name: 'Brute', type: 'giant', cr: '5', count: n, hp: 30, AC: 10, saveBonus: 0, mode: 'custom', ext: { size: 'Large' },
+    actions: [{ id: id + 'a', name: 'Club', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr, toHit: 9, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const day = rest => { const b = cp(ctx.CB.find(c => c.name === 'Barbarian')), f = cp(ctx.CB.find(c => c.name === 'Fighter')); b.ext.relentlessRage = { hp: 10 }; b.hp = 20;
+    return { players: [b, f], encounters: [{ monsters: [brute('b1', 2, '3d8+6')] }, { monsters: [brute('b2', 1, '1')], shortRest: rest }] }; };
+  // days where it stood back up in fight 1 (the counter went up), the party won, and fight 2 (one harmless brute) never dropped it
+  let rested = 0, restedOk = 0, unrested = 0, unrestedKept = 0;
+  for (let i = 0; i < 60; i++) for (const rest of [true, false]) {
+    const res = Tac.runDay(day(rest), { seed: 900 + i * 13, record: true, prefightBuffs: false, _keep: true });
+    if (res.length < 2 || !res[0].events.some(e => /Relentless Rage keeps it up/.test(e.text || ''))) continue;
+    const barb = res._sim.units.find(u => u.name === 'Barbarian'), n = barb.uses.get('__relentless') || 0;
+    if (barb.dead) continue;      // the dead do not rest
+    if (rest) { rested++; if (n === 0) restedOk++; } else { unrested++; if (n >= 1) unrestedKept++; }
+  }
+  check(rested >= 3 && restedOk === rested, `after a short rest the Relentless Rage counter is back at 0, so the next save is DC 10 (${restedOk}/${rested} days)`);
+  check(unrested >= 3 && unrestedKept === unrested, `without a rest it keeps climbing (${unrestedKept}/${unrested} days)`);
+}
+
 section('A creature that drops loses the rest of its turn');
 {
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);

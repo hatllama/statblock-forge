@@ -102,7 +102,8 @@ function runDay(day, opts) {
     if (!enc || !enc.monsters || !enc.monsters.length) return;
     if (!party.some(u => !u.dead)) return;
     if (enc.shortRest && results.length) {
-      party.forEach(u => { if (!u.dead) { u.hp = u.maxHp; u.temp = 0; u.actions.concat(u.surges || []).forEach(a => { if (freqKind(a.freq) === 'sr') u.uses.set(a.id, a.freq.uses || 1); }); if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'sr') u.uses.set('res:' + k, +u.resMax[k].uses || 0); if (u.slots && u.slotReset === 'sr') u.slots = u.slotsMax.slice(); else if (u.slots && u.recovery && !u.recovery.anyBreak && !u.recoveryUsed) recoverSlots(u); } });
+      party.forEach(u => { if (!u.dead) { u.hp = u.maxHp; u.temp = 0; u.uses.delete('__relentless');     // Relentless Rage: the DC goes back to 10 after a rest
+        u.actions.concat(u.surges || []).forEach(a => { if (freqKind(a.freq) === 'sr') u.uses.set(a.id, a.freq.uses || 1); }); if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'sr') u.uses.set('res:' + k, +u.resMax[k].uses || 0); if (u.slots && u.slotReset === 'sr') u.slots = u.slotsMax.slice(); else if (u.slots && u.recovery && !u.recovery.anyBreak && !u.recoveryUsed) recoverSlots(u); } });
     }
     party.forEach(u => { if (!u.dead && u.hp <= 0) u.hp = 1; resetFightState(u); (u.dayBuffs || []).forEach(d => sim.addBuff(u, { uid: d.src }, d.action, d.data)); });
     const foes = expandTeam(enc.monsters, 'foes', false);
