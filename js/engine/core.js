@@ -538,9 +538,9 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   } else if (info.attack && src !== tgt) {
     this.onDamaged(tgt, src);
   }
-  // concentration check: Con save, DC 10 or half the damage
+  // concentration check: Con save, DC 10 or half the damage, at most 30 (2024)
   if (tgt.concentrating && tgt.hp > 0 && !tgt.dead && dmg > 0) {
-    const dc = Math.max(10, Math.floor(dmg / 2));
+    const dc = Math.min(30, Math.max(10, Math.floor(dmg / 2)));
     const roll = this.R.d(20) + (tgt.conSave || 0) + tgt.buffs.reduce((t, b) => t + (b.concBonus || 0), 0);
     if (roll < dc) this.endConcentration(tgt, `Con save ${roll} vs DC ${dc}`);
   }
