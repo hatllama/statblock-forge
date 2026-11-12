@@ -2499,6 +2499,47 @@ section('Rules pass: prone (2024)');
   }
 }
 
+section('Rules pass: the dead do not roll initiative');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const build = n => JSON.parse(JSON.stringify(ctx.CB.find(b => b.name === n)));
+  const rat = (id) => ({ id, name: 'Rat', mode: 'custom', hp: 2, AC: 8, saveBonus: 0, count: 2, speed: 20, actions: [{ id: id + '1', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 2, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const day = names => ({ players: names.map(build), encounters: [{ monsters: [rat('r1')] }, { monsters: [rat('r2')] }, { monsters: [rat('r3')] }] });
+  // the Barbarian is struck down in the first round of fight 1
+  const proto = Tac.Sim.prototype, turn = proto.turn;
+  proto.turn = function (u) {
+    if (this.fightNo === 0 && this.round === 1 && u.team === 'foes' && !this._scripted) { this._scripted = true; const b = this.units.find(x => x.name === 'Barbarian'); if (b && !b.dead) { this.kill(b, null, 'scripted'); struck = true; } }
+    return turn.call(this, u);
+  };
+  const inOrder = (r, uid) => r.events[0].order.includes(uid), acted = (r, uid) => r.events.some(e => e.uid === uid && e.kind === 'turn');
+  let struck = false, noRez = 0, deadInOrder = 0, deadActed = 0, hasInit = 0, rez = 0, rejoined = 0, startedIn = 0;
+  try {
+    for (let i = 0; i < 40; i++) {
+      // no one to revive them: dead for the rest of the day
+      struck = false;
+      const a = Tac.runDay(day(['Fighter', 'Barbarian', 'Wizard']), { seed: 50 + i * 31, partyAI: 'tactical', ai: { party: 'v2' }, record: true, prefightBuffs: false });
+      if (a.length === 3 && struck) {
+        noRez++;
+        const bu = a[0].units.find(u => u.name === 'Barbarian').uid;
+        if (inOrder(a[0], bu)) startedIn++;
+        for (const r of a.slice(1)) { if (inOrder(r, bu) || /Barbarian \d/.test(r.events[0].text)) deadInOrder++; if (acted(r, bu)) deadActed++; if (r.units.find(u => u.name === 'Barbarian').init !== undefined) hasInit++; }
+      }
+      // a Cleric with Revivify brings them back when the fight is won: they roll again in the next one
+      struck = false;
+      const b = Tac.runDay(day(['Cleric', 'Fighter', 'Barbarian']), { seed: 50 + i * 31, partyAI: 'tactical', ai: { party: 'v2' }, record: true, prefightBuffs: false });
+      if (b.length === 3 && struck && !b[0].party.find(p => p.name === 'Barbarian').dead) {
+        rez++;
+        const bu = b[1].units.find(u => u.name === 'Barbarian').uid;
+        if (inOrder(b[1], bu) && /Barbarian \d/.test(b[1].events[0].text) && acted(b[1], bu)) rejoined++;
+      }
+    }
+  } finally { proto.turn = turn; }
+  check(noRez >= 8 && startedIn === noRez, `the Barbarian was alive when fight 1 began, so it is in that initiative line (${startedIn}/${noRez} days)`);
+  check(deadInOrder === 0 && deadActed === 0 && hasInit === 0, `dead for the rest of the day: not in the initiative line of the next fights, no turn, no initiative (${deadInOrder} in a line, ${deadActed} turns, ${hasInit} with a roll)`);
+  check(rez >= 3 && rejoined === rez, `Revivify after fight 1: the Barbarian rolls and acts in fight 2 (${rejoined} of ${rez} days)`);
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {

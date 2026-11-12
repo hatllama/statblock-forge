@@ -1861,3 +1861,9 @@ budget and the AI's reach estimates see it; a creature still prone, not yet on i
 enemies' reach estimates match what the turn will give. Falls (`fallProne`: climbing, falling from height, spat out) now last `until it stands up`
 instead of `1 round`. Crawling covers the same distance as standing then walking (half), and also stays prone, so the engine always stands.
 Nothing parsed from a statblock or spell sets Prone yet (only these engine falls do), so the effect is small today.
+
+**3. The dead and initiative.** `runEncounter` rolled initiative for every unit, so a party member lost in an earlier fight (the party carries
+its dead through the day) was in the log's "Initiative:" line and `order`, only skipped when its turn came. Now a dead unit takes no roll
+(`u.init` is `undefined`; the roll's random draw goes with it, so days with a death change) and is not in `order`. Revives (`endFightRevives`) happen
+between fights, and only for someone who died in that fight, so a revived member is alive when the next fight starts and rolls like anyone else;
+nobody is raised mid-fight, so `order` never needs an insert.

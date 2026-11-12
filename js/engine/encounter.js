@@ -517,11 +517,14 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   this.boardChanged();
   if (this.aiV2) this.units.forEach(u => this.v2Setup(u));
   // initiative (2024: surprised creatures roll with disadvantage)
+  // the dead (a party member lost in an earlier fight and not revived) take no part: no roll, no place in the order
+  // (a revive happens between fights, endFightRevives, so a revived one rolls like anyone else in the next fight)
   for (const u of this.units) {
+    if (u.dead) { u.init = undefined; continue; }
     const sur = this.surprised[u.team] && this.surpriseRules === '2024';
     u.init = this.d20(u.initAdv, sur, false) + u.initBonus + this.R() * 0.01;
   }
-  this.order = this.units.slice().sort((a, b) => b.init - a.init);
+  this.order = this.units.filter(u => !u.dead).sort((a, b) => b.init - a.init);
   this.ev('start', 'Initiative: ' + this.order.map(u => `${u.name} ${Math.floor(u.init)}`).join(', '), { order: this.order.map(u => u.uid) });
   this.round = 1;
   if (this.morningNotes && this.morningNotes.length) { this.morningNotes.forEach(n => this.ev('heal', n.text, { uid: n.uid })); this.morningNotes = null; }
