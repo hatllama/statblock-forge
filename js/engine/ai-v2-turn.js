@@ -142,7 +142,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
   const hurt = healR ? this.alliesOf(u).filter(o => o !== u && o.onBoard && !o.dead && o.hp < o.maxHp * 0.5) : [];
   const reachPen = (x, y) => { let n = 0; for (const o of hurt) if (this.distXY(x, y, o) > healR) n++; return n * W.healReach; };
   // concentration: each hit is a Con save (DC 10 for most hits)
-  const pfConc = holding ? Math.min(0.95, Math.max(0.05, (10 - (u.conSave || 0) - 1 - u.buffs.reduce((t, b) => t + (b.concBonus || 0), 0)) / 20)) : 0;
+  const pfConc = holding ? Math.min(0.95, Math.max(0.05, (10 - this.concMod(u) - 1) / 20)) : 0;
   const concR = th => holding && th > 0 ? holding * (1 - Math.pow(1 - pfConc, th / 8)) * W.concRisk : 0;
   // hiding: which squares nobody can see, and how far each square is from one
   const hideA = this.T.any && !bonusSpent && !bonusDis ? u.actions.find(a => isHideAction(a) && a.actionSlot === 1 && this.usable(u, a) && this.condOk(u, a)) : null;

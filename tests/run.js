@@ -2418,6 +2418,43 @@ section('AI v2: the boss tier (phase 4b)');
   check(/scores, aiPlan, \.\.\.rest/.test(fs.readFileSync(path.join(ROOT, 'js/forge.js'), 'utf8')), 'the day export (exportCreature) leaves ext.aiPlan out, like ext.scores');
 }
 
+section('Rules pass: concentration saves use the normal save path');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const wiz = () => Tac.expandTeam([JSON.parse(JSON.stringify(ctx.CB.find(b => b.name === 'Wizard')))], 'party', true)[0];
+  // hold rate of a concentration spell against a hit of `dmg`, with the Wizard's Con save set to `con` and some buffs on it
+  const hold = (con, dmg, buffs, n) => {
+    const u = wiz(), sim = new Tac.Sim({ seed: 11 }); sim.units = [u]; sim.byId = {}; sim.byId[u.uid] = u;
+    u.saves = { con }; u.saveBonus = con; u.conSave = con; u.hp = u.maxHp = 100000;
+    let held = 0;
+    for (let i = 0; i < n; i++) {
+      u.buffs = (buffs || []).map(b => ({ id: b.name, name: b.name, src: 'x', data: Object.assign({}, b.data), expiry: 'entire encounter', concBonus: b.concBonus }));
+      u.concentrating = 'spell'; u.hp = u.maxHp;
+      sim.damage(u, u, dmg, {});
+      if (u.concentrating) held++;
+    }
+    return held / n;
+  };
+  const N = 4000;
+  const plain = hold(0, 20, null, N), bless = hold(0, 20, [{ name: 'Bless', data: { save: '1d4' } }], N), adv = hold(0, 20, [{ name: 'Edge', data: { condition: 'Saves with Advantage' } }], N);
+  const dis = hold(0, 20, [{ name: 'Hex', data: { condition: 'Save with Disadvantage' } }], N);
+  check(Math.abs(plain - 0.55) < 0.04, `a +0 Con save holds DC 10 about 55% of the time (${plain.toFixed(3)})`);
+  check(Math.abs(bless - 0.675) < 0.04, `Bless adds its 1d4 to the concentration save (${bless.toFixed(3)} held, expect ~0.675)`);
+  check(Math.abs(adv - 0.7975) < 0.04 && Math.abs(dis - 0.3025) < 0.04, `advantage and disadvantage apply (${adv.toFixed(3)} with, ${dis.toFixed(3)} with disadvantage; expect 0.80 and 0.30)`);
+  check(hold(9, 20, null, 500) === 1 && hold(9, 20, null, 500) >= 0.99, 'a +9 Con save holds a DC 10 every time');
+  const h40 = hold(10, 40, null, N), h60 = hold(10, 60, null, N), h400 = hold(10, 400, null, N);
+  check(Math.abs(h40 - 0.55) < 0.04 && Math.abs(h60 - 0.05) < 0.03 && Math.abs(h400 - 0.05) < 0.03, `the DC is half the damage (40 → DC 20: ${h40.toFixed(2)}) and stops at 30 (60 and 400 both ${h60.toFixed(2)} / ${h400.toFixed(2)})`);
+  const band = hold(0, 20, [{ name: 'Bladesong', data: {}, concBonus: 4 }], N);
+  check(Math.abs(band - 0.75) < 0.04, `Bladesong's concentration bonus still counts (${band.toFixed(3)}, expect ~0.75)`);
+  const u0 = wiz(), s0 = new Tac.Sim({ seed: 2 }); u0.saves = { con: 3 }; u0.conSave = 3; u0.buffs = [{ id: 'b', name: 'Bless', src: 'x', data: { save: '1d4' } }];
+  check(Math.abs(s0.concMod(u0) - 5.5) < 1e-9, `concMod (what the AI estimates with) is the Con bonus plus the buffs' average (${s0.concMod(u0)})`);
+  // the save context a damage call sits inside is put back
+  const u1 = wiz(), s1 = new Tac.Sim({ seed: 3 }); s1.units = [u1]; s1.byId = {}; s1.byId[u1.uid] = u1; u1.concentrating = 's'; u1.hp = u1.maxHp = 1000;
+  s1._saveDmg = 7; s1._saveStakes = 1; s1.damage(u1, u1, 10, {});
+  check(s1._saveDmg === 7 && s1._saveStakes === 1, 'a concentration save inside another roll leaves that roll\'s save context alone');
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {

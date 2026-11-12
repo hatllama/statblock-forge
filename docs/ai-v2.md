@@ -1838,3 +1838,16 @@ scanner now accepts saves inside an area its caster began alive (the engine is u
 **Backlog.** The monsters' targeting once casters are read right (undead, the 3-fight day); healing against a big hitter is not weighed by its
 DPR the way damage is (why the better reading in `v2Value` hurt a worn-down party); the B1/B7 and Mage gains are there to win back if those two
 are fixed.
+
+## Rules accuracy pass (2024 / SRD 5.2; rules, not AI)
+
+Behaviour changes to the rules engine, one commit each; hashes move on purpose. Evidence per step is in the commit message.
+
+**1. Concentration saves.** A hit on a concentrating creature now rolls `saveRoll(tgt, dc, null, 'con', { bonus: concBonusOf(tgt), conc: true })`
+instead of `d20 + conSave + concBonus`: the Con save with proficiency, Bless/Bane-style `save` buffs, advantage and disadvantage from conditions,
+Indomitable. DC = max(10, damage / 2), at most 30. `concBonusOf` is Bladesong's Int (a buff's `concBonus`) and stays flat. The save context other
+rolls set (`_saveDmg`, `_saveStakes`…) is put aside for it and restored. Legendary Resistance and Luck read the "stakes" of a save and a lost spell is
+not a danger condition, so they are not spent here (the same rule as other saves, with stakes 0); nobody *learns* from the roll (`conc` skips
+`learnSave`). v2's own estimate (`pfConc` in `v2TurnInner`) now reads `concMod(u)`, the same bonus the roll uses; the learn-mode estimate of a
+foe's concentration break (`knowledge.js`, `targetValue`) still uses `kSave(.., 'con')` alone. War Caster (advantage on concentration saves) is not read
+from sheets yet: backlog.

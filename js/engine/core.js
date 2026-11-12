@@ -345,6 +345,14 @@ Sim.prototype.saveBonusFor = function (t, ab) {
   if (ab === 'strdex') return Math.max(typeof sv.str === 'number' ? sv.str : t.saveBonus, typeof sv.dex === 'number' ? sv.dex : t.saveBonus);
   return typeof sv[ab] === 'number' ? sv[ab] : t.saveBonus;
 };
+/* the flat part of a concentration save on top of a normal Con save: Bladesong adds Int (a buff's concBonus) */
+Sim.prototype.concBonusOf = function (t) {
+  return t.buffs.reduce((n, b) => n + (b.concBonus || 0), 0);
+};
+/* what a concentration save adds to the d20 on average, as the roll will use it (AI estimates call this) */
+Sim.prototype.concMod = function (t) {
+  return this.saveBonusFor(t, 'con') + this.sumBuff(t, 'save', false) + this.concBonusOf(t);
+};
 Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   if (dc >= 99) return { success: false, roll: 1, total: -99 };
   const c = this.conds(t);
@@ -354,7 +362,8 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || (t.dexAdv && ab === 'dex' && !this.incap(t) && !c.has('Blinded') && !c.has('Deafened')) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
   const dis = c.has('Save with Disadvantage') || c.has('Attacks and saves with Disadvantage') || ((ab === 'dex') && c.has('Restrained'));
   let r = this.d20(adv, dis, false);
-  let total = r + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true);
+  const flat = (sopt && sopt.bonus) || 0;            // a flat extra the caller owns (Bladesong on a concentration save)
+  let total = r + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + flat;
   // half cover helps Dexterity saves against something coming from elsewhere (the area's point, or the caster)
   if (ab === 'dex' && src && src !== t && this.T.any && !this._ignoreCover) {
     const from = this._coverFrom || src;
@@ -368,7 +377,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   }
   // Legendary Resistance: only when failing would be dangerous — a disabling condition (paralysed, stunned,
   // restrained, frightened, blinded…), or damage that would drop it or take a big bite out of what it has left
-  this.learnSave(t, dc, ab, total >= dc);
+  if (!(sopt && sopt.conc)) this.learnSave(t, dc, ab, total >= dc);      // nobody watches a concentration roll
   this.learnDc(src, t, dc);
   const failDmg = this._saveDmg || 0;
   // Indomitable: reroll a failed save with a bonus (saved for ones that matter)
@@ -376,7 +385,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
       ((this._saveStakes || 0) >= 1 || failDmg >= t.hp * 0.25 || t.ai !== 'tactical')) {
     t.uses.set('__indom', t.uses.get('__indom') - 1);
     const r2 = this.d20(adv, dis, false);
-    const tot2 = r2 + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + t.indomitable.bonus;
+    const tot2 = r2 + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + flat + t.indomitable.bonus;
     this.ev('react', `${t.name} uses Indomitable: rerolls the save (${Math.round(total)} → ${Math.round(tot2)})`, { uid: t.uid });
     r = r2; total = tot2;
   }
@@ -541,8 +550,14 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   // concentration check: Con save, DC 10 or half the damage, at most 30 (2024)
   if (tgt.concentrating && tgt.hp > 0 && !tgt.dead && dmg > 0) {
     const dc = Math.min(30, Math.max(10, Math.floor(dmg / 2)));
-    const roll = this.R.d(20) + (tgt.conSave || 0) + tgt.buffs.reduce((t, b) => t + (b.concBonus || 0), 0);
-    if (roll < dc) this.endConcentration(tgt, `Con save ${roll} vs DC ${dc}`);
+    // the normal save path (Con bonus, Bless/Bane, advantage and disadvantage, Luck, Indomitable); this runs inside other
+    // rolls, so the save context they set (_saveDmg…) is put aside and restored. Legendary Resistance and Luck read the
+    // stakes, and a lost spell is not a danger condition, so neither is spent here.
+    const keep = [this._saveDmg, this._saveStakes, this._saveCond, this._saveA, this._saveHalf];
+    this._saveDmg = 0; this._saveStakes = 0; this._saveCond = null; this._saveA = null; this._saveHalf = 0;
+    const s = this.saveRoll(tgt, dc, null, 'con', { bonus: this.concBonusOf(tgt), conc: true });
+    [this._saveDmg, this._saveStakes, this._saveCond, this._saveA, this._saveHalf] = keep;
+    if (!s.success) this.endConcentration(tgt, `Con save ${Math.round(s.total)} vs DC ${dc}`);
   }
   // "…each time it takes damage, it repeats the save" (Hideous Laughter: with advantage)
   if (tgt.hp > 0 && !tgt.dead && dmg > 0) for (const b of tgt.buffs.slice()) {
