@@ -171,7 +171,7 @@ async function smoke() {
   check(/Paste a statblock first/.test(page.el('parseStatus').innerHTML), 'an empty box gives a message, not a crash');
   page.el('statblockInput').value = 'this is not a statblock at all';
   await page.el('parseBtn').fire('click'); await page.settle();
-  check(/Couldn't find a statblock|couldn't be converted|Check the parse/.test(page.el('parseStatus').innerHTML), 'text that is no statblock gives a message: ' + String(page.el('parseStatus').innerHTML).replace(/<[^>]+>/g, '').slice(0, 80));
+  check(/couldn't be converted/.test(page.el('parseStatus').innerHTML) && page.run('encounters[activeIdx].monsters.length') === 1, 'text that is no statblock adds nothing and gives a message: ' + String(page.el('parseStatus').innerHTML).replace(/<[^>]+>/g, '').slice(0, 80));
   check(page.errors.length === at, 'no error logged by the importer' + (page.errors.length > at ? ': ' + errs(page, at) : ''));
 
   // 3. the day export passes the format check

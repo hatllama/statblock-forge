@@ -1160,7 +1160,15 @@ function parse(text) {
   const blocks = splitBlocks(text);
   const monsters = [], skipped = [];
   for (const b of blocks) {
-    try { monsters.push(parseOne(b)); }
+    try {
+      const m = parseOne(b);
+      // text with nothing of a statblock in it (no AC, hit points, ability scores, CR or actions) is not a creature: say so instead of adding an AC 10, 10 HP blank
+      const nt = m._notes || [];
+      if (!m.actions.length && ['No Armor Class found', 'No hit points found', 'Ability scores not found', 'No challenge rating found'].every(x => nt.some(n => n.indexOf(x) === 0))) {
+        throw new Error("this doesn't look like a statblock (no Armor Class, Hit Points, ability scores, challenge rating or actions found)");
+      }
+      monsters.push(m);
+    }
     catch (err) { skipped.push((b.split('\n')[0] || 'statblock') + ': ' + err.message); }
   }
   return { monsters, skipped };

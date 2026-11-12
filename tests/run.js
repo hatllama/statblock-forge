@@ -520,6 +520,14 @@ section('Statblock parser (no AI)');
 {
   const dir = path.join(__dirname, 'statblocks');
   const parsed = {};
+  {
+    // text with nothing of a statblock in it is refused with a reason; a thin but real one (a name, AC and HP) still comes through with notes
+    const junk = Parser.parse('this is not a statblock at all'), prose = Parser.parse('Hello\nworld, how are you today?\nThis is a paragraph about a tavern.');
+    check(!junk.monsters.length && junk.skipped.length === 1 && /doesn't look like a statblock/.test(junk.skipped[0]), 'junk text is skipped with a reason, not turned into an AC 10 / 10 HP creature: ' + junk.skipped[0]);
+    check(!prose.monsters.length && prose.skipped.length === 1, 'a paragraph of prose is skipped too');
+    const thin = Parser.parse('Goblin\nAC 15\nHP 7');
+    check(thin.monsters.length === 1 && thin.monsters[0].AC === 15 && thin.monsters[0].hp === 7 && thin.monsters[0]._notes.some(n => /No usable actions/.test(n)), 'a name with AC and HP is still read, with a note that it has no actions');
+  }
   for (const f of fs.readdirSync(dir)) {
     const r = Parser.parse(fs.readFileSync(path.join(dir, f), 'utf8'));
     check(r.monsters.length === 1 && !r.skipped.length, `${f}: expected one creature, got ${r.monsters.length} (${r.skipped.join('; ')})`);
