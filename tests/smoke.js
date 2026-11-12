@@ -216,9 +216,22 @@ async function smoke() {
   await go(page.el('wt-btnRun'));
   check(page.errors.length === at, 'an encounter with no monsters does not crash a fight or an odds run' + (page.errors.length > at ? ': ' + errs(page, at) : ''));
 
+  // 6b. loading a day file: not JSON, JSON of the wrong shape, and a real day (tests/fixtures/hard-day.json)
+  at = page.errors.length;
+  page.run('showView("forge")');
+  const snap = JSON.parse(page.run('snapshot()'));      // the session's work, for step 7 (hard-day.json has no party)
+  const loadDay = async (name, text) => { await page.el('loadDayInput').fire('change', { target: { value: '', files: [{ name, text: async () => text }] } }); await page.settle(); return String(page.el('loadStatus').innerHTML).replace(/<[^>]+>/g, ' '); };
+  const shape = () => page.run('JSON.stringify([encounters.length, encounters.map(e => e.monsters.length), PARTY_PLAYERS.length])');
+  const before = shape();
+  const s1 = await loadDay('broken.json', '{"players": [');
+  const s2 = await loadDay('other.json', '{"hello": "world"}');
+  const untouched = shape() === before;
+  const s3 = await loadDay('hard-day.json', fs.readFileSync(path.join(__dirname, 'fixtures', 'hard-day.json'), 'utf8'));
+  check(/isn't valid JSON/.test(s1) && /doesn't look like a day save file/.test(s2) && untouched, 'a day file that is not JSON, or not a day, gives a message and changes nothing: ' + s1.slice(0, 40) + ' / ' + s2.slice(0, 50));
+  check(/Loaded "hard-day.json"/.test(s3) && page.run('encounters.length') === 4 && page.errors.length === at, 'a real day file loads (hard-day.json, 4 encounters): ' + s3.slice(0, 70) + (page.errors.length > at ? ' || ' + errs(page, at) : ''));
+
   // 7. saved work comes back: this session's, and one saved by an older version (party version 9, no selection, bare encounters)
-  const snap = JSON.parse(page.run('snapshot()'));
-  const old = JSON.parse(JSON.stringify(snap));
+  const old =JSON.parse(JSON.stringify(snap));
   old.partyVersion = 9; delete old.sel; delete old.activeIdx; old.dayName = 'An old day';
   old.players.forEach(p => (p.actions || []).forEach(a => { if (a.ext && a.ext.react) delete a.ext.react; }));
   old.encounters = old.encounters.filter(e => e.monsters.length).map(e => ({ monsters: e.monsters }));
