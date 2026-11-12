@@ -1867,3 +1867,17 @@ its dead through the day) was in the log's "Initiative:" line and `order`, only 
 (`u.init` is `undefined`; the roll's random draw goes with it, so days with a death change) and is not in `order`. Revives (`endFightRevives`) happen
 between fights, and only for someone who died in that fight, so a revived member is alive when the next fight starts and rolls like anyone else;
 nobody is raised mid-fight, so `order` never needs an insert.
+
+**4. Short rest with Hit Dice.** `runDay`'s short rest healed every living party member to full. Now `shortRestHp(u, sim)` (`day.js`): a party
+member with Hit Dice (`u.hd = { die, max, left, con }`, from `hitDiceOf` in `base.js`) rolls one die at a time plus its Con modifier (0 at the least)
+until it is at full HP or out of dice, so it spends the fewest it can; the log's first lines of the next fight say what was spent
+("Fighter rests: 2 Hit Dice (d10) for +14 HP, 3/5 left"). The dice are `ext.hitDice = { die, count, con }`: written by `tools/build-party.js` (die by class,
+one per level, Con modifier) and the sheet reader (main class's die, total level; a multiclass sheet is approximated by that one die), added to saved
+built-in members where missing by `PARTY_EXT_UPDATES[16]` (nobody is swapped, so edits stay; this differs from listing ids in `PARTY_UPDATES`), and
+otherwise worked out in the engine from `class.type`/`level` and the Con save (less proficiency for Barbarian, Fighter, Sorcerer), which is how
+older saves and `parties/zaki-party-level-5.json` get them with no file change. No class and no dice (a monster used as a player): healed fully as before.
+`ext.hitDice` is War Table only and `exportCreature` strips it, so day exports are unchanged. `opts.rules.rest` is `'hitdice'` (default; a saved
+workspace with no setting reads as this) or `'full'` (the old rule, which draws no random numbers, so its logs are the old ones); the War Table has
+a "Rules: Short rest" select saved with the workspace. Slot, pool and per-rest abilities that recover on a short rest are untouched. The engine has no
+long rest (a run is one day, every day starts with all dice), so "half the dice back" is not modelled. AI estimates never assumed a full-HP rest
+(only slots and pools read `restBeforeNext`), so nothing there needed to change.

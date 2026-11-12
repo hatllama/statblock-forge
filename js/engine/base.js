@@ -264,6 +264,19 @@ function recoverSlots(u) {
   u.recoveryUsed = true;
   (u.recovery.restores || []).forEach(id => { const a = u.actions.find(x => x.id === id); if (a && u.uses.has(id)) u.uses.set(id, Math.min((a.freq && a.freq.uses) || 1, u.uses.get(id) + 1)); });
 }
+/* Hit Dice for the short rest (2024): ext.hitDice = { die, count, con } when the creature declares them (the class builds and the
+   sheet reader do); otherwise from its class and level (older saved parties, Zaki's party file), with the Con modifier read back from its
+   Con save (less proficiency for the classes that have it). No class and no hitDice: null, and a short rest heals it fully as before. */
+const HIT_DIE = { barbarian: 12, fighter: 10, paladin: 10, ranger: 10, artificer: 8, bard: 8, cleric: 8, druid: 8, monk: 8, rogue: 8, warlock: 8, sorcerer: 6, wizard: 6 };
+const CON_SAVE_CLASSES = { barbarian: 1, fighter: 1, sorcerer: 1 };
+function hitDiceOf(tpl) {
+  const ex = tpl.ext || {}, h = ex.hitDice;
+  if (h && +h.die > 0 && +h.count > 0) return { die: +h.die, max: +h.count, left: +h.count, con: Math.round(+h.con || 0) };
+  const c = tpl.class, die = c && HIT_DIE[c.type], lv = c ? Math.floor(+c.level) : 0;
+  if (!die || !(lv > 0)) return null;
+  const pb = 2 + Math.floor((lv - 1) / 4), sv = ex.saves && typeof ex.saves.con === 'number' ? ex.saves.con : 0;
+  return { die, max: lv, left: lv, con: Math.round(sv - (CON_SAVE_CLASSES[c.type] ? pb : 0)) };
+}
 function makeUnit(tpl, team, idx, count, isPC) {
   const ex = tpl.ext || {};
   const sb = spellbookOf(tpl);
@@ -328,6 +341,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     u.recovery =sb.recovery && sb.recovery.levels ? sb.recovery : null;   // e.g. Arcane Recovery { levels: 2, maxSlot: 5, restores: [actionId] }
   }
   u.baseFly = u.fly;
+  u.hd = isPC ? hitDiceOf(tpl) : null;      // Hit Dice left for short rests (day.js)
   // "takes one additional action" (Action Surge) sits outside the normal action lists: it's used at the end of a turn
   u.surges = u.actions.filter(a => a.ext && a.ext.extraAction);
   if (u.surges.length) { u.actions = u.actions.filter(a => !u.surges.includes(a)); u.surges.forEach(a => initUses(u, a)); }
@@ -384,7 +398,8 @@ function Sim(opts) {
   this.climbDC = typeof opts.climbDC === 'number' ? opts.climbDC : 10;    // Athletics DC to scale a ledge 10 ft or higher (99: climb speed only)
   this.tpkKills = !!opts.tpkKills;     // the whole party down with foes still standing: nobody is left to save them
   this.maxRounds = opts.maxRounds || 40;
-  this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024' };      // rule variants (docs/ai-v2.md, "Counterspell rules option")
+  // rule variants (docs/ai-v2.md, "Counterspell rules option", "Rules accuracy pass"): rest 'hitdice' (default) spends Hit Dice on a short rest, 'full' heals everyone fully
+  this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024', rest: opts.rules && opts.rules.rest === 'full' ? 'full' : 'hitdice' };
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
   // AI v2 for non-casters (docs/ai-v2.md): 'v2' for both sides, or { party: 'v2', foes: 'v1' }
   const ai = opts.ai;

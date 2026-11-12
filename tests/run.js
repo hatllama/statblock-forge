@@ -798,6 +798,8 @@ section('Character sheets');
   check(p['pdf.txt'] && p['pdf.txt'].name === 'Lyra Vane' && p['pdf.txt'].ext.spellbook.slots.slice(0, 3).join() === '4,3,2' && sp(p['pdf.txt']).includes('Fireball') && sp(p['pdf.txt']).includes('Misty Step'), 'fillable PDF fields: name, wizard slots and spells');
   const rl = p['russianllama.txt'];
   check(rl && rl.name === 'Baruba Ran' && rl.class.type === 'barbarian' && rl.class.level === 7 && rl.AC === 15 && rl.hp === 93 && rl.ext.speed === 40 && rl.ext.saves.str === 8 && rl.ext.saves.con === 6 && rl.ext.saves.int === -1 && rl.ext.resist.includes('cold') && rl.actions.some(a => /Greataxe/.test(a.name) && a.toHit === 8 && /1d12 \+ 5/.test(JSON.stringify(a))), 'a D&D Beyond PDF (form widgets, no AcroForm): name, level, AC, HP, speed, saves, greataxe');
+  check(rl && rl.ext.hitDice && rl.ext.hitDice.die === 12 && rl.ext.hitDice.count === 7 && p['typed.txt'].ext.hitDice.die === 10 && p['typed.txt'].ext.hitDice.count === 6 && p['eldar-yollavien.txt'].ext.hitDice.die === 6,
+    'sheets carry Hit Dice for the short rest: d12 x7 for the level 7 barbarian, d10 x6 for the typed fighter, d6 for the wizard');
   const notesOf = c => ((c && c._notes) || []).join('\n'), actOf = (c, re) => c && c.actions.find(a => re.test(a.name));
   check(rl && rl.ext.dexSaveAdvantage === true && rl.ext.initAdvantage === true && !rl.ext.brutalCritical && !rl.ext.relentlessRage && /Ancestral Guardian/.test(rl.ext.build)
     && actOf(rl, /^Rage/).freq.uses === 4 && actOf(rl, /^Stone's Endurance/).freq.uses === 3 && actOf(rl, /^Stone's Endurance/).actionSlot === 4 && actOf(rl, /^Stone's Endurance/).buff.damageReduction === '1d12 + 3',
@@ -2415,7 +2417,7 @@ section('AI v2: the boss tier (phase 4b)');
   };
   const p0 = planRun(null, 8), ps = planRun({ save: [{ action: 'Cinder Storm', until: 'bloodied' }] }, 8);
   check(ps.early < p0.early && ps.late > 0, `ext.aiPlan.save holds Cinder Storm back until bloodied (${ps.early} storms while unhurt with the hint, ${p0.early} without; ${ps.late} after)`);
-  check(/scores, aiPlan, \.\.\.rest/.test(fs.readFileSync(path.join(ROOT, 'js/forge.js'), 'utf8')), 'the day export (exportCreature) leaves ext.aiPlan out, like ext.scores');
+  check(/scores, aiPlan, hitDice, \.\.\.rest/.test(fs.readFileSync(path.join(ROOT, 'js/forge.js'), 'utf8')), 'the day export (exportCreature) leaves ext.aiPlan out, like ext.scores');
 }
 
 section('Rules pass: concentration saves use the normal save path');
@@ -2538,6 +2540,80 @@ section('Rules pass: the dead do not roll initiative');
   check(noRez >= 8 && startedIn === noRez, `the Barbarian was alive when fight 1 began, so it is in that initiative line (${startedIn}/${noRez} days)`);
   check(deadInOrder === 0 && deadActed === 0 && hasInit === 0, `dead for the rest of the day: not in the initiative line of the next fights, no turn, no initiative (${deadInOrder} in a line, ${deadActed} turns, ${hasInit} with a roll)`);
   check(rez >= 3 && rejoined === rez, `Revivify after fight 1: the Barbarian rolls and acts in fight 2 (${rejoined} of ${rez} days)`);
+}
+
+section('Rules pass: a short rest spends Hit Dice');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const build = n => cp(ctx.CB.find(b => b.name === n));
+  const unit = n => Tac.expandTeam([build(n)], 'party', true)[0];
+  // the dice a class build carries: the die by class, one per level, the Con modifier
+  const dice = n => { const u = unit(n); return u.hd ? `d${u.hd.die}x${u.hd.max}${u.hd.con >= 0 ? '+' : ''}${u.hd.con}` : 'none'; };
+  check(['Barbarian', 'Fighter', 'Wizard', 'Cleric', 'Sorcerer'].map(dice).join() === 'd12x5+3,d10x5+3,d6x5+2,d8x5+2,d6x5+2', `class builds: d12 Barbarian, d10 Fighter, d6 Wizard and Sorcerer, d8 Cleric, one per level (${['Barbarian', 'Fighter', 'Wizard', 'Cleric', 'Sorcerer'].map(dice).join(' ')})`);
+  // a party member with only a class and level (an older save, the sheets in parties/): dice and Con modifier come from them
+  const old = cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players.find(p => /Kraax/.test(p.name)));
+  const ou = Tac.expandTeam([old], 'party', true)[0];
+  check(!old.ext.hitDice && ou.hd && ou.hd.die === 8 && ou.hd.max === 5 && ou.hd.con === 2, `a monk saved without hitDice gets d8 x5 +2 from its class, level and Con save (${JSON.stringify(ou.hd)})`);
+  const bb = build('Barbarian'); delete bb.ext.hitDice;
+  check(Tac.expandTeam([bb], 'party', true)[0].hd.con === 3, 'a class with Con save proficiency (Barbarian, +6 save, +3 proficiency) reads back its +3 Con modifier');
+  const mon = { id: 'g', name: 'Goblin', mode: 'custom', hp: 7, AC: 15, saveBonus: 0, count: 1, actions: [] };
+  check(Tac.expandTeam([mon], 'party', true)[0].hd === null && Tac.expandTeam([build('Fighter')], 'foes', false)[0].hd === null, 'no class, no dice (a monster as a player heals fully, as before); foes have none');
+  // the rest itself
+  const sim = new Tac.Sim({ seed: 9 }), simFull = new Tac.Sim({ seed: 9, rules: { rest: 'full' } });
+  check(sim.rules.rest === 'hitdice' && simFull.rules.rest === 'full' && new Tac.Sim({ rules: { rest: 'x' } }).rules.rest === 'hitdice', "rules.rest defaults to 'hitdice'; 'full' is the old behaviour");
+  let okStop = 0, okMin = 0, healed = 0, n = 300;
+  for (let i = 0; i < n; i++) {
+    const u = unit('Fighter'); u.maxHp = u.hp = 50; u.hp = 10;
+    const note = Tac.shortRestHp(u, sim);
+    // it stops at full HP or when out of dice, never before
+    if (u.hp === u.maxHp ? u.hd.left >= 0 : u.hd.left === 0) okStop++;
+    // the fewest dice: the last die is the one that took it to full (the one before it did not)
+    const spent = u.hd.max - u.hd.left;
+    if (spent >= 1 && spent <= 5 && (u.hp < u.maxHp || (note && new RegExp('^Fighter rests: ' + spent + ' Hit').test(note.text)))) okMin++;
+    healed += u.hp - 10;
+  }
+  check(okStop === n && okMin === n, `the rest spends dice until full or out and no more (${okStop}/${n}, ${okMin}/${n})`);
+  // 45/50: one die of d10+3 (4 to 13) is enough nearly always; at 5 HP down it is exactly one die except a 1-in-2 chance that a 4 leaves it short
+  let one = 0; for (let i = 0; i < n; i++) { const u = unit('Fighter'); u.maxHp = 50; u.hp = 45; Tac.shortRestHp(u, sim); if (u.hd.left === 4 && u.hp === 50) one++; }
+  check(one > n * 0.75, `five points down usually costs one die (${one}/${n})`);
+  // out of dice: stays hurt
+  { const u = unit('Wizard'); u.maxHp = 100; u.hp = 1; u.hd.left = 1; Tac.shortRestHp(u, sim); check(u.hp < 100 && u.hp >= 1 && u.hd.left === 0, `with one die left a badly hurt wizard stays hurt (${u.hp}/100)`); }
+  // 'full' and no dice
+  { const u = unit('Fighter'); u.maxHp = 50; u.hp = 3; const note = Tac.shortRestHp(u, simFull); check(u.hp === 50 && u.hd.left === 5 && note === null, "rules 'full' heals fully and spends nothing"); }
+  { const u = Tac.expandTeam([cp(mon)], 'party', true)[0]; u.hp = 1; Tac.shortRestHp(u, sim); check(u.hp === u.maxHp, 'a creature with no dice is healed fully'); }
+  // down at 0 HP: the dice start from 0
+  { const u = unit('Fighter'); u.maxHp = 50; u.hp = -4; Tac.shortRestHp(u, sim); check(u.hp >= 4, 'a creature at 0 HP gets up on its dice'); }
+  // a whole day: with a short rest the party meets the second fight less healed than with a full rest, and the log says what was spent
+  const foe = (id, hp, dpr) => ({ id, name: id, mode: 'custom', hp, AC: 12, saveBonus: 0, count: 3, speed: 30, actions: [{ id: id + '1', name: 'Slam', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr, toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const day = () => ({ players: ['Fighter', 'Paladin', 'Cleric', 'Wizard'].map(build), encounters: [{ monsters: [foe('Brute', 40, '12')] }, { monsters: [foe('Thug', 20, '6')], shortRest: true }] });
+  let startHd = 0, startFull = 0, lines = 0, days = 0;
+  const startHp = res => { const f = res[1].events[0]; return res[0].party.reduce((t, p) => t + Math.max(0, p.dead ? 0 : p.hp), 0); };
+  for (let i = 0; i < 30; i++) {
+    const a = Tac.runDay(day(), { seed: 700 + i * 13, record: true, prefightBuffs: false }), b = Tac.runDay(day(), { seed: 700 + i * 13, record: true, prefightBuffs: false, rules: { rest: 'full' } });
+    if (a.length < 2 || b.length < 2 || !a[0].won || !b[0].won) continue;
+    days++;
+    // HP on the first event that carries state of fight 2 is simpler to read from the rest lines
+    if (a[1].events.some(e => /rests: \d+ Hit Di/.test(e.text || ''))) lines++;
+    if (b[1].events.some(e => /rests:/.test(e.text || ''))) startFull++;
+    startHd += a[1].events.filter(e => /rests: \d+ Hit Di/.test(e.text || '')).length;
+  }
+  check(days >= 10 && lines >= days * 0.5 && startFull === 0, `the log names the dice spent at the start of the next fight (${lines}/${days} days have a rest line; none with rules full: ${startFull})`);
+  // fight 2 starts with fewer HP than a full rest gives, in the average day
+  let hpHd = 0, hpFull = 0, cnt = 0;
+  const proto = Tac.Sim.prototype, run = proto.runEncounter;
+  let cur = null;
+  proto.runEncounter = function (party, foes, enc, layout) { if (this.fightNo === 1) cur.push(party.filter(u => !u.dead).reduce((t, u) => t + u.hp / u.maxHp, 0)); return run.call(this, party, foes, enc, layout); };
+  try {
+    for (let i = 0; i < 30; i++) {
+      cur = []; Tac.runDay(day(), { seed: 700 + i * 13, prefightBuffs: false }); const a = cur[0];
+      cur = []; Tac.runDay(day(), { seed: 700 + i * 13, prefightBuffs: false, rules: { rest: 'full' } }); const b = cur[0];
+      if (a === undefined || b === undefined) continue;
+      cnt++; hpHd += a; hpFull += b;
+    }
+  } finally { proto.runEncounter = run; }
+  check(cnt >= 15 && hpHd < hpFull, `fight 2 starts with less of the party's HP than after a full rest (${(hpHd / cnt).toFixed(2)} vs ${(hpFull / cnt).toFixed(2)} party members' worth, ${cnt} days)`);
 }
 
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,

@@ -179,6 +179,8 @@ async function smoke() {
   const exp = page.run('(() => { const d = buildDayObject(); const r = checkRealSchema(d); return { fights: d.encounters.length, players: d.players.length, ok: r.ok, problems: r.errors }; })()');
   check(exp.players > 0 && exp.fights > 0 && exp.ok === true && !exp.problems.length, 'the day export passes checkRealSchema (' + exp.players + ' players, ' + exp.fights + ' encounter): ' + JSON.stringify(exp.problems).slice(0, 200));
 
+  check(page.run('PARTY_PLAYERS.every(p => p.ext && p.ext.hitDice) && buildDayObject().players.every(p => !(p.ext && p.ext.hitDice))'), 'the built-in party carries Hit Dice, and the day export leaves ext.hitDice out (the save-file format is unchanged)');
+
   // 4. the Forge's Smartness select writes ext.aiTier, and "auto" clears it
   const key = page.run('String(encounters[activeIdx].monsters.findIndex(m => m.name === "Ogre"))');
   const pick = v => page.el('forgeDynamic').fire('change', { target: { tagName: 'SELECT', type: 'select-one', value: v, checked: false, dataset: { ext: 'aiTier', owner: key } } });
@@ -197,6 +199,11 @@ async function smoke() {
   check(so.rules && so.rules.counterspell === '2014' && so.ai && so.ai.foes === 'tiers' && so.ai.party === 'v2', 'the Counterspell and Enemy AI selects reach the sim options: ' + JSON.stringify({ rules: so.rules, ai: so.ai }));
   await set('wt-rulesCounter', '2024');
   check(page.run('WarTable.simOpts(0).rules.counterspell') === '2024', 'and back to 2024');
+  check(page.run('WarTable.simOpts(0).rules.rest') === 'hitdice' && page.el('wt-rulesRest').value === 'hitdice', 'the short rest rule starts as Hit Dice (a workspace saved before it existed has no setting and reads the same)');
+  await set('wt-rulesRest', 'full');
+  check(page.run('WarTable.simOpts(0).rules.rest') === 'full', 'the Short rest select reaches the sim options (full)');
+  await set('wt-rulesRest', 'hitdice');
+  check(page.run('WarTable.simOpts(0).rules.rest') === 'hitdice', 'and back to Hit Dice');
   // handlers that wait on timers (animation, chunked odds) are started, then the timers are drained
   const go = async (el, type, max) => { let ended = false; el.fire(type || 'click').then(() => { ended = true; }, e => { ended = true; page.errors.push('a handler threw: ' + ((e && e.stack) || e)); }); await page.settle(max); await page.settle(max); return ended; };
   await go(page.el('wt-btnOne'));

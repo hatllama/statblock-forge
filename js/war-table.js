@@ -54,7 +54,7 @@ const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
 const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills, prefightBuffs: S.settings.prefightBuffs !== false,
-  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, expectFights: +S.settings.expectFights > 0 ? +S.settings.expectFights : undefined, morale: S.settings.morale || 'off', rules: { counterspell: S.settings.rulesCounter === '2014' ? '2014' : '2024' }, ai: { party: S.settings.aiParty === 'v2' ? 'v2' : 'v1', foes: S.settings.aiFoes === 'tiers' ? 'tiers' : S.settings.aiFoes === 'v2' ? 'v2' : 'v1' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
+  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, expectFights: +S.settings.expectFights > 0 ? +S.settings.expectFights : undefined, morale: S.settings.morale || 'off', rules: { counterspell: S.settings.rulesCounter === '2014' ? '2014' : '2024', rest: S.settings.rulesRest === 'full' ? 'full' : 'hitdice' }, ai: { party: S.settings.aiParty === 'v2' ? 'v2' : 'v1', foes: S.settings.aiFoes === 'tiers' ? 'tiers' : S.settings.aiFoes === 'v2' ? 'v2' : 'v1' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -785,6 +785,7 @@ document.getElementById('wt-aiParty').onchange = ev=>{ S.settings.aiParty = ev.t
 document.getElementById('wt-aiFoes').onchange = ev=>{ S.settings.aiFoes = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-expectFights').onchange = ev=>{ S.settings.expectFights = ev.target.value === 'exact' ? undefined : +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-rulesCounter').onchange = ev=>{ S.settings.rulesCounter = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-rulesRest').onchange = ev=>{ S.settings.rulesRest = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-morale').onchange = ev=>{ S.settings.morale = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 const knowNote = ()=>{ document.getElementById('wt-learnWarn').style.display = (S.settings.knowParty === 'learn' || S.settings.knowFoes === 'learn') ? '' : 'none'; };
 document.getElementById('wt-knowParty').onchange = ev=>{ S.settings.knowParty = ev.target.value; knowNote(); S.odds = {}; renderOdds(); scheduleSave(); };
@@ -798,6 +799,7 @@ function renderAll(){
   document.getElementById('wt-partyAI').value = S.settings.partyAI || 'tactical';
   document.getElementById('wt-aiParty').value = S.settings.aiParty === 'v2' ? 'v2' : 'v1';
   document.getElementById('wt-aiFoes').value = S.settings.aiFoes === 'tiers' ? 'tiers' : S.settings.aiFoes === 'v2' ? 'v2' : 'v1';
+  document.getElementById('wt-rulesRest').value = S.settings.rulesRest === 'full' ? 'full' : 'hitdice';
   document.getElementById('wt-morale').value = S.settings.morale || 'off';
   document.getElementById('wt-rulesCounter').value = S.settings.rulesCounter === '2014' ? '2014' : '2024';
   document.getElementById('wt-expectFights').value = +S.settings.expectFights > 0 ? String(S.settings.expectFights) : 'exact';

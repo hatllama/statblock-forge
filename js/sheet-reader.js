@@ -26,6 +26,7 @@ const titleCase = s => String(s).toLowerCase().replace(/(^|[\s\/(-])([a-z])/g, (
 const titleSmall = s => titleCase(s).replace(/ (Of|The|And|In|Or|A) /g, (m, w) => ' ' + w.toLowerCase() + ' ');
 const signed = n => (n >= 0 ? '+' : '') + n;
 
+const HIT_DIE = { barbarian: 12, fighter: 10, paladin: 10, ranger: 10, artificer: 8, bard: 8, cleric: 8, druid: 8, monk: 8, rogue: 8, warlock: 8, sorcerer: 6, wizard: 6 };
 const CLASSES = {
   barbarian: { saves: ['str', 'con'], cast: 0 }, bard: { saves: ['dex', 'cha'], cast: 1, ab: 'cha' }, cleric: { saves: ['wis', 'cha'], cast: 1, ab: 'wis' },
   druid: { saves: ['int', 'wis'], cast: 1, ab: 'wis' }, fighter: { saves: ['str', 'con'], cast: 0 }, monk: { saves: ['str', 'dex'], cast: 0 },
@@ -761,6 +762,8 @@ function build(f, opts) {
   });
   const avgSave = Math.round(ABS.reduce((t, k) => t + saves[k], 0) / 6 * 100) / 100;
   const cls = { type: CLASSES[main.name] ? main.name : 'fighter', level, options: {} };
+  // Hit Dice for a short rest: one per level, the die of its main class (a multiclass character is approximated by that one die)
+  ext.hitDice = { die: HIT_DIE[cls.type] || 8, count: level, con: mod(f.scores && f.scores[2] || 10) };
   ext.build = f.classes.map(c => `${titleCase(c.name)} ${c.level}${c.sub ? ` (${c.sub})` : ''}`).join(' / ') + ` · read from ${f.src === 'text' ? 'a pasted sheet' : f.src}`;
   const c = { id, mode: 'custom', class: cls, name: (f.name || 'Adventurer').slice(0, 60), count: 1, hp, AC: ac, saveBonus: avgSave, ext, actions };
   if (notes.length) c._notes = notes;

@@ -87,6 +87,18 @@ function morningCasts(party, sim, opts) {
   }
   return notes;
 }
+/* a short rest's healing. Rules 'full' (and a creature with no Hit Dice: a monster as a player, a class the table does not know): back to full HP,
+   as before. Otherwise (2024) it spends Hit Dice one at a time (a roll of the die plus its Con modifier, 0 at the least) until it is at full HP
+   or out of dice, so it spends the fewest it can. Returns the log line for the next fight's start, or null when nothing was spent.
+   A long rest (all HP, half the dice back, at least 1) has no place in a one-day run: every day starts with all of them. */
+function shortRestHp(u, sim) {
+  if (!u.hd || sim.rules.rest === 'full') { u.hp = u.maxHp; return null; }
+  const hd = u.hd, from = Math.max(0, u.hp);
+  let hp = from, spent = 0;
+  while (hp < u.maxHp && hd.left > 0) { hp = Math.min(u.maxHp, hp + Math.max(0, sim.R.d(hd.die) + hd.con)); hd.left--; spent++; }
+  u.hp = hp;
+  return spent ? { uid: u.uid, text: `${u.name} rests: ${spent} Hit ${spent > 1 ? 'Dice' : 'Die'} (d${hd.die}) for +${hp - from} HP, ${hd.left}/${hd.max} left` } : null;
+}
 function runDay(day, opts) {
   opts = opts || {};
   const sim = new Sim(opts);
@@ -102,8 +114,10 @@ function runDay(day, opts) {
     if (!enc || !enc.monsters || !enc.monsters.length) return;
     if (!party.some(u => !u.dead)) return;
     if (enc.shortRest && results.length) {
-      party.forEach(u => { if (!u.dead) { u.hp = u.maxHp; u.temp = 0; u.uses.delete('__relentless');     // Relentless Rage: the DC goes back to 10 after a rest
+      const restNotes = [];
+      party.forEach(u => { if (!u.dead) { const note = shortRestHp(u, sim); if (note) restNotes.push(note); u.temp = 0; u.uses.delete('__relentless');     // Relentless Rage: the DC goes back to 10 after a rest
         u.actions.concat(u.surges || []).forEach(a => { if (freqKind(a.freq) === 'sr') u.uses.set(a.id, a.freq.uses || 1); }); if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'sr') u.uses.set('res:' + k, +u.resMax[k].uses || 0); if (u.slots && u.slotReset === 'sr') u.slots = u.slotsMax.slice(); else if (u.slots && u.recovery && !u.recovery.anyBreak && !u.recoveryUsed) recoverSlots(u); } });
+      if (restNotes.length) sim.morningNotes = (sim.morningNotes || []).concat(restNotes);
     }
     party.forEach(u => { if (!u.dead && u.hp <= 0) u.hp = 1; resetFightState(u); (u.dayBuffs || []).forEach(d => sim.addBuff(u, { uid: d.src }, d.action, d.data)); });
     const foes = expandTeam(enc.monsters, 'foes', false);
@@ -249,6 +263,6 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { shortRestHp, Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);
 

@@ -13,6 +13,8 @@ const S = ctx.SpellData, spellAction = ctx.StatblockParser._internals.spellActio
 const PB = 3, LEVEL = 5;
 const mod = s => Math.floor((s - 10) / 2);
 const ABS = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
+// Hit Dice (2024): the die by class, one die per level; a short rest spends them (js/engine/day.js, opts.rules.rest)
+const HIT_DIE = { barbarian: 12, fighter: 10, paladin: 10, ranger: 10, artificer: 8, bard: 8, cleric: 8, druid: 8, monk: 8, rogue: 8, warlock: 8, sorcerer: 6, wizard: 6 };
 const titleCase = s => s.replace(/(^|[\s\/-])([a-z])/g, (m, a, b) => a + b.toUpperCase()).replace(/'S\b/g, "'s");
 
 /* one character */
@@ -27,7 +29,7 @@ function build(def) {
   const c = {
     id, mode: 'custom', class: { type: def.cls, level: LEVEL, options: {} },
     name: def.name, count: 1, hp: def.hp, AC: def.ac, saveBonus: avgSave,
-    ext: Object.assign({ speed: def.speed || 30, initBonus: mod(sc[1]), saves, build: def.build }, def.ext || {}),
+    ext: Object.assign({ speed: def.speed || 30, initBonus: mod(sc[1]), saves, build: def.build, hitDice: { die: HIT_DIE[def.cls], count: LEVEL, con: mod(sc[2]) } }, def.ext || {}),
     actions,
   };
   const athl = mod(sc[0]) + (def.athletics ? PB : 0), acro = mod(sc[1]) + (def.acrobatics ? PB : 0);

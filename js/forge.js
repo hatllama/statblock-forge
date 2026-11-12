@@ -890,7 +890,8 @@ function exportCreature(m){
   let c = stripInternal(m);
   // ext.scores (Int and Wis, read by the War Table's monster tiers) is not part of the save-file format: a plain export is the same as before tiers
   // ext.aiPlan (a boss's authored hints, War Table only) is not part of it either
-  if(c.ext && (c.ext.scores || c.ext.aiPlan)){ const { scores, aiPlan, ...rest } = c.ext; c = Object.assign({}, c, { ext: rest }); if(!Object.keys(rest).length) delete c.ext; }
+  // ext.hitDice (a party member's Hit Dice for the War Table's short rest) is not part of it either
+  if(c.ext && (c.ext.scores || c.ext.aiPlan || c.ext.hitDice)){ const { scores, aiPlan, hitDice, ...rest } = c.ext; c = Object.assign({}, c, { ext: rest }); if(!Object.keys(rest).length) delete c.ext; }
   if((c.actions || []).some(a=>a.ext && a.ext.wtOnly)) c = Object.assign({}, c, { actions: c.actions.filter(a=>!(a.ext && a.ext.wtOnly)) });
   if(!(c.ext && c.ext.spellbook) && !(c.actions || []).some(a=>a.ext && a.ext.fromSpellbook)) return c;
   return Object.assign({}, c, { actions: compileSpellbook(c) });
@@ -2612,7 +2613,7 @@ document.getElementById('downloadPartyBtn').addEventListener('click', ()=>{
 const SAVE_KEY = 'forge-workspace-v1';
 // Bump PARTY_VERSION when a built-in party member is rebuilt; list which player ids changed in that version.
 // Saved workspaces from older versions get exactly those players swapped in, nothing else touched.
-const PARTY_VERSION = 15;
+const PARTY_VERSION = 16;
 // v10: the built-in party is now a generic level-5 one (data/party.js, made by tools/build-party.js). A saved party is left
 // as it is, it's the user's work; the old sheets are in parties/zaki-party-level-5.json.
 // v5: real saving throws for Eldar and Tacitus (from their sheets) and the save each of Eldar's spells calls for; only fills what's missing
@@ -2641,7 +2642,9 @@ const PARTY_FN_UPDATES = { 14: p => {
 } };
 const PARTY_UPDATES = { 15: ['c5-paladin'], 14: ['c5-monk'], 13: ['c5-rogue', 'c5-monk'], 12: ['c5-cleric'], 11: ['c5-cleric'], 9: ['0c42f4e7-3115-43c2-88bf-8c83c199fa07', '7ba165da-a21c-4d81-9553-c8acf97f9294', 'f4d574da-e9e2-48be-9857-8cefd726544a', '7157d787-a405-41be-afb8-88bde61ef76f', '269adf29-1d78-49ba-be98-1e71db9f5504', '427e06c2-caa6-474a-9b95-c4aa5c49301f'], 2: ['427e06c2-caa6-474a-9b95-c4aa5c49301f'], 4: ['427e06c2-caa6-474a-9b95-c4aa5c49301f'], 6: ['427e06c2-caa6-474a-9b95-c4aa5c49301f', 'f4d574da-e9e2-48be-9857-8cefd726544a'], 7: ['269adf29-1d78-49ba-be98-1e71db9f5504', '0c42f4e7-3115-43c2-88bf-8c83c199fa07'], 8: ['269adf29-1d78-49ba-be98-1e71db9f5504', '0c42f4e7-3115-43c2-88bf-8c83c199fa07', '7157d787-a405-41be-afb8-88bde61ef76f'] };   // v15: Divine Smite is a rider on a hit (ext.smite)   // v13: Uncanny Dodge and Deflect Attacks need an attack roll   // v12: the Life Cleric has Revivify   // v11: Spirit Guardians and the other lingering spells keep hurting   // v9: damage types on every attack; Entangle needs a crowd, Fog Cloud is for getting out, Hideous Laughter breaks on damage   // v8: Niko rebuilt from his sheet; Juniper and Faithwalker get pushes, zones, teleports   // v7: Juniper (D&D Beyond) and Faithwalker (Notion sheet)   // v6: Eldar and Tacitus rebuilt from their sheets   // v4: Eldar gets a spell list + slots   // v2: Eldar rebuilt from his character sheet
 // v3: initiative from the character sheets; only filled in where the saved creature has none
-const PARTY_EXT_UPDATES = { 3: { '427e06c2-caa6-474a-9b95-c4aa5c49301f': { initBonus: 3 }, 'f4d574da-e9e2-48be-9857-8cefd726544a': { initBonus: 6, initAdvantage: true } } };
+// v16: Hit Dice for the short rest (ext.hitDice, tools/build-party.js); added where missing, no member is swapped (so a saved edit stays). A party member
+// without it gets its dice from class and level in the engine (hitDiceOf in js/engine/base.js), so older saves and the sheets in parties/ work as they are.
+const PARTY_EXT_UPDATES = { 16: { 'c5-barbarian': { hitDice: { die: 12, count: 5, con: 3 } }, 'c5-bard': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-cleric': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-druid': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-fighter': { hitDice: { die: 10, count: 5, con: 3 } }, 'c5-monk': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-paladin': { hitDice: { die: 10, count: 5, con: 2 } }, 'c5-ranger': { hitDice: { die: 10, count: 5, con: 2 } }, 'c5-rogue': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-sorcerer': { hitDice: { die: 6, count: 5, con: 2 } }, 'c5-warlock': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-wizard': { hitDice: { die: 6, count: 5, con: 2 } }, 'c5-artificer': { hitDice: { die: 8, count: 5, con: 2 } }, 'c5-eldritch-knight': { hitDice: { die: 10, count: 5, con: 3 } }, 'c5-arcane-trickster': { hitDice: { die: 8, count: 5, con: 2 } } }, 3: { '427e06c2-caa6-474a-9b95-c4aa5c49301f': { initBonus: 3 }, 'f4d574da-e9e2-48be-9857-8cefd726544a': { initBonus: 6, initAdvantage: true } } };
 const DEFAULT_PARTY = JSON.parse(JSON.stringify(PARTY_PLAYERS));
 const DEFAULT_DAY_NAME = document.getElementById('dayNameInput').value;
 let saveReady = false, saveTimer = null, saveNote = '';
