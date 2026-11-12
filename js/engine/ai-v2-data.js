@@ -7,7 +7,7 @@
 const ENG = root.TacEngine._;
 
 /* ===== AI v2 (docs/ai-v2.md) =====
-   Non-casters only for now (opts.ai = 'v2'). Three layers: a posture (what the creature is trying to do this round),
+   Turned on with opts.ai = 'v2' (martials and every caster kind). Three layers: a posture (what the creature is trying to do this round),
    one utility score per (mode, action, target, square), and resource pacing. It decides; the turn code in `turn`
    carries the decision out with the same rules as before. Every weight and threshold lives in AI_PROFILES. */
 const AI_BASE = {

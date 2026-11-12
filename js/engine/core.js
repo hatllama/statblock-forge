@@ -358,7 +358,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   // half cover helps Dexterity saves against something coming from elsewhere (the area's point, or the caster)
   if (ab === 'dex' && src && src !== t && this.T.any && !this._ignoreCover) {
     const from = this._coverFrom || src;
-    if (this.gapTo(from.x, from.y, from.n, t) > 1) total += this.coverBetween(from.x, from.y, t.x, t.y, from.uid ? (from.alt || 0) : (from.alt || 0), t.alt || 0);
+    if (this.gapTo(from.x, from.y, from.n, t) > 1) total += this.coverBetween(from.x, from.y, t.x, t.y, from.alt || 0, t.alt || 0);
   }
   if (total < dc && t.luckMax && (t.uses.get('__luck') || 0) > 0 && (this._saveStakes || 0) >= 1) {
     t.uses.set('__luck', t.uses.get('__luck') - 1);

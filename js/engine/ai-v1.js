@@ -583,8 +583,8 @@ Sim.prototype.planInner = function (u, a, budget) {
   return null;
 };
 
-/* first usable action of a slot that has a valid plan within `budget` ft of movement */
 /* ----- choosing an action (classic AI) ----- */
+/* first usable action of a slot that has a valid plan within `budget` ft of movement */
 Sim.prototype.choose = function (u, slot, budget) {
   const list = u.actions.filter(a => a.actionSlot === slot && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a) && !(slot === 0 && this.holdsResource(u, a)));
   for (let k = 0; k < list.length; k++) {
