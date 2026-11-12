@@ -138,6 +138,13 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Harness note**: the old AI's monsters do read the knowledge mode (`kAc`, `kHp`… in learn and blind); the TIER family's "v1 (any)" row is its open row only. The BOSS family runs v1 in every mode.
 - **Hiding and ambush in v2**: UNKNOWN; do a small scripted check before phase 4.
 - **Spirit Shield, Ancestral Protectors**: need an ally damage-reduction reaction and a "disadvantage on attacks against others" effect: phase 3.
+- **Found in the cleanup pass (November 2026), not fixed** (each changes logs or play, so it needs its own job and tables):
+  - *Standing up from Prone is free*: Prone is a one-round self buff (`push`, `fallCheck`, `expel` in `core.js`/`grid.js`); it ends by itself, costs no movement, and a prone attacker has no disadvantage on its own attacks (`DIS_SELF` has no Prone). Rules fix; every log with a knock-down moves.
+  - *Concentration saves skip save modifiers*: `damage` rolls a bare d20 + `conSave` + `concBonus`; Bless, Bane, advantage or disadvantage on saves and the Luck reroll do not apply (they go through `saveRoll`). Rules fix; moves most caster logs.
+  - *The dead roll initiative*: `runEncounter` rolls for every unit, so a PC who died in an earlier fight is in the "Initiative:" line and in the replay's order list, and uses a die. Skipping the dead shifts the dice of every later fight on such a day.
+  - *A short rest restores full hit points* (`runDay`): no Hit Dice. Known simplification; say so in the War Table's short-rest label or model Hit Dice.
+  - *Multi-point areas* (`ext.areaCount`, Waterfowl Dance style): the parser sets it and multiplies `targets`; nothing in the engine reads `areaCount`, so the points are one area with more targets. Needs an aim per point.
+  - *Legendary actions fire only after an enemy's turn* (`legendary`: `u.team === after.team` skips allies' turns). The rule allows any other creature's turn; with an escort a boss gets fewer windows than it should.
 - **Rising out of reach**: `settleAltitude` at the end of a turn can draw an opportunity attack the search does not price (`altOa` covers touch options only): next AI job on flyers.
 - **Lingering-zone gaps**: Flaming Sphere's bonus-action move and ram, Wall of Fire's side damage, Cloudkill drift, foes avoiding a damage zone; the cast-time hit counts as a round's zone hit (a small over-credit): next engine job, foe avoidance with phase 4.
 - **Spell data gaps, zones**: Cloud of Daggers, Hunger of Hadar, Create Bonfire, Spike Growth, Sleet Storm: next spell-data job (phase 2 for the casters that use them).

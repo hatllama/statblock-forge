@@ -1495,8 +1495,8 @@ spells that last the day. **In:** non-concentration buff spells that last 8 hour
 
 ## Not built yet
 
-Half/third casters and Divine Smite (roadmap phase 2), reactions (phase 3), the profile editor UI and a War Table switch (phase 5), lookahead of any kind (never: odds runs
-play thousands of fights in the browser). Harness: `node tests/ai-compare.js [runs] [filter]`.
+The profile editor UI and seeded odds runs (roadmap phase 5), the default switch to v2 (phase 6), summons and companions (phase 7), lookahead of any kind (never: odds runs
+play thousands of fights in the browser). Half and third casters, Divine Smite, reactions, the monster tiers and the boss tier are built (sections above). Harness: `node tests/ai-compare.js [runs] [filter]`.
 
 ## Monster intelligence tiers (phase 4)
 

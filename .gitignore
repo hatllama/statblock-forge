@@ -1,4 +1,11 @@
 node_modules/
 .DS_Store
+Thumbs.db
 *.log
+# scratch output of test and harness runs
 runs/
+# editor and OS files
+.vscode/
+.idea/
+*.swp
+*~

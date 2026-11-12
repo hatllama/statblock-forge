@@ -59,6 +59,7 @@ Files are big: `grep -n "function name"` (or `Sim.prototype.name`; `grep -n "Sim
 - `sheet-reader.js`: `fromDDB`/`fromFoundry`/`fromText` → facts → `build`; `classFeatures` adds per-class actions; `CUSTOM` holds spells the spell data lacks.
 - `sheet-reader.js` PDFs: `forge.js` `pdfText` hands the page text items to `SheetReader.layoutText`, which joins them into rows by their gaps and puts "Label: value" lines (value above or beside its caption, as on Roll20 sheets) in front; `fromText` reads those like any "Name: value" line. `tests/sheets/niko-roll20.txt` and `tacitus-roll20.txt` are that output (made with pdf.js 3.11.174 from the PDFs, which are not committed).
 - `war-table.js`: `simOptsFor` (sim settings per encounter), `renderSetup`, `renderInspect`, odds (`runOdds`/`renderOdds`/`drawHist`), replay (`startReplay`/`showFrame`/`play`/`animateEvent`).
+- `tests/smoke.js` (run by `npm test`, or alone with `node tests/smoke.js`) loads every script `index.html` ships into a stub page and drives the start-up render, the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload. It is the only test that runs `forge.js` and `war-table.js`; rendered HTML is not parsed, so clicks on rendered buttons are not covered.
 - `tests/run.js` is one script of `section('…')` blocks (the rule checks per AI incl. v2, area templates, terrain, flying, parser, class roster, knowledge modes, SRD monsters, character sheets, AI v2). Fixtures: `tests/statblocks`, `tests/sheets`, `tests/fixtures` (day files).
 
 How to:
