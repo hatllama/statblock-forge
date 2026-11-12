@@ -1015,7 +1015,7 @@ function parseOne(block) {
         else if (/\barrive|\bsummons?\b|\bappear(?:s)? in|\bcalls? (?:forth|in)|reinforcements/i.test(e.text)) { notes.push(`"${nm.name}" brings in other creatures — add them to the encounter yourself.`); continue; }
         else if (/\bmoves? up to|\bteleports?\b|\bfly up to|without provoking/i.test(e.text)) { notes.push(`"${nm.name}" is movement only; the War Table already positions it.`); continue; }
         else { notes.push(`${cap(sec.replace(/s$/, ''))} "${nm.name}" has nothing the simulator can model; left out.`); continue; }
-        if (!a) continue;
+        if (!a) { notes.push(`${cap(sec.replace(/s$/, ''))} "${nm.name}": the swallow could not be read (no attack that delivers it was found); left out.`); continue; }
       }
       a.actionSlot = slotOf[sec];
       if (a.freq === 'at will' && nm.freq !== 'at will') a.freq = nm.freq;
