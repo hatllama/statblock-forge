@@ -1851,3 +1851,13 @@ not a danger condition, so they are not spent here (the same rule as other saves
 `learnSave`). v2's own estimate (`pfConc` in `v2TurnInner`) now reads `concMod(u)`, the same bonus the roll uses; the learn-mode estimate of a
 foe's concentration break (`knowledge.js`, `targetValue`) still uses `kSave(.., 'con')` alone. War Caster (advantage on concentration saves) is not read
 from sheets yet: backlog.
+
+**2. Prone.** Read first: attacks against a prone creature already had advantage within 5 ft and disadvantage beyond (`attackRoll`, `hitChance`);
+a prone attacker's own disadvantage was missing, standing up was free (a fall's Prone buff was `1 round` and ended at the faller's own next turn
+start), and nothing cost movement. Now: `DIS_SELF` has `Prone` (the roll and the AI's `hitChance` both read it). `standUp(u)` runs at the start
+of a creature's turn (`turn`): a prone creature that `canStand` (not incapacitated, held, restrained, speed above 0) drops its Prone and pays half
+its speed (rounded up to 5 ft, `standCost`), recorded as `u.stoodFt` for that turn only (`stoodTurn`). `speedOf` subtracts it, so every movement
+budget and the AI's reach estimates see it; a creature still prone, not yet on its turn, is read as having already stood (half speed), so
+enemies' reach estimates match what the turn will give. Falls (`fallProne`: climbing, falling from height, spat out) now last `until it stands up`
+instead of `1 round`. Crawling covers the same distance as standing then walking (half), and also stays prone, so the engine always stands.
+Nothing parsed from a statblock or spell sets Prone yet (only these engine falls do), so the effect is small today.

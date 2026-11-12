@@ -62,6 +62,7 @@ Sim.prototype.turn = function (u) {
       return;
     }
   }
+  this.standUp(u);                  // prone: stands, for half its speed (2024)
   // passives (Other 1 / Other 2): self buffs keep themselves up
   for (const a of u.actions) {
     if ((a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && this.usable(u, a) && this.condOk(u, a)) {

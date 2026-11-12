@@ -86,7 +86,7 @@ const DANGER_CONDS = ['Incapacitated', 'Paralyzed', 'Stunned', 'Unconscious', 'P
 const ADV_TARGET = ['Blinded', 'Paralyzed', 'Restrained', 'Stunned', 'Unconscious', 'Petrified', 'Is attacked with Advantage', 'Attacks and is attacked with Advantage'];
 const ADV_SELF = ['Invisible', 'Attacks with Advantage', 'Attacks and is attacked with Advantage'];
 const DIS_TARGET = ['Invisible', 'Is attacked with Disadvantage'];
-const DIS_SELF = ['Blinded', 'Frightened', 'Poisoned', 'Restrained', 'Attacks with Disadvantage', 'Attacks and saves with Disadvantage'];
+const DIS_SELF = ['Blinded', 'Frightened', 'Poisoned', 'Prone', 'Restrained', 'Attacks with Disadvantage', 'Attacks and saves with Disadvantage'];
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 /* squares a creature covers along each side (5e grid: Large 2x2, Huge 3x3, Gargantuan 4x4). A unit's x,y is the top-left
    square of its footprint; u.n holds the side. */

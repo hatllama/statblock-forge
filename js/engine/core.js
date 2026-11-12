@@ -39,7 +39,7 @@ Sim.prototype.unitState = function (u) {
 };
 /* one line per effect on a creature: [name, what it does, how long, who put it there] */
 const EXPIRY_TEXT = { 'entire encounter': 'the whole fight', '1 round': 'until its maker\'s next turn', 'until next attack made': 'until its next attack', 'until next attack taken': 'until it is next attacked',
-  'repeat the save each round': 'save each turn to end', hide: 'until it attacks or moves into view' };
+  'until it stands up': 'until it stands (half its speed)', 'repeat the save each round': 'save each turn to end', hide: 'until it attacks or moves into view' };
 Sim.prototype.buffInfo = function (u, b) {
   const d = b.data || {}, bits = [];
   const sign = v => (typeof v === 'number' && v >= 0 ? '+' : (typeof v === 'string' && !/^[-+]/.test(v) ? '+' : '')) + v;
@@ -302,7 +302,7 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
         this.ev('move', `${u.name} slips climbing down`, { uid: u.uid, path: [{ x: step.x, y: step.y }], from: Object.assign({}, from) });
         const d = this.damage(u, u, Math.floor(rollDice(Math.floor(-rise / 2) + 'd6', this.R, false)), { type: 'bludgeoning' });
         u.dmgDealt -= d;   // it hurt itself; don't count it as damage dealt
-        this.addBuff(u, u, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
+        this.fallProne(u);
         this.ev('effect', `${u.name} falls ${-rise * 5} ft (Athletics ${tot} vs DC ${dc}; ${d} damage) and lands prone`, { uid: u.uid, dmg: d });
         return;
       }
@@ -939,7 +939,7 @@ Sim.prototype.push = function (src, t, ft) {
   const drop = this.T.anyH && !t.fly ? this.hAt(from.x, from.y) - this.hAt(t.x, t.y) : 0;
   if (drop >= 2) {
     const d = this.damage(src, t, Math.floor(rollDice(Math.floor(drop / 2) + 'd6', this.R, false)), { type: 'bludgeoning' });
-    this.addBuff(t, t, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
+    this.fallProne(t);
     this.ev('effect', `${t.name} falls ${drop * 5} ft (${d} damage) and lands prone`, { uid: t.uid, dmg: d });
   }
 };
@@ -1013,7 +1013,7 @@ Sim.prototype.expel = function (w, v, why) {
   }
   if (best) { v.x = best.x; v.y = best.y; }
   this.boardChanged();
-  this.addBuff(v, v, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
+  this.fallProne(v);
   this.ev('expel', why === 'freed' ? `${v.name} crawls out of ${w.name}` : `${w.name} regurgitates ${v.name}, who lands prone`, { uid: v.uid, target: w.uid });
 };
 

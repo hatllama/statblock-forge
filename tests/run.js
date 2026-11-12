@@ -2455,6 +2455,50 @@ section('Rules pass: concentration saves use the normal save path');
   check(s1._saveDmg === 7 && s1._saveStakes === 1, 'a concentration save inside another roll leaves that roll\'s save context alone');
 }
 
+section('Rules pass: prone (2024)');
+{
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', ctx);
+  const fighter = () => Tac.expandTeam([JSON.parse(JSON.stringify(ctx.CB.find(b => b.name === 'Fighter')))], 'party', true)[0];
+  const mk = (seed) => { const s = new Tac.Sim({ width: 20, height: 10, seed }); const a = fighter(), t = fighter(); t.team = 'foes'; t.uid = 'foe1'; t.baseAC = 12; a.x = 2; a.y = 2; t.x = 3; t.y = 2; s.units = [a, t]; s.byId = { [a.uid]: a, [t.uid]: t }; s.boardChanged(); return { s, a, t }; };
+  const prone = (s, u) => s.addBuff(u, u, { id: 'prone', name: 'Prone' }, { duration: 'until it stands up', condition: 'Prone' });
+  // stand-up cost
+  { const { s, a } = mk(1); a.speed = 30; s.turnSeq = 5;
+    prone(s, a);
+    check(s.speedOf(a) === 15, `a prone creature plans with half its speed (30 → ${s.speedOf(a)})`);
+    check(s.standUp(a) === true && !s.has(a, ['Prone']) && s.speedOf(a) === 15, 'standing up ends Prone and costs half the speed this turn');
+    s.turnSeq = 6;
+    check(s.speedOf(a) === 30, 'the next turn it has its whole speed back');
+    a.speed = 25; prone(s, a); s.turnSeq = 7; s.standUp(a);
+    check(s.speedOf(a) === 10, `an odd half rounds the cost up to the next 5 ft (25 ft → ${s.speedOf(a)} left)`);
+    const b = mk(2); b.a.speed = 0; prone(b.s, b.a);
+    check(b.s.standUp(b.a) === false && b.s.has(b.a, ['Prone']), 'at speed 0 it cannot stand up');
+    const c = mk(3); prone(c.s, c.a); c.s.addBuff(c.a, c.t, { id: 'st', name: 'Stun' }, { duration: 'entire encounter', condition: 'Stunned' });
+    check(c.s.standUp(c.a) === false && c.s.has(c.a, ['Prone']), 'while incapacitated it cannot stand up');
+    const d = mk(4); prone(d.s, d.a); d.a.grappledBy = 'foe1'; d.a.grappleInfo = { escapeDC: 99 };
+    check(d.s.standUp(d.a) === false, 'while grappled (speed 0) it cannot stand up');
+  }
+  // attack rolls: 4000 swings at AC 12 with +7: 0.80 flat, 0.96 with advantage, 0.64 with disadvantage
+  const rate = (setup) => { const { s, a, t } = mk(7); setup(s, a, t); s.boardChanged(); const act = a.actions.find(x => x.type === 'atk'); let h = 0; for (let i = 0; i < 4000; i++) if (s.attackRoll(a, t, act, { noReact: true }).hit) h++; return h / 4000; };
+  const base = rate(() => {}), proneAtt = rate((s, a) => prone(s, a)), near = rate((s, a, t) => prone(s, t)), far = rate((s, a, t) => { prone(s, t); t.x = 8; });
+  check(Math.abs(base - 0.80) < 0.03, `baseline hit rate ${base.toFixed(3)}`);
+  check(Math.abs(proneAtt - 0.64) < 0.03, `a prone attacker has disadvantage (${proneAtt.toFixed(3)}, expect 0.64)`);
+  check(Math.abs(near - 0.96) < 0.03, `attacks on a prone creature within 5 ft have advantage (${near.toFixed(3)}, expect 0.96)`);
+  check(Math.abs(far - 0.64) < 0.03, `…and disadvantage from farther away (${far.toFixed(3)}, expect 0.64)`);
+  // the AI's own estimate agrees
+  { const { s, a, t } = mk(8), act = a.actions.find(x => x.type === 'atk'), p0 = s.hitChance(a, t, act); prone(s, a); const p1 = s.hitChance(a, t, act);
+    check(p1 < p0 - 0.1, `hitChance (what the AI scores with) sees the prone attacker's disadvantage (${p0.toFixed(2)} → ${p1.toFixed(2)})`); }
+  // in a fight: a knocked-down creature stands at the start of its turn, once, and the log says so
+  { let stood = 0, proneAtTurn = 0;
+    const foe = { id: 'f', name: 'Brute', mode: 'custom', hp: 40, AC: 10, saveBonus: 0, count: 1, speed: 30, ext: { size: 'Large' }, actions: [{ id: 'f1', name: 'Club', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2', toHit: 5, target: 'enemy with least HP', ext: { range: 5 } }] };
+    const proto = Tac.Sim.prototype, turn = proto.turn;
+    let sim = null;
+    proto.turn = function (u) { sim = this; if (u.team === 'party' && this.round === 1 && !u._knocked) { u._knocked = true; this.fallProne(u); } const before = this.has(u, ['Prone']); const r = turn.call(this, u); if (before && !this.has(u, ['Prone'])) stood++; if (this.has(u, ['Prone']) && !this.incap(u)) proneAtTurn++; return r; };
+    try { Tac.runDay({ players: [fighter()], encounters: [{ monsters: [foe] }] }, { seed: 3, partyAI: 'tactical', record: true }); } finally { proto.turn = turn; }
+    check(stood === 1 && proneAtTurn === 0, `a creature knocked prone stands when its turn comes and is not prone after it (${stood} stood, ${proneAtTurn} still prone)`);
+  }
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {

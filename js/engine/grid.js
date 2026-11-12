@@ -181,10 +181,39 @@ Sim.prototype.setTerrain = function (t) {
   }
   this.T = T;
 };
-Sim.prototype.speedOf = function (u) {
+/* speed before standing up costs anything */
+Sim.prototype.rawSpeed = function (u) {
   let s = u.speed;
   for (const b of u.buffs) if (b.speedBonus) s += b.speedBonus;
   return Math.max(0, s);
+};
+/* Prone (2024): standing up costs half the creature's speed, and is not possible at speed 0 or while incapacitated (or held).
+   Crawling covers the same distance as standing and then walking (half), but leaves it prone, so a creature always stands. */
+Sim.prototype.canStand = function (u) {
+  return !u.grappledBy && !this.incap(u) && !this.has(u, ['Restrained']) && this.rawSpeed(u) > 0;
+};
+Sim.prototype.standCost = function (u) { return Math.ceil(this.rawSpeed(u) / 10) * 5; };
+const isProne = u => { for (const b of u.buffs) if (b.data.condition === 'Prone') return true; return false; };
+/* what it can move this turn: a creature that stood up this turn has paid for it (u.stoodFt), one that is still prone
+   (it has not had its turn yet) moves as if it already had, so reach estimates and the AI see the same cost the turn will */
+Sim.prototype.speedOf = function (u) {
+  let s = this.rawSpeed(u);
+  if (u.stoodFt && u.stoodTurn === this.turnSeq) s -= u.stoodFt;
+  else if (isProne(u) && this.canStand(u)) s -= this.standCost(u);
+  return Math.max(0, s);
+};
+/* start of its turn: a prone creature that can stands up, paying half its speed */
+Sim.prototype.standUp = function (u) {
+  if (!isProne(u) || !this.canStand(u)) return false;
+  const c = this.standCost(u);
+  this.dropBuffs(u, b => b.data.condition === 'Prone');
+  u.stoodFt = c; u.stoodTurn = this.turnSeq;
+  this.ev('effect', `${u.name} stands up (${c} ft of its movement)`, { uid: u.uid });
+  return true;
+};
+/* knocked down by a fall or a spit: prone until it stands up on its own turn */
+Sim.prototype.fallProne = function (u) {
+  this.addBuff(u, u, { id: 'prone', name: 'Prone' }, { duration: 'until it stands up', condition: 'Prone' });
 };
 Sim.prototype.hAt = function (x, y) { return this.T.anyH ? this.T.h[x + y * this.W] : 0; };
 Sim.prototype.isWall = function (x, y) { return this.T.any && this.T.wall[x + y * this.W] === 1; };
@@ -220,7 +249,7 @@ Sim.prototype.fallCheck = function (u) {
     const dice = Math.floor(h / 2);
     let d = 0;
     if (dice > 0) { d = this.damage(u, u, Math.floor(rollDice(dice + 'd6', this.R, false)), { type: 'bludgeoning' }); u.dmgDealt -= d; }
-    if (!u.dead && !this.has(u, ['Prone'])) this.addBuff(u, u, { id: 'prone', name: 'Prone' }, { duration: '1 round', condition: 'Prone' });
+    if (!u.dead && !this.has(u, ['Prone'])) this.fallProne(u);
     this.ev('effect', `${u.name} falls ${h * 5} ft${d ? ` (${d} damage)` : ''}${u.dead ? '' : ' and lands prone'}`, { uid: u.uid, dmg: d });
   } finally { this._falling = null; }
 };

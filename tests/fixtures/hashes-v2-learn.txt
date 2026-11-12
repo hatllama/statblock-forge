@@ -27,7 +27,7 @@ default party vs bandit-day | walled | tactical | 8419 | 3a048b277962
 default party vs bandit-day | walled | tactical | 16338 | eeb2c8f340f2
 default party vs bandit-day | walled | tactical | 24257 | 96f4059cb30a
 default party vs bandit-day | walled | regular | 500 | 56884c5dc800
-default party vs bandit-day | walled | regular | 8419 | 04aa717eba38
+default party vs bandit-day | walled | regular | 8419 | 01cf28a4d924
 default party vs bandit-day | walled | regular | 16338 | c2dfc2568a70
 default party vs bandit-day | walled | regular | 24257 | 85aa69c3c695
 casters vs goblins / ogres / mage | open | tactical | 500 | 623c90c76a57
@@ -50,18 +50,18 @@ casters vs priests + young dragon | open | tactical | 500 | 45b05f13a948
 casters vs priests + young dragon | open | tactical | 8419 | d3a4a2b38bc3
 casters vs priests + young dragon | open | tactical | 16338 | 1749038e9ad1
 casters vs priests + young dragon | open | tactical | 24257 | 8d3cadb367d4
-casters vs priests + young dragon | open | regular | 500 | 389222563ec2
+casters vs priests + young dragon | open | regular | 500 | 53ebb4a0deb8
 casters vs priests + young dragon | open | regular | 8419 | 2c9ec486fd6a
 casters vs priests + young dragon | open | regular | 16338 | 17c348f5d1cd
-casters vs priests + young dragon | open | regular | 24257 | 54b961dc487f
+casters vs priests + young dragon | open | regular | 24257 | 335d03f3c30e
 casters vs priests + young dragon | walled | tactical | 500 | e482b6bb0ba0
 casters vs priests + young dragon | walled | tactical | 8419 | 4c9ee41dffd2
 casters vs priests + young dragon | walled | tactical | 16338 | bfd6c4e7acd0
 casters vs priests + young dragon | walled | tactical | 24257 | 7d4aa64d5ca0
 casters vs priests + young dragon | walled | regular | 500 | 36034a43e467
-casters vs priests + young dragon | walled | regular | 8419 | c5ec182c08b3
+casters vs priests + young dragon | walled | regular | 8419 | fd05336c71fa
 casters vs priests + young dragon | walled | regular | 16338 | 743db6a5e19a
-casters vs priests + young dragon | walled | regular | 24257 | 1288dfff5344
+casters vs priests + young dragon | walled | regular | 24257 | 0cb6a30b1ef0
 default party vs medium-day | open | tactical | 500 | 2d87ac6be8b5
 default party vs medium-day | open | tactical | 8419 | 185be581a296
 default party vs medium-day | open | tactical | 16338 | 321ee3522c5f
