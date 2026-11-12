@@ -233,7 +233,14 @@ async function smoke() {
   // saved text that is not a workspace: a message, the page still works
   const broken = loadSite({ 'forge-workspace-v1': '{"v":1,"players":[{"name":"half a creature"' });
   await broken.fireWindow('DOMContentLoaded'); await broken.settle();
+  const bad = '{"v":1,"players":[{"name":"half a creature"';
   check(!broken.loadErrors.length && /Couldn't read saved work/.test(String(broken.el('saveStatus').textContent)) && broken.el('forgeSide').innerHTML.length > 100, 'saved work that cannot be read gives a message and the default workspace');
+  check(broken.store.get('forge-workspace-v1-unreadable') === bad, 'and the unreadable text is put aside before autosave can write over it');
+  // a saved encounter with a hole in its monster list still loads (the hole is dropped)
+  const holed = JSON.parse(JSON.stringify(snap)); holed.encounters[0].monsters.push(null);
+  const patched = loadSite({ 'forge-workspace-v1': JSON.stringify(holed) });
+  await patched.fireWindow('DOMContentLoaded'); await patched.settle();
+  check(!patched.errors.length && /Restored|✓ Saved/.test(String(patched.el('saveStatus').textContent)) && patched.run('encounters[0].monsters.length') === snap.encounters[0].monsters.length, 'a saved encounter with an empty slot in its monster list still loads');
   return out;
 }
 

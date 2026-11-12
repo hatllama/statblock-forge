@@ -2665,6 +2665,15 @@ const store = {
     if(this.kind === 'claude'){ try{ await window.storage.delete(SAVE_KEY, false); }catch(e){} return; }
     if(this.kind === 'local'){ try{ localStorage.removeItem(SAVE_KEY); }catch(e){} }
   },
+  // saved text that could not be read is put aside before autosave writes over it
+  async keepUnreadable(v){
+    try{
+      if(this.kind === 'claude') await window.storage.set(SAVE_KEY + '-unreadable', v, false);
+      else if(this.kind === 'local') localStorage.setItem(SAVE_KEY + '-unreadable', v);
+      else return false;
+      return true;
+    }catch(e){ return false; }
+  },
 };
 
 function setSaveStatus(text, cls){
@@ -2711,9 +2720,9 @@ function applyWorkspace(ws){
       (PARTY_UPDATES[v] || []).forEach(id=>{
         const i = PARTY_PLAYERS.findIndex(x=>x.id === id);
         const fresh = DEFAULT_PARTY.find(x=>x.id === id);
-        if(i >= 0 && fresh){ PARTY_PLAYERS[i] = JSON.parse(JSON.stringify(fresh)); updated.push(fresh.name); }
+        if(i >= 0 && fresh){ PARTY_PLAYERS[i] = JSON.parse(JSON.stringify(fresh)); if(!updated.includes(fresh.name)) updated.push(fresh.name); }
       });
-      if(PARTY_FN_UPDATES[v]) PARTY_PLAYERS.forEach(p=>{ if(PARTY_FN_UPDATES[v](p)) updated.push(p.name); });
+      if(PARTY_FN_UPDATES[v]) PARTY_PLAYERS.forEach(p=>{ if(PARTY_FN_UPDATES[v](p) && !updated.includes(p.name)) updated.push(p.name); });
       Object.entries((PARTY_EXT_UPDATES[v] || {})).forEach(([id, add])=>{
         const p = PARTY_PLAYERS.find(x=>x.id === id); if(!p) return;
         p.ext = p.ext || {};
@@ -2724,7 +2733,7 @@ function applyWorkspace(ws){
   if(Array.isArray(ws.encounters) && ws.encounters.length){
     encounters = ws.encounters.map(e=>({
       ...(e.name ? { name: String(e.name) } : {}),
-      monsters: (e.monsters||[]).map(m=>{ m._warnings = validateMonster(m); return m; }),
+      monsters: (e.monsters||[]).filter(m=>m && typeof m === 'object').map(m=>{ m._warnings = validateMonster(m); return m; }),
       playersSurprised: !!e.playersSurprised,
       monstersSurprised: !!e.monstersSurprised,
       shortRest: !!e.shortRest,
@@ -2737,8 +2746,9 @@ function applyWorkspace(ws){
 }
 
 async function loadWorkspace(){
+  let raw = null;
   try{
-    const raw = await store.get();
+    raw = await store.get();
     if(raw){
       const updated = applyWorkspace(JSON.parse(raw));
       renderPartyBar(); renderAll();
@@ -2752,7 +2762,9 @@ async function loadWorkspace(){
     }
   }catch(e){
     console.error(e);
-    setSaveStatus("✕ Couldn't read saved work — starting fresh", 'unsaved');
+    // the next autosave writes over the saved text: put it aside first, so it can still be recovered by hand
+    const kept = raw ? await store.keepUnreadable(raw) : false;
+    setSaveStatus("✕ Couldn't read saved work — starting fresh" + (kept ? ` (the unreadable copy is kept in this browser as "${SAVE_KEY}-unreadable")` : ''), 'unsaved');
   }
   saveReady = true;
 }
