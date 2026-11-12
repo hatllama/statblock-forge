@@ -2388,5 +2388,12 @@ section('AI v2: the boss tier (phase 4b)');
   check(/scores, aiPlan, \.\.\.rest/.test(fs.readFileSync(path.join(ROOT, 'js/forge.js'), 'utf8')), 'the day export (exportCreature) leaves ext.aiPlan out, like ext.scores');
 }
 
-console.log(`\n${checks - failures}/${checks} checks passed`);
-process.exit(failures ? 1 : 0);
+/* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
+   the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
+require('./smoke.js').smoke().then(results => {
+  section('Browser smoke test: the whole site loads in a stub page and its main flows run');
+  results.forEach(r => check(r.ok, r.msg));
+}, e => { section('Browser smoke test'); check(false, 'the smoke test itself threw: ' + ((e && e.stack) || e)); }).then(() => {
+  console.log(`\n${checks - failures}/${checks} checks passed`);
+  process.exit(failures ? 1 : 0);
+});
