@@ -1,0 +1,48 @@
+PASQUALE MINUZZI
+Medium humanoid (human), any alignment
+
+Armor Class 18 (armoured jacket)
+Hit Points 157 (21d8 + 63)
+Speed 30 ft.
+
+STR 16 (+3)  DEX 18 (+4)  CON 16 (+3)  INT 14 (+2)  WIS 12 (+1)  CHA 16 (+3)
+
+Saving Throws Dex +8, Con +7
+Skills Athletics +7, Deception +7, Insight +5, Intimidation +7, Perception +5
+Senses passive Perception 15
+Languages Common, Halfling
+Challenge 10 (5,900 XP)    Proficiency Bonus +4
+
+First Stake. Pasquale's luck works through the holy coin he was given at his Staking, which must be on his person. Without it he loses every luck ability.
+
+Masked. When he fights he wears a plain mask and plain clothes under the jacket. Nothing on him names the Family.
+
+Trained Shooter. Pasquale ignores the loading property of crossbows, and ranged attacks he makes within 5 feet of a hostile creature don't have disadvantage.
+
+Trained Fighter. Pasquale doesn't provoke opportunity attacks from a creature he has hit with a melee attack this turn.
+
+Hold the Door. Whenever Pasquale hits with a Buonanotte stock strike, he fires a bolt from the weapon into the same target as part of the attack, with no attack roll. The target takes 7 (2d6) piercing damage and 7 (2d6) force damage from the hammer bolt. He carries twelve hammer bolts.
+
+Follow Through. Once per turn, when Pasquale hits a creature with two attacks, the target takes an extra 7 (2d6) bludgeoning damage.
+
+ACTIONS
+
+Multiattack. Pasquale makes three attacks, in any combination of stock strikes and point-blank shots.
+
+Stock Strike. Melee Weapon Attack: +8 to hit, reach 5 ft., one target. Hit: 9 (1d10 + 4) bludgeoning damage, plus the Hold the Door shot.
+
+Point-Blank Shot. Ranged Weapon Attack: +9 to hit, range 30/90 ft., one target. Hit: 12 (2d6 + 5) piercing damage plus 7 (2d6) force damage from a hammer bolt, plus 3 (1d6) piercing damage if the target is within 15 feet.
+
+Both Barrels (Recharge 5-6). Pasquale fires the Buonanotte in a 15-foot cone. Each creature in the cone must make a DC 16 Dexterity saving throw, taking 24 (7d6) piercing damage on a failed save and being pushed 10 feet away from him, or half as much damage on a successful one and no push.
+
+BONUS ACTIONS
+
+Shoulder Check. One creature within 5 feet of Pasquale must succeed on a DC 16 Strength saving throw or be pushed 10 feet away and knocked prone. Pasquale can then move up to 10 feet toward it without provoking opportunity attacks.
+
+Double Down. Pasquale flips the coin. On heads, his next attack roll this turn has advantage and deals an extra 9 (2d8) force damage if it hits. On tails, that attack roll has disadvantage.
+
+REACTIONS
+
+Call It in the Air (once per round). When Pasquale is hit by an attack, he flips the coin. On heads, the attack misses instead. On tails, the attack hits as normal and Pasquale has disadvantage on his next attack roll before the end of his next turn.
+
+Parry. When Pasquale is hit by a melee attack, he adds 3 to his AC against that attack, potentially causing it to miss. He can use only one reaction per round.

@@ -97,7 +97,7 @@ section('Engine modules: every shared name a file uses is imported from an earli
   };
   const names = (text, re) => { const m = re.exec(text); return m ? m[1].split(',').map(s => s.trim()).filter(Boolean) : []; };
   const mods = ENGINE_FILES.map(f => {
-    const text = fs.readFileSync(path.join(ROOT, f), 'utf8'), lines = text.split('\n');
+    const text = fs.readFileSync(path.join(ROOT, f), 'utf8').replace(/\r\n/g, '\n'), lines = text.split('\n'); // checkouts with CRLF line ends (Windows autocrlf) read the same
     const body = lines.filter(l => !/^const \{[^}]*\} = ENG;$/.test(l) && !/^Object\.assign\(ENG, /.test(l));
     return { f, lines: body, decl: declared(body), imports: names(text, /^const \{([^}]*)\} = ENG;$/m), exports: names(text, /^Object\.assign\(ENG, \{([^}]*)\}\);$/m) };
   });
