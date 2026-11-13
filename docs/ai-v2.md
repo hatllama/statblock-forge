@@ -1940,3 +1940,18 @@ read the same; changing it would change other creatures). The coin's extra force
 **Checks.** All hash sets (old AI; v2 open, learn, blind; v2 with tiers; `PREFIGHT=0`; the BOSS and TIER tables) are compared before and after each commit. A
 scenario in `tests/ai-compare.js` (`^PASQ`) runs him against `parties/zaki-party-level-5.json` and again with `ext.coin` removed, to show what the coin
 features do.
+
+### Results (Pasquale; `node tests/ai-compare.js 200 '^PASQ'`, 200 seeded days, party and Pasquale on v2, both sides' knowledge in the row's mode)
+
+Hash sets before and after (old AI; v2 open, learn, blind; v2 with tiers; `PREFIGHT=0`; the learn fixture) are identical, the TIER and BOSS tables (100 runs, three modes, 216 rows) are identical but for the timing column, and every SRD and test statblock other than Pasquale parses to the same JSON.
+
+Alone against Zaki's party the CR 10 as written is dead in 2 to 3 rounds (the party wins 100% in every mode), too short for a coin or the bolts to count, so the second block gives him 471 HP:
+
+| 471 HP, party win | open | learn | blind |
+|---|---|---|---|
+| as written | 98.5 ± 0.9 | 99.0 ± 0.7 | 79.5 ± 2.9 |
+| without Double Down and Call It | 97.5 ± 1.1 | 100.0 ± 0.0 | 85.0 ± 2.5 |
+| as written, `react.base` 3 (a cheap reaction) | 97.5 ± 1.1 | 98.0 ± 1.0 | 75.5 ± 3.0 |
+
+Only blind is outside noise, and then barely (the coin is worth about 5 points of party win there, 1.4 standard errors; with the cheap reaction about 10, 2.5). Double Down is flipped 2 times a long fight (0.7 in the short one), and heads comes up half the time. **Call It in the Air is almost never offered at the shared reaction price** (`react.base` 8: 0.03 to 0.4 a long fight): at an even coin its value is half a hit less a quarter of one of his own, so only a hit of about 20 points or more clears 8. With `react.base` 3 it is used 1 to 1.8 times a fight, half of them heads. That is the same reading every other reaction gets, so it stays; a profile can lower it per creature (`ext.aiProfile: { react: { base: 3 } }`).
+Bolts: 1 to 3.4 hits a fight take one (9.5 in the blind long fight), so twelve is not exhausted in these fights; the empty-pool path is covered by the engine test.

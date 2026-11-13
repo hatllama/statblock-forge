@@ -675,20 +675,21 @@ function playBoss(sc, N) {
    node tests/ai-compare.js 200 '^PASQ'   (TIER_MODES=open picks the modes). Monsters and party on v2; both sides' knowledge is the row's mode.
    Two arms: as written, and with his coin abilities (Double Down, Call It in the Air) taken away. Lower party win = a stronger Pasquale. */
 const PASQ_METRICS = {
-  'coin/fight': r => r.events.filter(e => (e.kind === 'buff' && /flips the coin/.test(e.text || '')) || (e.kind === 'react' && /Call It in the Air: (heads|tails)/.test(e.text || ''))).length,
-  'heads': r => r.events.filter(e => /: heads —/.test(e.text || '')).length,
+  'DoubleDown': r => r.events.filter(e => e.kind === 'buff' && /flips the coin/.test(e.text || '')).length,
+  'CallIt': r => r.events.filter(e => e.kind === 'react' && /uses Call It in the Air/.test(e.text || '')).length,
+  'CallIt heads': r => r.events.filter(e => e.kind === 'react' && /uses Call It in the Air: heads/.test(e.text || '')).length,
   'bolts/fight': r => r.events.filter(e => e.kind === 'attack' && /hammer bolt/.test(e.text || '')).length,
   'Pasquale dmg': r => r.foes.reduce((t, f) => t + (f.dealt || 0), 0),
 };
-const pasquale = (noCoin, hp) => { const m = statblock('pasquale.txt'); if (noCoin) m.actions = m.actions.filter(a => !(a.ext && a.ext.coin)); if (hp) m.hp = hp; return m; };
+const pasquale = (noCoin, hp, cheap) => { const m = statblock('pasquale.txt'); if (noCoin) m.actions = m.actions.filter(a => !(a.ext && a.ext.coin)); if (hp) m.hp = hp; if (cheap) m.ext.aiProfile = { base: 'balanced', react: { base: 3 } }; return m; };   // cheap: a reaction costs 3 points instead of 8, so Call It in the Air is offered on smaller hits
 function playPasq(N) {
   // the second block gives him three times the hit points (471): the party kills the one as written in two rounds, which is too short for a pool of bolts or a coin to show
   for (const [title, hp] of [["PASQ Pasquale Minuzzi (CR 10, 157 HP) alone against Zaki's party, as written and without his coin abilities", 0], ['PASQ long: the same with 471 HP (3x), a longer fight for the coin and the bolts', 471]]) {
     console.log('\n' + title);
     console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(PASQ_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-    for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const [label, noCoin] of [['coin', false], ['no coin', true]]) {
-      const sc = { name: 'PASQ', players: zaki, encounters: () => [{ monsters: [pasquale(noCoin, hp)] }], metrics: PASQ_METRICS, record: true, know: { party: know, foes: know } };
-      console.log(row(pad(know + ' ' + label, 14), play(sc, { party: 'v2', foes: 'v2' }, N)));
+    for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const [label, noCoin, cheap] of [['coin', false], ['no coin', true], ['coin, cheap react', false, true]]) {
+      const sc = { name: 'PASQ', players: zaki, encounters: () => [{ monsters: [pasquale(noCoin, hp, cheap)] }], metrics: PASQ_METRICS, record: true, know: { party: know, foes: know } };
+      console.log(row(pad(know + ' ' + label, 20), play(sc, { party: 'v2', foes: 'v2' }, N)));
     }
   }
 }
