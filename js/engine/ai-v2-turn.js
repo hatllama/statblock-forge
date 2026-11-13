@@ -436,7 +436,7 @@ Sim.prototype.v2Bonus = function (u, phase, choice) {
       if (phase === 'pre' && (a.type !== 'buff' || (a.ext && a.ext.coin))) continue;     // a coin is flipped after it has moved, beside the other bonus options
       const L = this.v2CastLevels(u, a)[0];
       if (L === undefined || !this.v2PoolFor(u, a, ctx).length) continue;
-      const v = this.v2SelfValue(u, a, ctx);
+      const v = this.v2SelfValue(u, a, ctx, phase === 'post' && choice ? choice : null);
       offer(a, { dest: { x: u.x, y: u.y }, path: [], targets: [u], castL: L }, v - this.v2PaceCost(u, a, v, L));
       if (phase === 'pre' && v > 0 && v - this.v2PaceCost(u, a, v, L) <= 0) held = a;
     } else if (phase === 'post' && (a.type === 'atk' || a.type === 'debuff' || a.type === 'heal' || a.type === 'buff')) {

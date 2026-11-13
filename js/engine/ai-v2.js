@@ -437,7 +437,7 @@ Sim.prototype.v2AdvGain = function (u, a, t) {
     e1 += avgDice(u.sneak.dice) * 0.6 * this.hitChance(u, t, a) * this.kMult(u, a, t);
   return Math.max(0, e1 - e0);
 };
-Sim.prototype.v2SelfValue = function (u, a, ctx) {
+Sim.prototype.v2SelfValue = function (u, a, ctx, plan) {
   const W = u.v2P.w;
   if (a.type === 'heal') {
     if (!this.healNeeded(u, a, u)) return -Infinity;
@@ -452,7 +452,7 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
     if (ctx.posture.kind === 'recover' || ctx.posture.kind === 'retreat') v += W.recover;
     return v;
   }
-  if (a.type === 'buff' && a.ext && a.ext.coin) return u.buffs.some(b => b.id === a.id + ':coin') ? -Infinity : this.v2CoinValue(u, a, ctx);
+  if (a.type === 'buff' && a.ext && a.ext.coin) return u.buffs.some(b => b.id === a.id + ':coin') ? -Infinity : this.v2CoinValue(u, a, ctx, plan);
   if (a.type !== 'buff' || isHideAction(a) || this.alreadyHas(a, u) || u.buffs.some(b => b.id === a.id && b.src === u.uid)) return -Infinity;
   if (u.buffs.some(b => b.id !== a.id && effectName(b.name) === effectName(a.name))) return -Infinity;     // the same effect doesn't stack
   // what it adds over the rounds it lasts
@@ -473,8 +473,15 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
 };
 /* a coin flip as a bonus action (Double Down, ext.coin): the next attack roll of the main attack, p of one outcome and 1 - p of the other, in damage —
    advantage or disadvantage changes the chance that roll hits (p to 1 - (1 - p)^2, or to p^2) on a hit worth its damage; an outcome's hitDmg lands with it */
-Sim.prototype.v2CoinValue = function (u, a, ctx) {
-  const m = ctx.main, c = a.ext.coin;
+Sim.prototype.v2CoinValue = function (u, a, ctx, plan) {
+  const c = a.ext.coin;
+  let m = ctx.main;
+  // the action it has planned: only an attack roll feels a coin (a breath or a save-based spell does not), and the roll is that attack's against its target
+  if (plan && plan.a) {
+    const t = plan.p && plan.p.targets && plan.p.targets[0];
+    if (plan.a.type !== 'atk' || plan.a.useSaves || !t || t === u) return 0;
+    m = { e: this.expected(u, plan.a, t), p: this.hitChance(u, t, plan.a), n: plan.a.targets || 1 };
+  }
   if (!m) return 0;
   const ph = typeof c.p === 'number' ? c.p : 0.5, p = m.p, dmg = m.e / Math.max(0.05, m.n * Math.max(0.05, p));
   const side = o => {

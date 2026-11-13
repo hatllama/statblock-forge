@@ -512,6 +512,9 @@ function extBits(a){
   if(ex.aid) bits.push('+max HP');
   if(ex.retaliate) bits.push(`${ex.retaliate.dmg}${ex.retaliate.perLevel ? '/slot level' : ''} back at melee attackers`);
   if(ex.tempBuff && ex.tempBuff.ac) bits.push(`+${ex.tempBuff.ac} AC while temp HP lasts`);
+  if(ex.bolt) bits.push(`+${ex.bolt.dice} a hit while ${ex.bolt.resource} lasts`);
+  if(ex.nearBonus) bits.push(`+${ex.nearBonus.dice} within ${ex.nearBonus.within} ft`);
+  if(ex.coin){ const w = o => (o && (o.miss ? 'the attack misses' : (o.buff && o.buff.condition ? o.buff.condition.replace('Attacks with ', '').toLowerCase() : '') + (o.hitDmg ? ' +' + o.hitDmg : ''))) || 'nothing'; bits.push(`coin flip: heads ${w(ex.coin.heads)}, tails ${w(ex.coin.tails)}`); }
   if(ex.wtOnly) bits.push('War Table only');
   if(ex.wtSkip) bits.push('export only');
   if(typeof ex.range === 'number') bits.push(ex.range <= 5 ? 'melee' : `${ex.range} ft`);
@@ -1869,7 +1872,7 @@ function cloneCreature(src){
 /* ---------------- resources: shared pools (Focus Points, Superiority Dice, Sorcery Points…) ---------------- */
 function resourcesPanel(key, c){
   const R = (c.ext && c.ext.resources) || {}, names = Object.keys(R);
-  const users = n => (c.actions || []).filter(a=>a.ext && a.ext.resource === n).map(a=>a.name);
+  const users = n => (c.actions || []).filter(a=>a.ext && (a.ext.resource === n || (a.ext.bolt && a.ext.bolt.resource === n))).map(a=>a.name + (a.ext.bolt && a.ext.bolt.resource === n ? ' (a hit rider, one per hit)' : ''));
   return `<div class="res-list">${names.map((n, i)=>{ const r = R[n] || {}, u = users(n); return `<div class="res-row">
       <label class="sf"><span>Name</span><input data-res="${i}" data-rf="name" data-owner="${key}" value="${escapeAttr(n)}"></label>
       <label class="sf"><span>Amount</span><input data-res="${i}" data-rf="uses" data-owner="${key}" type="number" min="0" value="${+r.uses || 0}"></label>
@@ -1888,7 +1891,7 @@ function onResourceField(el){
   if(f === 'name'){
     const nn = el.value.trim(); if(!nn || nn === old || c.ext.resources[nn]) return;
     const out = {}; names.forEach(n=>{ out[n === old ? nn : n] = c.ext.resources[n]; }); c.ext.resources = out;
-    (c.actions || []).concat((c.ext.spellbook && c.ext.spellbook.spells) || []).forEach(a=>{ if(a.ext && a.ext.resource === old) a.ext.resource = nn; });
+    (c.actions || []).concat((c.ext.spellbook && c.ext.spellbook.spells) || []).forEach(a=>{ if(a.ext && a.ext.resource === old) a.ext.resource = nn; if(a.ext && a.ext.bolt && a.ext.bolt.resource === old) a.ext.bolt.resource = nn; });
   }
   else if(f === 'uses') r.uses = Math.max(0, parseInt(el.value, 10) || 0);
   else if(f === 'reset') r.reset = el.value;
@@ -2093,7 +2096,7 @@ dyn.addEventListener('click', ev=>{
     c.ext = c.ext || {};
     const R = c.ext.resources || {};
     if(d.resAdd !== undefined){ let n = 'Points', i = 2; while(R[n]) n = 'Points ' + i++; R[n] = { uses: 2, reset: 'sr' }; c.ext.resources = R; }
-    else { const nm = Object.keys(R)[+d.resDel]; delete R[nm]; (c.actions || []).forEach(a=>{ if(a.ext && a.ext.resource === nm){ delete a.ext.resource; delete a.ext.resourceCost; } }); if(!Object.keys(R).length) delete c.ext.resources; }
+    else { const nm = Object.keys(R)[+d.resDel]; delete R[nm]; (c.actions || []).forEach(a=>{ if(a.ext && a.ext.resource === nm){ delete a.ext.resource; delete a.ext.resourceCost; } if(a.ext && a.ext.bolt && a.ext.bolt.resource === nm){ a.dpr = a.ext.bolt.base; delete a.ext.bolt; } }); if(!Object.keys(R).length) delete c.ext.resources; }
     return rerenderFor(d.owner);
   }
   if(d.sheetRead !== undefined){ readSheet(); return; }
