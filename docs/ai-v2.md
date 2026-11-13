@@ -1881,3 +1881,62 @@ workspace with no setting reads as this) or `'full'` (the old rule, which draws 
 a "Rules: Short rest" select saved with the workspace. Slot, pool and per-rest abilities that recover on a short rest are untouched. The engine has no
 long rest (a run is one day, every day starts with all dice), so "half the dice back" is not modelled. AI estimates never assumed a full-HP rest
 (only slots and pools read `restBeforeNext`), so nothing there needed to change.
+
+## Pasquale Minuzzi: coin flips, hit riders and a bolt pool (rules + v2; no old-AI behaviour)
+
+A CR 10 homebrew (`tests/statblocks/pasquale.txt`) needed pieces the engine did not have. All of them are **data on `ext`**, read only where the data is
+present, so every creature without them plays and hashes exactly as before. Rules go in the engine (every AI gets them); scoring is v2 only, as weights in
+`AI_BASE` plus a term, and a creature on the old AI simply never chooses the coin reaction or Double Down (v1 is going away; nothing is added there).
+
+**Trained Shooter** (`ext.closeShot`, creature): a ranged attack made within 5 ft of a hostile creature has no disadvantage (`attackRoll`, the line that
+adds it). Loading is not modelled by the engine at all, so "ignores loading" needs no data. No existing flag did this (the sheet reader has no Crossbow
+Expert yet); it can reuse this one later. v2's `hitChance` never priced the close-range disadvantage, so scoring is unchanged.
+
+**Trained Fighter** (`ext.meleeHitNoOA`, creature): it does not provoke an opportunity attack from a creature it has hit with a melee attack *this turn*.
+`attackOnce` records the target's uid in `u.meleeHits` (stamped with `turnSeq`) on a melee hit on its own turn; `moveAlongSteps` skips an enemy that is in
+that set. Per creature, not "disengaged": the others it left alone still get their opportunity attack.
+
+**Hit riders on one action** (`ext.bolt`, on the attack): `{ resource, cost, base, dice }` where `dice` is the rider's damage, `base` the damage without
+it, and `dpr` stays the full sum (the number the export, the AI's `expected` and `kDpr` already read). On a *hit* the engine draws `cost` from the pool
+`ext.resources[resource]` (the existing shared-pool machinery: `u.uses['res:<name>']`, `resMax`, reset on the day) **per hit, not per attack**: a
+Multiattack of three swings is one action, and a bolt is only fired by a swing that hits. When the pool is empty `attackOnce` rolls `base` instead, so the rider
+is lost and the swing still works. `expected` is not told the pool is empty (it reads the full `dpr`): a small over-estimate late in a long fight, accepted.
+Parsed from "Whenever X hits with a *<action name>*, … (damage) … He carries twelve *<things>*": the trait attaches to the action(s) whose names the
+sentence names, and any other action whose text says "from a *<thing>*" (Point-Blank Shot) gets the same pool cost.
+
+**Damage near the target** (`ext.nearBonus: { dice, type, within }`, on the attack): "plus 3 (1d6) piercing damage if the target is within 15 feet".
+Rolled on a hit when the target is within `within` ft; `expected` adds its average at that distance. Neither the hit-roll nor `dpr` changes.
+
+**Once per turn, the second hit** (`ext.followThrough: { dice, type }`, creature; Follow Through): the first time in a turn a creature hits the same
+target with two attacks (the second hit), the extra dice are added to that second hit's damage (one damage instance, like Sneak Attack). `u.ftSeq`
+= `turnSeq` marks it used, the way `saSeq` does for Sneak Attack. The AI is not told: it is worth about 7 per turn and is not in `expected`.
+
+**The coin primitive** (`ext.coin`, on a self-buff action; engine function `coinFlip`):
+`{ p: 0.5, heads: OUTCOME, tails: OUTCOME }`, an OUTCOME being `{ buff: { condition, duration }, hitDmg: '2d8', hitType: 'force', miss: true, lasts: 'turn' | 'next' }`.
+`p` is the chance of heads (default 0.5), drawn from the engine's seeded generator, so runs reproduce. `buff` is applied to the flipper
+through `addBuff` with the new expiry `'next attack roll'` (spent by the next *attack roll*, not by a save-based action; dropped like
+`'until next attack made'` in `attackRoll`); `hitDmg` is carried on the buff and added to that attack's damage on a hit (doubled on a crit); `lasts`
+sets `endTurn` on the buff: `'turn'` ends it with this turn, `'next'` with the creature's next turn (`endTurn` is checked in `endTurn()`).
+`miss: true` is only for a reaction offered at the `hit` trigger: the attack becomes a miss. Both Double Down and Call It in the Air are this one
+shape. The action keeps a plain `buff` (heads' advantage) so `validateMonster` is happy and carries `ext.wtOnly`: a plain export would be *wrong*
+about a coin, so exports leave both out, as for the other War-Table-only effects.
+
+**Call It in the Air as a reaction** goes through the reaction layer: `reactKind` gives `'coin'` to a slot-4 action with `ext.coin`, `REACT_ON.coin` = `['hit']`,
+`reactHitV2` offers it beside Shield and Parry, and `reactCoinDo` flips and applies. It uses `u.reaction`, the one reaction per round, so "once per round"
+and "not after Parry" need no flag: whoever is taken first spends it. Value (v2, same points as Shield): `p_heads × (the hit it turns into a miss, × crit weight)
+− (1 − p_heads) × tails` with tails priced as `AI_BASE.coin.tails` × the best one-hit damage the creature has (the disadvantage on one attack roll is
+worth about p(1 − p) of a hit, 0.25 at an even hit chance), then `reactPrice` as for any reaction. The attacker never reads it: the knowledge modes
+learn from the die, and `kAc`/`hitChance` do not mention a coin, so blind and learn see only a miss.
+
+**Double Down as a bonus action** (`v2SelfValue`, `ext.coin` branch): expected damage of the next attack roll with `p` of advantage and `hitDmg`
+and `1 − p` of disadvantage, from the main attack's hit chance `m.p` and its damage per hit: `p × (dmg × (pAdv − m.p) + hitDmg × pAdv) + (1 − p) ×
+dmg × (pDis − m.p)`, × `AI_BASE.coin.weight` (1). It is skipped in the `pre` phase (nothing to gain by flipping before it moves) and competes in `post`
+with Shoulder Check and the other bonus options on the same footing as every self-buff (`offer`). Neutral for creatures with no `ext.coin`.
+
+**Gaps kept, not modelled** (each keeps a note): Shoulder Check's push and prone are read as a debuff only if the parser finds them; the move up to
+10 ft after it is movement the War Table already positions. *Parry* in the engine is a +AC against any hit, not only melee (pre-existing: all `adds N to its AC` reactions
+read the same; changing it would change other creatures). The coin's extra force damage is added to the weapon's damage in one lump (typed as the weapon).
+
+**Checks.** All hash sets (old AI; v2 open, learn, blind; v2 with tiers; `PREFIGHT=0`; the BOSS and TIER tables) are compared before and after each commit. A
+scenario in `tests/ai-compare.js` (`^PASQ`) runs him against `parties/zaki-party-level-5.json` and again with `ext.coin` removed, to show what the coin
+features do.
