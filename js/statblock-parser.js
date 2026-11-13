@@ -25,7 +25,7 @@ const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 const TYPES = ['aberration', 'beast', 'celestial', 'construct', 'dragon', 'elemental', 'fey', 'fiend', 'giant', 'humanoid', 'monstrosity', 'ooze', 'plant', 'undead'];
 const ABIL = ['str', 'dex', 'con', 'int', 'wis', 'cha'];
 const ABIL_NAMES = { strength: 'str', dexterity: 'dex', constitution: 'con', intelligence: 'int', wisdom: 'wis', charisma: 'cha' };
-const NUM_WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, twice: 2, thrice: 3 };
+const NUM_WORDS = { a: 1, an: 1, one: 1, two: 2, three: 3, four: 4, five: 5, six: 6, seven: 7, eight: 8, nine: 9, ten: 10, eleven: 11, twelve: 12, thirteen: 13, fourteen: 14, fifteen: 15, sixteen: 16, seventeen: 17, eighteen: 18, nineteen: 19, twenty: 20, twice: 2, thrice: 3 };
 const SECTION_RE = /^(traits|actions|bonus actions|reactions|legendary actions|lair actions|mythic actions|regional effects)\s*:?$/i;
 const CONDITION_WORDS = [
   ['paralyzed', 'Paralyzed'], ['stunned', 'Stunned'], ['petrified', 'Petrified'], ['unconscious', 'Unconscious'],
@@ -453,6 +453,9 @@ function readAttack(entry, nm, notes) {
   a._ranged = kind !== 'melee' ? (rg.ranged || 20) : 0;
   a._avg = parts.reduce((s, p) => s + p.avg, 0) || avgDice(dpr);
   setDamageType(a, parts);
+  // "plus 3 (1d6) piercing damage if the target is within 15 feet": rolled on a hit at that distance, and counted by the AI there (damageParts skips it as conditional)
+  const nb = hitText.match(/\bplus\s+(\d+)\s*\(\s*([\dd+\-\s]+?)\s*\)\s*([a-z]+)?\s*damage if the (?:target|creature) is within (\d+) (?:feet|ft)/i);
+  if (nb) { a.ext.nearBonus = { dice: cleanDice(nb[2]), type: (nb[3] || '').toLowerCase(), within: +nb[4] }; notes.push(`${nm.name}: +${a.ext.nearBonus.dice} damage when the target is within ${nb[4]} ft (War Table only; the export doesn't have it).`); }
 
   // grapples (2014 "the target is grappled (escape DC 13)", 2024 "has the Grappled condition (escape DC 13)")
   const gm = hitText.match(/grappled[^(]*\(\s*escape DC\s*(\d+)\s*\)|Grappled condition\s*\(\s*escape DC\s*(\d+)/i);
@@ -491,6 +494,31 @@ function readAttack(entry, nm, notes) {
     notes.push(`${nm.name}: ${mvh.speedBonus ? (mvh.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mvh.speedBonus && mvh.onHit ? ' and ' : ''}${mvh.onHit ? 'blocks its reactions' : ''} on a hit — War Table only.`);
   }
   return a;
+}
+
+/* a coin flip: "flips the coin. On heads, …. On tails, …." → { p: 0.5, heads, tails }, an outcome being { miss, buff: { condition }, hitDmg, hitType, lasts: 'turn' | 'next' } */
+function readCoin(t) {
+  if (!/\bflips? (?:the|a) coin\b/i.test(t)) return null;
+  const hm = t.match(/\bOn heads,?\s*([^]*?)(?=\bOn tails\b|$)/i), tm = t.match(/\bOn tails,?\s*([^]*)$/i);
+  if (!hm || !tm) return null;
+  const outcome = s => {
+    const o = {}, buff = {};
+    if (/\battack misses instead\b/i.test(s)) o.miss = true;
+    if (/\bhas advantage\b|\badvantage on (?:his|her|its|their) next attack/i.test(s)) buff.condition = 'Attacks with Advantage';
+    else if (/disadvantage/i.test(s)) buff.condition = 'Attacks with Disadvantage';
+    const dm = s.match(/\b(?:deals?|takes?)\s+an extra\s+\d+\s*\(\s*([\dd+\-\s]+?)\s*\)\s*([a-z]+)?\s*damage/i);
+    if (dm) { o.hitDmg = cleanDice(dm[1]); if (dm[2]) o.hitType = dm[2].toLowerCase(); }
+    if (buff.condition || o.hitDmg) { o.buff = buff; o.lasts = /(?:before|until) the end of (?:his|her|its|their) next turn/i.test(s) ? 'next' : 'turn'; }
+    return o;
+  };
+  return { p: 0.5, heads: outcome(hm[1]), tails: outcome(tm[1]) };
+}
+function coinSays(o) {
+  const bits = [];
+  if (o.miss) bits.push('the attack misses');
+  if (o.buff && o.buff.condition) bits.push(o.buff.condition === 'Attacks with Advantage' ? 'advantage on its next attack roll' : 'disadvantage on its next attack roll');
+  if (o.hitDmg) bits.push(`+${o.hitDmg}${o.hitType ? ' ' + o.hitType : ''} on a hit`);
+  return bits.join(', ') || 'nothing';
 }
 
 /* a save effect: breath weapons, auras, Frightful Presence… */
@@ -670,6 +698,25 @@ function readTrait(entry, h, notes, out) {
   if (/^spellcasting|innate spellcasting/i.test(nm.name)) return 'spell';
   if (/magic resistance/i.test(low)) { out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', condition: 'Saves with Advantage' }, ext: { range: 0 } }); return true; }
   if (/pack tactics/i.test(low)) { h.ext.packTactics = true; return true; }
+  // "ranged attacks he makes within 5 feet of a hostile creature don't have disadvantage" (Crossbow Expert style); loading is not modelled at all
+  if (/ranged attacks?[^.]{0,60}within 5 (?:feet|ft)[^.]{0,40}(?:don't|do not|doesn't|does not) (?:have|impose) disadvantage|ranged attacks?[^.]{0,60}(?:aren't|are not) (?:made )?(?:at|with) disadvantage[^.]{0,40}within 5 (?:feet|ft)/i.test(t)) {
+    h.ext.closeShot = true;
+    notes.push(`${nm.name}: its ranged attacks have no disadvantage within 5 ft of a foe (War Table); ${/loading/i.test(t) ? 'the simulator ignores loading anyway' : 'the rest isn\'t modelled'}.`);
+    return true;
+  }
+  // "doesn't provoke opportunity attacks from a creature he has hit with a melee attack this turn"
+  if (/(?:doesn't|does not|don't|do not|never) provoke opportunity attacks from (?:a|any) creature[^.]{0,60}\bhit(?:s)? (?:it )?with a melee attack this turn/i.test(t) || /(?:doesn't|does not) provoke opportunity attacks from creatures? [^.]{0,40}melee attack[^.]{0,20}this turn/i.test(t)) {
+    h.ext.meleeHitNoOA = true;
+    notes.push(`${nm.name}: no opportunity attack from a creature it has hit with a melee attack this turn (War Table).`);
+    return true;
+  }
+  // "Once per turn, when X hits a creature with two attacks, the target takes an extra 7 (2d6) bludgeoning damage"
+  const ftm = t.match(/once (?:per|each|on each of (?:its|his|her|their)) turn,?\s+when\s+[^,]{0,40}?hits? (?:a|the same) creature with two (?:or more )?attacks?,?[^.]*?(?:takes?|deals?)\s+an extra\s+\d+\s*\(([\dd+\-\s]+)\)\s*([a-z]+)?\s*damage/i);
+  if (ftm) {
+    h.ext.followThrough = { dice: cleanDice(ftm[1]), type: (ftm[2] || '').toLowerCase() };
+    notes.push(`${nm.name}: +${h.ext.followThrough.dice}${h.ext.followThrough.type ? ' ' + h.ext.followThrough.type : ''} on the second hit on one target, once a turn (War Table); the AI doesn't count it when it picks a move.`);
+    return true;
+  }
   if (/nimble escape|cunning action/i.test(low)) { h.ext.bonusDisengage = true; out.push(hideAction(h, 'Hide (' + nm.name + ')')); return true; }
   if (/regeneration/i.test(low) || /regains? \d+ hit points at the start of (?:its|each of its) turn/i.test(t)) {
     const m = t.match(/regains?\s*(\d+)\s*hit points/i);
@@ -780,7 +827,7 @@ function readMultiattack(entry, attacks, notes, others) {
       if (a && n > 0) combo.push({ a, n });
     }
     // "makes two attacks, using Blowpipe or Molten Gather in any combination": each named option, n times (the best is picked below)
-    const usingM = !combo.length && total && rt.match(/\busing\s+(?:its\s+)?(.+?)(?:\s+in any (?:combination|order)|\.|$)/i);
+    const usingM = !combo.length && total && rt.match(/(?:\busing|\bin any (?:combination|order) of)\s+(?:its\s+)?(.+?)(?:\s+in any (?:combination|order)|\.|$)/i);
     let choice = false;
     if (usingM) {
       const picks = usingM[1].split(/,|\bor\b|\band\b/).map(x => find(x.replace(/^\s*(?:its|a|an|the)\s+/i, '').trim())).filter((a, i, arr) => a && arr.indexOf(a) === i);
@@ -835,6 +882,9 @@ function comboAction(name, combo) {
   if (lead.riderEffect) a.riderEffect = JSON.parse(JSON.stringify(lead.riderEffect));
   if (lead.ext.riderSave) a.ext.riderSave = lead.ext.riderSave;
   if (lead.ext.onHit) a.ext.onHit = JSON.parse(JSON.stringify(lead.ext.onHit));
+  // a hit rider on a pool and an extra at close range belong to the one attack the routine repeats (a mixed routine averages its swings, so there is no single base)
+  if (same && lead.ext.bolt) a.ext.bolt = JSON.parse(JSON.stringify(lead.ext.bolt));
+  if (same && lead.ext.nearBonus) a.ext.nearBonus = JSON.parse(JSON.stringify(lead.ext.nearBonus));
   const types = combo.map(c => c.a.ext.damageType).filter(Boolean);
   if (types.length && types.every(t => t === types[0])) { a.ext.damageType = types[0]; if (lead.ext.damageMix) a.ext.damageMix = JSON.parse(JSON.stringify(lead.ext.damageMix)); }
   else if (types.length) {
@@ -879,6 +929,7 @@ function parseOne(block) {
   const selfName = (h.name.split(/[\s,]+/)[0] || '').length > 2 ? h.name.split(/[\s,]+/)[0] : '';
   for (const k in body) if (Array.isArray(body[k])) body[k].forEach(e => { if (e && typeof e === 'object') e._selfName = selfName; });
   const acNote = (flat.match(/\b(?:Armor Class|AC)\b\s*:?\s*\d+\s*\(([^)]*)\)/i) || [])[1] || '';
+  const riders = [];
   for (const e of body.traits) {
     const nm0 = nameAndUsage(e.raw);
     // "Can't make opportunity attacks" (War Table)
@@ -891,6 +942,18 @@ function parseOne(block) {
     if (r === 'spell') { const so = parseSpellcasting(e, h, notes); if (so.spellbook) spellbook = so.spellbook; spellOut.push(...so.actions); }
     else if (!r) {
       const nm = nameAndUsage(e.raw);
+      // "Whenever Pasquale hits with a Buonanotte stock strike, he fires a bolt … 7 (2d6) piercing damage and 7 (2d6) force damage. He carries twelve hammer bolts."
+      // his own hit, on one of his own actions: an on-hit rider attached to that action after the actions are read (applyHitRiders)
+      const hrm = /^(?:whenever|each time|every time)\s+(?:a|an|another|any|each|one)\b/i.test(e.text) ? null : e.text.match(/^(?:whenever|each time|every time)\s+[^,.;]{1,40}?\s+hits?\s+(?:with|using)\s+an?\s+([^,.;]+?)\s*[,;]/i);
+      const hrParts = hrm ? damageParts(e.text.slice(hrm[0].length)) : [];
+      if (hrm && hrParts.length) {
+        const carry = e.text.match(/\b(?:carr(?:y|ies)|has|holds?|keeps?)\s+(\w+)\s+([a-z' -]+?)\s*[.;,]/i);
+        const count = carry ? num(carry[1]) : NaN, thing = carry && !isNaN(count) ? carry[2].trim().toLowerCase() : '';
+        const pool = thing ? cap(thing.replace(/([^s])$/, '$1s')) : '';
+        if (pool) { h.ext.resources = h.ext.resources || {}; h.ext.resources[pool] = { uses: count, reset: 'lr' }; }
+        riders.push({ name: nm.name, phrase: hrm[1].toLowerCase(), parts: hrParts, pool, thing: thing.replace(/s$/, '') });
+        continue;
+      }
       // set off by something other creatures do ("Whenever a creature within 60 feet scores a critical hit…"): not an aura
       if (/^(?:whenever|each time|every time)\b[^.]*\b(?:deals?|scores?|fails?|expends?|casts?|spends?|uses?|makes?|regains?|hits?)\b/i.test(e.text) &&
           !/(?:start|end)s? (?:of )?(?:its|their|each of its) turns?/i.test(e.text)) { notes.push(`Trait "${nm.name}" is set off by what other creatures do; not modelled.`); continue; }
@@ -915,6 +978,16 @@ function parseOne(block) {
       if (/^multiattack/.test(low)) { multis.push({ e, sec }); continue; }
       const pool = poolOf(h, nm);
       const resExt = pool ? { resource: pool } : {};
+      // a coin flip ("Pasquale flips the coin. On heads, … On tails, …"): ext.coin, a bonus action or a reaction (docs/ai-v2.md "Pasquale Minuzzi")
+      const coin = (sec === 'bonus actions' || sec === 'reactions') ? readCoin(e.text) : null;
+      if (coin) {
+        const hb = [coin.heads, coin.tails].find(o => o.buff), stand = { duration: hb ? 'until next attack made' : '1 round' };
+        if (hb && hb.buff.condition) stand.condition = hb.buff.condition;
+        if (hb && hb.hitDmg) stand.damage = hb.hitDmg;
+        parsedBySection[sec].push({ name: nm.name, actionSlot: slotOf[sec], freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: stand, ext: Object.assign({ range: 0, coin, wtOnly: true }, resExt) });
+        notes.push(`${nm.name}: a coin flip on the War Table (heads: ${coinSays(coin.heads)}; tails: ${coinSays(coin.tails)}); a plain export would be wrong about a coin, so it leaves it out.`);
+        continue;
+      }
       // "takes one additional action" (Action Surge): an extra action at the end of its turn; any lasting extra comes along
       if (/\btakes? (?:one|an) (?:additional|extra) action\b/i.test(e.text)) {
         const ex = e.text.match(/deal an extra \d+\s*\((\d+d\d+(?:\s*[+-]\s*\d+)?)\)/i);
@@ -1018,6 +1091,7 @@ function parseOne(block) {
         if (!a) { notes.push(`${cap(sec.replace(/s$/, ''))} "${nm.name}": the swallow could not be read (no attack that delivers it was found); left out.`); continue; }
       }
       a.actionSlot = slotOf[sec];
+      a._src = e.text;
       if (a.freq === 'at will' && nm.freq !== 'at will') a.freq = nm.freq;
       if (sec === 'lair actions' && noRepeatLair && a.freq === 'at will') { a.freq = { reset: 'recharge', cooldownRounds: 2 }; a.condition = 'is available'; }
       a._cost = nm.cost;
@@ -1029,6 +1103,35 @@ function parseOne(block) {
       if (/swallow/i.test(low) && a.type === 'atk' && !a.ext.swallow) { const s = readSwallow(e, nm, parsedBySection.actions, notes); if (s) a = Object.assign(s, { actionSlot: a.actionSlot }); }
       parsedBySection[sec].push(a);
     }
+  }
+
+  // hit riders ("Whenever Pasquale hits with a … stock strike, he fires a bolt … He carries twelve hammer bolts"): the damage joins the named attack, a pool pays for it per hit
+  for (const r of riders) {
+    const hit = parsedBySection.actions.filter(a => a.type === 'atk' && !a.useSaves && r.phrase.indexOf(a.name.toLowerCase().replace(/s$/, '')) >= 0);
+    if (!hit.length) { notes.push(`Trait "${r.name}" names an attack that wasn't found; not modelled.`); continue; }
+    const dice = cleanDice(r.parts.map(p => p.dice).join(' + ')), avg = r.parts.reduce((s, p) => s + p.avg, 0);
+    const mixIn = (a, before, parts) => {
+      const mix = {};
+      if (a.ext.damageMix) a.ext.damageMix.forEach(([t, w]) => { mix[t] = (mix[t] || 0) + w; }); else if (a.ext.damageType) mix[a.ext.damageType] = before;
+      parts.forEach(p => { if (DAMAGE_TYPES.includes(p.type)) mix[p.type] = (mix[p.type] || 0) + p.avg; });
+      const names = Object.keys(mix);
+      if (names.length) { a.ext.damageType = names.join(' + '); if (names.length > 1) a.ext.damageMix = names.map(n => [n, round1(mix[n])]); }
+    };
+    for (const a of hit) {
+      const before = a._avg, base = a.dpr;
+      a.dpr = cleanDice(base + ' + ' + dice); a._avg += avg;
+      mixIn(a, before, r.parts);
+      if (r.pool) a.ext.bolt = { resource: r.pool, cost: 1, base, dice, name: r.thing || 'bolt' };
+    }
+    const also = [];
+    if (r.thing) for (const a of parsedBySection.actions) {
+      if (hit.includes(a) || a.type !== 'atk' || a.useSaves || !a._src) continue;
+      const m = a._src.match(new RegExp('(\\d+)\\s*\\(\\s*([\\dd+\\-\\s]+?)\\s*\\)\\s*(?:[a-z]+\\s+)?damage from an? ' + r.thing.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i'));
+      if (!m) continue;
+      const bd = cleanDice(m[2]), tail = new RegExp('\\s*\\+\\s*' + bd.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '\\s*$');
+      if (r.pool && tail.test(a.dpr)) { a.ext.bolt = { resource: r.pool, cost: 1, base: a.dpr.replace(tail, ''), dice: bd, name: r.thing }; also.push(a.name); }
+    }
+    notes.push(`${r.name}: +${dice} on every hit with ${hit.map(a => a.name).join(', ')}${also.length ? ' and ' + also.join(', ') : ''}, counted in their damage${r.pool ? `; each hit takes one ${r.thing} from a pool of ${h.ext.resources[r.pool].uses} (${r.pool}), and with none left the attack still works without it (War Table)` : ''}; an export counts it on every hit.`);
   }
 
   // multiattack: replace its component attacks with one routine

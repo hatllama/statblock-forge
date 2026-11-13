@@ -671,6 +671,27 @@ function playBoss(sc, N) {
   }
   BOSS_FORCE = null;
 }
+/* ---- Pasquale Minuzzi (docs/ai-v2.md "Pasquale Minuzzi"): the coin features against Zaki's party ----
+   node tests/ai-compare.js 200 '^PASQ'   (TIER_MODES=open picks the modes). Monsters and party on v2; both sides' knowledge is the row's mode.
+   Two arms: as written, and with his coin abilities (Double Down, Call It in the Air) taken away. Lower party win = a stronger Pasquale. */
+const PASQ_METRICS = {
+  'coin/fight': r => r.events.filter(e => (e.kind === 'buff' && /flips the coin/.test(e.text || '')) || (e.kind === 'react' && /Call It in the Air: (heads|tails)/.test(e.text || ''))).length,
+  'heads': r => r.events.filter(e => /: heads —/.test(e.text || '')).length,
+  'bolts/fight': r => r.events.filter(e => e.kind === 'attack' && /hammer bolt/.test(e.text || '')).length,
+  'Pasquale dmg': r => r.foes.reduce((t, f) => t + (f.dealt || 0), 0),
+};
+const pasquale = (noCoin, hp) => { const m = statblock('pasquale.txt'); if (noCoin) m.actions = m.actions.filter(a => !(a.ext && a.ext.coin)); if (hp) m.hp = hp; return m; };
+function playPasq(N) {
+  // the second block gives him three times the hit points (471): the party kills the one as written in two rounds, which is too short for a pool of bolts or a coin to show
+  for (const [title, hp] of [["PASQ Pasquale Minuzzi (CR 10, 157 HP) alone against Zaki's party, as written and without his coin abilities", 0], ['PASQ long: the same with 471 HP (3x), a longer fight for the coin and the bolts', 471]]) {
+    console.log('\n' + title);
+    console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(PASQ_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+    for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const [label, noCoin] of [['coin', false], ['no coin', true]]) {
+      const sc = { name: 'PASQ', players: zaki, encounters: () => [{ monsters: [pasquale(noCoin, hp)] }], metrics: PASQ_METRICS, record: true, know: { party: know, foes: know } };
+      console.log(row(pad(know + ' ' + label, 14), play(sc, { party: 'v2', foes: 'v2' }, N)));
+    }
+  }
+}
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
 const AI_OVER = ['w', 'pacing', 'burn', 'react'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
@@ -784,6 +805,7 @@ if (process.env.ACCURACY === '1') {
 }
 for (const sc of TIER_SCENARIOS) if (only && only.test(sc.name)) playTier(sc, N);
 for (const sc of BOSS_SCENARIOS) if (only && only.test(sc.name)) playBoss(sc, N);
+if (only && only.test('PASQ')) playPasq(N);
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);

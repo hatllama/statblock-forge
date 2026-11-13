@@ -469,7 +469,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   // attack-scoped buffs are spent
   this.dropBuffs(att, b => b.expiry === 'until next attack made' || b.expiry === 'hide');
   let coinHit = null;   // a coin's buff (ext.coin) is spent by the roll; the extra damage it carries is added by attackOnce on a hit
-  if (att.buffs.some(b => b.expiry === 'next attack roll')) { coinHit = att.buffs.filter(b => b.expiry === 'next attack roll' && b.hitDmg); this.dropBuffs(att, b => b.expiry === 'next attack roll'); }
+  if (att.buffs.some(b => b.expiry === 'next attack roll')) { coinHit = att.buffs.filter(b => b.expiry === 'next attack roll' && b.hitDmg); if (!coinHit.length) coinHit = null; this.dropBuffs(att, b => b.expiry === 'next attack roll'); }
   this.dropBuffs(tgt, b => b.expiry === 'until next attack taken');
   return { hit, crit, total: Math.round(total * 10) / 10, ac: Math.round(ac * 10) / 10, roll: r, adv: adv && !dis, dis: dis && !adv, mirror, fa, coinHit };
 };

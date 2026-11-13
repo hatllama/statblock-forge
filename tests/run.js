@@ -2616,6 +2616,212 @@ section('Rules pass: a short rest spends Hit Dice');
   check(cnt >= 15 && hpHd < hpFull, `fight 2 starts with less of the party's HP than after a full rest (${(hpHd / cnt).toFixed(2)} vs ${(hpFull / cnt).toFixed(2)} party members' worth, ${cnt} days)`);
 }
 
+section('Pasquale Minuzzi: coin flips, hit riders on a bolt pool, Follow Through, Trained Shooter and Fighter');
+{
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const parsedPq = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'pasquale.txt'), 'utf8')).monsters[0];
+  const act = re => parsedPq.actions.find(a => re.test(a.name));
+  const avg = Tac.avgDice;
+  // the statblock, as the parser reads it
+  check(parsedPq.AC === 18 && parsedPq.hp === 157 && String(parsedPq.cr) === '10', `Pasquale: AC ${parsedPq.AC}, ${parsedPq.hp} HP, CR ${parsedPq.cr}`);
+  const ms = act(/^Multiattack \(3 Stock Strike\)/), mp = act(/^Multiattack \(3 Point-Blank Shot\)/);
+  check(ms && ms.targets === 3 && ms.toHit === 8 && !(ms.ext && ms.ext.wtOnly), 'Multiattack: three stock strikes (+8) is the routine');
+  check(mp && mp.targets === 3 && mp.toHit === 9 && mp.ext.wtOnly && mp.ext.range === 30, 'Multiattack, "in any combination": three point-blank shots (+9, range 30) is the War Table alternative');
+  check(ms && avg(ms.dpr) === 23.5 && ms.ext.bolt && ms.ext.bolt.base === '1d10 + 4' && ms.ext.bolt.dice === '2d6 + 2d6' && /piercing/.test(ms.ext.damageType) && /force/.test(ms.ext.damageType), `Stock Strike: 1d10 + 4 plus Hold the Door's 7 piercing and 7 force = ${ms && avg(ms.dpr)} per hit, base 1d10 + 4`);
+  check(mp && avg(mp.dpr) === 19 && mp.ext.bolt && mp.ext.bolt.base === '2d6 + 5' && mp.ext.nearBonus && mp.ext.nearBonus.dice === '1d6' && mp.ext.nearBonus.within === 15, 'Point-Blank Shot: 12 + 7 (its bolt) and +1d6 within 15 ft');
+  check(parsedPq.ext.resources && parsedPq.ext.resources['Hammer Bolts'] && parsedPq.ext.resources['Hammer Bolts'].uses === 12 && ms.ext.bolt.resource === 'Hammer Bolts' && mp.ext.bolt.resource === 'Hammer Bolts', 'twelve hammer bolts, one pool both attacks draw on');
+  const bb = act(/^Both Barrels/);
+  check(bb && bb.freq.reset === 'recharge' && bb.toHit === 16 && bb.ext.saveAbility === 'dex' && bb.ext.area.shape === 'cone' && bb.ext.area.size === 15 && bb.dpr === '7d6' && bb.halfOnSave, 'Both Barrels: recharge, DC 16 Dex, 15-ft cone, 7d6, half on a save');
+  const dd = act(/^Double Down/), ci = act(/^Call It/), py = act(/^Parry/);
+  check(dd && dd.actionSlot === 1 && dd.ext.coin.p === 0.5 && dd.ext.coin.heads.hitDmg === '2d8' && dd.ext.coin.heads.buff.condition === 'Attacks with Advantage' && dd.ext.coin.tails.buff.condition === 'Attacks with Disadvantage' && dd.ext.coin.heads.lasts === 'turn', 'Double Down: a bonus-action coin, heads advantage and +2d8 force, tails disadvantage, this turn');
+  check(ci && ci.actionSlot === 4 && ci.ext.coin.heads.miss === true && ci.ext.coin.tails.buff.condition === 'Attacks with Disadvantage' && ci.ext.coin.tails.lasts === 'next', 'Call It in the Air: a reaction coin, heads the attack misses, tails disadvantage until the end of its next turn');
+  check(py && py.actionSlot === 4 && py.buff.ac === 3, 'Parry: +3 AC');
+  check(parsedPq.ext.closeShot === true && parsedPq.ext.meleeHitNoOA === true && parsedPq.ext.followThrough && parsedPq.ext.followThrough.dice === '2d6' && parsedPq.ext.followThrough.type === 'bludgeoning', 'Trained Shooter, Trained Fighter and Follow Through are read into ext');
+  const bad = (parsedPq._notes || []).filter(n => /isn't modelled|not modelled|nothing the simulator can model/.test(n));
+  check(!bad.length, 'no "not modelled" note is left for the traits and actions: ' + bad.join(' | '));
+  check(parsedPq.actions.filter(a => a.ext && a.ext.coin).every(a => a.ext.wtOnly), 'the coin abilities are War Table only, so a plain export leaves them out');
+  // a creature without any of this reads and exports as before: no stray ext keys
+  const gob = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'goblin-2014.txt'), 'utf8')).monsters[0];
+  check(!gob.ext.closeShot && !gob.ext.meleeHitNoOA && !gob.ext.followThrough && gob.actions.every(a => !a.ext || (!a.ext.bolt && !a.ext.nearBonus && !a.ext.coin)), 'a goblin has none of the new keys');
+
+  // engine: a small board with Pasquale and a dummy; forced dice where a result must be one thing
+  const dummyTpl = () => ({ id: 'tg', name: 'Dummy', mode: 'custom', hp: 5000, AC: 1, saveBonus: 0, count: 1, ext: { size: 'Medium' }, actions: [{ id: 'tg0', name: 'Slash', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1d6', toHit: 5, target: 'enemy with most HP', ext: { range: 5 } }] });
+  const mkSim = seed => {
+    const s = new Tac.Sim({ width: 20, height: 10, seed: seed || 3, record: true });
+    const m = cp(parsedPq); m.id = 'pq'; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = 'pq' + i; });
+    const pq = Tac.expandTeam([m], 'foes', false)[0], tg = Tac.expandTeam([dummyTpl()], 'party', false)[0];
+    pq.x = 2; pq.y = 2; tg.x = 3; tg.y = 2; s.units = [pq, tg]; s.byId = { [pq.uid]: pq, [tg.uid]: tg };
+    s._last = {}; s.turnSeq = 1; s.current = pq; pq.turnNo = 1; s.boardChanged();
+    const g = n => pq.actions.find(a => a.name.indexOf(n) === 0);
+    return { s, pq, tg, g };
+  };
+  const rigged = (s, v) => { const R = () => v; R.d = n => 1 + Math.floor(v * n); s.R = R; };      // v < 0.5 = heads
+  const lastAttack = s => s.events.filter(e => e.kind === 'attack').pop();
+
+  // Double Down: heads = advantage and +2d8 force on the next attack roll, tails = disadvantage; either is spent by that roll
+  {
+    const { s, pq, tg, g } = mkSim(), atk = g('Multiattack (3 Stock');
+    rigged(s, 0.1); s.doAction(pq, g('Double Down'), { targets: [pq] });
+    check(s.conds(pq).has('Attacks with Advantage') && s.events.some(e => /flips the coin.*heads/.test(e.text)), 'Double Down, heads: advantage on its next attack roll');
+    s.d20 = () => 15;
+    const r1 = s.attackRoll(pq, tg, atk, {});
+    check(r1.adv && r1.coinHit && r1.coinHit.length === 1 && r1.coinHit[0].hitDmg === '2d8', 'the next roll has advantage and carries the +2d8');
+    const r2 = s.attackRoll(pq, tg, atk, {});
+    check(!r2.adv && !r2.coinHit && !s.conds(pq).has('Attacks with Advantage'), 'it is spent by that one roll');
+    // heads damage: the attack's event names Double Down and the target takes at least 2 more
+    const a = mkSim(5); rigged(a.s, 0.1); a.s.doAction(a.pq, a.g('Double Down'), { targets: [a.pq] }); a.s.d20 = () => 15; a.pq.uses.set('res:Hammer Bolts', 0);
+    a.s.attackOnce(a.pq, a.g('Multiattack (3 Stock'), a.tg, {});
+    check(/Double Down/.test(lastAttack(a.s).text) && /hit/.test(lastAttack(a.s).text), 'a hit after heads lists Double Down in the log: ' + lastAttack(a.s).text);
+    // tails
+    const t = mkSim(); rigged(t.s, 0.9); t.s.doAction(t.pq, t.g('Double Down'), { targets: [t.pq] }); t.s.d20 = () => 15;
+    const rt = t.s.attackRoll(t.pq, t.tg, t.g('Multiattack (3 Stock'), {});
+    check(t.s.events.some(e => /flips the coin.*tails/.test(e.text)) && rt.dis && !rt.coinHit, 'Double Down, tails: disadvantage on that roll, no extra damage');
+    // unused at the end of the turn it goes away
+    const u = mkSim(); rigged(u.s, 0.1); u.s.doAction(u.pq, u.g('Double Down'), { targets: [u.pq] }); u.s.endTurn(u.pq);
+    check(!u.s.conds(u.pq).has('Attacks with Advantage'), 'Double Down does not carry over to its next turn');
+    // seeded: the same seed flips the same coins, and about half are heads
+    const tally = seed => { const w = mkSim(seed); let h = 0; const seq = []; for (let i = 0; i < 400; i++) { const f = w.s.coinFlip(w.pq, w.g('Double Down')); if (f.heads) h++; seq.push(f.heads ? 1 : 0); } return { h, seq: seq.join('') }; };
+    const t1 = tally(11), t2 = tally(11);
+    check(t1.seq === t2.seq && t1.h > 160 && t1.h < 240, `the coin comes from the seeded dice: reproducible (${t1.seq === t2.seq}), ${t1.h}/400 heads`);
+  }
+
+  // Call It in the Air, through the reaction layer (v2): heads turns a hit into a miss, tails leaves it and costs a disadvantaged roll; one reaction a round, shared with Parry
+  {
+    const proto = Tac.Sim.prototype, turn = proto.turn;
+    const fighter = (() => { const c = { console }; c.globalThis = c; vm.createContext(c); vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS;', c); return cp(c.CB.find(b => b.name === 'Fighter')); })();
+    const m = cp(parsedPq); m.id = 'pq'; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = 'pq' + i; });
+    let out = null;
+    proto.turn = function (who) {
+      if (out === null) {
+        const S = this, pq = S.units.find(o => /Pasquale/.test(o.name)), fi = S.units.find(o => o.team === 'party');
+        const big = { id: 'big', name: 'Big swing', actionSlot: 0, type: 'atk', dpr: '6d12', toHit: 40, targets: 1, _range: 5, ext: { range: 5, damageType: 'slashing' } };
+        const trial = (v, setup) => { pq.reaction = true; pq.buffs = []; if (setup) setup(); rigged(S, v); S.d20 = () => 19; const r = S.attackRoll(fi, pq, big, {}); return { r, reaction: pq.reaction, dis: S.conds(pq).has('Attacks with Disadvantage'), v2: !!pq.v2 }; };
+        const heads = trial(0.1), tails = trial(0.9);
+        const twice = trial(0.1, () => { rigged(S, 0.9); S.d20 = () => 19; S.attackRoll(fi, pq, big, {}); pq.buffs = []; pq.reaction = false; });
+        const after = trial(0.1, () => { S.reactTake(pq, pq.actions.find(a => /^Parry/.test(a.name)), 0); });
+        // the disadvantage lasts to the end of its next turn
+        pq.buffs = []; pq.turnNo = 3; pq.reaction = true; rigged(S, 0.9); S.d20 = () => 19; S.attackRoll(fi, pq, big, {});
+        const buff = pq.buffs.find(b => b.endTurn !== undefined);
+        const endT = buff ? buff.endTurn : null; pq.turnNo = 3; S.endTurn(pq); const keptAt3 = pq.buffs.some(b => b.endTurn !== undefined); pq.turnNo = 4; S.endTurn(pq); const keptAt4 = pq.buffs.some(b => b.endTurn !== undefined);
+        out = { heads, tails, twice, after, endT, keptAt3, keptAt4 };
+      }
+      return turn.call(this, who);
+    };
+    try { Tac.runDay({ players: [fighter], encounters: [{ monsters: [m] }] }, { seed: 9, partyAI: 'tactical', ai: { party: 'v2', foes: 'v2' } }); } finally { proto.turn = turn; }
+    check(out && out.heads.v2, 'Pasquale is on v2 here');
+    check(out && !out.heads.r.hit && !out.heads.reaction, 'Call It in the Air, heads: the hit becomes a miss and the reaction is spent');
+    check(out && out.tails.r.hit && out.tails.dis && !out.tails.reaction, 'tails: the hit lands and he has disadvantage on his next attack roll');
+    check(out && out.twice.r.hit && !out.twice.dis, 'a second hit the same round: no second flip (the one reaction was used)');
+    check(out && out.after.r.hit && !out.after.dis, 'not available once Parry has taken the reaction');
+    check(out && out.endT === 4 && out.keptAt3 === true && out.keptAt4 === false, `the tails disadvantage, flipped after his turn 3, runs to the end of his next turn (dated ${out && out.endT}): still there at the end of turn 3? ${out && out.keptAt3}; at the end of turn 4? ${out && out.keptAt4}`);
+  }
+
+  // Follow Through: once per turn, on the second hit on one target
+  {
+    const { s, pq, tg, g } = mkSim(), ms3 = g('Multiattack (3 Stock');
+    s.d20 = () => 15;
+    const ft = () => s.events.filter(e => e.kind === 'attack' && /Follow Through/.test(e.text)).length;
+    s.resolveAttackAction(pq, ms3, [tg], {});
+    check(ft() === 1 && /Follow Through/.test(s.events.filter(e => e.kind === 'attack')[1].text), 'three hits on one target: Follow Through on the second, once');
+    s.resolveAttackAction(pq, ms3, [tg], {});
+    check(ft() === 1, 'a second routine in the same turn does not trigger it again');
+    s.turnSeq++;
+    s.resolveAttackAction(pq, ms3, [tg], {});
+    check(ft() === 2, 'the next turn it can trigger again');
+    // two targets: one hit on each is not two hits on one
+    const w = mkSim(), t2 = Tac.expandTeam([dummyTpl()], 'party', false)[0]; t2.uid = 'party:tg:9'; t2.x = 1; t2.y = 2; w.s.units.push(t2); w.s.byId[t2.uid] = t2; w.s.d20 = () => 15; w.s.boardChanged();
+    const one = Object.assign({}, w.g('Multiattack (3 Stock'), { targets: 1 });
+    w.s.attackOnce(w.pq, one, w.tg, {}); w.s.attackOnce(w.pq, one, t2, {});
+    check(!w.s.events.some(e => /Follow Through/.test(e.text || '')), 'one hit on each of two targets does not count');
+    w.s.attackOnce(w.pq, one, w.tg, {});
+    check(w.s.events.filter(e => /Follow Through/.test(e.text || '')).length === 1, '…the second hit on the first target does');
+  }
+
+  // Trained Fighter: no opportunity attack from a creature he has hit with a melee attack this turn, only from that one
+  {
+    const run = (hitFirst, hitOther) => {
+      const { s, pq, tg, g } = mkSim();
+      const t2 = Tac.expandTeam([dummyTpl()], 'party', false)[0]; t2.uid = 'party:tg:9'; t2.x = 2; t2.y = 3; s.units.push(t2); s.byId[t2.uid] = t2; s.boardChanged();
+      s.d20 = () => 15;
+      const one = Object.assign({}, g('Multiattack (3 Stock'), { targets: 1 });
+      if (hitFirst) s.attackOnce(pq, one, tg, {});
+      if (hitOther) s.attackOnce(pq, one, t2, {});
+      s.events.length = 0;
+      s.moveAlong(pq, [{ x: 1, y: 1 }]);       // away from both (they stand east and south)
+      return s.events.filter(e => e.kind === 'oa').map(e => e.text.split(' takes')[0]);
+    };
+    const none = run(false, false), one = run(true, false), both = run(true, true);
+    check(none.length === 2 && one.length === 1 && both.length === 0, `opportunity attacks as he leaves two creatures: ${none.length} with no hit, ${one.length} after hitting one, ${both.length} after hitting both`);
+    const w = mkSim(); w.s.d20 = () => 15; w.s.attackOnce(w.pq, Object.assign({}, w.g('Multiattack (3 Stock'), { targets: 1 }), w.tg, {});
+    w.s.turnSeq++; w.s.events.length = 0; w.s.moveAlong(w.pq, [{ x: 1, y: 2 }]);
+    check(w.s.events.some(e => e.kind === 'oa'), 'a melee hit on an earlier turn does not count');
+  }
+
+  // Trained Shooter: no disadvantage on a ranged attack with a foe within 5 ft
+  {
+    const { s, pq, tg, g } = mkSim(), pbs = g('Multiattack (3 Point-Blank');
+    s.d20 = () => 15;
+    const near = s.attackRoll(pq, tg, pbs, { noReact: true });
+    pq.closeShot = false;
+    const without = s.attackRoll(pq, tg, pbs, { noReact: true });
+    check(!near.dis && without.dis, `point-blank, foe adjacent: ${near.dis ? 'disadvantage' : 'no disadvantage'} with Trained Shooter, ${without.dis ? 'disadvantage' : 'none'} without it`);
+  }
+
+  // the bolts: one per hit, both attacks draw on the pool, and when it is empty the swing still works without the rider
+  {
+    const { s, pq, tg, g } = mkSim(), ms3 = g('Multiattack (3 Stock'), pbs = g('Multiattack (3 Point-Blank');
+    s.d20 = () => 15;
+    const pool = () => pq.uses.get('res:Hammer Bolts');
+    check(pool() === 12, 'he starts with twelve bolts');
+    s.resolveAttackAction(pq, ms3, [tg], {});
+    check(pool() === 9, `three stock strike hits take three bolts (per hit, not per attack): ${pool()} left`);
+    s.d20 = () => 1;            // misses
+    s.resolveAttackAction(pq, ms3, [tg], {});
+    check(pool() === 9, 'a miss fires nothing');
+    s.d20 = () => 15;
+    s.resolveAttackAction(pq, pbs, [tg], {});
+    check(pool() === 6, `point-blank shots draw on the same pool: ${pool()} left`);
+    s.resolveAttackAction(pq, ms3, [tg], {}); s.resolveAttackAction(pq, ms3, [tg], {});
+    check(pool() === 0, 'six more hits empty it');
+    const before = tg.dmgTaken; s.events.length = 0;
+    s.resolveAttackAction(pq, ms3, [tg], {});
+    const swings = s.events.filter(e => e.kind === 'attack');
+    check(pool() === 0 && swings.length === 3 && swings.every(e => /hit/.test(e.text) && !/bolt/.test(e.text)) && tg.dmgTaken > before, 'with no bolts left the swings still hit and deal their base damage, with no bolt');
+    // base damage is 1d10 + 4 (5-14), so three swings are 15-42; with the bolts they would be 23 on average more than that
+    check(tg.dmgTaken - before >= 15 && tg.dmgTaken - before <= 42, `…and that is 1d10 + 4 a swing (${tg.dmgTaken - before} in all)`);
+  }
+
+  // damage within 15 ft: Point-Blank Shot's extra 1d6
+  {
+    const dmgAt = dist => { const { s, pq, tg, g } = mkSim(21); pq.uses.set('res:Hammer Bolts', 0); tg.hp = tg.maxHp = 1e7; tg.x = pq.x + dist / 5; s.boardChanged(); s.d20 = () => 15; const one = Object.assign({}, g('Multiattack (3 Point-Blank'), { targets: 1 }); let t = 0; for (let i = 0; i < 600; i++) { const b = tg.dmgTaken; s.attackOnce(pq, one, tg, {}); t += tg.dmgTaken - b; } return t / 600; };
+    const near = dmgAt(10), far = dmgAt(20);
+    check(Math.abs((near - far) - 3.5) < 0.6, `a point-blank shot does ${near.toFixed(1)} at 10 ft and ${far.toFixed(1)} at 20 ft (1d6 = 3.5 more near)`);
+    const { s, pq, tg, g } = mkSim(), pbs1 = Object.assign({}, g('Multiattack (3 Point-Blank'), { targets: 1 });
+    const eNear = s.expected(pq, pbs1, tg); tg.x = pq.x + 4; s.boardChanged(); const eFar = s.expected(pq, pbs1, tg);
+    check(eNear > eFar + 2, `the AI's own estimate counts it only up close (${eNear.toFixed(1)} vs ${eFar.toFixed(1)})`);
+  }
+
+  // v2 values a coin like any bonus option: positive with a foe in reach; a creature with no coin gets none of this
+  {
+    const proto = Tac.Sim.prototype, turn = proto.turn;
+    const m = cp(parsedPq); m.id = 'pq'; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = 'pq' + i; });
+    const fighterTpl = { id: 'f', name: 'Fighter', hp: 60, AC: 16, saveBonus: 3, count: 1, ext: {}, actions: [{ id: 'f0', name: 'Sword', actionSlot: 0, freq: 'at will', condition: 'default', targets: 2, type: 'atk', dpr: '1d8 + 4', toHit: 6, target: 'enemy with most HP', ext: { range: 5 } }] };
+    let out = null;
+    proto.turn = function (who) {
+      if (out === null) {
+        const S = this, pq = S.units.find(o => /Pasquale/.test(o.name)), fi = S.units.find(o => o.team === 'party');
+        fi.x = pq.x + 1; fi.y = pq.y; S.boardChanged();
+        const dd = pq.actions.find(a => /^Double Down/.test(a.name)), ctx = S.v2Ctx(pq, 0);
+        out = { v: S.v2SelfValue(pq, dd, ctx), none: S.v2CoinValue(pq, Object.assign({}, dd, { ext: { coin: { p: 0.5 } } }), ctx), pre: !!S.v2Bonus(pq, 'pre') && S.v2Bonus(pq, 'pre').a === dd };
+      }
+      return turn.call(this, who);
+    };
+    try { Tac.runDay({ players: [fighterTpl], encounters: [{ monsters: [m] }] }, { seed: 4, partyAI: 'tactical', ai: { party: 'v2', foes: 'v2' } }); } finally { proto.turn = turn; }
+    check(out && out.v > 0 && out.none === 0, `Double Down is worth ${out && out.v.toFixed(1)} points beside a foe, and a coin with no outcomes is worth ${out && out.none}`);
+    check(out && out.pre === false, 'it is not taken before moving (a coin is flipped with the other bonus options)');
+  }
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {
