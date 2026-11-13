@@ -433,7 +433,7 @@ Sim.prototype.v2Bonus = function (u, phase, choice) {
   const offer = (a, p, v) => { v -= conc(a); if (v > 0 && (!best || v > best.v)) best = { a, p, v }; };
   for (const a of list) {
     if (a.target === 'self' || a._range === 0) {
-      if (phase === 'pre' && a.type !== 'buff') continue;
+      if (phase === 'pre' && (a.type !== 'buff' || (a.ext && a.ext.coin))) continue;     // a coin is flipped after it has moved, beside the other bonus options
       const L = this.v2CastLevels(u, a)[0];
       if (L === undefined || !this.v2PoolFor(u, a, ctx).length) continue;
       const v = this.v2SelfValue(u, a, ctx);

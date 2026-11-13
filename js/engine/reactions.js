@@ -7,11 +7,12 @@ const { rollDice, avgDice, damageMultFor, freqKind, Sim, otherTeam, reactFits } 
 
 /* ----- reactions as a layer (docs/ai-v2.md, "Reactions as a layer") ----- */
 /* what a reaction action is, from its shape; REACT_ON is what each kind is offered at, ext.react.on overrides it */
-const REACT_ON = { ac: ['hit'], barbs: ['hit', 'save'], cut: ['damage'], counter: ['spell'] };
+const REACT_ON = { ac: ['hit'], barbs: ['hit', 'save'], cut: ['damage'], counter: ['spell'], coin: ['hit'] };
 function reactKind(x) {
   if (!x || x.actionSlot !== 4) return '';
   const ex = x.ext || {};
   if (ex.counterspell) return 'counter';
+  if (ex.coin && x.type === 'buff' && x.target === 'self') return 'coin';       // Call It in the Air: a coin flip when hit (docs/ai-v2.md "Pasquale Minuzzi")
   if (x.type === 'buff' && x.target === 'self' && x.buff) {
     if (x.buff.ac !== undefined) return 'ac';
     if (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) return 'cut';
@@ -151,6 +152,9 @@ Sim.prototype.reactHitV2 = function (S, opt) {
       const sh = tgt.v2 ? this.reactFind(tgt, 'ac', 'hit') : null;
       if (sh) { const val = this.reactShieldValue(S, tgt, sh), net = val - this.reactPrice(tgt, sh, val, 0); if (net > 0) cands.push({ who: tgt, x: sh, net, kind: 'ac' }); }
     }
+    // a coin-flip reaction on the target (Call It in the Air): it shares the one reaction with Shield and the rest, the best net wins
+    const cn = tgt.v2 ? this.reactFind(tgt, 'coin', 'hit') : null;
+    if (cn) { const val = this.reactCoinValue(S, tgt, cn), net = val - this.reactPrice(tgt, cn, val, 0); if (net > 0) cands.push({ who: tgt, x: cn, net, kind: 'coin' }); }
     // Silvery Barbs from any v2 ally that sees the attacker
     for (const h of this.alliesOf(tgt)) {
       if (!h.v2 || !h.reaction || !h.onBoard || this.dist(h, att) > 60) continue;
@@ -164,6 +168,7 @@ Sim.prototype.reactHitV2 = function (S, opt) {
     cands.sort((p, q) => q.net - p.net);
     const c = cands[0];
     if (c.kind === 'ac') this.reactShieldDo(S, c.who, c.x);
+    else if (c.kind === 'coin') this.reactCoinDo(S, c.who, c.x);
     else this.reactBarbsDo(S, c.who, c.x);
   }
   // Lucky (no reaction): a luck point against a hit
@@ -195,6 +200,21 @@ Sim.prototype.reactShieldDo = function (S, tgt, x) {
   S.ac = this.ac(tgt) + this.coverAC(S.att, tgt);
   S.hit = S.d === 20 || (S.d !== 1 && S.total >= S.ac);
   this.ev('react', `${tgt.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${was} would hit AC ${acWas}, ${S.hit ? 'still hits' : 'now misses'} (AC ${Math.round(S.ac)})`, { uid: tgt.uid });
+};
+/* Call It in the Air: heads turns this hit into a miss, tails leaves it and costs a disadvantaged attack roll of its own.
+   The best one-hit damage the creature has, as the cost of one tails (react.coin.tails of it); the hit as the defender reads it, like Shield */
+Sim.prototype.reactCoinValue = function (S, tgt, x) {
+  const R = tgt.v2P, c = x.ext.coin, ph = typeof c.p === 'number' ? c.p : 0.5, dmg = this.kHitDmg(tgt, S.att, S.a) * (S.crit ? R.w.critDmg : 1);
+  let mine = 0;
+  for (const o of tgt.actions) if (o.type === 'atk' && !o.useSaves && o.actionSlot === 0) mine = Math.max(mine, avgDice((o.ext && o.ext.wtDpr) || o.dpr) / Math.max(1, o.targets || 1));
+  const heads = c.heads && c.heads.miss ? dmg : 0, tails = c.tails && c.tails.buff && c.tails.buff.condition === 'Attacks with Disadvantage' ? mine * R.coin.tails : 0;
+  return (ph * heads - (1 - ph) * tails) * R.coin.weight;
+};
+Sim.prototype.reactCoinDo = function (S, tgt, x) {
+  this.reactTake(tgt, x, 0);
+  const f = this.coinFlip(tgt, x);
+  if (f.heads && f.out.miss) { S.hit = false; S.crit = false; }
+  this.ev('react', `${tgt.name} uses ${x.name}: ${f.heads ? 'heads' : 'tails'} — ${this.coinWords(f.out)} (${S.att.name}'s ${Math.round(S.total)} vs AC ${Math.round(S.ac)})`, { uid: tgt.uid, target: S.att.uid });
 };
 Sim.prototype.reactBarbsDo = function (S, h, x) {
   const att = S.att;

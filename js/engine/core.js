@@ -38,7 +38,7 @@ Sim.prototype.unitState = function (u) {
            fled: u.fled || undefined };
 };
 /* one line per effect on a creature: [name, what it does, how long, who put it there] */
-const EXPIRY_TEXT = { 'entire encounter': 'the whole fight', '1 round': 'until its maker\'s next turn', 'until next attack made': 'until its next attack', 'until next attack taken': 'until it is next attacked',
+const EXPIRY_TEXT = { 'entire encounter': 'the whole fight', '1 round': 'until its maker\'s next turn', 'until next attack made': 'until its next attack', 'next attack roll': 'until its next attack roll', 'until next attack taken': 'until it is next attacked',
   'until it stands up': 'until it stands (half its speed)', 'repeat the save each round': 'save each turn to end', hide: 'until it attacks or moves into view' };
 Sim.prototype.buffInfo = function (u, b) {
   const d = b.data || {}, bits = [];
@@ -281,6 +281,7 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
     const after = new Set(this.adjacentEnemies(u, step.x, step.y));
     for (const e of (u.disengaged ? [] : this.adjacentEnemies(u, u.x, u.y))) {
       if (after.has(e) || !e.reaction || this.incap(e) || e.noOA) continue;
+      if (u.mhHit && u.mhHit.seq === this.turnSeq && u.mhHit.set.has(e.uid)) continue;     // Trained Fighter: hit it with a melee attack this turn
       const atk = e.actions.find(a => a.type === 'atk' && !a.useSaves && a.actionSlot === 0 && a._range <= 10 && !(a.ext && a.ext.swallow));
       if (!atk) continue;
       flush();
@@ -435,7 +436,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   let dis = DIS_TARGET.some(x => tc.has(x)) || DIS_SELF.some(x => atc.has(x));
   if (tc.has('Prone') && !opt.inside) { if (this.dist(att, tgt) <= 5) adv = true; else dis = true; }      // prone: easy up close, hard from afar
   // ranged attack with any enemy (that can see you and isn't incapacitated) within 5 ft
-  if ((a._range || 5) > 10 && !opt.inside && this.enemiesOf(att).some(e => e.onBoard && this.alive(e) && !this.incap(e) && this.dist(e, att) <= 5 && !this.isHidden(att))) dis = true;
+  if ((a._range || 5) > 10 && !opt.inside && !att.closeShot && this.enemiesOf(att).some(e => e.onBoard && this.alive(e) && !this.incap(e) && this.dist(e, att) <= 5 && !this.isHidden(att))) dis = true;
   const r = this.d20(adv, dis, att.elvenAccuracy);
   const toHit = Number(avgDice(a.toHit)) + this.sumBuff(att, 'toHit', true);
   let total = r + toHit;
@@ -467,8 +468,10 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   if (hit && this.dist(att, tgt) <= 5 && !opt.inside && (tc.has('Paralyzed') || tc.has('Unconscious'))) crit = true;
   // attack-scoped buffs are spent
   this.dropBuffs(att, b => b.expiry === 'until next attack made' || b.expiry === 'hide');
+  let coinHit = null;   // a coin's buff (ext.coin) is spent by the roll; the extra damage it carries is added by attackOnce on a hit
+  if (att.buffs.some(b => b.expiry === 'next attack roll')) { coinHit = att.buffs.filter(b => b.expiry === 'next attack roll' && b.hitDmg); this.dropBuffs(att, b => b.expiry === 'next attack roll'); }
   this.dropBuffs(tgt, b => b.expiry === 'until next attack taken');
-  return { hit, crit, total: Math.round(total * 10) / 10, ac: Math.round(ac * 10) / 10, roll: r, adv: adv && !dis, dis: dis && !adv, mirror, fa };
+  return { hit, crit, total: Math.round(total * 10) / 10, ac: Math.round(ac * 10) / 10, roll: r, adv: adv && !dis, dis: dis && !adv, mirror, fa, coinHit };
 };
 
 /* ----- damage, healing, death ----- */
@@ -805,7 +808,10 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
   const ex = a.ext || {};
   const agathys = r.hit && this.dist(u, t) <= 5 ? t.buffs.find(b => b.retaliate > 0) : null;
   if (r.hit) {
-    const formula = (ex.dprIfHurt && t.hp < t.maxHp) ? ex.dprIfHurt : (ex.wtDpr || a.dpr);
+    let formula = (ex.dprIfHurt && t.hp < t.maxHp) ? ex.dprIfHurt : (ex.wtDpr || a.dpr);
+    // a hit rider that draws on a pool (ext.bolt: Hold the Door's hammer bolts): one per hit; with the pool empty the swing is its base damage
+    const boltKey = ex.bolt ? 'res:' + ex.bolt.resource : '', boltOn = !!ex.bolt && (u.uses.get(boltKey) || 0) >= (ex.bolt.cost || 1);
+    if (ex.bolt && !boltOn) formula = ex.bolt.base;
     let raw;
     if (ex.leap) {
       // roll the dice one by one: two of the same number on the spell's dice let it leap
@@ -823,12 +829,26 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       raw += rollDice(u.sneak.dice, this.R, r.crit);
       if (u.sneak.assassinate && this.round === 1) raw += u.sneak.assassinate;     // Assassinate: Surprising Strikes
     }
+    if (boltOn) { u.uses.set(boltKey, u.uses.get(boltKey) - (ex.bolt.cost || 1)); smTag += ' + ' + (ex.bolt.name || 'bolt'); }
+    if (ex.nearBonus && this.dist(u, t) <= ex.nearBonus.within) raw += rollDice(ex.nearBonus.dice, this.R, r.crit);     // "plus 3 (1d6) … if the target is within 15 feet"
+    if (r.coinHit && r.coinHit.length) for (const cb of r.coinHit) { raw += rollDice(cb.hitDmg, this.R, r.crit); smTag += ' + ' + (cb.name || 'coin'); }   // Double Down's extra damage
+    if (u.followThrough) {
+      // Follow Through: once a turn, the second hit on one target
+      const ft = u.ftHits && u.ftHits.seq === this.turnSeq ? u.ftHits : (u.ftHits = { seq: this.turnSeq, n: {}, used: false });
+      ft.n[t.uid] = (ft.n[t.uid] || 0) + 1;
+      if (ft.n[t.uid] >= 2 && !ft.used) { ft.used = true; raw += rollDice(u.followThrough.dice, this.R, r.crit); smTag += ' + Follow Through'; }
+    }
+    if (u.meleeHitNoOA && this.current === u && (a._range || 5) <= 10 && !opt.oa) {
+      // Trained Fighter: that creature gets no opportunity attack when it leaves this turn
+      if (!u.mhHit || u.mhHit.seq !== this.turnSeq) u.mhHit = { seq: this.turnSeq, set: new Set() };
+      u.mhHit.set.add(t.uid);
+    }
     // Divine Smite (v2 only): decided now the hit is known, one damage instance with the weapon's, each part of its own type
     const sm = u.v2 && u.smiteSeq === this.turnSeq ? this.v2SmiteHit(u, a, t, r.crit, raw) : null;
     raw *= this.multBuff(u, 'damageMultiplier');
     let apart = 0;
     if (sm) {
-      smTag = sm.tag;
+      smTag += sm.tag;
       const sR = sm.raw * this.multBuff(u, 'damageMultiplier'), tmW = damageMultFor(a, t), tmS = damageMultFor(null, t, sm.type);
       if (sR > 0) this.learnType(t, { type: sm.type }, tmS);
       if (tmW > 0) raw += sR * tmS / tmW; else apart = sR;
@@ -974,6 +994,28 @@ Sim.prototype.applyRider = function (u, t, a) {
   }
   this.addBuff(t, u, a, re.buff, { dc: re.dc, saveAbility: rab });
   this.ev('effect', `${t.name} is affected by ${a.name}${re.buff.condition ? ': ' + re.buff.condition : ''}`, { uid: t.uid });
+};
+/* a coin flip (ext.coin = { p: 0.5, heads: OUTCOME, tails: OUTCOME }, docs/ai-v2.md "Pasquale Minuzzi"): the seeded generator decides; the outcome's buff goes
+   on the flipper (spent by its next attack roll, ended by `lasts`: 'turn' this turn, 'next' its next turn), with the extra damage carried on it.
+   Returns { heads, out }; `out.miss` is for the caller (a reaction that turns a hit into a miss). */
+Sim.prototype.coinFlip = function (u, a) {
+  const c = a.ext.coin, heads = this.R() < (typeof c.p === 'number' ? c.p : 0.5), out = (heads ? c.heads : c.tails) || {};
+  if (out.buff) {
+    const extra = {};
+    if (out.lasts === 'turn') extra.endTurn = u.turnNo || 0;
+    else if (out.lasts === 'next') extra.endTurn = (u.turnNo || 0) + 1;
+    if (out.hitDmg) { extra.hitDmg = out.hitDmg; extra.hitType = out.hitType; }
+    this.addBuff(u, u, { id: a.id + ':coin', name: a.name }, Object.assign({}, out.buff, { duration: 'next attack roll' }), extra);
+  }
+  return { heads, out };
+};
+Sim.prototype.coinWords = function (out) {
+  const bits = [];
+  if (out.miss) bits.push('the attack misses instead');
+  if (out.buff && out.buff.condition === 'Attacks with Advantage') bits.push('advantage on its next attack roll');
+  if (out.buff && out.buff.condition === 'Attacks with Disadvantage') bits.push('disadvantage on its next attack roll');
+  if (out.hitDmg) bits.push(`+${out.hitDmg}${out.hitType ? ' ' + out.hitType : ''} on a hit`);
+  return bits.join(', ') || 'nothing';
 };
 Sim.prototype.afterHitExt = function (u, t, a, hit) {
   const ex = a.ext || {};
@@ -1169,6 +1211,11 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
       }
       this.ev('heal', `${u.name} → ${t.name}: ${a.name}, +${a.tempHP ? Math.round(amt) : t.hp - hpWas}${a.tempHP ? ' temp' : ''} HP`, { uid: u.uid, target: t.uid });
     }
+    return true;
+  }
+  if (a.type === 'buff' && a.ext && a.ext.coin) {
+    const f = this.coinFlip(u, a);
+    this.ev('buff', `${u.name} flips the coin (${a.name}): ${f.heads ? 'heads' : 'tails'} — ${this.coinWords(f.out)}`, { uid: u.uid });
     return true;
   }
   const succ = (a.ext && typeof a.ext.successChance === 'number') ? a.ext.successChance : 1;

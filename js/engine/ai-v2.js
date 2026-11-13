@@ -452,6 +452,7 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
     if (ctx.posture.kind === 'recover' || ctx.posture.kind === 'retreat') v += W.recover;
     return v;
   }
+  if (a.type === 'buff' && a.ext && a.ext.coin) return u.buffs.some(b => b.id === a.id + ':coin') ? -Infinity : this.v2CoinValue(u, a, ctx);
   if (a.type !== 'buff' || isHideAction(a) || this.alreadyHas(a, u) || u.buffs.some(b => b.id === a.id && b.src === u.uid)) return -Infinity;
   if (u.buffs.some(b => b.id !== a.id && effectName(b.name) === effectName(a.name))) return -Infinity;     // the same effect doesn't stack
   // what it adds over the rounds it lasts
@@ -469,6 +470,19 @@ Sim.prototype.v2SelfValue = function (u, a, ctx) {
   if (b.condition === 'Is attacked with Disadvantage' || b.condition === 'Invisible') v += inc * 0.4 * R;
   if (!v && !b.condition && !b.damage && !b.toHit) v = this.effectValue(b, u, false, u);
   return v;
+};
+/* a coin flip as a bonus action (Double Down, ext.coin): the next attack roll of the main attack, p of one outcome and 1 - p of the other, in damage —
+   advantage or disadvantage changes the chance that roll hits (p to 1 - (1 - p)^2, or to p^2) on a hit worth its damage; an outcome's hitDmg lands with it */
+Sim.prototype.v2CoinValue = function (u, a, ctx) {
+  const m = ctx.main, c = a.ext.coin;
+  if (!m) return 0;
+  const ph = typeof c.p === 'number' ? c.p : 0.5, p = m.p, dmg = m.e / Math.max(0.05, m.n * Math.max(0.05, p));
+  const side = o => {
+    if (!o) return 0;
+    const cond = o.buff && o.buff.condition, pr = cond === 'Attacks with Advantage' ? 1 - (1 - p) * (1 - p) : cond === 'Attacks with Disadvantage' ? p * p : p;
+    return dmg * (pr - p) + (o.hitDmg ? avgDice(o.hitDmg) * pr : 0);
+  };
+  return (ph * side(c.heads) + (1 - ph) * side(c.tails)) * u.v2P.coin.weight;
 };
 /* ---- Divine Smite on a hit (docs/ai-v2.md "Hybrids"): what it is worth, when it is cast, what keeping the bonus action for it is worth ---- */
 // the smite u could add to a's hits: its spell (a slot free, this turn's slot unused), a melee weapon attack

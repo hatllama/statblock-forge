@@ -94,6 +94,9 @@ const AI_BASE = {
   // the share of the best ally's DPR that advantage on its next attack is worth; a condition's worth when a save is rerolled; rounds a held spell is worth countering;
   // blind: rounds of the caster's damage a spell is taken to be worth; Ready: the chance a melee foe / a shooter comes into reach
   react: { base: 8, luck: 4, round: 0.6, hitP: 0.6, perFoe: 2, spread: 0.15, maxL: 2, ally: 0.2, stakes: 12, conc: 2, blindRounds: 1.2, blindLevel: 3, readyMelee: 0.8, readyRanged: 0.15 },
+  // coin flips (ext.coin; docs/ai-v2.md "Pasquale Minuzzi"): tails = the share of one hit a disadvantaged attack roll loses (p(1 - p) at an even hit chance), priced in the
+  // creature's best one-hit damage; weight = the expected coin value as a bonus action (Double Down) or reaction (Call It in the Air). Nothing here moves a creature with no coin.
+  coin: { tails: 0.25, weight: 1 },
   morale: { fearless: false, bloodied: true, half: true, leader: true, dc: 10 },   // a creature that may lose its nerve (opts.morale on): which triggers count, and the Wisdom save DC; equal to the old rule
   // the boss tier (docs/ai-v2.md "Boss tier"); neutral here (factors 1, weights 0, pickers 'rule'), so only the boss profile changes play.
   // solo/soloOa: self-care and opportunity attacks × solo + (1 − solo) × the share of its side's DPR its allies bring; legendary/lair/legRes: 'rule' (old pickers) or 'weigh' (v2 values);

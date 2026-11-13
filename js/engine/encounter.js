@@ -330,6 +330,7 @@ Sim.prototype.endTurn = function (u) {
     }
   }
   this.dropBuffs(u, b => b.expiry === 'hide' && (u.turnNo || 0) > b.madeOnTurn);
+  this.dropBuffs(u, b => b.endTurn !== undefined && b.endTurn <= (u.turnNo || 0));     // a coin's effect (Double Down, Call It in the Air) with a time limit
   // passive auras (Other 1 / Other 2 attacks and debuffs) hit enemies around it
   for (const a of u.actions) {
     if ((a.actionSlot !== 5 && a.actionSlot !== 6) || a.type === 'buff' || a.type === 'heal' || !this.usable(u, a) || !this.condOk(u, a)) continue;

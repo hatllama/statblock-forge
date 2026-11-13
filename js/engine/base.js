@@ -300,6 +300,9 @@ function makeUnit(tpl, team, idx, count, isPC) {
     hover: !!ex.hover,                                                     // can stay up when knocked prone or stopped
     alt: 0,                                                                 // height above the ground under it, in 5-ft steps (flyers only)
     noOA: !!ex.noOpportunityAttacks,
+    closeShot: !!ex.closeShot,                                              // Trained Shooter: ranged attacks within 5 ft of a foe have no disadvantage
+    meleeHitNoOA: !!ex.meleeHitNoOA,                                        // Trained Fighter: no opportunity attack from a creature it hit with a melee attack this turn
+    followThrough: ex.followThrough && ex.followThrough.dice ? ex.followThrough : null,   // once a turn, the second hit on one target: { dice, type }
     indomitable: ex.indomitable && ex.indomitable.uses ? { uses: +ex.indomitable.uses, bonus: +ex.indomitable.bonus || 0 } : null,   // reroll a failed save
     saveAdvVs: Array.isArray(ex.saveAdvVs) ? ex.saveAdvVs.map(c => String(c).toLowerCase()) : [],                          // Advantage on saves against these conditions
     resMax: ex.resources && typeof ex.resources === 'object' ? ex.resources : null,                                         // shared pools: { 'Superiority Dice': { uses, reset, regainOnInit } }                                        // "can't make opportunity attacks"
