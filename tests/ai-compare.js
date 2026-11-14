@@ -693,6 +693,35 @@ function playPasq(N) {
     }
   }
 }
+/* ---- Elia Dantes (docs/ai-v2.md "Elia Dantes"): Chain Bolts, Push Your Luck, the burst routine and Tight Grouping against Zaki's party ----
+   node tests/ai-compare.js 200 '^ELIA'   (TIER_MODES=open picks the modes). Monsters and party on v2; both sides' knowledge is the row's mode.
+   Arms: as written, then each feature taken away in turn, then all of them. Lower party win = a stronger Elia. */
+const ELIA_METRICS = {
+  'pushes': r => r.events.filter(e => e.kind === 'react' && /pushes their luck/.test(e.text || '')).length,
+  'pushHit': r => r.events.filter(e => e.kind === 'react' && /pushes their luck.*a hit/.test(e.text || '')).length,
+  'slowed': r => r.events.filter(e => e.kind === 'effect' && /speed is halved/.test(e.text || '')).length,
+  'grouping': r => r.events.filter(e => e.kind === 'attack' && /Follow Through/.test(e.text || '')).length,
+  'Elia dmg': r => r.foes.reduce((t, f) => t + (f.dealt || 0), 0),
+};
+const elia = (arm, hp) => {
+  const m = statblock('elia.txt');
+  if (hp) m.hp = hp;
+  if (arm === 'no push' || arm === 'plain') delete m.ext.pushLuck;
+  if (arm === 'no bolts' || arm === 'plain') m.actions.forEach(a => { if (a.ext && a.ext.bolt) delete a.ext.bolt; });
+  if (arm === 'no burst' || arm === 'plain') m.actions = m.actions.filter(a => !(a.ext && a.ext.seq));
+  if (arm === 'no grouping' || arm === 'plain') delete m.ext.followThrough;
+  return m;
+};
+function playElia(N) {
+  for (const [title, hp] of [["ELIA Elia Dantes (CR 7, 165 HP) alone against Zaki's party, as written and with each feature taken away", 0], ['ELIA long: the same with 495 HP (3x), a longer fight for the pool of bolts and the luck', 495]]) {
+    console.log('\n' + title);
+    console.log('  ' + [pad('arm', 22), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(ELIA_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+    for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['as written', 'no push', 'no bolts', 'no burst', 'no grouping', 'plain']) {
+      const sc = { name: 'ELIA', players: zaki, encounters: () => [{ monsters: [elia(arm, hp)] }], metrics: ELIA_METRICS, record: true, know: { party: know, foes: know } };
+      console.log(row(pad(know + ' ' + arm, 22), play(sc, { party: 'v2', foes: 'v2' }, N)));
+    }
+  }
+}
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
 const AI_OVER = ['w', 'pacing', 'burn', 'react'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
@@ -807,6 +836,7 @@ if (process.env.ACCURACY === '1') {
 for (const sc of TIER_SCENARIOS) if (only && only.test(sc.name)) playTier(sc, N);
 for (const sc of BOSS_SCENARIOS) if (only && only.test(sc.name)) playBoss(sc, N);
 if (only && only.test('PASQ')) playPasq(N);
+if (only && only.test('ELIA')) playElia(N);
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);

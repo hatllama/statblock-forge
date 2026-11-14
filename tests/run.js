@@ -2822,6 +2822,119 @@ section('Pasquale Minuzzi: coin flips, hit riders on a bolt pool, Follow Through
   }
 }
 
+section('Elia Dantes: Chain Bolts (speed halved), Push Your Luck, the burst routine, Tight Grouping');
+{
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const avg = Tac.avgDice;
+  const parsedEl = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'elia.txt'), 'utf8')).monsters[0];
+  const act = re => parsedEl.actions.find(a => re.test(a.name));
+  check(parsedEl.AC === 16 && parsedEl.hp === 165 && String(parsedEl.cr) === '7', `Elia: AC ${parsedEl.AC}, ${parsedEl.hp} HP, CR ${parsedEl.cr}`);
+  const m4 = act(/^Multiattack \(4 Carabina\)/), m31 = act(/^Multiattack \(3 Carabina, 1 Burst\)/), bk = act(/^Brass Knuckles/);
+  check(m4 && m4.targets === 4 && m4.toHit === 7 && m4.dpr === '1d8 + 4' && m4.ext.range === 100 && !m4.ext.wtOnly, 'Multiattack: four carabina attacks (+7, 1d8 + 4, range 100) is the routine');
+  check(m31 && m31.targets === 4 && m31.ext.wtOnly && m31.ext.seq && m31.ext.seq.length === 4 && m31.ext.seq.slice(0, 3).every(s => s.dpr === '1d8 + 4') && m31.ext.seq[3].dpr === '3d8 + 4' && m31.ext.seq.every(s => s.toHit === 7),
+    '"One of them can be a burst": the routine with three carabina swings and a 3d8 + 4 burst (+7), War Table alternative');
+  check(m31 && Math.abs(m31.dpr - (3 * avg('1d8 + 4') + avg('3d8 + 4')) / 4) < 0.01, 'the burst routine\'s dpr is the average swing (10.75)');
+  check(!act(/^Burst$/) && !act(/^Carabina$/), 'the Burst and Carabina actions are folded into the routines');
+  check(bk && bk.toHit === 5 && bk.dpr === '1d4 + 2' && bk.ext.range === 5, 'Brass Knuckles: +5, 1d4 + 2, melee');
+  check(parsedEl.ext.resources && parsedEl.ext.resources['Chain Bolts'] && parsedEl.ext.resources['Chain Bolts'].uses === 12 && [m4, m31].every(a => a.ext.bolt && a.ext.bolt.resource === 'Chain Bolts' && a.ext.bolt.effect.slowHalf === true && a.ext.bolt.base === undefined),
+    'Chain Bolts: a pool of 12; every carabina and burst hit takes one and halves speed (no damage rider)');
+  check(parsedEl.ext.pushLuck && parsedEl.ext.pushLuck.dice === '1d4', 'Push Your Luck: ext.pushLuck 1d4');
+  check(parsedEl.ext.followThrough && parsedEl.ext.followThrough.dice === '3d6' && parsedEl.ext.followThrough.type === 'piercing', 'Tight Grouping: ext.followThrough 3d6 piercing');
+  const badEl = (parsedEl._notes || []).filter(n => /isn't modelled|not modelled|nothing the simulator can model/.test(n));
+  check(!badEl.length, 'no "not modelled" note is left for Elia: ' + badEl.join(' | '));
+  check((parsedEl._notes || []).some(n => /unlimited/.test(n)) && (parsedEl._notes || []).some(n => /doesn't say which attacks/.test(n)), 'the notes say ammunition is unlimited and that every ranged hit is assumed to fire a bolt');
+  // "one of them can be a …" is general: a plain statblock with the phrase gets the swapped routine, and one without it none
+  const wolf = Parser.parse('Test Archer\nMedium humanoid, any alignment\nArmor Class 14\nHit Points 30 (4d8 + 12)\nSpeed 30 ft.\nSTR 10 (+0) DEX 14 (+2) CON 14 (+2) INT 10 (+0) WIS 10 (+0) CHA 10 (+0)\nChallenge 1 (200 XP)\nActions\nMultiattack. The archer makes two bow attacks. One of them can be a power shot.\nBow. Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 5 (1d6 + 2) piercing damage.\nPower Shot. Ranged Weapon Attack: +4 to hit, range 80/320 ft., one target. Hit: 9 (2d6 + 2) piercing damage.\n').monsters[0];
+  check(wolf.actions.some(a => /^Multiattack \(1 Bow, 1 Power Shot\)/.test(a.name) && a.ext.seq && a.ext.seq.length === 2) && wolf.actions.some(a => /^Multiattack \(2 Bow\)/.test(a.name)), 'a statblock that says "one of them can be a power shot" gets both routines');
+  const gob = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'goblin-2014.txt'), 'utf8')).monsters[0];
+  check(!gob.ext.pushLuck && gob.actions.every(a => !a.ext || (!a.ext.seq && !(a.ext.bolt && a.ext.bolt.effect))), 'a goblin has none of the new keys');
+
+  // engine: Elia and a dummy, forced dice
+  const dummyTpl = () => ({ id: 'tg', name: 'Dummy', mode: 'custom', hp: 5000, AC: 1, saveBonus: 0, count: 1, ext: { size: 'Medium' }, actions: [{ id: 'tg0', name: 'Slash', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1d4', toHit: 0, target: 'enemy with most HP', ext: { range: 5, damageType: 'slashing' } }] });
+  const mkSim = (seed, ac) => {
+    const s = new Tac.Sim({ width: 30, height: 10, seed: seed || 3, record: true });
+    const m = cp(parsedEl); m.id = 'el'; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = 'el' + i; });
+    const d = dummyTpl(); if (ac) d.AC = ac;
+    const el = Tac.expandTeam([m], 'foes', false)[0], tg = Tac.expandTeam([d], 'party', false)[0];
+    el.x = 2; el.y = 2; tg.x = 12; tg.y = 2; s.units = [el, tg]; s.byId = { [el.uid]: el, [tg.uid]: tg };
+    s._last = {}; s.turnSeq = 1; s.current = el; el.turnNo = 1; s.boardChanged();
+    const g = n => el.actions.find(a => a.name.indexOf(n) === 0);
+    return { s, el, tg, g };
+  };
+  const dice = (s, seq) => { let i = 0; s.d20 = () => seq[Math.min(i++, seq.length - 1)]; };
+  const lastAttack = s => s.events.filter(e => e.kind === 'attack').pop();
+  // Chain Bolts
+  {
+    const { s, el, tg, g } = mkSim(), main = g('Multiattack (4 Carabina)');
+    check(el.uses.get('res:Chain Bolts') === 12, 'the pool starts at 12');
+    dice(s, [15]); s.attackOnce(el, main, tg, {});
+    check(el.uses.get('res:Chain Bolts') === 11 && s.speedOf(tg) === Math.floor(tg.speed / 2) && s.speedOf(tg) < tg.speed, `a bolt hit takes one bolt and halves the target's speed (${tg.speed} → ${s.speedOf(tg)})`);
+    check(s.events.some(e => /speed is halved/.test(e.text)), 'the log says the speed is halved');
+    tg.turnNo = 1; s.dropBuffs(tg, b => b.endTurn !== undefined && b.endTurn <= 0);
+    check(s.speedOf(tg) < tg.speed, 'it lasts into the target\'s next turn');
+    s.endTurn(tg);
+    check(s.speedOf(tg) === tg.speed, 'and ends with that turn');
+    // the movement maps read the same speed: a halved creature reaches fewer squares
+    dice(s, [15]); s.attackOnce(el, main, tg, {}); const slowed = s.speedOf(tg);
+    s.dropBuffs(tg, b => b.speedMult !== undefined);
+    check(slowed * 2 === s.speedOf(tg), 'speedOf is the one speed everything reads');
+    // two hits do not stack
+    dice(s, [15]); s.attackOnce(el, main, tg, {}); s.attackOnce(el, main, tg, {});
+    check(s.speedOf(tg) === Math.floor(tg.speed / 2), 'a second bolt does not halve it again');
+    // an empty pool: the hit is still a hit, no slow
+    const e2 = mkSim(4); e2.el.uses.set('res:Chain Bolts', 0); dice(e2.s, [15]); e2.s.attackOnce(e2.el, e2.g('Multiattack (4 Carabina)'), e2.tg, {});
+    check(/hit/.test(lastAttack(e2.s).text) && e2.tg.hp < e2.tg.maxHp && e2.s.speedOf(e2.tg) === e2.tg.speed && e2.el.uses.get('res:Chain Bolts') === 0, 'pool empty: the base attack still hits, no slow, the pool stays at 0');
+    // twelve hits empty it
+    const e3 = mkSim(5); dice(e3.s, [15]); for (let i = 0; i < 14; i++) e3.s.attackOnce(e3.el, e3.g('Multiattack (4 Carabina)'), e3.tg, {});
+    check(e3.el.uses.get('res:Chain Bolts') === 0, 'twelve hits use the twelve bolts, and more hits do not take it below 0');
+  }
+  // the burst routine
+  {
+    const { s, el, tg, g } = mkSim(7); el.followThrough = null; el.uses.set('res:Chain Bolts', 0);
+    dice(s, [15]); s.resolveAttackAction(el, g('Multiattack (3 Carabina, 1 Burst)'), [tg], {});
+    const swings = s.events.filter(e => e.kind === 'attack');
+    check(swings.length === 4 && swings.every(e => e.hit), 'the 3 + 1 routine makes four swings');
+    const dm = swings.map(e => e.dmg);
+    check(dm.slice(0, 3).every(d => d >= 5 && d <= 12) && dm[3] >= 7 && dm[3] <= 28, `the first three roll 1d8 + 4 (${dm.slice(0, 3)}), the fourth 3d8 + 4 (${dm[3]})`);
+    let top = 0; for (let k = 0; k < 40; k++) { const w = mkSim(100 + k); w.el.followThrough = null; dice(w.s, [15]); w.s.resolveAttackAction(w.el, w.g('Multiattack (3 Carabina, 1 Burst)'), [w.tg], {}); top = Math.max(top, lastAttack(w.s).dmg); }
+    check(top > 12, `the burst swing goes above a carabina's top damage (${top} > 12)`);
+  }
+  // Tight Grouping: the extra dice on the second hit, once a turn, and counted by `expected`
+  {
+    const { s, el, tg, g } = mkSim(9); el.uses.set('res:Chain Bolts', 0);
+    dice(s, [15]); s.resolveAttackAction(el, g('Multiattack (4 Carabina)'), [tg], {});
+    check(s.events.filter(e => e.kind === 'attack' && /Follow Through/.test(e.text)).length === 1, 'Tight Grouping lands once in a four-hit turn');
+    const w0 = Tac.AI_BASE.follow.weight, main = g('Multiattack (4 Carabina)');
+    Tac.AI_BASE.follow.weight = 0; const e0 = s.expected(el, main, tg); Tac.AI_BASE.follow.weight = 1; el.ftHits = null; const e1 = s.expected(el, main, tg); Tac.AI_BASE.follow.weight = w0;
+    check(e1 > e0 + 5 && e1 < e0 + 11, `v2's expected damage counts Tight Grouping (${e0.toFixed(1)} → ${e1.toFixed(1)})`);
+  }
+  // Push Your Luck
+  {
+    const v2 = u => { u.v2 = true; u.v2P = Tac.AI_PROFILES.balanced; };
+    const hit = (hp, seq, ac, mod) => { const w = mkSim(11, ac); v2(w.el); w.el.hp = hp; if (mod) mod(w); dice(w.s, seq); const r = w.s.attackRoll(w.el, w.tg, w.g('Multiattack (4 Carabina)'), {}); return { w, r }; };
+    const a = hit(100, [2, 18], 15);
+    check(a.r.hit && a.w.el.hp < 100 && a.w.el.hp >= 96 && a.w.s.events.some(e => /pushes their luck/.test(e.text)), `a miss is rerolled (2 → 18) and costs 1d4 (hp ${a.w.el.hp}/100)`);
+    const b = hit(100, [18], 15);
+    check(b.r.hit && b.w.el.hp === 100, 'a hit is left alone');
+    const c = hit(4, [2, 18], 15);
+    check(!c.r.hit && c.w.el.hp === 4, 'at 4 hp (a 1d4 could drop it to 0) it never pushes');
+    const d = hit(5, [2, 18], 15);
+    check(d.r.hit && d.w.el.hp >= 1 && d.w.el.hp <= 4, 'at 5 hp it may push, and stays above 0');
+    const e = hit(100, [2, 18], 40);
+    check(!e.r.hit && e.w.el.hp === 100, 'a reroll that has almost no chance (AC 40) is not worth the hit points');
+    const f = hit(100, [2, 18], 15, w => { w.el.v2 = false; });
+    check(!f.r.hit && f.w.el.hp === 100, 'a creature not on v2 never pushes its luck');
+    const h = hit(100, [2, 2], 15);
+    check(!h.r.hit && h.w.el.hp < 100, 'a bad reroll stays a miss and still costs the hit points (the new result stands)');
+    // reproducible: the same seed pushes the same way
+    const run = seed => { const w = mkSim(seed, 12); v2(w.el); let out = ''; for (let i = 0; i < 40; i++) { w.s.attackRoll(w.el, w.tg, w.g('Multiattack (4 Carabina)'), {}); out += w.el.hp + ','; w.el.hp = 100; } return out; };
+    check(run(21) === run(21), 'the reroll uses the seeded dice');
+    // the knowledge modes: it reads the target's AC through kAc, so blind does not see the real one
+    const bl = mkSim(11, 30); v2(bl.el); bl.s.know = { party: 'blind', foes: 'blind' };
+    check(typeof bl.s.kAc(bl.el, bl.tg) === 'number', 'the target\'s AC is read through kAc');
+  }
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {
