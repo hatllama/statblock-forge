@@ -20,6 +20,16 @@ let failures = 0, checks = 0;
 function check(ok, msg) { checks++; if (!ok) { failures++; console.log('  FAIL', msg); } else if (process.env.VERBOSE) console.log('  ok', msg); }
 function section(name) { console.log('\n' + name); }
 
+/* The v2 learn log baseline (tests/fixtures/hashes-v2-learn.txt) must match what the engine plays now, so it cannot drift
+   silently: `AI=v2 KNOW=learn node tests/flagoff-hash.js` runs in a child process beside these checks (it takes ~15 s on its own
+   and overlaps them) and is compared at the end. Line endings are ignored (a Windows checkout writes the fixture with CRLF).
+   After a change that moves v2 learn play on purpose, regenerate the fixture and say what moved. */
+const v2LearnHashes = new Promise(resolve => {
+  const env = Object.assign({}, process.env, { AI: 'v2', KNOW: 'learn' });
+  delete env.FOES; delete env.PREFIGHT;
+  require('child_process').execFile(process.execPath, [path.join(__dirname, 'flagoff-hash.js')], { env, maxBuffer: 1 << 24 }, (err, out) => resolve(err ? { err } : { out }));
+});
+
 section('Shipped scripts: they load, and use only syntax older Safari/iOS can run');
 {
   // forge.js once failed to load in the browser for several commits (a regex lost its backslashes) and no test loaded it: check every script index.html ships
@@ -2940,7 +2950,16 @@ section('Elia Dantes: Chain Bolts (speed halved), Push Your Luck, the burst rout
 require('./smoke.js').smoke().then(results => {
   section('Browser smoke test: the whole site loads in a stub page and its main flows run');
   results.forEach(r => check(r.ok, r.msg));
-}, e => { section('Browser smoke test'); check(false, 'the smoke test itself threw: ' + ((e && e.stack) || e)); }).then(() => {
+}, e => { section('Browser smoke test'); check(false, 'the smoke test itself threw: ' + ((e && e.stack) || e)); }).then(() => v2LearnHashes).then(h => {
+  section('Logs: v2 learn hashes match tests/fixtures/hashes-v2-learn.txt');
+  const lines = s => s.replace(/\r/g, '').split('\n').filter(Boolean);
+  if (h.err) check(false, 'the hash script failed: ' + h.err.message);
+  else {
+    const want = lines(fs.readFileSync(path.join(__dirname, 'fixtures', 'hashes-v2-learn.txt'), 'utf8')), got = lines(h.out);
+    const diff = want.filter((l, i) => got[i] !== l);
+    check(want.length === got.length && !diff.length, `${diff.length} of ${want.length} lines differ (first: ${diff[0] || '-'}); regenerate with AI=v2 KNOW=learn node tests/flagoff-hash.js > tests/fixtures/hashes-v2-learn.txt if the change is on purpose`);
+  }
+}).then(() => {
   console.log(`\n${checks - failures}/${checks} checks passed`);
   process.exit(failures ? 1 : 0);
 });
