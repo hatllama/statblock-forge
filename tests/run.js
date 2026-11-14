@@ -999,7 +999,7 @@ section('Character sheets');
   const ogre = srd('Ogre');
   const prof = run({ players: martials(), encounters: [{ monsters: [Object.assign(cp(ogre), { ext: Object.assign({}, ogre.ext, { aiProfile: 'berserker' }) }), cp(ogre)] }] }, { seed: 5, ai: 'v2', _keep: true });
   const ogres = prof._sim ? prof._sim.units.filter(u => u.team === 'foes') : [];
-  check(ogres.length === 2 && ogres[0].v2 && ogres[0].v2P.reckless === 'always' && !ogres[1].v2, 'ext.aiProfile puts a regular monster on v2; the one without stays on its own AI');
+  check(ogres.length === 2 && ogres[0].v2 && ogres[0].v2P.reckless === 'always' && ogres[1].v2 && ogres[1].v2P.reckless !== 'always', 'ext.aiProfile picks a regular monster\'s profile; the one without plays v2 too, on the balanced profile (phase 6: no old-AI gate)');
   const berserk = pc('Barbarian'); berserk.ext.aiProfile = 'berserker';
   let swingTurns = 0, recklessTurns = 0;
   for (let i = 0; i < 4; i++) for (const r of run({ players: [berserk, pc('Fighter')], encounters: [{ monsters: [srd('Ogre', 2)] }] }, { seed: 70 + i, ai: { party: 'v2' }, record: true })) {
@@ -2318,10 +2318,13 @@ section('AI v2: monster intelligence tiers (phase 4)');
   }
   check(tiers.every(t => seenTier[t] > 0) && err === 0, `each tier plays on v2 (${JSON.stringify(seenTier)}), ${err} threw`);
   check(Tac.TIER_PROFILES.mindless.know === 'blind' && Tac.TIER_PROFILES.genius.w.caster > Tac.AI_BASE.w.caster && Tac.TIER_PROFILES.cunning.w.caster === Tac.AI_BASE.w.caster, 'a tier is a profile of plain weights over AI_BASE (nothing names a creature)');
-  // the old foes setting is untouched: v2 for the old gate only, no tier
+  // the old foes setting: every monster on v2 with one profile, no tier (phase 6 step 1 cut the old Int >= 10 gate)
   const old = run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2), srd('Mage', 1)] }] }, { seed: 4, partyAI: 'tactical', ai: { party: 'v2', foes: 'v2' }, record: true, _keep: true });
   const ou = old._sim ? old._sim.units.filter(u => u.team === 'foes') : [];
-  check(ou.length && ou.every(u => !u.tier) && ou.filter(u => u.v2).every(u => /^Mage/.test(u.name)) && ou.some(u => u.v2), 'foes: "v2" keeps the old gate (only the Int 10+ Mage) and no tiers');
+  check(ou.length === 3 && ou.every(u => !u.tier && u.v2), 'foes: "v2" puts every monster on v2 (the wolves too), with no tiers');
+  // a swallower and a party under partyAI 'regular' play v2 when their side has the flag
+  const sw = run({ players: party(), encounters: [{ monsters: [Object.assign(srd('Wolf', 1), { actions: srd('Wolf', 1).actions.concat([{ id: 'swx', name: 'Swallow', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d6', toHit: 5, target: 'enemy with least HP', ext: { range: 5, swallow: { maxSize: 'Medium' } } }]) })] }] }, { seed: 4, partyAI: 'regular', ai: { party: 'v2', foes: 'tiers' }, _keep: true });
+  check(sw._sim && sw._sim.units.every(u => u.v2), 'a swallower and a party playing "regular" are on v2 when their side has the flag');
   // morale: mindless never flee; animals flee once bloodied and losing; geniuses never lose their nerve
   const fled = (name, tier, N) => {
     let n = 0;

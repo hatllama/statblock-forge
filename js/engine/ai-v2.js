@@ -9,13 +9,11 @@ const { rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, sizeIdx, s
 
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
-/* which creatures v2 drives: plays tactically (or names a profile), any caster kind (step 3a),
-   and nothing it can't score yet (swallowing, dice pools other than heals) */
+/* which creatures v2 drives: every creature on a side with the flag (phase 6 step 1: the old Int >= 10 gate for monsters under foes 'v2',
+   the party's 'regular' setting, swallowers and non-heal dice pools no longer keep anyone on the old AI; docs/ai-v2.md "Cutting the old AI loose").
+   Every caster kind plays on v2 (step 3a); casterKind only says who stands at the back (backLine) */
 Sim.prototype.v2Eligible = function (u) {
-  const prof = u.tpl.ext && u.tpl.ext.aiProfile;
-  if (!this.aiV2 || !this.aiV2[u.team] || (u.ai !== 'tactical' && !prof && !(this.aiV2.tiers && !u.isPC))) return false;
-  // every caster kind plays on v2 (step 3a); casterKind now only says who stands at the back (backLine)
-  return !u.actions.some(a => (a.actionSlot === 0 || a.actionSlot === 1) && a.ext && (a.ext.swallow || (a.ext.pool && a.type !== 'heal')));
+  return !!(this.aiV2 && this.aiV2[u.team]);
 };
 /* stands at the back: a spellbook, and a full caster or no melee attack (a paladin or an Eldritch Knight is a front-liner) */
 Sim.prototype.backLine = function (o) {

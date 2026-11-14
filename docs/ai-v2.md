@@ -2152,3 +2152,13 @@ hit; `intent` on every v2 turn (it returns at once: v2's `why` is empty). Whole 
 still uses, and the next job can keep or replace them without touching `ai-v1.js`. The three old reaction thresholds are called only when some
 unit in the fight is not on v2 (`anyV1`, set by `runEncounter`; each of them already skipped v2 creatures). `intent` is not called for a v2
 turn. After these, the only old-AI calls left come from the creatures still on it.
+
+**Everyone on a v2 side plays v2** (behaviour). `v2Eligible` is now just "its side has the flag". What that moves:
+- *Swallowers* (`ext.swallow`): v2 already limits a swallow to a creature it has grappled (`v2PoolFor`) and scores it as the attack it is; the
+  swallow's own effect (the target leaves the board) is not priced, so it is taken when its damage is worth it. On v2 + tiers this is the only
+  change: the harness has no non-heal dice pool and no `regular` party.
+- *Non-heal dice pools*: scored as the action they are (no pool term); none in the harness or the Library.
+- *`foes: 'v2'`* (and `ai: 'v2'`): every monster plays v2 with the `balanced` profile; before, monsters under Int 10 without a profile kept
+  the old AI. `foes: 'tiers'` is unchanged.
+- *The party's `regular` setting* (`partyAI`, War Table "The party plays"): with the party on v2 it plays v2 like `tactical` (the `balanced`
+  profile). The planned "by the book" profile for it is not built; until then the setting does nothing on v2 (the user's call).
