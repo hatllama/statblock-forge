@@ -1955,3 +1955,33 @@ Alone against Zaki's party the CR 10 as written is dead in 2 to 3 rounds (the pa
 
 Only blind is outside noise, and then barely (the coin is worth about 5 points of party win there, 1.4 standard errors; with the cheap reaction about 10, 2.5). Double Down is flipped 2 times a long fight (0.7 in the short one), and heads comes up half the time. **Call It in the Air is almost never offered at the shared reaction price** (`react.base` 8: 0.03 to 0.4 a long fight): at an even coin its value is half a hit less a quarter of one of his own, so only a hit of about 20 points or more clears 8. With `react.base` 3 it is used 1 to 1.8 times a fight, half of them heads. That is the same reading every other reaction gets, so it stays; a profile can lower it per creature (`ext.aiProfile: { react: { base: 3 } }`).
 Bolts: 1 to 3.4 hits a fight take one (9.5 in the blind long fight), so twelve is not exhausted in these fights; the empty-pool path is covered by the engine test.
+
+## Elia Dantes: a slowing bolt, Push Your Luck and "one of them can be a burst" (rules + v2; no old-AI behaviour)
+
+A CR 7 homebrew (`tests/statblocks/elia.txt`). Same rule as Pasquale: **data on `ext`**, read only where present, so creatures without it hash as before;
+rules in the engine, scoring in v2 only as `AI_BASE` weights plus a term, nothing added to `ai-v1.js` (an old-AI Elia never pushes her luck).
+
+**Chain Bolts** (`ext.bolt` with `effect: { slowHalf: true }`, no `dice`): the existing hit-rider pool, but the rider is an effect, not damage. "Elia carries
+twelve chain bolts. A creature hit by a chain bolt has its speed halved until the end of its next turn." The statblock does not say which attacks fire one:
+**assumed: every Carabina hit (and every Burst hit) takes one bolt from the pool of twelve while it lasts**; with the pool empty the hit is a plain hit.
+The effect is a buff with `speedMult: 0.5` (new; `rawSpeed` multiplies after the flat bonuses, so `speedOf`, the movement maps, the AI's reach estimates and
+the stand-up cost all read it) and `endTurn` = the target's `turnNo + 1`, so it is dropped at the end of the target's next turn (the coin machinery's
+`endTurn`). Halving is a multiplier, not `onHit.slow`'s fixed feet, because the statblock says halved (a 60 ft flyer loses 30). Two hits do not stack (same buff id and source replace).
+
+**Push Your Luck** (`ext.pushLuck: { dice }`, creature): in `attackRoll`, when its own attack roll misses (a natural 1 included) the creature may reroll with the
+same advantage or disadvantage and must keep the new die; each use takes `dice` damage (1d4) straight off its hit points (not an attack, no reaction, no concentration
+save, but a hit point loss all the same). The decision is `pushLuckValue` (v2, `AI_BASE.push`): the chance the new die hits × the hit's damage (crit weight for a 20), less
+`push.cost` × the expected self-damage, and never when `hp <= the dice's maximum` (it cannot be dropped to 0 by it; `push.floor` adds a margin). The target's AC reads through `kAc`, the
+damage through `kHitDmg`'s attacker-side twin (`expected`-style, `kDpr` in learn/blind). Opponents do not read it: it leaves no trace but the log line. A creature not on v2 never uses it.
+
+**"One of them can be a burst"** (parser, general): `readMultiattack` already keeps routines whose counts name several attacks; the sentence "One of them can be
+a <name>" now yields a second routine, the routine with one swing of the first attack swapped for that one. The `Burst` action itself ("expends three pieces of ammunition for one
+carabina attack. On a hit, it deals 17 (3d8 + 4)") is read as a copy of the attack it names with the new damage. The combined routine carries its swings in order
+(`ext.seq`, `[ {dpr, toHit} ]`, only on a mixed routine), so the burst is a real 3d8 + 4 swing and not an average. **Ammunition is treated as unlimited** (the statblock gives no count; none is invented). The AI
+chooses between the 4 × Carabina and the 3 + 1 routine like any two options, by expected damage.
+
+**Tight Grouping** is `ext.followThrough`, unchanged in the rules. New: `expected` adds its average × the chance of two hits among the routine's swings
+(`AI_BASE.follow.weight`, 1; 0 = the old reading). It moves Pasquale's PASQ numbers a little; his hash sets do not contain him.
+
+**Trained Shooter** "ignores loading": a plain note, the engine has no loading.
+**Not modelled**: the holy coin ("must be on her person": never lost), Masked.

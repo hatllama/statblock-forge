@@ -1,0 +1,36 @@
+ELIA DANTES
+Medium humanoid (human, minotaur heritage), any alignment
+
+Armor Class 16 (studded leather)
+Hit Points 165 (22d8 + 66)
+Speed 30 ft.
+
+STR 14 (+2)  DEX 18 (+4)  CON 16 (+3)  INT 12 (+1)  WIS 14 (+2)  CHA 14 (+2)
+
+Saving Throws Dex +7, Con +6
+Skills Insight +5, Perception +5, Persuasion +5, Stealth +7, Survival +5
+Senses passive Perception 15
+Languages Common
+Challenge 7 (2,900 XP)    Proficiency Bonus +3
+
+Masked. Elia wears a plain mask and plain clothes. Nothing on her names the Family.
+
+First Stake. Elia's luck works through the holy coin she was given at her Staking, which must be on her person. Without it she loses every luck ability.
+
+Trained Shooter. Elia ignores the loading property of crossbows.
+
+Tight Grouping. Once per turn, when Elia hits the same creature with two or more attacks, the target takes an extra 10 (3d6) piercing damage.
+
+Chain Bolts. Elia carries twelve chain bolts. A creature hit by a chain bolt has its speed halved until the end of its next turn.
+
+Push Your Luck. When Elia misses with an attack, she can reroll it and must use the new result. She takes 2 (1d4) damage each time she does.
+
+ACTIONS
+
+Multiattack. Elia makes four carabina attacks. One of them can be a burst.
+
+Carabina. Ranged Weapon Attack: +7 to hit, range 100/400 ft., one target. Hit: 8 (1d8 + 4) piercing damage.
+
+Burst. Elia expends three pieces of ammunition for one carabina attack. On a hit, it deals 17 (3d8 + 4) piercing damage.
+
+Brass Knuckles. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 5 (1d4 + 2) bludgeoning damage.
