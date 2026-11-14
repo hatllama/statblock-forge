@@ -2185,3 +2185,44 @@ The same holds for `v2AimValue` (how an aimed option compares with others after 
 spreads and aims better). Zaki's days (600 runs, open / learn / blind): hard 97.0 / 96.0 / 94.8 → 98.0 / 95.8 / 95.7, boss 86.8 / 66.2 / 72.5
 → 89.5 / 74.3 / 73.2 (learn +8, about 3 SE). Hashes: old AI and `PREFIGHT=0` unchanged; v2 open 86, learn 78, blind 82, tiers learn 80,
 tiers open 90, old AI + tiers 48 of 96; `hashes-v2-learn.txt` regenerated.
+
+### Zaki's boss day (step 6, item 1; diagnosis, nothing changed)
+
+Re-measured on the step 5 code (party v2; 600 runs; open / learn / blind): monsters on the old AI 83.2 / 65.8 / 75.8, on tiers 86.8 / 66.2 / 72.5.
+The open gap fell from 7.3 points (84.5 against 77.2, before steps 1–3) to 3.6 (about 1.6 SE); learn is level and blind has tiers stronger. The
+hard day alone is level (98.5 against 97.0), so what is left is the Ember Tyrant fight. Each boss knob in turn on the Tyrant (open, 600 runs,
+base 86.8): `solo` 1 (full self-care when alone) **83.3**, level with the old AI; Legendary Resistance by the old rule 86.0, legendary actions
+by the old picker 85.5, lair by the old picker 86.8, no recharge price 87.5, all of them back to genius 86.0; `dprSeen` 0 (the cantrip reading
+of the party's damage) 91.5, so the better reading carries the boss. **Cause:** low self-care against six attackers, most of them melee: the
+Tyrant spends no turns staying out of reach, and Zaki's party has the bodies to punish that. Phase 4b set `solo` 0.25 on the four-PC BOSS
+family, where `solo` 1 cost the Tyrant 8.5 points (51.5 → 43), so raising it trades one scenario for another; the healing and the self-care
+leads named in the brief were not the cause here (healing is weighed by `v2BackUp` / `w.heal`, the same in both arms). After the area change
+(item 3) the day reads 89.5 / 74.3 / 73.2 on tiers. **Recommendation:** accept; a self-care term that grows with the number of attackers that
+can reach a lone boss was tried in phase 4b and lost the four-PC Tyrant, and nothing better is in hand.
+
+### Genius and cunning (step 6, item 4; nothing changed)
+
+The nine TIER scenarios, every monster forced to the tier, party win (lower = stronger monsters), step 4 baseline: genius / cunning means
+open 52.9 / 54.0, learn 61.9 / 61.6, blind 61.5 / 61.9. No scenario differs beyond 2 SE in any mode (the largest: brutes open 64.5 / 71.5, 1.5 SE).
+The genius profile raises the caster, healer, wounded and pick weights and retreats earlier; these change whom it hits, and against these
+parties that does not change who wins. **Plainly: the genius tier does not matter as built.** Recommendation: merge genius into cunning
+(keeping the Int ≥ 16 rule as a label) or give it something real, such as reading the party's spells in open (`dprSeen`, item 2) or the boss's
+legendary-action and recharge weighing; not done here because nothing measured asks for it.
+
+### The Lich and the Tyrant (step 6, item 5; report)
+
+Forced tiers, party win, step 4 baseline (open / learn / blind): the Lich mindless 29.5 / 32.5 / 29.5, genius 62.0 / 34.5 / 37.0, boss (its tier
+by rule) 36.0 / 23.0 / 24.0; the Tyrant mindless 33.5 / 29.5 / 33.5, genius 48.0 / 27.5 / 32.5, boss 21.0 / 22.0 / 21.5. **Mindless above genius
+remains** for a lone caster (the Lich in every mode, the Tyrant in open): genius keeps full self-care and stands off. **Gone where it matters:**
+both get the boss tier by the rule, and the boss is the strongest of the three except the open Lich (36.0 against mindless 29.5, 1.4 SE).
+
+### A coin-flip reaction's price (step 6, item 6; decided, nothing changed)
+
+`reactPrice` = `react.base` (8: the reaction itself, what it gives up, chiefly the opportunity attack) + the pacing price of what it spends. The
+coin reaction's own cost (tails: disadvantage on its next attack) is already inside its value (`reactCoinValue`), and it competes with Parry in
+the same pick (the best net wins), so neither its own cost nor Parry belongs in the price. Measured at `react.base` 3 for Pasquale alone (step 4
+baseline, 200 runs): Call It in the Air 0.9–1.9 times a long fight instead of 0.0–0.5, heads half the time; party win unchanged in five of the
+six rows, blind long 79.0 → 69.0 (Pasquale stronger, 2.3 SE). **Decision: the price stays one shared number** and does not depend on the reaction's
+own cost: the gap is that `react.base` is a flat guess at an opportunity attack's worth, not that the coin is priced twice. The principled next
+step (not built) is to price the reaction by the opportunity attack it can still expect this round (the chance a foe leaves its reach × its
+melee hit), which would make every cheap reaction cheaper for a creature nobody walks away from; it changes every reaction row and needs its own job.
