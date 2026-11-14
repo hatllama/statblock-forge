@@ -97,6 +97,11 @@ const AI_BASE = {
   // coin flips (ext.coin; docs/ai-v2.md "Pasquale Minuzzi"): tails = the share of one hit a disadvantaged attack roll loses (p(1 - p) at an even hit chance), priced in the
   // creature's best one-hit damage; weight = the expected coin value as a bonus action (Double Down) or reaction (Call It in the Air). Nothing here moves a creature with no coin.
   coin: { tails: 0.25, weight: 1 },
+  // Follow Through / Tight Grouping: the share of its extra dice `expected` counts (chance two swings of the routine hit × the dice); 0 = not counted
+  follow: { weight: 1 },
+  // Push Your Luck (ext.pushLuck; docs/ai-v2.md "Elia Dantes"): a missed attack roll is rerolled when the chance the new die hits × the hit's damage beats
+  // `cost` × the average self-damage; `floor` = hit points kept beyond the dice's maximum (it is never done at or below that maximum)
+  push: { cost: 1, floor: 0 },
   morale: { fearless: false, bloodied: true, half: true, leader: true, dc: 10 },   // a creature that may lose its nerve (opts.morale on): which triggers count, and the Wisdom save DC; equal to the old rule
   // the boss tier (docs/ai-v2.md "Boss tier"); neutral here (factors 1, weights 0, pickers 'rule'), so only the boss profile changes play.
   // solo/soloOa: self-care and opportunity attacks × solo + (1 − solo) × the share of its side's DPR its allies bring; legendary/lair/legRes: 'rule' (old pickers) or 'weigh' (v2 values);

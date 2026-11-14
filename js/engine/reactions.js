@@ -3,7 +3,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { rollDice, avgDice, damageMultFor, freqKind, Sim, otherTeam, reactFits } = ENG;
+const { rollDice, parseDice, avgDice, damageMultFor, freqKind, Sim, otherTeam, reactFits } = ENG;
 
 /* ----- reactions as a layer (docs/ai-v2.md, "Reactions as a layer") ----- */
 /* what a reaction action is, from its shape; REACT_ON is what each kind is offered at, ext.react.on overrides it */
@@ -376,6 +376,28 @@ Sim.prototype.reactRedirect = function (u, r, src, info) {
   if (sv.success) { this.ev('react', `${u.name} redirects the blow at ${src.name}, who dodges it (Dex save ${sv.total} vs DC ${rd.dc})`, { uid: u.uid, target: src.uid }); return; }
   const d = this.damage(u, src, Math.max(0, Math.floor(rollDice(rd.dice, this.R, false))), { type: info.type || (info.a && info.a.ext && info.a.ext.damageType) || 'bludgeoning' });
   this.ev('react', `${u.name} redirects the blow at ${src.name} (Dex save ${sv.total} vs DC ${rd.dc}): ${d} damage`, { uid: u.uid, target: src.uid, dmg: d });
+};
+
+/* ---- Push Your Luck (ext.pushLuck: { dice }; docs/ai-v2.md "Elia Dantes") ----
+   A miss on its own attack roll may be rerolled (same advantage or disadvantage, the new die stands) for `dice` damage to the creature itself.
+   Worth it when the chance the new roll hits × one hit's damage (a 20 counts the crit weight) beats cost × the average self-damage; never when the
+   dice's maximum (+ floor) could take it to 0. The target's AC reads through kAc. Returns true when it rerolled (S holds the new roll). */
+Sim.prototype.pushLuckTry = function (S) {
+  const att = S.att, pl = att.pushLuck, P = att.v2P.push;
+  if (!pl || S.hit || att.dead || att.hp <= 0) return false;
+  const pd = parseDice(pl.dice), top = pd.flat + pd.dice.reduce((s, g) => s + g.n * g.d, 0);
+  if (att.hp <= top + P.floor) return false;
+  const a = S.a, bonus = S.toHit, ac = this.kAc(att, S.tgt) + this.coverAC(att, S.tgt);
+  let p = Math.min(0.95, Math.max(0.05, (21 + bonus - ac) / 20));
+  if (S.adv && !S.dis) p = 1 - Math.pow(1 - p, att.elvenAccuracy ? 3 : 2); else if (S.dis && !S.adv) p *= p;
+  const dmg = avgDice((a.ext && a.ext.wtDpr) || a.dpr) * this.multBuff(att, 'damageMultiplier') * damageMultFor(a, S.tgt) + this.sumBuff(att, 'damage', false);
+  if (p * dmg <= P.cost * avgDice(pl.dice)) return false;
+  const cost = Math.max(0, Math.floor(rollDice(pl.dice, this.R, false)));
+  const was = Math.round(S.total), d2 = this.d20(S.adv, S.dis, att.elvenAccuracy);
+  att.hp = Math.max(1, att.hp - cost);
+  this.reactApplyDie(S, d2);
+  this.ev('react', `${att.name} pushes their luck, taking ${cost}: the attack roll ${was} rerolls to ${Math.round(S.total)} vs AC ${Math.round(S.ac)}, ${S.hit ? 'a hit' : 'still a miss'}`, { uid: att.uid, target: att.uid, dmg: cost });
+  return true;
 };
 
 Object.assign(ENG, { hitP });

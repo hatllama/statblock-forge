@@ -185,6 +185,7 @@ Sim.prototype.setTerrain = function (t) {
 Sim.prototype.rawSpeed = function (u) {
   let s = u.speed;
   for (const b of u.buffs) if (b.speedBonus) s += b.speedBonus;
+  for (const b of u.buffs) if (b.speedMult !== undefined) s = Math.floor(s * b.speedMult);     // halved (Chain Bolts)
   return Math.max(0, s);
 };
 /* Prone (2024): standing up costs half the creature's speed, and is not possible at speed 0 or while incapacitated (or held).

@@ -53,6 +53,7 @@ Sim.prototype.buffInfo = function (u, b) {
   if (typeof d.damageTakenMultiplier === 'number' && d.damageTakenMultiplier !== 1) bits.push('×' + d.damageTakenMultiplier + ' damage taken');
   if (b.resist) bits.push('resists ' + b.resist.join(', '));
   if (b.speedBonus) bits.push(sign(b.speedBonus) + ' ft speed');
+  if (b.speedMult !== undefined) bits.push('speed ×' + b.speedMult);
   if (b.mirror) bits.push(b.mirror + ' images');
   if (b.loseAction) bits.push('loses its action');
   if (b.expiry === 'hide') bits.push('hidden');
@@ -118,7 +119,8 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   const b = { id: action.id, name: action.name || 'effect', src: src.uid, data: Object.assign({}, data), expiry: data.duration };
   const ax = action.ext || {};
   if (typeof ax.speedBonus === 'number') b.speedBonus = ax.speedBonus;          // Bladesong +10 ft, Longstrider…
-  if (typeof ax.concBonus === 'number') b.concBonus = ax.concBonus;            // Bladesong adds Int to concentration saves
+  if (typeof ax.speedMult === 'number') b.speedMult = ax.speedMult;            // Chain Bolts: speed halved
+  if (typeof ax.concBonus === 'number') b.concBonus = ax.concBonus;           // Bladesong adds Int to concentration saves
   if (ax.endsOnIncap) b.endsOnIncap = true;
   if (ax.resist) b.resist = listOf(ax.resist);                                  // Rage: resistance while it lasts
   if (ax.endsOnDamage) b.endsOnDamage = true;
@@ -437,7 +439,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   if (tc.has('Prone') && !opt.inside) { if (this.dist(att, tgt) <= 5) adv = true; else dis = true; }      // prone: easy up close, hard from afar
   // ranged attack with any enemy (that can see you and isn't incapacitated) within 5 ft
   if ((a._range || 5) > 10 && !opt.inside && !att.closeShot && this.enemiesOf(att).some(e => e.onBoard && this.alive(e) && !this.incap(e) && this.dist(e, att) <= 5 && !this.isHidden(att))) dis = true;
-  const r = this.d20(adv, dis, att.elvenAccuracy);
+  let r = this.d20(adv, dis, att.elvenAccuracy);
   const toHit = Number(avgDice(a.toHit)) + this.sumBuff(att, 'toHit', true);
   let total = r + toHit;
   let ac = this.ac(tgt) + this.coverAC(att, tgt);
@@ -446,7 +448,9 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   if (r !== 20 && r !== 1 && !opt.inside) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
   this.learnAtk(att, tgt, ac, r !== 20 && r !== 1 && !adv && !dis, hit);
   // reactions on the target's side (docs/ai-v2.md, "Reactions as a layer"): v1 creatures keep their thresholds, v2 creatures score theirs
-  const S = { att, tgt, a, r, d: r, toHit, total, hit, crit, ac };
+  const S = { att, tgt, a, r, d: r, toHit, total, hit, crit, ac, adv, dis };
+  // Push Your Luck: its own miss, rerolled for a price in hit points (v2 decides)
+  if (!hit && att.pushLuck && att.v2 && !opt.noReact && this.pushLuckTry(S)) { r = S.d; total = S.total; hit = S.hit; crit = S.hit && (S.d === 20 || (!a._spell && S.d >= (att.critOn || 20))); }
   if (hit && !opt.noReact) {
     this.reactBarbsOld(S, opt);
     if (this.aiV2) this.reactHitV2(S, opt);
@@ -789,7 +793,9 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
       cur = this.orderBySelector(opts, a.target)[0];
     }
     this._strikeBy = u; this._strikesLeft = n - i - 1;       // reactions read how many swings are still to come
-    this.attackOnce(u, a, cur, opt);
+    // a routine of unlike swings (ext.seq: "four attacks, one of them a burst"): each swing rolls its own damage and bonus
+    const sw = a.ext && a.ext.seq && a.ext.seq[i] ? Object.assign({}, a, { dpr: a.ext.seq[i].dpr, toHit: a.ext.seq[i].toHit }) : a;
+    this.attackOnce(u, sw, cur, opt);
     this._strikeBy = null; this._strikesLeft = 0;
     if (u.dead || u.hp <= 0) break;
   }
@@ -803,7 +809,7 @@ Sim.prototype.sneakOk = function (u, t, a, r) {
 Sim.prototype.attackOnce = function (u, a, t, opt) {
   opt = opt || {};
   const r = this.attackRoll(u, t, a, opt);
-  let dealt = 0, sa = false, smTag = '';
+  let dealt = 0, sa = false, smTag = '', boltFx = null;
   const at = this.mark();
   const ex = a.ext || {};
   const agathys = r.hit && this.dist(u, t) <= 5 ? t.buffs.find(b => b.retaliate > 0) : null;
@@ -811,7 +817,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
     let formula = (ex.dprIfHurt && t.hp < t.maxHp) ? ex.dprIfHurt : (ex.wtDpr || a.dpr);
     // a hit rider that draws on a pool (ext.bolt: Hold the Door's hammer bolts): one per hit; with the pool empty the swing is its base damage
     const boltKey = ex.bolt ? 'res:' + ex.bolt.resource : '', boltOn = !!ex.bolt && (u.uses.get(boltKey) || 0) >= (ex.bolt.cost || 1);
-    if (ex.bolt && !boltOn) formula = ex.bolt.base;
+    if (ex.bolt && !boltOn && ex.bolt.base !== undefined) formula = ex.bolt.base;      // an effect-only bolt (Chain Bolts) has no base: the hit is the same without it
     let raw;
     if (ex.leap) {
       // roll the dice one by one: two of the same number on the spell's dice let it leap
@@ -829,7 +835,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       raw += rollDice(u.sneak.dice, this.R, r.crit);
       if (u.sneak.assassinate && this.round === 1) raw += u.sneak.assassinate;     // Assassinate: Surprising Strikes
     }
-    if (boltOn) { u.uses.set(boltKey, u.uses.get(boltKey) - (ex.bolt.cost || 1)); smTag += ' + ' + (ex.bolt.name || 'bolt'); }
+    if (boltOn) { u.uses.set(boltKey, u.uses.get(boltKey) - (ex.bolt.cost || 1)); smTag += ' + ' + (ex.bolt.name || 'bolt'); boltFx = ex.bolt.effect || null; }
     if (ex.nearBonus && this.dist(u, t) <= ex.nearBonus.within) raw += rollDice(ex.nearBonus.dice, this.R, r.crit);     // "plus 3 (1d6) … if the target is within 15 feet"
     if (r.coinHit && r.coinHit.length) for (const cb of r.coinHit) { raw += rollDice(cb.hitDmg, this.R, r.crit); smTag += ' + ' + (cb.name || 'coin'); }   // Double Down's extra damage
     if (u.followThrough) {
@@ -868,6 +874,11 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
   }
   if (r.hit && a.riderEffect) this.applyRider(u, t, a);
   if (r.hit && ex.onHit) this.onHitEffects(u, t, a, dealt);
+  // a bolt with an effect (Chain Bolts): speed halved until the end of the target's next turn
+  if (boltFx && boltFx.slowHalf && !t.dead) {
+    this.addBuff(t, u, { id: 'chain:' + u.uid, name: 'Chain bolt', ext: { speedMult: 0.5 } }, { duration: 'until the end of its next turn' }, { endTurn: (t.turnNo || 0) + 1 });
+    this.ev('effect', `${t.name}'s speed is halved until the end of its next turn`, { uid: t.uid });
+  }
   if (r.hit && ex.leap) this.leap(u, a, t, opt);
   this.afterHitExt(u, t, a, r.hit);
   if (!r.hit && !opt.inside && !a.useSaves && (a._range || 5) <= 10 && !u.dead && u.onBoard) this.counterAttack(t, u, 'riposte');

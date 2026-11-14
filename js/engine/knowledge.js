@@ -435,7 +435,14 @@ Sim.prototype.expected = function (u, a, t) {
     const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + (a.ext && a.ext.nearBonus && this.dist(u, t) <= a.ext.nearBonus.within ? avgDice(a.ext.nearBonus.dice) : 0) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * this.kMult(u, a, t));
     const thru = areaSpec(a) ? 1 : this.throughChance(u, t);
     if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return thru * dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
-    return thru * dmg * this.hitChance(u, t, a) * (a.targets || 1);
+    const hp = this.hitChance(u, t, a), nSw = a.targets || 1;
+    let ft = 0;
+    // Tight Grouping / Follow Through: once a turn, the extra dice on the second hit on one target; the chance two of this routine's swings land
+    if (u.followThrough && nSw >= 2 && AI_BASE.follow.weight && !(u.ftHits && u.ftHits.seq === this.turnSeq && u.ftHits.used)) {
+      const two = 1 - Math.pow(1 - hp, nSw) - nSw * hp * Math.pow(1 - hp, nSw - 1);
+      ft = avgDice(u.followThrough.dice) * Math.max(0, two) * AI_BASE.follow.weight;
+    }
+    return thru * dmg * hp * nSw + (ft ? thru * ft : 0);
   }
   if (a.type === 'debuff') {
     let v = this.effectValue(a.buff, t, true, u);
