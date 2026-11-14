@@ -452,10 +452,11 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   // Push Your Luck: its own miss, rerolled for a price in hit points (v2 decides)
   if (!hit && att.pushLuck && att.v2 && !opt.noReact && this.pushLuckTry(S)) { r = S.d; total = S.total; hit = S.hit; crit = S.hit && (S.d === 20 || (!a._spell && S.d >= (att.critOn || 20))); }
   if (hit && !opt.noReact) {
-    this.reactBarbsOld(S, opt);
+    const v1 = this.anyV1 !== false;      // the old thresholds only act for creatures not on v2; with everyone on v2 they are skipped
+    if (v1) this.reactBarbsOld(S, opt);
     if (this.aiV2) this.reactHitV2(S, opt);
-    this.reactLuckyOld(S, opt);
-    this.reactShieldOld(S, opt);
+    if (v1) this.reactLuckyOld(S, opt);
+    if (v1) this.reactShieldOld(S, opt);
     total = S.total; hit = S.hit; crit = S.crit; ac = S.ac;
   }
   // Mirror Image: each duplicate left gives a d6; any 3+ means a duplicate took the hit instead

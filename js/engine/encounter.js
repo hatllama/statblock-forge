@@ -142,7 +142,7 @@ Sim.prototype.turn = function (u) {
       if (tp.mode === 'act' || tp.mode === 'bonusDis' || (tp.mode === 'jump' && tp.off)) {
         choice = { a: tp.off.pl.a, p: { targets: [tp.off.t], path: tp.path, why: u.v2 ? '' : tp.off.why } };
         if (u.v2) choice.p.castL = tp.off.pl.castL;
-        this.intent(u, choice.a, choice.p);
+        else this.intent(u, choice.a, choice.p);      // v2's own lines come from v2Say (its why is empty here, so intent would say nothing)
       }
       if (tp.mode === 'jump') {
         this.spend(u, tp.jumpA); bonusSpent = true;
@@ -518,6 +518,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   this.place(party, foes, layout);
   this.boardChanged();
   if (this.aiV2) this.units.forEach(u => this.v2Setup(u));
+  this.anyV1 = !this.aiV2 || this.units.some(u => !u.v2);     // someone plays the old AI: its reaction thresholds are offered (attackRoll)
   // initiative (2024: surprised creatures roll with disadvantage)
   // the dead (a party member lost in an earlier fight and not revived) take no part: no roll, no place in the order
   // (a revive happens between fights, endFightRevives, so a revived one rolls like anyone else in the next fight)

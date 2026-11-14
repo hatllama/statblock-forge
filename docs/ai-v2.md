@@ -2133,3 +2133,22 @@ through `k*`) is the job's, and the gain the leak gave is not one a table could 
 95.5 / 94.5 → 97.0 / 96.0 / 94.8, boss 87.7 / 65.7 / 71.8 → 86.8 / 66.2 / 72.5 (noise). Hashes: old AI unchanged (the off-board rule never
 fired in them); v2 open 12, learn 2, blind 8, tiers learn 6, tiers open 14, old AI + tiers 2 of 96; `hashes-v2-learn.txt` regenerated.
 Run time: the same (Zaki hard day 176 against 182 ms a day).
+
+### Cutting the old AI loose (step 5)
+
+**The trap.** `V1TRAP=1` (in `tools/engine-files.js`, also applied by `tests/smoke.js` to the page's engine) forces every `runDay` /
+`monteCarlo` to `ai: { party: 'v2', foes: 'tiers' }` and makes every old-AI-only method throw inside a run: the Sim methods `ai-v1.js`
+defines (listed by loading the files and diffing the prototype) and `reactBarbsOld`, `reactLuckyOld`, `reactShieldOld`, `surge`.
+`V1TRAP=log` counts the calls by caller instead, to find them all in one pass. Sims a test builds by hand are not trapped.
+
+**First pass** (`V1TRAP=log node tests/run.js`), calls by caller: legendary and lair actions → `choose` (every tier but the boss, which
+weighs them); `choose` → `plan` → `planInner` → `mayHitDowned`; the passive self buffs (`turn`), `doAction`'s default plan and Hide
+(`slipAndHide`) → `plan`; Hellish Rebuke's price (`onDamaged`) → `slotCost`; the old reaction thresholds, called from `attackRoll` for every
+hit; `intent` on every v2 turn (it returns at once: v2's `why` is empty). Whole creatures still on the old AI: party members under
+`partyAI: 'regular'` (v2 drives the party only when it plays tactically) and swallowers (`v2Eligible`). No non-heal dice pool in the tests.
+
+**Structural moves** (byte-identical: every hash set and the BOSS/TIER table unchanged). `choose`, `plan`, `planInner`, `mayHitDowned` and
+`slotCost` moved unchanged to a new file `js/engine/choose.js`, loaded before `ai-v1.js`: they are the classic picker the rest of the engine
+still uses, and the next job can keep or replace them without touching `ai-v1.js`. The three old reaction thresholds are called only when some
+unit in the fight is not on v2 (`anyV1`, set by `runEncounter`; each of them already skipped v2 creatures). `intent` is not called for a v2
+turn. After these, the only old-AI calls left come from the creatures still on it.

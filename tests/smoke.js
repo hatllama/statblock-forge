@@ -135,6 +135,7 @@ function loadSite(saved) {
     try { page.run(fs.readFileSync(path.join(ROOT, f), 'utf8'), f); }
     catch (e) { page.loadErrors.push(f + ' threw while loading: ' + String((e && e.stack) || e).split('\n').slice(0, 3).join(' | ')); }
   }
+  if (process.env.V1TRAP && page.ctx.TacEngine && page.ctx.TacEngine.runDay) require('../tools/engine-files.js').v1Trap(page.ctx.TacEngine);     // the old AI unreachable (tools/engine-files.js)
   return page;
 }
 

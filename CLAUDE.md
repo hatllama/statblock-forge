@@ -2,7 +2,8 @@
 
 - No build step. `index.html` loads classic scripts that share globals; keep the load order
   (data/party.js → data/srd-monsters.js → js/spell-data.js → js/statblock-parser.js → js/sheet-reader.js → js/forge.js → the engine files → js/war-table.js).
-- The engine is the 12 files in `js/engine/`; their order is `tools/engine-files.js` (base → grid → ai-v2-data → knowledge → core → reactions → ai-v1 → ai-v2 → ai-boss → ai-v2-turn → encounter → day).
+- The engine is the 13 files in `js/engine/`; their order is `tools/engine-files.js` (base → grid → ai-v2-data → knowledge → core → reactions → choose → ai-v1 → ai-v2 → ai-boss → ai-v2-turn → encounter → day).
+  `choose.js` holds the classic picker the rest of the engine still uses (`choose`, `plan`/`planInner`, `mayHitDowned`, `slotCost`); with v2 on for the party and tiers for the monsters nothing in `ai-v1.js` runs (`V1TRAP=1 npm test` proves it: every old-AI-only method throws).
   `index.html` must list them in that order and every Node script loads them with `loadEngine()` from that file; `npm test` checks both. Each engine file is its own closure:
   `Sim.prototype.*` methods reach each other through `this`, free helpers and constants pass through `ENG` (`const { … } = ENG;` at the top, `Object.assign(ENG, { … });` at the end; how it works is at the top of `js/engine/base.js`).
   Using a helper from another engine file means adding it to both lists; `npm test` ("Engine modules") fails if a list and the code disagree. A helper can only come from an earlier file.
