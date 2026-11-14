@@ -1385,6 +1385,45 @@ section('Pre-fight buffs (Aid cast in the morning; morningShare 1 = every slot m
   const off = run([0, 2], { prefightBuffs: false });
   check(morning(off[0]).length === 0, 'with the toggle off nothing is cast in the morning');
   check(slotsLeft(off) <= 2 && grown(off[0]).length <= aidHeals(off[0]).length, 'with the toggle off max HP only grows from in-fight casts');
+  // the morning cast raises both: frame 0 of fight 1 shows the aided at hp = max = base + 5
+  const f0 = r => r.events[0].state, uOf = (r, n) => r.units.find(u => u.name === n);
+  check(lowest.every(n => { const u = uOf(r1, n); return u.maxHp === base[n] + 5 && f0(r1)[u.uid].hp === u.maxHp; }), 'a morning Aid raises max HP and current HP: fight 1 starts at hp = max HP = base + 5');
+}
+
+section('HP at the start of a fight, and the replay\'s max HP after an Aid cast in the fight');
+{
+  // The report: the War Table showed Zaki's party at 38/48 at the start of a fight. The replay's unit table was taken after the fight,
+  // so an Aid cast in it (Niko's Aid at 3rd level, a Pact slot) was drawn against frame 0. The fight itself started at full HP.
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const mon = (name, count) => { const s = ctx.M.find(m => m.name === name), m = cp(Parser.parse(s.text).monsters[0]); m.id = s.id; m.mode = 'custom'; m.count = count || 1; m.actions.forEach((a, i) => { a.id = s.id + i; }); return m; };
+  const zaki = () => cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players);
+  // every party member starts fight 1 at full HP, in the sim and in frame 0 of the replay, on both AIs
+  const proto = Tac.Sim.prototype, re = proto.runEncounter;
+  let low = 0, frame = 0, days = 0;
+  proto.runEncounter = function (party, foes, e, l) { if (this.fightNo === 0) for (const u of party) if (!u.dead && u.hp !== u.maxHp) low++; return re.call(this, party, foes, e, l); };
+  try {
+    for (const ai of [undefined, { party: 'v2', foes: 'tiers' }]) for (let i = 0; i < 4; i++) {
+      const r = Tac.runDay({ players: zaki(), encounters: cp(fixture('hard-day.json').encounters).slice(0, 1) }, { seed: 700 + i * 7919, ai, partyAI: 'tactical', record: true, maxRounds: 6 })[0];
+      days++;
+      for (const u of r.units) if (u.team === 'party' && r.events[0].state[u.uid].hp !== u.maxHp) frame++;
+    }
+  } finally { proto.runEncounter = re; }
+  check(days === 8 && low === 0, `every party member starts fight 1 with hp = max HP (${low} below, ${days} days)`);
+  check(frame === 0, `frame 0 of the replay shows every party member at its full max HP (${frame} shown below)`);
+  // an Aid cast in the fight (old AI, Zaki's party vs a Mage and 4 Guards: Niko casts Aid at 3rd level)
+  const r = Tac.runDay({ players: zaki(), encounters: [{ monsters: [mon('Mage'), mon('Guard', 4)] }] }, { seed: 1000 + 5 * 7919, partyAI: 'tactical', record: true, know: { party: 'learn', foes: 'open' } })[0];
+  const aidAt = r.events.findIndex(e => e.kind === 'heal' && /: Aid \(L3\), max HP \+10/.test(e.text));
+  check(aidAt > 0, 'the scene casts Aid in the fight (3rd level, +10)');
+  if (aidAt > 0) {
+    const tgt = r.events[aidAt].target, u = r.units.find(x => x.uid === tgt);
+    let st = {}; for (let k = 0; k < aidAt; k++) if (r.events[k].state[tgt]) st = r.events[k].state[tgt];
+    const after = r.events[aidAt].state[tgt] || {};
+    check(r.units.filter(x => x.team === 'party').every(x => r.events[0].state[x.uid].hp === x.maxHp), 'the unit table holds the max HP the fight started with, so frame 0 is at full HP');
+    check(after.maxHp === u.maxHp + 10 && after.hp >= st.hp && after.hp <= after.maxHp, `after the in-fight Aid the frame carries the raised max HP (${st.hp}/${st.maxHp || u.maxHp} -> ${after.hp}/${after.maxHp}) and current HP rose with it`);
+    check(r.events[0].state[tgt].maxHp === undefined && after.hp - st.hp === 10, 'current HP rose by the full 10; a frame carries maxHp only once it differs from the fight\'s start (logs without Aid are unchanged)');
+  }
 }
 
 

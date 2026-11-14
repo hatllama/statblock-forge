@@ -2009,3 +2009,48 @@ Push Your Luck is taken 1.3 times a fight (open, 165 HP) and about 6 in 10 pushe
 burst routine and Tight Grouping are each worth 3 to 10 (Tight Grouping lands 0.7 to 1.6 times a fight). **Chain Bolts do nothing measurable**: about 2.4 to 5.7 hits a fight halve a speed, but the party is not trying to close
 on a shooter that has 100 ft of range, so a halved speed costs it nothing the damage columns can see. Pool: twelve bolts are not used up in these fights (up to 11.4 slowed in the blind 495 HP fight); the empty-pool path is covered by the engine test.
 The party's win rate under blind/learn knowledge of Elia never falls under 98.5 %, so nothing "got worse beyond noise" for the party's side; no existing creature's numbers changed (all hash sets identical).
+
+## Phase 6 step 1: gate and move (November 2026)
+
+Two bugs that distort the tables, then v2 + monster tiers made able to replace the old AI. One subsection per step; tables are 200 runs
+(600 for Zaki's days), same seeds (`1000 + i × 7919`), party win % ± SE. Harness scripts live in `runs/gate/` (not committed).
+
+### The fixture "mismatch" (step 0b)
+
+`tests/fixtures/hashes-v2-learn.txt` was reported not to match `AI=v2 KNOW=learn node tests/flagoff-hash.js`. It did match: four runs on
+the same tree gave the same hashes (deterministic), and the only difference was line endings (`core.autocrlf` checks the fixture out with
+CRLF; the script prints LF). Not stale, not nondeterministic, so it was not regenerated. `npm test` now runs the hash script in a child
+process beside its checks and compares it with the fixture (line endings ignored), so the fixture cannot drift silently; `.gitattributes`
+keeps the fixture LF. `npm test` time unchanged (110 s), 897 → 898 checks.
+
+### The max HP display (step 1, part A)
+
+**Report.** Zaki's party at the start of a fight on the War Table: Tacitus 38/48, Juniper 28/38, Niko 38/48, Faithwalker 43/53, Eldar 37/47,
+Kraax 38/38; the extra 10 disappears with Aid off Niko's list, and the win rate goes up without Aid. Only Mage Armor in the morning notes.
+
+**Cause.** A display bug, not a rules bug. `runDay`'s `units` table (the replay's name, team and max HP per creature) was taken when the
+fight *ended*, and the frames carry the current HP only. Niko casts **Aid in the fight** at 3rd level (a Pact slot: +10, 3 targets a cast;
+two casts reach 5), so frame 0 drew the fight-start HP against the max HP after the casts. The log line is "Aid (L3), max HP +10", which is
+why searching for "Aid, max HP" found nothing. Checked: every party member starts fight 1 with `hp == maxHp` in the simulation (Zaki's
+hard day, both AIs, 100 days each: 0 below), the preview (`previewPlacement`) casts nothing, units are rebuilt per day (`expandTeam`).
+The morning pass never casts Niko's Aid: his budget is `floor(0.25 × 6 slot levels) = 1`, under the 3rd-level Pact slot.
+
+**Fix.** `runEncounter` records `u.maxHp0`; the units table reports it; `unitState` carries `maxHp` once it differs from the fight's start
+(so a log changes only where max HP moved in the fight); the War Table draws `st.maxHp || u.maxHp` (tokens, inspector, initiative list).
+Play is unchanged. Hashes move only where an in-fight Aid was cast (v1 4, v2 open 3, learn 4, blind 5, tiers 2 / 2, v1 + tiers 4, `PREFIGHT=0`
+21 of 96; the BOSS/TIER table identical); `hashes-v2-learn.txt` regenerated.
+
+**Aid on or off** (Zaki's days, Niko's Aid removed; 600 runs; v1 = old AI on both sides, v2 = party v2 and monsters old AI, v2t = party v2 and tiers):
+
+| day | arm | open on → off | learn | blind |
+|---|---|---|---|---|
+| hard | v1 | 88.7 → 89.2 | 72.2 → 75.2 | 66.3 → 69.7 |
+| hard | v2 | 95.7 → 95.2 | 94.8 → 94.5 | 87.7 → 86.8 |
+| hard | v2t | 97.3 → 97.2 | 93.7 → 92.7 | 91.2 → 91.3 |
+| boss | v1 | 49.3 → 50.3 | 44.2 → 41.5 | 43.0 → 39.8 |
+| boss | v2 | 77.2 → 76.8 | 56.2 → 54.0 | 65.3 → 61.0 |
+| boss | v2t | 84.5 → 84.5 | 60.5 → 59.0 | 63.5 → 61.0 |
+
+The report's rise is the old AI on the hard day (+3 to +3.4 in learn and blind, about 1.3 SE each): the old AI spends a Pact slot and an
+action on Aid mid-fight (its heal list counts an aid target as hurt). On v2 removing Aid never helps beyond noise and costs a little on the
+boss day. The Cleric's Aid (roster days, the morning cast plus in-fight ones) is worth 1–3 points on every arm.

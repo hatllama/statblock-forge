@@ -508,6 +508,7 @@ Sim.prototype.over = function () { return !this.partyStanding() || !this.foesSta
 Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   this.units = party.concat(foes);
   this.byId = {}; this.units.forEach(u => this.byId[u.uid] = u);
+  this.units.forEach(u => { u.maxHp0 = u.maxHp; });     // max HP as the fight starts: the replay's unit table; a change in the fight (Aid) goes in the frame state (unitState)
   this._last = {};
   this.surprised = { party: !!enc.playersSurprised, foes: !!enc.monstersSurprised };
   this.revives = { party: 0, foes: 0 };

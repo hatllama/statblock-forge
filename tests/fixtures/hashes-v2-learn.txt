@@ -35,19 +35,19 @@ casters vs goblins / ogres / mage | open | tactical | 8419 | 037b9b4cfffa
 casters vs goblins / ogres / mage | open | tactical | 16338 | 32d5400df517
 casters vs goblins / ogres / mage | open | tactical | 24257 | 88c9a41f465d
 casters vs goblins / ogres / mage | open | regular | 500 | 6687d6b2c61e
-casters vs goblins / ogres / mage | open | regular | 8419 | 6eecb88feecb
+casters vs goblins / ogres / mage | open | regular | 8419 | f2dcc973dc68
 casters vs goblins / ogres / mage | open | regular | 16338 | 7daf24308980
 casters vs goblins / ogres / mage | open | regular | 24257 | e828b7d1480e
 casters vs goblins / ogres / mage | walled | tactical | 500 | 7dc3ec716d35
 casters vs goblins / ogres / mage | walled | tactical | 8419 | cd5cd41921de
-casters vs goblins / ogres / mage | walled | tactical | 16338 | b8a166b7d57e
+casters vs goblins / ogres / mage | walled | tactical | 16338 | 396db5b93693
 casters vs goblins / ogres / mage | walled | tactical | 24257 | 70d6f504af54
 casters vs goblins / ogres / mage | walled | regular | 500 | ee86c9c5d896
 casters vs goblins / ogres / mage | walled | regular | 8419 | b6dcc850062f
 casters vs goblins / ogres / mage | walled | regular | 16338 | abb578e6c776
 casters vs goblins / ogres / mage | walled | regular | 24257 | 1cf6f6a6a757
 casters vs priests + young dragon | open | tactical | 500 | 45b05f13a948
-casters vs priests + young dragon | open | tactical | 8419 | d3a4a2b38bc3
+casters vs priests + young dragon | open | tactical | 8419 | 0d1f15eb2ae4
 casters vs priests + young dragon | open | tactical | 16338 | 1749038e9ad1
 casters vs priests + young dragon | open | tactical | 24257 | 8d3cadb367d4
 casters vs priests + young dragon | open | regular | 500 | 53ebb4a0deb8
@@ -91,6 +91,6 @@ casters vs medium-day | walled | tactical | 8419 | 2e62fefb7f1e
 casters vs medium-day | walled | tactical | 16338 | c9fdc12f79c4
 casters vs medium-day | walled | tactical | 24257 | c3429fbb68be
 casters vs medium-day | walled | regular | 500 | 4f49992d3788
-casters vs medium-day | walled | regular | 8419 | e68205c8a384
+casters vs medium-day | walled | regular | 8419 | 8d6ca23530eb
 casters vs medium-day | walled | regular | 16338 | dfad5bbe0c70
 casters vs medium-day | walled | regular | 24257 | 0f42b966fa44

@@ -204,7 +204,8 @@ function renderInspect(){
   else if(inspectUid && S.mode === 'setup'){ u = preview.find(p=>p.uid === inspectUid); st = u && u.state; }
   if(!u || !st){ inspectUid = null; box.hidden = true; box.innerHTML = ''; return; }
   const sh = u.sheet || {};
-  const hp = Math.max(0, Math.round(st.hp)), frac = Math.max(0, Math.min(1, st.hp / u.maxHp));
+  const maxHp = st.maxHp || u.maxHp;      // a frame carries maxHp once it rose in the fight (Aid)
+  const hp = Math.max(0, Math.round(st.hp)), frac = Math.max(0, Math.min(1, st.hp / maxHp));
   const col = frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f';
   const sub = [sh.ai ? cap1(sh.ai) + ' AI' : '', u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
   // height: the ground it stands on plus how high it flies
@@ -212,7 +213,7 @@ function renderInspect(){
   const height = alt ? `flying ${alt} ft up${ground ? ` (${ground + alt} ft above the floor)` : ''}` : ground > 0 ? `on ${ground} ft high ground` : ground < 0 ? `in a ${-ground} ft dip` : 'ground level';
   const acNow = st.ac !== undefined ? st.ac : sh.ac;
   const stats = [
-    `<span><b>HP</b>${hp}/${u.maxHp}${st.temp ? ` +${st.temp} temp` : ''}</span>`,
+    `<span><b>HP</b>${hp}/${maxHp}${st.temp ? ` +${st.temp} temp` : ''}</span>`,
     `<span><b>AC</b>${acNow}${sh.ac !== undefined && acNow !== sh.ac ? ` (base ${sh.ac})` : ''}</span>`,
     `<span><b>Height</b>${height}</span>`,
     `<span><b>Speed</b>${sh.speed || 30} ft${sh.fly ? ` · fly ${sh.fly}` : ''}${sh.climb ? ` · climb ${sh.climb}` : ''}</span>`,
@@ -221,7 +222,7 @@ function renderInspect(){
   if(st.fled) chips.push(`<span class="chip">${st.fled === 'surrendered' ? 'surrendered' : 'fled the fight'}</span>`);
   else if(st.dead) chips.push('<span class="chip bad">dead</span>');
   else if(st.down) chips.push(`<span class="chip bad">${st.stable ? 'down, stable' : `down · death saves ${st.ds}✓ ${st.df}✗`}</span>`);
-  else if(st.hp < u.maxHp / 2) chips.push('<span class="chip bad">bloodied</span>');
+  else if(st.hp < maxHp / 2) chips.push('<span class="chip bad">bloodied</span>');
   if(!st.onBoard && !st.dead) chips.push(`<span class="chip bad">${st.swallowedBy ? 'swallowed' : 'off the field'}</span>`);
   if(st.grappledBy) chips.push(`<span class="chip bad">grappled${S.replay && S.replay.units[st.grappledBy] ? ' by ' + esc(S.replay.units[st.grappledBy].name) : ''}</span>`);
   (st.conds || []).forEach(c=>chips.push(`<span class="chip ${/Advantage/.test(c) && !/is attacked/i.test(c) ? 'good' : 'bad'}">${esc(c)}</span>`));
@@ -552,7 +553,7 @@ function actorAt(idx){
 function showFrame(idx){
   const R = S.replay; R.idx = idx;
   const f = R.frames[idx];
-  for(const uid in f){ const st = f[uid], u = R.units[uid]; if(!u) continue; placeToken(uid, st.x, st.y); paintToken(uid, st, u.maxHp, u.name); }
+  for(const uid in f){ const st = f[uid], u = R.units[uid]; if(!u) continue; placeToken(uid, st.x, st.y); paintToken(uid, st, st.maxHp || u.maxHp, u.name); }
   // swallowed counts & grapple links
   layers.links.innerHTML = '';
   const inside = {};
@@ -584,10 +585,10 @@ function renderInit(f, actor){
   const order = (R.events[0] && R.events[0].order) || R.unitList.map(u=>u.uid);
   document.getElementById('wt-initList').innerHTML = order.map(uid=>{
     const u = R.units[uid], st = f[uid] || {}; if(!u) return '';
-    const frac = Math.max(0, Math.min(1, (st.hp||0) / u.maxHp));
+    const maxHp = st.maxHp || u.maxHp, frac = Math.max(0, Math.min(1, (st.hp||0) / maxHp));
     const gone = st.dead || (!st.onBoard && !st.swallowedBy);
     const col = frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f';
-    const tag = st.dead ? 'dead' : st.down ? (st.stable ? 'stable' : `${st.ds}✓ ${st.df}✗`) : st.swallowedBy ? 'swallowed' : `${Math.round(st.hp)}/${u.maxHp}`;
+    const tag = st.dead ? 'dead' : st.down ? (st.stable ? 'stable' : `${st.ds}✓ ${st.df}✗`) : st.swallowedBy ? 'swallowed' : `${Math.round(st.hp)}/${maxHp}`;
     return `<div class="init-row ${uid===actor?'cur':''} ${gone?'gone':''}"><span class="dot" style="background:${u.team==='party'?'var(--party)':'var(--foe)'}"></span><span class="nm">${esc(u.name)}${st.slots || st.conc ? `<span class="spl">${st.slots ? 'slots ' + esc(st.slots) : ''}${st.conc ? ` · ◈ ${esc(st.conc)}` : ''}</span>` : ''}</span>
       <span><div class="mini-hp"><div style="width:${frac*100}%;background:${col}"></div></div><div class="mono" style="font-size:12px;color:var(--parchment-faint);text-align:right;">${tag}</div></span></div>`;
   }).join('');

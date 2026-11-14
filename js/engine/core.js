@@ -21,7 +21,7 @@ Sim.prototype.hoist = function (at) {
   this.events.splice(at, 0, Object.assign(e, { state: {} }));
 };
 Sim.prototype.unitState = function (u) {
-  return { x: u.x, y: u.y, hp: Math.round(u.hp * 10) / 10, temp: u.temp, onBoard: u.onBoard, dead: !!u.dead, down: u.hp <= 0 && !u.dead,
+  return { x: u.x, y: u.y, hp: Math.round(u.hp * 10) / 10, maxHp: u.maxHp0 !== undefined && u.maxHp !== u.maxHp0 ? u.maxHp : undefined, temp: u.temp, onBoard: u.onBoard, dead: !!u.dead, down: u.hp <= 0 && !u.dead,
            conds: Array.from(this.conds(u)).sort(), stable: u.stable, ds: u.deathS, df: u.deathF,
            grappledBy: u.grappledBy, swallowedBy: u.swallowedBy,
            slots: u.slots ? u.slots.map((n, i) => n + '/' + u.slotsMax[i]).slice(0, u.slotsMax.reduce((m, n, i) => n ? i + 1 : m, 0)).join(' ') : undefined,
