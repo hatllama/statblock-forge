@@ -704,6 +704,15 @@ function readTrait(entry, h, notes, out) {
     notes.push(`${nm.name}: its ranged attacks have no disadvantage within 5 ft of a foe (War Table); ${/loading/i.test(t) ? 'the simulator ignores loading anyway' : 'the rest isn\'t modelled'}.`);
     return true;
   }
+  // "ignores the loading property of crossbows": the simulator never models loading, so there is nothing to set
+  if (/ignores? the loading (?:property|quality)/i.test(t)) { notes.push(`${nm.name}: ignores the loading property; the simulator never models loading, so every shot is always ready.`); return true; }
+  // "When Elia misses with an attack, she can reroll it and must use the new result. She takes 2 (1d4) damage each time she does."
+  const pl = t.match(/when [^,.]{0,50}?\bmisses? with an? (?:weapon |ranged |melee )?attack,?\s+(?:she|he|it|they|[A-Z]\w+)\s+(?:can|may) reroll (?:it|the (?:attack )?roll)[^.]*\.\s*(?:She|He|It|They|[A-Z]\w+)\s+takes?\s+\d+\s*\(([\dd+\-\s]+)\)\s*(?:[a-z]+\s+)?damage each time/i);
+  if (pl) {
+    h.ext.pushLuck = { dice: cleanDice(pl[1]) };
+    notes.push(`${nm.name}: rerolls a missed attack roll for ${h.ext.pushLuck.dice} damage to itself, never at or below its highest possible self-damage (War Table, AI v2 only; opponents don't read it). Assumes the coin of First Stake is on it.`);
+    return true;
+  }
   // "doesn't provoke opportunity attacks from a creature he has hit with a melee attack this turn"
   if (/(?:doesn't|does not|don't|do not|never) provoke opportunity attacks from (?:a|any) creature[^.]{0,60}\bhit(?:s)? (?:it )?with a melee attack this turn/i.test(t) || /(?:doesn't|does not) provoke opportunity attacks from creatures? [^.]{0,40}melee attack[^.]{0,20}this turn/i.test(t)) {
     h.ext.meleeHitNoOA = true;
@@ -714,7 +723,7 @@ function readTrait(entry, h, notes, out) {
   const ftm = t.match(/once (?:per|each|on each of (?:its|his|her|their)) turn,?\s+when\s+[^,]{0,40}?hits? (?:a|the same) creature with two (?:or more )?attacks?,?[^.]*?(?:takes?|deals?)\s+an extra\s+\d+\s*\(([\dd+\-\s]+)\)\s*([a-z]+)?\s*damage/i);
   if (ftm) {
     h.ext.followThrough = { dice: cleanDice(ftm[1]), type: (ftm[2] || '').toLowerCase() };
-    notes.push(`${nm.name}: +${h.ext.followThrough.dice}${h.ext.followThrough.type ? ' ' + h.ext.followThrough.type : ''} on the second hit on one target, once a turn (War Table); the AI doesn't count it when it picks a move.`);
+    notes.push(`${nm.name}: +${h.ext.followThrough.dice}${h.ext.followThrough.type ? ' ' + h.ext.followThrough.type : ''} on the second hit on one target, once a turn (War Table); v2's damage estimate counts it (the chance two swings of a routine land).`);
     return true;
   }
   if (/nimble escape|cunning action/i.test(low)) { h.ext.bonusDisengage = true; out.push(hideAction(h, 'Hide (' + nm.name + ')')); return true; }
@@ -814,7 +823,10 @@ function readMultiattack(entry, attacks, notes, others) {
     return best;
   };
   // options: "…or…" between whole routines; take the first as the main one
-  const routines = t.split(/\.\s+Or\b|;\s*or\b|,? or (?=(?:it |the \w+ )?makes)|\bOr the \w+ makes\b|\s+or\s+(?=(?:one|two|three|four|five|six|\d+)\s)/i);
+  // "One of them can be a burst": the routine again with one swing swapped for that attack (added to the alternatives below)
+  const swapM = t.match(/(?:\.\s*|^)(?:one|a single one) of (?:them|these|the attacks) (?:can|may) be (?:an? |the )?([A-Za-z' -]+?)\s*(?:attack)?\s*$/i);
+  const tt = swapM ? t.slice(0, swapM.index) : t;
+  const routines = tt.split(/\.\s+Or\b|;\s*or\b|,? or (?=(?:it |the \w+ )?makes)|\bOr the \w+ makes\b|\s+or\s+(?=(?:one|two|three|four|five|six|\d+)\s)/i);
   const parseRoutine = rt => {
     const combo = [];
     const total = rt.match(/makes?\s+(\w+)\s+(?:melee |ranged |weapon )*attacks?/i);
@@ -858,6 +870,14 @@ function readMultiattack(entry, attacks, notes, others) {
   const alts = routines.slice(1).map(rt => { const c = parseRoutine(rt); c.ranged = /ranged|throw|shoot|range/i.test(rt) && !/melee/i.test(rt); return c; }).filter(c => c.length);
   main.ranged = /ranged attacks?/i.test(routines[0]) && !/melee/i.test(routines[0]);
   if (main.others) alts.push(...main.others);
+  if (swapM && main.length) {
+    const sw = find(swapM[1]), lead = main.slice().sort((p, q) => q.n - p.n)[0];
+    if (sw && lead.a !== sw) {
+      const alt = main.map(c => c === lead ? { a: c.a, n: c.n - 1 } : c).filter(c => c.n > 0).concat([{ a: sw, n: 1 }]);
+      alt.ranged = main.ranged; alt.seq = true;        // unlike swings: each keeps its own damage (ext.seq)
+      alts.push(alt);
+    } else notes.push(`Multiattack: "one of them can be ${swapM[1]}" wasn't matched to an attack; not modelled.`);
+  }
   const pre = [];
   // "…and uses Frightful Presence": a fear effect fires before the fight; a damaging one ("and uses Bite") stays its own option
   for (const o of others) if (o.type !== 'atk' && new RegExp('\\buses?\\s+(?:its\\s+)?' + o.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i').test(t)) pre.push(o);
@@ -884,6 +904,13 @@ function comboAction(name, combo) {
   if (lead.ext.onHit) a.ext.onHit = JSON.parse(JSON.stringify(lead.ext.onHit));
   // a hit rider on a pool and an extra at close range belong to the one attack the routine repeats (a mixed routine averages its swings, so there is no single base)
   if (same && lead.ext.bolt) a.ext.bolt = JSON.parse(JSON.stringify(lead.ext.bolt));
+  // an effect-only bolt (Chain Bolts) has no damage to average: every swing of a mixed routine carries it
+  if (!same && lead.ext.bolt && !lead.ext.bolt.dice && combo.every(c => c.a.ext.bolt && c.a.ext.bolt.resource === lead.ext.bolt.resource)) a.ext.bolt = JSON.parse(JSON.stringify(lead.ext.bolt));
+  // "four attacks, one of them a burst": the swings in order, each with its own damage and bonus, the routine's dpr/toHit staying their average
+  if (combo.seq && !same && combo.every(c => c.a.type === 'atk' && !c.a.useSaves && !c.a.ext.wtDpr)) {
+    a.ext.seq = [];
+    combo.forEach(c => { for (let i = 0; i < c.n; i++) a.ext.seq.push({ dpr: c.a.dpr, toHit: c.a.toHit }); });
+  }
   if (same && lead.ext.nearBonus) a.ext.nearBonus = JSON.parse(JSON.stringify(lead.ext.nearBonus));
   const types = combo.map(c => c.a.ext.damageType).filter(Boolean);
   if (types.length && types.every(t => t === types[0])) { a.ext.damageType = types[0]; if (lead.ext.damageMix) a.ext.damageMix = JSON.parse(JSON.stringify(lead.ext.damageMix)); }
@@ -929,7 +956,7 @@ function parseOne(block) {
   const selfName = (h.name.split(/[\s,]+/)[0] || '').length > 2 ? h.name.split(/[\s,]+/)[0] : '';
   for (const k in body) if (Array.isArray(body[k])) body[k].forEach(e => { if (e && typeof e === 'object') e._selfName = selfName; });
   const acNote = (flat.match(/\b(?:Armor Class|AC)\b\s*:?\s*\d+\s*\(([^)]*)\)/i) || [])[1] || '';
-  const riders = [];
+  const riders = [], slowBolts = [];
   for (const e of body.traits) {
     const nm0 = nameAndUsage(e.raw);
     // "Can't make opportunity attacks" (War Table)
@@ -942,6 +969,14 @@ function parseOne(block) {
     if (r === 'spell') { const so = parseSpellcasting(e, h, notes); if (so.spellbook) spellbook = so.spellbook; spellOut.push(...so.actions); }
     else if (!r) {
       const nm = nameAndUsage(e.raw);
+      // "Elia carries twelve chain bolts. A creature hit by a chain bolt has its speed halved until the end of its next turn.": a pool of bolts whose hit slows the target
+      const cbm = e.text.match(/\bcarr(?:y|ies)\s+(\w+)\s+([a-z' -]+?)\s*\.\s*(?:A|Any|The) (?:creature|target)[^.]{0,30}?\bhit by an? ([a-z' -]+?)\s+has its speed (halved|reduced by half)\b/i);
+      if (cbm && !isNaN(num(cbm[1]))) {
+        const thing = cbm[3].trim().toLowerCase(), pool = cap(cbm[2].trim().toLowerCase());
+        h.ext.resources = h.ext.resources || {}; h.ext.resources[pool] = { uses: num(cbm[1]), reset: 'lr' };
+        slowBolts.push({ name: nm.name, pool, thing, count: num(cbm[1]) });
+        continue;
+      }
       // "Whenever Pasquale hits with a Buonanotte stock strike, he fires a bolt … 7 (2d6) piercing damage and 7 (2d6) force damage. He carries twelve hammer bolts."
       // his own hit, on one of his own actions: an on-hit rider attached to that action after the actions are read (applyHitRiders)
       const hrm = /^(?:whenever|each time|every time)\s+(?:a|an|another|any|each|one)\b/i.test(e.text) ? null : e.text.match(/^(?:whenever|each time|every time)\s+[^,.;]{1,40}?\s+hits?\s+(?:with|using)\s+an?\s+([^,.;]+?)\s*[,;]/i);
@@ -1083,6 +1118,18 @@ function parseOne(block) {
         const base = parsedBySection.actions.find(x => x.type === 'atk' && x.name.toLowerCase().replace(/s$/, '') === reuse[1].toLowerCase().replace(/s$/, ''));
         if (base) a = Object.assign(JSON.parse(JSON.stringify(stripPriv(base))), { name: nm.name, _avg: base._avg, _melee: base._melee, _ranged: base._ranged });
       }
+      // "Elia expends three pieces of ammunition for one carabina attack. On a hit, it deals 17 (3d8 + 4) piercing damage.": a copy of that attack with the new damage
+      if (!a && sec === 'actions') {
+        const vm = e.text.match(/\bfor one ([\w' -]+?) attack\.?\s*(?:On a hit,?\s*)?(?:it|the attack)\s+deals?\s+\d+\s*\(([\dd+\-\s]+)\)\s*([a-z]+)?\s*damage/i);
+        const vb = vm && parsedBySection.actions.find(x => x.type === 'atk' && !x.useSaves && x.name.toLowerCase().replace(/s$/, '') === vm[1].toLowerCase().replace(/s$/, ''));
+        if (vb) {
+          a = Object.assign(JSON.parse(JSON.stringify(stripPriv(vb))), { name: nm.name, _avg: avgDice(cleanDice(vm[2])), _melee: vb._melee, _ranged: vb._ranged, _either: vb._either });
+          a.dpr = cleanDice(vm[2]);
+          if (vm[3] && a.ext) a.ext.damageType = vm[3].toLowerCase();
+          const ammo = e.text.match(/\bexpends?\s+(\w+)\s+pieces? of ammunition/i);
+          notes.push(`${nm.name}: one ${vb.name} swing with ${a.dpr}${ammo ? `; the ${ammo[1]} pieces of ammunition aren't counted (ammunition is treated as unlimited, the statblock gives no number)` : ''}.`);
+        }
+      }
       if (!a) {
         if (/swallow/i.test(low)) a = readSwallow(e, nm, parsedBySection.actions, notes);
         else if (/\barrive|\bsummons?\b|\bappear(?:s)? in|\bcalls? (?:forth|in)|reinforcements/i.test(e.text)) { notes.push(`"${nm.name}" brings in other creatures — add them to the encounter yourself.`); continue; }
@@ -1106,8 +1153,15 @@ function parseOne(block) {
   }
 
   // hit riders ("Whenever Pasquale hits with a … stock strike, he fires a bolt … He carries twelve hammer bolts"): the damage joins the named attack, a pool pays for it per hit
+  // bolts with an effect and no damage (Chain Bolts): the statblock doesn't say which attacks fire one, so every ranged weapon attack takes one per hit while the pool lasts
+  for (const sb of slowBolts) {
+    const shots = parsedBySection.actions.filter(a => a.type === 'atk' && !a.useSaves && (a._ranged || 0) > 10);
+    if (!shots.length) { notes.push(`Trait "${sb.name}" has no ranged attack to fire from; not modelled.`); continue; }
+    for (const a of shots) a.ext.bolt = { resource: sb.pool, cost: 1, name: sb.thing, effect: { slowHalf: true } };
+    notes.push(`${sb.name}: each hit with ${shots.map(a => a.name).join(', ')} takes one ${sb.thing} from a pool of ${sb.count} (the statblock doesn't say which attacks fire them) and halves the target's speed until the end of its next turn (War Table); with the pool empty the hit is a plain hit.`);
+  }
   for (const r of riders) {
-    const hit = parsedBySection.actions.filter(a => a.type === 'atk' && !a.useSaves && r.phrase.indexOf(a.name.toLowerCase().replace(/s$/, '')) >= 0);
+    const hit =parsedBySection.actions.filter(a => a.type === 'atk' && !a.useSaves && r.phrase.indexOf(a.name.toLowerCase().replace(/s$/, '')) >= 0);
     if (!hit.length) { notes.push(`Trait "${r.name}" names an attack that wasn't found; not modelled.`); continue; }
     const dice = cleanDice(r.parts.map(p => p.dice).join(' + ')), avg = r.parts.reduce((s, p) => s + p.avg, 0);
     const mixIn = (a, before, parts) => {

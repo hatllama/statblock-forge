@@ -512,7 +512,8 @@ function extBits(a){
   if(ex.aid) bits.push('+max HP');
   if(ex.retaliate) bits.push(`${ex.retaliate.dmg}${ex.retaliate.perLevel ? '/slot level' : ''} back at melee attackers`);
   if(ex.tempBuff && ex.tempBuff.ac) bits.push(`+${ex.tempBuff.ac} AC while temp HP lasts`);
-  if(ex.bolt) bits.push(`+${ex.bolt.dice} a hit while ${ex.bolt.resource} lasts`);
+  if(ex.bolt) bits.push(ex.bolt.effect && ex.bolt.effect.slowHalf ? `halves speed a hit while ${ex.bolt.resource} lasts` : `+${ex.bolt.dice} a hit while ${ex.bolt.resource} lasts`);
+  if(ex.seq) bits.push(`${ex.seq.length} unlike swings`);
   if(ex.nearBonus) bits.push(`+${ex.nearBonus.dice} within ${ex.nearBonus.within} ft`);
   if(ex.coin){ const w = o => (o && (o.miss ? 'the attack misses' : (o.buff && o.buff.condition ? o.buff.condition.replace('Attacks with ', '').toLowerCase() : '') + (o.hitDmg ? ' +' + o.hitDmg : ''))) || 'nothing'; bits.push(`coin flip: heads ${w(ex.coin.heads)}, tails ${w(ex.coin.tails)}`); }
   if(ex.wtOnly) bits.push('War Table only');
