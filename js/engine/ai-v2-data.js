@@ -41,6 +41,7 @@ const AI_BASE = {
     // for each fight left today, deathFightRounds more × deathDay; a life no ordinary heal brings back), × deathNow
     deathNow: 8, deathLife: 200, deathDay: 1, deathFightRounds: 4,
     buff: 1, buffRounds: 2, zone: 2,                             // buffs on allies (per round × rounds, counted this many rounds ahead at most); difficult ground
+    fogRounds: 2.2,                                              // Fog Cloud (v2FogValue): the rounds its per-round worth is counted (ranged damage it stops, less our ranged damage it hides)
     concSwap: 1, concRisk: 1,                                    // dropping what it holds for a new one; losing it where it stands
     zoneStay: 0.55, zoneFollow: 0.3,                             // a damage zone (Moonbeam…): how many of the later rounds a foe in it stays and burns; more when it follows the caster
     // going down on its own turn (docs/ai-v2.md): how far expected damage understates a hit; the share of its HP a hit must reach before it can drop it; its rounds lost, at most this many, × a weight; a life in points

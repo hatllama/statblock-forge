@@ -55,11 +55,11 @@ casters vs priests + young dragon | open | regular | 8419 | e3c6f74f78d3
 casters vs priests + young dragon | open | regular | 16338 | 19f4f0a80956
 casters vs priests + young dragon | open | regular | 24257 | 6faaaaa092df
 casters vs priests + young dragon | walled | tactical | 500 | 703f626d390b
-casters vs priests + young dragon | walled | tactical | 8419 | f00421d7db39
+casters vs priests + young dragon | walled | tactical | 8419 | fc0cc4fba689
 casters vs priests + young dragon | walled | tactical | 16338 | 8b947135264a
 casters vs priests + young dragon | walled | tactical | 24257 | e9a917db86f9
 casters vs priests + young dragon | walled | regular | 500 | 703f626d390b
-casters vs priests + young dragon | walled | regular | 8419 | f00421d7db39
+casters vs priests + young dragon | walled | regular | 8419 | fc0cc4fba689
 casters vs priests + young dragon | walled | regular | 16338 | 8b947135264a
 casters vs priests + young dragon | walled | regular | 24257 | e9a917db86f9
 default party vs medium-day | open | tactical | 500 | 53c171f892b4
@@ -86,11 +86,11 @@ casters vs medium-day | open | regular | 500 | ce9546cb873a
 casters vs medium-day | open | regular | 8419 | fa9ea8d675a2
 casters vs medium-day | open | regular | 16338 | 5c6a946f6df0
 casters vs medium-day | open | regular | 24257 | cca3cb91a08e
-casters vs medium-day | walled | tactical | 500 | 917aa41201d3
+casters vs medium-day | walled | tactical | 500 | be8ad57c1b72
 casters vs medium-day | walled | tactical | 8419 | 17cf2ba8fd31
 casters vs medium-day | walled | tactical | 16338 | c9fdc12f79c4
 casters vs medium-day | walled | tactical | 24257 | 45e3264c743e
-casters vs medium-day | walled | regular | 500 | 917aa41201d3
+casters vs medium-day | walled | regular | 500 | be8ad57c1b72
 casters vs medium-day | walled | regular | 8419 | 17cf2ba8fd31
 casters vs medium-day | walled | regular | 16338 | c9fdc12f79c4
 casters vs medium-day | walled | regular | 24257 | 45e3264c743e

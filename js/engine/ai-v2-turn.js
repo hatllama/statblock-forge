@@ -195,7 +195,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
         if (pl.fog) {
           // Fog Cloud: the damage it stops ranged foes from dealing (hardly depends on where it's cast from)
           let fv = pl.fogC.get(t.uid);
-          if (fv === undefined) { fv = this.targetValue(u, pl.act, t, pl.pool, x, y).val; pl.fogC.set(t.uid, fv); }
+          if (fv === undefined) { fv = this.v2FogValue(u, pl.act, t, pl.pool, x, y); pl.fogC.set(t.uid, fv); }
           if (!(fv > 0)) continue;
           v = fv; why = 'fog';
         } else if (pl.area) {
@@ -394,7 +394,7 @@ Sim.prototype.v2Aim = function (u, a, prefer, L) {
   let best = null;
   for (const t of pool) {
     if (this.dist(u, t) > range || !this.canSee(u.x, u.y, t)) continue;
-    let v = (fog ? this.targetValue(u, act, t, pool, u.x, u.y).val : this.v2Value(u, act, t, ctx).val) + (t === prefer ? W.pick : 0) + (ctx.posture.t === t ? W.pick : 0), ac = null;
+    let v = (fog ? this.v2FogValue(u, act, t, pool, u.x, u.y) : this.v2Value(u, act, t, ctx).val) + (t === prefer ? W.pick : 0) + (ctx.posture.t === t ? W.pick : 0), ac = null;
     if (areaSpec(act)) {
       ac = this.areaCatch(act, t, u.x, u.y, live, u);
       if (!ac) continue;
@@ -434,6 +434,7 @@ Sim.prototype.v2AimValue = function (u, a, p, ctx) {
   let v;
   if (p.targets[0] === u && (a.target === 'self' || a._range === 0)) v = this.v2SelfValue(u, act, ctx);
   else if (a.type === 'heal' || a.type === 'buff') v = p.targets.reduce((s, t) => s + this.v2AllyValue(u, act, t, ctx), 0);
+  else if (a.ext && a.ext.zone && a.ext.zone.fog) v = this.v2FogValue(u, act, p.targets[0], ctx.foes, u.x, u.y);
   else if (p.area) { v = 0; p.targets.forEach((o, i) => { v += Math.max(0, this.v2Value(u, act, o, ctx, true).val) * (i ? u.v2P.w.area : 1); }); }     // an area: everyone at its bare value
   else v = this.v2Value(u, act, p.targets[0], ctx).val;
   return v - this.v2PaceCost(u, a, v, p.castL);

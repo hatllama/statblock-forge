@@ -1001,6 +1001,28 @@ Sim.prototype.v2Holding = function (u, ctx) {
   ctx.holdId = id; ctx.holding = v;
   return v;
 };
+/* Fog Cloud on t from (x, y), in damage per round × w.fogRounds (docs/ai-v2.md "Fog Cloud in one currency"): the ranged damage the foes it
+   hides can no longer deal (kDpr of each caught foe that attacks at range and is not engaged; a melee foe caught −0.2 × kDpr, as the old value
+   had it), less what our own ranged attackers lose: each ally with a ranged attack, its DPR (own side, real) × the share of the foes it could
+   aim at that the cloud hides. Nobody sees into or out of fog, so a cloud on a lone boss blinds every shooter on our side. */
+Sim.prototype.v2FogValue = function (u, a, t, pool, x, y) {
+  if (this.zones && this.zones.some(z => z.fog && z.src === u.uid)) return -Infinity;
+  const W = u.v2P.w, live = pool.filter(o => o.hp > 0);
+  const ac = this.areaCatch(a, t, x, y, live, u);
+  const caught = [t].concat(ac ? ac.extra : []);
+  const mine = this.alliesOf(u).filter(o => o.onBoard && this.alive(o));
+  let stop = 0;
+  for (const c of caught) {
+    const engagedC = mine.some(o => this.dist(o, c) <= Math.max(5, this.meleeReach(c)));
+    const kr = this.kReach(u, c);
+    const rangedC = kr !== null ? kr > 15 : (this.meleeReach(c) === 0 || c.actions.some(q => q.type === 'atk' && (q._range || 5) > 15));
+    stop += rangedC && !engagedC ? this.kDpr(u, c) : -this.kDpr(u, c) * 0.2;
+  }
+  const hid = caught.filter(c => live.indexOf(c) >= 0).length / Math.max(1, live.length);
+  let lost = 0;
+  for (const o of mine) if (o.actions.some(q => q.type === 'atk' && (q.actionSlot === 0 || q.actionSlot === 1) && (q._range || 5) > 15)) lost += (o.dpr || 0) * hid;
+  return (stop - lost) * W.fogRounds;
+};
 /* friendly fire: what catching these allies costs, more for the ones that matter */
 Sim.prototype.v2FF = function (u, a, friends) {
   const W = u.v2P.w;

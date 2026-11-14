@@ -2200,6 +2200,108 @@ leads named in the brief were not the cause here (healing is weighed by `v2BackU
 (item 3) the day reads 89.5 / 74.3 / 73.2 on tiers. **Recommendation:** accept; a self-care term that grows with the number of attackers that
 can reach a lone boss was tried in phase 4b and lost the four-PC Tyrant, and nothing better is in hand.
 
+### Fog Cloud in one currency (step 6, item 7: the ablation sweep's first flag)
+
+**Found by the sweep.** Removing Faithwalker's Fog Cloud raised Zaki's boss day by 13.0 ± 3.6 (learn) and 6.0 ± 2.5 (open), paired, 200 runs.
+v2 still priced Fog Cloud with the old AI's `targetValue`: each ranged foe caught, not engaged, is worth `kDpr × 2.2`; the cost to our side is
+**2 points per shooter** × the share of foes caught, whatever those shooters deal. In the engine a fog cloud blocks sight completely (nobody sees
+into or out of it), so fogging a lone boss takes every ranged attack on our side off it, and Zaki's party is four ranged casters out of six. Two
+currencies in one sum: damage stopped against a flat count.
+
+**The change (`v2FogValue`, v2 only).** Per round, in damage: the ranged damage the foes caught can no longer deal (`kDpr` of each caught foe
+that attacks at range and is not engaged, as before) **less the damage our own ranged attackers lose**: each ally with a ranged attack deals its
+DPR (own side: real numbers) × the share of the foes it could target that the cloud hides; the caster's own concentration is paid for as usual.
+Both × `w.fogRounds` (2.2, the old gain's factor). A melee foe caught still counts −0.2 × its `kDpr`, as before. The old AI keeps `targetValue`.
+
+**Results.** Zaki's boss day (600 runs, open / learn / blind): 89.5 / 74.3 / 73.2 → **93.8 / 82.8 / 79.2**; with Fog Cloud removed now 93.7 / 84.0 / 79.3
+(no longer better without it). Hard day 98.0 / 95.8 / 95.7 → 98.0 / 96.0 / 95.7. Every family, 200 runs, same seeds, against the area change:
+0 worse beyond 2 SE in any mode, 2 better (H2 open 60.5 → 70, R7 blind 96 → 99.5); against the step 4 baseline (both step 6 changes): open 69.6 →
+70.0, learn 69.1 → 69.3, blind 67.7 → 67.6, 0 worse in any mode. A fresh fog on the full-strength Tyrant (73 damage a round, mostly ranged)
+still scores +104, so the spell is cast where it stops more than it hides. Hashes: old AI, old AI + tiers and `PREFIGHT=0` unchanged; v2 open 6,
+learn 4, blind 6, tiers learn / open 12 / 12 of 96; `hashes-v2-learn.txt` regenerated.
+
+### The ablation sweep (step 6, item 7)
+
+**What it is.** `runs/ablate/ablate.js` (not committed): for Zaki's party, the default party and the nine-caster roster, every action and spell
+of every member removed in turn (246 abilities), each party's two standard days (Zaki: hard day and boss day; default party: hard day and bandit
+day; casters: the goblins / ogres / Mages day and the priests / Young Green Dragon day), learn and open, v2 party and tiered monsters, 200 runs,
+same seeds, compared seed by seed with the full kit (paired SE). 984 cells, 111 min on 19 processes.
+
+**Flags.** 11 cells rose beyond 2 SE; with 984 cells about 22 would by chance, so each flag was re-run paired at 600 runs on the code with the
+area change:
+
+| member | ability | day, mode | 200 runs | 600 runs, paired | verdict |
+|---|---|---|---|---|---|
+| Faithwalker | Fog Cloud | Zaki boss, learn | +13.0 ± 3.6 | (fixed: +1.2 after the change, 600 runs) | **misused, fixed** (Fog Cloud in one currency, above) |
+| Faithwalker | Fog Cloud | Zaki boss, open | +6.0 ± 2.5 | (fixed: −0.1) | as above |
+| Tacitus | Shortbow | Zaki hard, learn | +2.0 ± 1.0 | **+2.7 ± 0.9** | cause found, not fixed (below) |
+| Bard | Hypnotic Pattern | default party hard, learn | +3.0 ± 1.4 | +2.2 ± 0.8 | not confirmed (that day reads high for any change) |
+| Cleric | Sacred Flame | default party hard, learn | +5.5 ± 2.6 | +3.2 ± 1.4 | not confirmed (same) |
+| Fighter | Action Surge | default party hard, learn | +6.0 ± 2.4 | +2.5 ± 1.4 | noise |
+| Paladin | Longsword ×2 | default party hard, learn | +5.5 ± 2.5 | +2.5 ± 1.4 | noise |
+| Bard | Sorcerous Burst | default party hard, learn | +5.5 ± 2.4 | +2.0 ± 1.4 | noise |
+| Bard | Rapier | default party hard, learn | +2.0 ± 1.0 | +1.2 ± 0.7 | noise |
+| Bard | Bardic Inspiration | default party hard, learn | +5.5 ± 2.4 | +1.0 ± 1.5 | noise |
+| Fighter | Heavy Crossbow ×2 | default party hard, open | +4.0 ± 1.6 | +0.0 ± 1.1 | noise |
+
+"That day reads high for any change": on the default party's hard day in learn the full kit wins 91.3 of these 600 seeds, and every removal
+tried there reads +1 to +3, a Bard's Rapier as much as a Cleric's cantrip; over all 61 removals at 200 runs the mean change on that day is +0.9
+(other days −1.2 to 0). A paired SE does not cover the full kit's own luck on a seed set; the two cells that stay over 2 SE there are what that
+leaves, and nothing in either ability's use looked wrong in the logs.
+
+**Tacitus's Shortbow (cause found, not fixed).** With the bow he shoots 5.4 times a day and swings 0.6; without it he swings 6.3. He deals
+about the same (134 against 130 a day) and takes less himself (15 against 26), but **the party** takes more (125 against 111): in melee, with
+Uncanny Dodge, he soaks attacks that otherwise go to the softer members. v2 prices a creature's own risk and has `guard` / `protect` terms for
+front-liners standing next to a back-liner, but nothing values drawing attacks off the others. That is a missing term ("draw fire": the damage
+a square takes off the allies by being the nearer, harder target), not a misused weapon; it touches every martial's positioning and needs its own
+job and tables. Left.
+
+**What carries the most** (removal lowers the win rate most, 200 runs): Niko's Eldritch Blast (boss day learn −25), Eldar's Chromatic Orb (boss
+day open −17), Faithwalker's Cure Wounds (boss day open −9).
+
+### Fights worth watching on the War Table (Party AI = New, Monsters = Smart, by intelligence)
+
+About ten replays, each with what to look for (load `parties/zaki-party-level-5.json` with Day file → Load just the party unless said):
+1. **Dragon breath spreading**: Zaki's party against a Young Red Dragon (one fight, Library). Look at each breath: does it line up three or
+   more (the area change, step 6 item 3), and does the party spread after the first breath (no two on one side of the dragon)?
+2. **The flying dragon**: the same dragon left flying. Does it breathe from 30 ft over a group, and does a touch heal from the air come
+   down first (Niko)?
+3. **The Lich** (Library, alone, against the Fighter / Barbarian / Cleric / Wizard roster): it should cast from range and use its legendary
+   actions between your turns; a Lich that stands off doing little is the reversal of item 5 (it plays the boss tier by default).
+4. **Zaki's boss day** (hard-day.json fights 1–2, then the Ember Tyrant): in fight 3, Faithwalker should not cast Fog Cloud on the Tyrant
+   while the party's shooters are on it (item 7); the Tyrant should spend Legendary Resistance on the saves that matter.
+5. **A wolf pack** (6 Dire Wolves against Fighter, Rogue, Cleric, Wizard): animals spread their bites and keep Pack Tactics; with morale on,
+   bloodied wolves run.
+6. **A swallower** (bandit-day.json, the Sand-Pit Worms): the worm grapples, then swallows the grappled creature (it is on v2 now); the
+   swallowed one attacks from inside.
+7. **A legendary escort fight** (Osric with 4 Bandits, `tests/statblocks/osric-homebrew.txt` pasted into the Forge): legendary actions only after
+   your side's turns (not after a bandit's), lair actions at initiative 20, the bandits keeping out of Osric's areas.
+8. **A multiattack that drops its first target** (Ogres or a Troll against the roster with a hurt member, or Kraax's Flurry): after the first
+   swing drops someone, the next swings go to another creature in reach, never into the body (step 3).
+9. **Undead** (5 Mummies, 3 Wights, 8 Zombies): mindless zombies walk straight in; the Wights (cunning) go for the Cleric and Wizard.
+10. **Niko's morning**: the log's first lines, "Niko Aris cast Aid this morning … +10 max HP" (step 1), and the initiative list at full HP on frame 0.
+
+### Ordinary monsters and the party's real damage (step 6, item 2; diagnosis, nothing changed)
+
+
+`w.dprSeen` stays 0 for every tier but the boss. Measured again (Fighter, Rogue, Cleric, Wizard against 5 Mummies, 3 Wights, 8 Zombies;
+the party learns, the monsters open):
+
+| monsters | dprSeen | party win | monster attacks on the Cleric or Wizard | party opportunity attacks a day | monster turns with no attack |
+|---|---|---|---|---|---|
+| tiers as the rule gives them (zombies and mummies mindless, reading blind), 200 runs | 0 | 44.0 | 51% | 0.74 | |
+| | 1 | 47.0 | 62% | 0.83 | |
+| every monster forced cunning, 600 runs | 0 | 27.7 | 47% | 0.51 | 33% |
+| | 1 | 39.2 | 59% | 0.60 | 31% |
+
+With the tiers as the rule gives them the cost is small (3 points, noise): most of these monsters read blind. Forced cunning shows it: the monsters
+win 11.5 points less. **The brief's hypothesis is not what happens**: slow monsters do not waste turns walking through the front line (turns with
+no attack 33% → 31%; opportunity attacks they draw 0.51 → 0.60 a day). What changes is whom they hit: 47% → 59% of their attacks go to the
+Cleric and the Wizard, read at their best spell, and against this party that is the worse choice (the Fighter and Rogue they leave alone deal
+most of the damage, and the casters sit behind them). `dprSeenGap` 0 gives the same (38.0). **Not fixed**: the fix belongs in target value (how
+long the party's casters keep their best spell, against how much damage the front line deals now), not in movement; it needs its own job with
+the undead, the 3-fight day and the Mage rows.
+
 ### Genius and cunning (step 6, item 4; nothing changed)
 
 The nine TIER scenarios, every monster forced to the tier, party win (lower = stronger monsters), step 4 baseline: genius / cunning means

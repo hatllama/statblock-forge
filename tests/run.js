@@ -1442,6 +1442,26 @@ section('An area is worth what it does to everyone in it (v2 breath aim)');
   check(breaths > 20 && caught / breaths >= 2.6, `a tier Young Red Dragon's breath catches ${(caught / Math.max(1, breaths)).toFixed(2)} of Zaki's party on average over ${breaths} breaths (at least 2.6)`);
 }
 
+section('Fog Cloud in one currency (v2FogValue)');
+{
+  // Zaki's party (four ranged casters) against a lone boss that also shoots: nobody sees into fog, so a cloud on it hides it from our
+  // shooters too. Its worth is the ranged damage it stops less the ranged damage it hides from us; the old flat 2 points a shooter made it a gain
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const fogOn = scale => {
+    const boss = cp(Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'long-homebrew-boss.txt'), 'utf8')).monsters[0]);
+    boss.id = 'tyr'; boss.mode = 'custom'; boss.count = 1; boss.actions.forEach((a, i) => { a.id = 'tyr' + i; if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * scale)); });
+    const r = Tac.runDay({ players: cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players), encounters: [{ monsters: [boss] }] },
+      { seed: 3, ai: { party: 'v2', foes: 'tiers' }, partyAI: 'tactical', maxRounds: 1, _keep: true, know: { party: 'open', foes: 'open' } });
+    const s = r._sim, fw = s.units.find(u => /Faithwalker/.test(u.name)), t = s.units.find(u => u.team === 'foes');
+    const fog = fw && fw.actions.find(a => a.ext && a.ext.zone && a.ext.zone.fog);
+    s.zones = [];
+    return fog && t ? { v: s.v2FogValue(fw, fog, t, [t], fw.x, fw.y), old: s.targetValue(fw, fog, t, [t], fw.x, fw.y).val } : { v: NaN, old: NaN };
+  };
+  const weak = fogOn(0.4), full = fogOn(1);
+  check(weak.v < 0 && weak.old > 0, `the boss day's Tyrant (0.4 damage): fogging it while four of us shoot it is worth less than nothing on v2 (${weak.v.toFixed(1)}; the old value said ${weak.old.toFixed(1)})`);
+  check(full.v > 0, `the full-strength Tyrant: the ranged damage fog stops outweighs what it hides from us (${full.v.toFixed(1)})`);
+}
+
 section('HP at the start of a fight, and the replay\'s max HP after an Aid cast in the fight');
 {
   // The report: the War Table showed Zaki's party at 38/48 at the start of a fight. The replay's unit table was taken after the fight,
