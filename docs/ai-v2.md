@@ -2081,3 +2081,19 @@ down to nothing says "spend nothing" whatever the spell is worth.
 at 3rd level (3 × 10 HP = 10 a level) is cast; a weak first cast past the share (a 1-target Mage Armor worth 5 a level) still is not; the
 share itself (0.25) is unchanged, so every caster whose budget already fit is untouched. Short-rest slots are not counted differently: the
 hard day has no rest and gains as much as the boss day, so a rest is not what the rule was missing.
+
+**Results** (600 runs; open / learn / blind). v2 + tiers: hard 97.3 / 93.7 / 91.2 → 97.0 / 96.0 / 94.8, boss 84.5 / 60.5 / 63.5 → 86.8 / 66.2 / 72.5.
+Party v2, monsters old AI: hard 95.7 / 94.8 / 87.7 → 98.5 / 96.5 / 95.2, boss 77.2 / 56.2 / 65.3 → 83.2 / 65.8 / 75.8. Old AI on both sides: hard 88.7 /
+72.2 / 66.3 → 92.8 / 83.8 / 82.8, boss 49.3 / 44.2 / 43.0 → 60.8 / 54.5 / 48.7. Roster days unchanged; every hash set identical (no Pact caster with a
+pre-fight spell in the hashed days).
+
+### Hit Dice against a full short rest (step 2, a check)
+
+An earlier harness had `opts.rules.rest` `'hitdice'` winning more than `'full'` in every pair, which a rest that heals less should not do.
+Measured on identical seeds with HP as the only difference (an engine copy whose `'full'` rolls the same Hit Dice and then heals fully, so the
+random stream is the same), 600 runs, old AI and v2 + tiers, three modes: Zaki's hard day with a rest before fight 3 and the casters' day
+(goblins / ogres after a rest / Mages): **the same days in 3,594 of 3,600 pairs**, the rest's HP gap 0.0–0.5 a rest (level-5 Hit Dice heal
+these parties to full nearly every time), never a day the full rest lost and Hit Dice won but one. The real `'full'` rule draws no dice, so
+every die after the rest falls differently: then rows differ by noise (casters' day: Hit Dice ahead in 5 of 6 rows by 0.7–2.7 points, the
+standard error of an unpaired difference is about 2.3). Not a bug; nothing changed. The step 1 HP bug was a display matter and does not
+touch this.
