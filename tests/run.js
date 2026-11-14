@@ -1412,8 +1412,8 @@ section('HP at the start of a fight, and the replay\'s max HP after an Aid cast 
   } finally { proto.runEncounter = re; }
   check(days === 8 && low === 0, `every party member starts fight 1 with hp = max HP (${low} below, ${days} days)`);
   check(frame === 0, `frame 0 of the replay shows every party member at its full max HP (${frame} shown below)`);
-  // an Aid cast in the fight (old AI, Zaki's party vs a Mage and 4 Guards: Niko casts Aid at 3rd level)
-  const r = Tac.runDay({ players: zaki(), encounters: [{ monsters: [mon('Mage'), mon('Guard', 4)] }] }, { seed: 1000 + 5 * 7919, partyAI: 'tactical', record: true, know: { party: 'learn', foes: 'open' } })[0];
+  // an Aid cast in the fight (old AI, Zaki's party vs a Mage and 4 Guards, no morning casts: Niko casts Aid at 3rd level)
+  const r = Tac.runDay({ players: zaki(), encounters: [{ monsters: [mon('Mage'), mon('Guard', 4)] }] }, { seed: 1000 + 5 * 7919, partyAI: 'tactical', record: true, prefightBuffs: false, know: { party: 'learn', foes: 'open' } })[0];
   const aidAt = r.events.findIndex(e => e.kind === 'heal' && /: Aid \(L3\), max HP \+10/.test(e.text));
   check(aidAt > 0, 'the scene casts Aid in the fight (3rd level, +10)');
   if (aidAt > 0) {
@@ -1476,6 +1476,13 @@ section('Pre-fight buffs: Mage Armor, Death Ward, the table and morningShare');
   check(morning(tight[0]).length === 1 && /Aid/.test(morning(tight[0])[0].text), 'a share that pays for only one spell leaves the lesser one uncast (2 levels: Aid, no Mage Armor)');
   const noRoom = run(day([aid, MA], [0, 0]));
   check(morning(noRoom[0]).length === 0, 'no slots, no cast, whatever the share');
+  // a small pool of high slots (a warlock's two 3rd-level Pact slots: 6 levels, budget floor(0.25 x 6) = 1): the first cast may go past the
+  // share when its gain per slot level clears PREFIGHT.minGain (Aid at 3rd: 3 x 10 HP, 10 a level); later casts keep the share rule
+  const pact = run(day([aid, MA], [0, 0, 2]));
+  check(morning(pact[0]).length === 1 && /^Cleric cast Aid this morning: .* \+10 max HP$/.test(morning(pact[0])[0].text) && unit(pact, 'Cleric').slots[2] === 1,
+    'two 3rd-level slots: Aid is cast in the morning at 3rd level (+10), and only one cast goes past the share: ' + (morning(pact[0])[0] || {}).text);
+  check(morning(run(day([MA], [0, 0, 2]))[0]).length === 0, 'a weak first cast past the share (Mage Armor in a 3rd-level slot, under minGain a level) is not cast');
+  check(morning(run(day([aid], [0, 0, 2]), { morningShare: 0 })[0]).length === 0, 'morningShare 0 still casts nothing');
 
   // Death Ward: one level-4 slot
   const dw = run(day([DW], [4, 3, 3, 1]), { morningShare: 0.4 });

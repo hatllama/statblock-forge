@@ -2054,3 +2054,30 @@ Play is unchanged. Hashes move only where an in-fight Aid was cast (v1 4, v2 ope
 The report's rise is the old AI on the hard day (+3 to +3.4 in learn and blind, about 1.3 SE each): the old AI spends a Pact slot and an
 action on Aid mid-fight (its heal list counts an aid target as hurt). On v2 removing Aid never helps beyond noise and costs a little on the
 boss day. The Cleric's Aid (roster days, the morning cast plus in-fight ones) is worth 1–3 points on every arm.
+
+### The morning price of a slot (step 1, part B)
+
+**What was measured** (600 runs, the same days and arms; "base" is the table above with everything on):
+
+| change | day | v1 open / learn / blind | v2t open / learn / blind |
+|---|---|---|---|
+| base | hard | 88.7 / 72.2 / 66.3 | 97.3 / 93.7 / 91.2 |
+| | boss | 49.3 / 44.2 / 43.0 | 84.5 / 60.5 / 63.5 |
+| Eldar without Mage Armor | hard | 88.2 / 70.0 / 67.5 | 96.0 / 93.2 / 90.7 |
+| | boss | 46.5 / 48.8 / 44.2 | 83.3 / 60.8 / 66.8 |
+| Faithwalker also has Aid (cast in the morning at 2nd level) | hard | 90.3 / 78.3 / 75.3 | 97.2 / 94.2 / 92.2 |
+| | boss | 59.2 / 49.0 / 49.3 | 86.3 / 68.3 / 69.7 |
+| `morningShare` 0.5 (only Niko changes: his Aid in the morning) | hard | 92.8 / 83.8 / 82.8 | 97.5 / 95.5 / 94.5 |
+| | boss | 60.8 / 54.5 / 48.7 | 87.7 / 65.7 / 71.8 |
+
+Mage Armor is right as it is (noise either way). A morning Aid is worth a lot: +10 max HP on three members for the whole day. But Niko never
+cast it, for a reason that has nothing to do with value: the budget is `floor(share × slot levels)`, and a Pact caster's pool is a few slots of
+one high level (2 × 3rd = 6 levels, budget 1), so no spell of 2nd level or more ever fits. Any caster whose cheapest slot is above a quarter of
+its slot levels is shut out the same way. The share is the wrong tool for a small pool: it says how much of the day to spend, and rounding it
+down to nothing says "spend nothing" whatever the spell is worth.
+
+**The fix (`PREFIGHT.minGain`).** A caster's *first* morning cast may go past the share when it is clearly worth its slot: gain per slot level
+≥ `minGain` (8 HP, about what pacing prices a slot level at in a fight, `AI_BASE.pacing.slot`). Later casts keep the share rule. So Niko's Aid
+at 3rd level (3 × 10 HP = 10 a level) is cast; a weak first cast past the share (a 1-target Mage Armor worth 5 a level) still is not; the
+share itself (0.25) is unchanged, so every caster whose budget already fit is untouched. Short-rest slots are not counted differently: the
+hard day has no rest and gains as much as the boss day, so a rest is not what the rule was missing.

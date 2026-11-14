@@ -29,7 +29,9 @@ const PREFIGHT = {
   intake: 0.5,      // part of its max HP a creature takes in a fight, before armor and luck
   hitP: 0.65,       // typical enemy chance to hit it; one point of AC removes 5% of the rolls, 0.05 / hitP of the damage
   downP: 0.1,       // chance, per fight, it drops to 0 HP
-  downCost: 0.6     // an avoided drop to 0 is worth this part of its max HP (turns lost, risk of dying)
+  downCost: 0.6,    // an avoided drop to 0 is worth this part of its max HP (turns lost, risk of dying)
+  minGain: 8        // HP saved per slot level that lets a caster's FIRST morning cast go past the share (about a slot level's price in a fight,
+                    // AI_BASE.pacing.slot): a small pool of high slots (a warlock's 2 x 3rd = budget 1) would otherwise never cast at all
 };
 const unarmoredAC = o => { const x = (o.tpl && o.tpl.ext) || {}; return x.unarmored ? 13 + (+x.dexMod || 0) : 0; };
 const aidAmount = (a, k) => Math.round(avgDice(a.amount) + (k > 0 ? k * avgDice(a._spell.upcast) : 0));
@@ -67,7 +69,7 @@ function morningCasts(party, sim, opts) {
         let L = 0;
         if (a._spell && a._spell.level) {
           for (let l = Math.max(a._spell.level, spec.min); l <= 9; l++) if (u.slots && u.slots[l - 1] > 0) { L = l; break; }
-          if (!L || L > budget) continue;
+          if (!L || (L > budget && (notes.some(n => n.uid === u.uid) || !(share > 0)))) continue;     // past the share: only a first cast, and only if it clears minGain (below)
         }
         const k = L && a._spell.upcast ? L - a._spell.level : 0;
         const n = (a.targets || 1) + (a._spell && a._spell.upcastTargets ? a._spell.upcastTargets * k : 0);
@@ -75,12 +77,13 @@ function morningCasts(party, sim, opts) {
           .sort((x, y) => y.g - x.g || x.o.maxHp - y.o.maxHp).slice(0, n);
         if (!ts.length) continue;
         const v = ts.reduce((t, x) => t + x.g, 0) / Math.max(1, L);
+        if (L > budget && v < PREFIGHT.minGain) continue;
         if (!best || v > best.v) best = { a, spec, L, k, ts, v };
       }
       if (!best) break;
       const text = best.ts.map(x => x.o.name).join(', ') + ' ' + best.spec.apply(sim, u, best.a, best.ts[0].o, best.k);
       for (let i = 1; i < best.ts.length; i++) best.spec.apply(sim, u, best.a, best.ts[i].o, best.k);
-      if (best.L) { u.slots[best.L - 1]--; budget -= best.L; }
+      if (best.L) { u.slots[best.L - 1]--; budget = Math.max(0, budget - best.L); }
       done[best.a.id] = true;
       notes.push({ uid: u.uid, text: `${u.name} cast ${best.a.name} this morning: ${text}` });
     }
