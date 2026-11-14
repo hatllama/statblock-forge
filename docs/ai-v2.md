@@ -2005,7 +2005,7 @@ Damage Elia deals per fight, as written / without each feature (the long block i
 | no Tight Grouping | 46.6 | 80.8 | 177.5 |
 | all four removed | 21.5 | 43.8 | 94.2 |
 
-Push Your Luck is taken 1.3 times a fight (open, 165 HP) and about a third of the pushes turn a miss into a hit (0.8 of 1.3 in the short fight is the count of pushes that hit); it is worth 7 to 16 damage a fight. The
+Push Your Luck is taken 1.3 times a fight (open, 165 HP) and about 6 in 10 pushes turn a miss into a hit (0.8 of 1.3 in the short open fight); it is worth 7 to 16 damage a fight. The
 burst routine and Tight Grouping are each worth 3 to 10 (Tight Grouping lands 0.7 to 1.6 times a fight). **Chain Bolts do nothing measurable**: about 2.4 to 5.7 hits a fight halve a speed, but the party is not trying to close
 on a shooter that has 100 ft of range, so a halved speed costs it nothing the damage columns can see. Pool: twelve bolts are not used up in these fights (up to 11.4 slowed in the blind 495 HP fight); the empty-pool path is covered by the engine test.
 The party's win rate under blind/learn knowledge of Elia never falls under 98.5 %, so nothing "got worse beyond noise" for the party's side; no existing creature's numbers changed (all hash sets identical).
