@@ -2328,3 +2328,89 @@ six rows, blind long 79.0 → 69.0 (Pasquale stronger, 2.3 SE). **Decision: the 
 own cost: the gap is that `react.base` is a flat guess at an opportunity attack's worth, not that the coin is priced twice. The principled next
 step (not built) is to price the reaction by the opportunity attack it can still expect this round (the chance a foe leaves its reach × its
 melee hit), which would make every cheap reaction cheaper for a creature nobody walks away from; it changes every reaction row and needs its own job.
+
+### The gate report (phase 6 step 1, final)
+
+**Tables.** Every ai-compare family in three modes, 200 runs, same seeds, the AI forced in every arm (`runs/gate/run.js`, `ARM=`): the old AI on
+both sides (the step 4 table; the old AI's logs never moved in this job), v2 + tiers on both sides (the final code), and the middle arm, v2 for the
+party with the monsters on the old AI (the final code), which splits each row into a party side (middle − old) and a monster side (v2 + tiers −
+middle). Party win %; for a monster row lower is a stronger monster.
+
+| family | rows | open: old AI / v2 + tiers | learn | blind | old AI higher beyond 2 SE (o / l / b) | v2 + tiers higher (o / l / b) |
+|---|---|---|---|---|---|---|
+| A (area vs single target) | 8 | 91.8 / 95.6 | 93.1 / 93.4 | 91.8 / 91.5 | 0 / 0 / 0 | 1 / 0 / 0 |
+| B (Legendary Resistance) | 13 | 14.8 / 27.7 | 12.0 / 19.7 | 9.8 / 15.2 | 0 / 1 / 1 | 10 / 10 / 6 |
+| BOSS | 15 | 35.0 / 45.3 | 37.5 / 50.0 | 38.6 / 50.3 | 2 / 2 / 2 | 9 / 10 / 10 |
+| C (casters) | 11 | 89.4 / 92.3 | 86.5 / 89.9 | 85.3 / 89.4 | 0 / 0 / 0 | 2 / 3 / 3 |
+| D (downed allies) | 11 | 55.8 / 79.1 | 56.2 / 76.8 | 54.3 / 75.2 | 0 / 1 / 1 | 10 / 9 / 10 |
+| DUMB | 11 | 91.0 / 91.2 | 91.0 / 90.6 | 91.3 / 90.8 | 0 / 0 / 0 | 0 / 0 / 0 |
+| E (Brew, dragons) | 6 | 73.7 / 96.2 | 74.3 / 92.3 | 75.3 / 92.2 | 0 / 0 / 0 | 4 / 4 / 4 |
+| ELIA | 12 | 99.8 / 100.0 | 100.0 / 99.7 | 100.0 / 99.0 | 0 / 0 / 2 | 0 / 0 / 0 |
+| F (flyers) | 2 | 12.3 / 60.0 | 12.0 / 53.5 | 10.0 / 43.0 | 0 / 0 / 0 | 2 / 2 / 2 |
+| H (hybrids) | 9 | 54.1 / 77.7 | 58.8 / 75.8 | 58.4 / 74.1 | 0 / 0 / 0 | 7 / 5 / 5 |
+| K (control) | 8 | 57.4 / 61.9 | 48.9 / 53.4 | 40.3 / 39.3 | 1 / 2 / 1 | 2 / 3 / 3 |
+| PASQ | 6 | 97.6 / 99.0 | 97.8 / 98.4 | 91.6 / 89.7 | 0 / 0 / 0 | 1 / 0 / 0 |
+| R (revive) | 21 | 62.1 / 77.0 | 62.5 / 72.9 | 59.3 / 70.6 | 0 / 0 / 0 | 18 / 12 / 12 |
+| RC (reactions) | 8 | 37.4 / 49.0 | 34.5 / 43.1 | 33.4 / 44.8 | 3 / 2 / 1 | 5 / 4 / 4 |
+| S (spacing) | 6 | 73.8 / 92.7 | 71.2 / 87.4 | 68.1 / 86.0 | 0 / 1 / 1 | 5 / 4 / 4 |
+| T | 5 | 96.4 / 95.5 | 95.6 / 93.5 | 90.1 / 88.5 | 0 / 1 / 0 | 0 / 0 / 0 |
+| TIER | 63 | 53.9 / 57.8 | 58.3 / 61.4 | 58.3 / 61.6 | 13 / 6 / 6 | 20 / 20 / 14 |
+| step 1–2 scenarios (incl. the foe-side Manticores and Gnoll swarm) | 10 | 79.7 / 67.7 | 75.7 / 63.8 | 74.1 / 64.5 | 2 / 3 / 3 | 2 / 2 / 3 |
+| **all** | 225 / 216 / 216 | **62.1 / 70.0** | **63.0 / 69.3** | **61.6 / 67.6** | **21 / 19 / 18** | 98 / 88 / 80 |
+
+**Every one of the 58 "old AI higher" rows is a monster-side row**: in each, the monster side is negative (tier monsters beat the party more than
+old-AI monsters do), from −2 to −90 points, and the party side is positive or within noise. Run per side:
+- **Party side** (v2 party against the old party, both facing old-AI monsters): v2 higher beyond 2 SE in 139 / 119 / 113 rows; the old party AI
+  higher in **one family**: the TIER goblin pack (16 Goblins, 6 Bugbears, 2 Bosses) in **blind** (96.5 against 88.0, 3.2 SE). Explanation: blind
+  reads every Small goblin at the size prior (15 HP) and the v2 party's posture finishes "soft" goblins while the Bugbears and Bosses hit (the
+  same cause as "Opening hits in blind" in the roadmap); the old AI's selector spreads more evenly. Fix size: small (the proposal to raise the
+  Small prior to 32 is written up under "Pacing and danger"), but it moves every blind row and the old AI's blind logs. **Recommendation: accept
+  for now** (blind is the "ambush" mode the user decided may play badly) or take the Small-prior proposal as its own job.
+- **Monster side** (tiers against old-AI monsters, both facing the v2 party), rows where the **default** tiers are weaker beyond 2 SE (forced
+  mindless and animal arms are weak by design; forced genius on a boss is not its tier):
+
+  | row | modes | old-AI monsters / tiers (party win) | what it is | recommendation |
+  |---|---|---|---|---|
+  | TIER goblin pack | open, blind | 61 / 73, 88 / 94.5 | the pack is cunning; the old AI's goblins all close at once, the tier's spread and stand off (`risk`) | accept or tune the cunning tier's risk on a pack (one scenario: do not tune for it alone) |
+  | D4, D6 (giants and ogres, downed allies) | all, blind | 75.5 / 86, 76 / 85.5, 76.5 / 86.5; 28 / 38.5 | Hill Giants and Ogres are animals: no interest in the downed or the casters, by the tier's design | accept (by design) |
+  | RC5 (Young Green Dragon, 30 ft apart) | learn, blind | 61.5 / 81, 61 / 76 | the dragon is cunning on v2: it stays at range and breathes, the old AI flew in; a lone monster without the boss tier keeps full self-care (the item 5 effect on a non-legendary loner) | fix candidate: give lone non-legendary monsters the boss tier's `solo` term (a `w`, not a tier rule); measured nowhere yet |
+  | F2 (hard day, then 2 Young Green Dragons) | learn | 17 / 27.5 | the same dragons | as RC5 |
+  | E6 (Zaki's day ending in a Young Red Dragon) | open | 83 / 91.5 | the same, and a red dragon's breath already catches more since item 3 | as RC5 |
+
+**Zaki's boss day, monster side (item 1, final code).** Tiers 93.8 / 82.8 / 79.2 against old-AI monsters 89.3 / 79.2 / 79.8 (party v2 in both,
+600 runs): the boss tier's Tyrant is weaker than the old AI's by 4.5 in open (about 2.4 SE unpaired), 3.6 in learn (1.5 SE), level in blind. The
+cause is unchanged (`boss.solo`, low self-care against six attackers); the party's step 6 gains (area aim, Fog Cloud) raised both arms. Accept or
+take it to a boss job together with the lone non-legendary self-care row (RC5) below, since both are the same term.
+
+**Run time** (A/B, old and new code alternating under the same outside load): `npm test` 180 / 161 s on `main` against 192 / 182 s now
+(**+9.7%**; 897 → 925 checks, the v2 learn fixture replay runs in a child process beside the checks); one harness process (TIER, BOSS and D9 families,
+20 runs) 845 / 811 s against 877 / 852 s (**+4.4%**). Both within the +10% the job allows; `npm test` is at the edge.
+
+**Gate status.** The phase 6 gate asks that v2 be no worse than the old AI in any scenario beyond noise. For the **party** that holds except the
+blind goblin pack. For the **monsters** the tiers are stronger than the old AI in 70 / 66 / 49 rows and weaker in the rows above; the weaker ones
+are by tier design (animals) or the lone non-legendary self-care gap. The user decides on those rows; the ten watched fights are listed above.
+
+**The old AI is unreachable** with v2 for the party and tiers for the monsters: `V1TRAP=1 npm test` runs to the end with no throw, `V1TRAP=log`
+reports "no old-AI calls", and every ai-compare family under `V1TRAP=1` (10 runs, three modes, 180 shards) wrote no trap error. Still present and
+never called in that mode (the next job deletes them): every method in `js/engine/ai-v1.js` (`optionValue`, `rankSpells`, `notePacing`, `dashWorthIt`,
+`tacticalTurn`, `tacticalTurnInner`, `intent`) plus `reactBarbsOld`, `reactLuckyOld`, `reactShieldOld` (`reactions.js`) and `surge` (`encounter.js`).
+Still used and kept (`choose.js`): `choose`, `plan`, `planInner`, `mayHitDowned`, `slotCost` (legendary and lair actions below the boss tier,
+passives, `doAction`'s default plan, Hide, Hellish Rebuke's price); replacing them is the step after the deletion.
+
+**Zaki's two days** (600 runs, both sides reading the mode; open / learn / blind):
+
+| | job start (main) | final |
+|---|---|---|
+| hard day, old AI both sides | 88.7 / 72.2 / 66.3 | 92.8 / 83.8 / 82.8 (the morning Aid; the old AI's play is otherwise unchanged) |
+| hard day, v2 + tiers | 97.3 / 93.7 / 91.2 | 98.0 / 96.0 / 95.7 |
+| boss day, old AI both sides | 49.3 / 44.2 / 43.0 | 60.8 / 54.5 / 48.7 |
+| boss day, v2 party, old-AI monsters | 77.2 / 56.2 / 65.3 | 89.3 / 79.2 / 79.8 |
+| boss day, v2 + tiers | 84.5 / 60.5 / 63.5 | 93.8 / 82.8 / 79.2 |
+
+**Surprises.** The fixture "mismatch" was only CRLF. The reported HP bug was the replay's unit table, not the rules, and it hid a real price bug
+(no morning cast for Pact casters at all). The old multiattack re-aim read every foe's true HP (a knowledge leak the old AI had all along). The
+young dragons' weak breaths were the area scoring, not their height. Fog Cloud was still on the old AI's units and cost the party a boss fight in
+eight. The ablation sweep's other flags were mostly the full kit's luck on a seed set: with 984 cells, about 22 cross 2 SE by chance, and a
+paired SE does not cover the base run's own luck. Outside load on the machine (another program's 20 Python processes from 04:41) slowed every
+table after that by about 2.5× uniformly; run times were therefore compared A/B, alternating old and new code under the same load.
+
