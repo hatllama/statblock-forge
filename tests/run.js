@@ -982,8 +982,8 @@ section('Character sheets');
   goliath.actions.push({ id: 'g-stone', name: "Stone's Endurance", actionSlot: 4, freq: { reset: 'lr', uses: 3 }, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: '1d12 + 3' } });
   let small = 0, uses = 0;
   for (let i = 0; i < 6; i++) for (const r of run({ players: [cp(goliath), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 10)] }, { monsters: [srd('Ogre', 3)] }] }, { seed: 50 + i * 7919, ai: { party: 'v2' }, record: true }))
-    for (const e of r.events) { const m = e.kind === 'react' && /Stone's Endurance \((\d+) →/.exec(e.text); if (m) { uses++; if (+m[1] < 7) small++; } }
-  check(uses > 0 && small === 0, `Stone's Endurance is kept for real hits (${uses} uses, ${small} on hits under 7)`);
+    { const st = {}; for (const e of r.events) { const m = e.kind === 'react' && /Stone's Endurance \((\d+) →/.exec(e.text); if (m) { uses++; if (+m[1] < 7 && !(st[e.uid] && st[e.uid].hp <= +m[1])) small++; } for (const k in e.state || {}) st[k] = e.state[k]; } }
+  check(uses > 0 && small === 0, `Stone's Endurance is kept for real hits: a big one or one that would drop it (${uses} uses, ${small} on hits under 7 that would not)`);
 
   // no Dodge-crawling toward archers: the Monk dashes in instead
   let crawl = 0;
@@ -1388,6 +1388,35 @@ section('Pre-fight buffs (Aid cast in the morning; morningShare 1 = every slot m
   // the morning cast raises both: frame 0 of fight 1 shows the aided at hp = max = base + 5
   const f0 = r => r.events[0].state, uOf = (r, n) => r.units.find(u => u.name === n);
   check(lowest.every(n => { const u = uOf(r1, n); return u.maxHp === base[n] + 5 && f0(r1)[u.uid].hp === u.maxHp; }), 'a morning Aid raises max HP and current HP: fight 1 starts at hp = max HP = base + 5');
+}
+
+section('Several attack rolls in one action: each swing picks its own target when the last one drops');
+{
+  // a Multiattack of three sure 10-damage swings with a 5-HP, a 15-HP and a 200-HP foe in reach: once a target drops, the next swing must go to
+  // another foe in reach, not into the corpse. The selector says "most HP" (the tank); v2 re-picks by its own scoring, so it kills both small
+  // foes (15 in two swings, 5 in one, in either order) and leaves the tank
+  const swinger = { id: 'sw', name: 'Swinger', mode: 'custom', hp: 60, AC: 30, saveBonus: 0, count: 1, speed: 30, initBonus: 99, isPC: true, ext: { class: { type: 'fighter', level: 5 } },
+    actions: [{ id: 'sw1', name: 'Multiattack', actionSlot: 0, freq: 'at will', condition: 'default', targets: 3, type: 'atk', dpr: '10', toHit: 99, target: 'enemy with most HP', ext: { range: 5 } }] };
+  const dummy = (id, hp) => ({ id, name: id, mode: 'custom', hp, AC: 5, saveBonus: 0, count: 1, speed: 0, actions: [{ id: id + 'x', name: 'Nothing', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '0', toHit: -99, target: 'enemy with least HP', ext: { range: 5 } }] });
+  const pos = { 'party|sw|0': { x: 5, y: 5 }, 'foes|weak|0': { x: 6, y: 5 }, 'foes|tank|0': { x: 6, y: 6 }, 'foes|mid|0': { x: 4, y: 5 }, 'foes|far|0': { x: 28, y: 5 } };
+  for (const [label, ai] of [['old AI', undefined], ['v2', { party: 'v2', foes: 'tiers' }]]) for (const know of ['open', 'learn', 'blind']) {
+    const r = Tac.runDay({ players: [JSON.parse(JSON.stringify(swinger))], encounters: [{ monsters: [dummy('weak', 5), dummy('tank', 200), dummy('mid', 15), Object.assign(dummy('far', 3), { speed: 5 })] }] },
+      { seed: 5, ai, partyAI: 'tactical', record: true, maxRounds: 1, width: 30, know: { party: know, foes: know }, layouts: { 0: { gapFt: 5, positions: pos } } })[0];
+    const me = r.units.find(x => x.name === 'Swinger').uid;
+    const turn = r.events.findIndex(e => e.kind === 'turn' && e.uid === me), next = r.events.findIndex((e, i) => i > turn && e.kind === 'turn');
+    const hits = r.events.slice(turn, next < 0 ? undefined : next).filter(e => e.kind === 'attack' && e.uid === me);
+    const on = n => hits.filter(e => r.units.find(x => x.uid === e.target).name === n).length;
+    // every swing hits for 10: a foe is down once its swings x 10 reach its HP
+    const HP = { weak: 5, mid: 15, tank: 200, far: 3 }, took = {};
+    let intoCorpse = 0, kills = 0;
+    for (const e of hits) { const n = r.units.find(x => x.uid === e.target).name; if ((took[n] || 0) >= HP[n]) intoCorpse++; took[n] = (took[n] || 0) + 10; if (took[n] >= HP[n] && took[n] - 10 < HP[n]) kills++; }
+    check(turn >= 0 && hits.length === 3 && intoCorpse === 0 && on('far') === 0 && kills >= 1,
+      `${label}, ${know}: three swings, a kill, and no swing into a foe already dropped or at the foe out of reach (weak ${on('weak')}, mid ${on('mid')}, tank ${on('tank')}, far ${on('far')})`);
+    // open: v2 knows the HP, so the re-pick finishes both small foes (15 in two swings, 5 in one) and leaves the selector's tank.
+    // learn and blind cannot tell the 15-HP foe from the 200-HP one (same priors), so either is an honest pick there
+    if (label === 'v2' && know === 'open') check(on('weak') === 1 && on('mid') === 2 && on('tank') === 0,
+      `v2, open: after the first kill the next swing re-picks by v2's scoring and finishes the other small foe, not the selector's tank (weak ${on('weak')}, mid ${on('mid')}, tank ${on('tank')})`);
+  }
 }
 
 section('HP at the start of a fight, and the replay\'s max HP after an Aid cast in the fight');

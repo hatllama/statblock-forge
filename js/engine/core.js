@@ -781,16 +781,18 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     this.dropBuffs(u, b => b.expiry === 'until next attack made');
     return;
   }
-  // attack rolls: `targets` = number of attacks, re-aimed if the target drops
+  // attack rolls: `targets` = number of attacks, re-aimed if the target drops or leaves the board (fled, swallowed):
+  // each swing then picks its own target among those in range from where it stands (v2: v2Repick, the same scoring as the first pick;
+  // the old AI: its selector)
   let n = a.targets || 1;
   let cur = targets[0];
   for (let i = 0; i < n; i++) {
-    if (!cur || cur.dead || (cur.hp <= 0 && !cur.isPC) || (cur.hp <= 0 && !opt.finishDowned)) {
+    if (!cur || cur.dead || (cur.hp <= 0 && !cur.isPC) || (cur.hp <= 0 && !opt.finishDowned) || (!cur.onBoard && !opt.inside)) {
       opt = Object.assign({}, opt, { finishDowned: false });
       const range = Math.max(5, a._range || 5);
       const opts = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && (opt.inside ? e.uid === u.swallowedBy : this.dist(u, e) <= range && this.canSee(u.x, u.y, e)));
       if (!opts.length) break;
-      cur = this.orderBySelector(opts, a.target)[0];
+      cur = u.v2 && !opt.inside && opts.length > 1 ? this.v2Repick(u, a, opts, n - i) : this.orderBySelector(opts, a.target)[0];
     }
     this._strikeBy = u; this._strikesLeft = n - i - 1;       // reactions read how many swings are still to come
     // a routine of unlike swings (ext.seq: "four attacks, one of them a burst"): each swing rolls its own damage and bonus

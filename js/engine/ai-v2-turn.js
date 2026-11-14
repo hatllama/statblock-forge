@@ -412,6 +412,18 @@ Sim.prototype.v2Aim = function (u, a, prefer, L) {
     targets.push(...live.filter(o => o !== t && this.dist(o, t) <= ((a.ext && a.ext.pairWithin) || 10) && this.dist(u, o) <= range).sort((p, q) => this.dist(p, t) - this.dist(q, t)).slice(0, n - 1));
   return { dest: { x: u.x, y: u.y }, path: [], targets, why: '', castL: L };
 };
+/* a swing's target dropped (or fled) partway through an action of several attack rolls (Multiattack, Extra Attack, Eldritch Blast's beams,
+   Scorching Ray's rays): pick the next one from those in range where it stands now, with the same scoring as the first pick (v2Value, so the
+   k* accessors in learn and blind), for the swings still to come; the posture's pick keeps its bonus. No movement between swings. */
+Sim.prototype.v2Repick = function (u, a, opts, left) {
+  const act = Object.assign({}, castCopy(a, u.castLevel), { targets: left }), ctx = this.v2Ctx(u, 0), W = u.v2P.w;
+  let best = null;
+  for (const t of opts) {
+    const v = this.v2Value(u, act, t, ctx).val + (ctx.posture.t === t ? W.pick : 0);
+    if (!best || v > best.v) best = { t, v };
+  }
+  return best && best.t;
+};
 /* what an aimed action is worth, net of what it spends */
 Sim.prototype.v2AimValue = function (u, a, p, ctx) {
   const act = castCopy(a, p.castL);

@@ -2082,8 +2082,9 @@ at 3rd level (3 × 10 HP = 10 a level) is cast; a weak first cast past the share
 share itself (0.25) is unchanged, so every caster whose budget already fit is untouched. Short-rest slots are not counted differently: the
 hard day has no rest and gains as much as the boss day, so a rest is not what the rule was missing.
 
-**Results** (600 runs; open / learn / blind). v2 + tiers: hard 97.3 / 93.7 / 91.2 → 97.0 / 96.0 / 94.8, boss 84.5 / 60.5 / 63.5 → 86.8 / 66.2 / 72.5.
-Party v2, monsters old AI: hard 95.7 / 94.8 / 87.7 → 98.5 / 96.5 / 95.2, boss 77.2 / 56.2 / 65.3 → 83.2 / 65.8 / 75.8. Old AI on both sides: hard 88.7 /
+**Results** (600 runs; open / learn / blind). v2 + tiers: hard 97.3 / 93.7 / 91.2 → 97.5 / 95.5 / 94.5, boss 84.5 / 60.5 / 63.5 → 87.7 / 65.7 / 71.8
+(re-measured on a snapshot of the commit; the commit message's v2 numbers were taken by runs that loaded the next step's re-pick code, and
+differ from these by under 1 point). Party v2, monsters old AI (same caveat): hard 95.7 / 94.8 / 87.7 → 98.5 / 96.5 / 95.2, boss 77.2 / 56.2 / 65.3 → 83.2 / 65.8 / 75.8. Old AI on both sides: hard 88.7 /
 72.2 / 66.3 → 92.8 / 83.8 / 82.8, boss 49.3 / 44.2 / 43.0 → 60.8 / 54.5 / 48.7. Roster days unchanged; every hash set identical (no Pact caster with a
 pre-fight spell in the hashed days).
 
@@ -2097,3 +2098,38 @@ these parties to full nearly every time), never a day the full rest lost and Hit
 every die after the rest falls differently: then rows differ by noise (casters' day: Hit Dice ahead in 5 of 6 rows by 0.7–2.7 points, the
 standard error of an unpaired difference is about 2.3). Not a bug; nothing changed. The step 1 HP bug was a display matter and does not
 touch this.
+
+### Each swing picks its own target (step 3)
+
+**What was there.** An action of several attack rolls (a Multiattack, Extra Attack, Eldritch Blast's beams, Scorching Ray's rays: `targets` = the
+number of swings) already moved on when its target dropped (`resolveAttackAction`): the next swing went to a foe in range from where the attacker
+stands. But the next foe came from the action's **selector** (`orderBySelector`, "enemy with most HP" and the like), the old AI's rule, for every
+creature, so a v2 creature that opened on a foe its scoring picked finished its routine on whatever the selector said, with no regard for what the
+side knows (`kHp`, `kAc`…), kills, posture or focus. A creature that fled or was swallowed mid-routine (off the board) was also swung at again.
+
+**The change.** Rules: a target that is off the board (fled, swallowed, unless the attacker is inside it) is invalid like a dropped one, for
+both AIs. AI: on v2, the next target is `v2Repick(u, a, foes in range, swings left)`: the best `v2Value` of the action with the swings still to
+come on each foe in range from the current square, plus the posture's pick bonus, the same scoring as the first pick, so every other-side fact
+goes through the `k*` accessors in learn and blind. No movement between swings (the engine never moved there). The old AI keeps its selector, so
+its only change is the off-board rule. With one foe in range there is no choice to make and no scoring is run.
+
+**Where it applies.** Every attack-roll routine of either side; legendary and lair actions are single actions (nothing to re-pick). Save
+spells with several targets resolve on everyone at once (a dropped one is skipped, as before). Magic Missile is one lump of 3d4 + 3 in the spell
+data: its darts cannot pick their own targets until it is three 1d4 + 1 darts (not done in this job, see the final report).
+
+**Results** (v2 party + tiers, every family, 200 runs, same seeds, against the commit before):
+
+| mode | rows | moved | mean | worse / better beyond 2 SE |
+|---|---|---|---|---|
+| open | 225 | 129 | 70.0 → 69.6 | 0 / 0 |
+| learn | 216 | 126 | 69.4 → 69.1 | 0 / 1 (DUMB 5, Stone's Endurance, 9.5 → 18) |
+| blind | 216 | 128 | 68.2 → 67.7 | 2 / 0 (H2 Ranger, Fighter, Cleric 73 → 60; ELIA long "no bolts" 100 → 95) |
+
+H2 re-run at 600 runs: open 58.7 → 61.2, learn 73.2 → 68.2, blind 64.3 → 59.3. The loss is the party's re-pick (re-pick on the monsters
+only: blind 63.8). It is not v2's scoring: re-picking the foe with the lowest `kHp` instead gives the same numbers (61.8 / 67.8 / 62.2). The old
+re-aim's selector ("enemy with least HP" and the like) read the **true** HP of every foe in reach, a knowledge leak in learn and blind; the
+honest reading costs those points there and gains a little in open, where it knows as much as the selector did. Kept: rule 4 (other-side facts
+through `k*`) is the job's, and the gain the leak gave is not one a table could have. Zaki's days (600 runs, open / learn / blind): hard 97.5 /
+95.5 / 94.5 → 97.0 / 96.0 / 94.8, boss 87.7 / 65.7 / 71.8 → 86.8 / 66.2 / 72.5 (noise). Hashes: old AI unchanged (the off-board rule never
+fired in them); v2 open 12, learn 2, blind 8, tiers learn 6, tiers open 14, old AI + tiers 2 of 96; `hashes-v2-learn.txt` regenerated.
+Run time: the same (Zaki hard day 176 against 182 ms a day).
