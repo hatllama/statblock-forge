@@ -208,8 +208,10 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
             if (!ac) continue;
             if (pl.sphere) { ac.cellSet = new Set(ac.cells.map(c => c[0] + ',' + c[1])); ac.others = ac.friends.filter(f => f !== u); acShared.set(key, ac); }
           }
-          // everyone else it catches adds what it would actually do to them (capped by what they have left)
-          for (const o of ac.extra) { const ov = pl.bare.get(o.uid); if (ov !== undefined) v += Math.max(0, ov) * W.area; }
+          // an area is worth what it does to everyone in it: each creature caught at its bare value (capped by what it has left), the
+          // posture's pick for whichever of them it is (docs/ai-v2.md "An area is worth what it does to everyone in it")
+          v = Math.max(0, pl.bare.get(t.uid));
+          for (const o of ac.extra) { const ov = pl.bare.get(o.uid); if (ov !== undefined) v += Math.max(0, ov) * W.area + postBonus(o); }
           caught += ac.extra.length;
           if (ac.extra.length) why = 'cluster';
           const friends = pl.sphere ? (ac.cellSet.has(x + ',' + y) ? ac.others.concat([u]) : ac.others) : ac.friends;
@@ -397,7 +399,9 @@ Sim.prototype.v2Aim = function (u, a, prefer, L) {
       ac = this.areaCatch(act, t, u.x, u.y, live, u);
       if (!ac) continue;
       if (!fog) {
-        for (const o of ac.extra) v += Math.max(0, this.v2Value(u, act, o, ctx, true).val) * W.area;
+        // the same as the square search: everyone caught at its bare value, the pick bonus for whichever of them it goes to
+        v = Math.max(0, this.v2Value(u, act, t, ctx, true).val) + (t === prefer ? W.pick : 0) + (ctx.posture.t === t ? W.pick : 0);
+        for (const o of ac.extra) v += Math.max(0, this.v2Value(u, act, o, ctx, true).val) * W.area + (ctx.posture.t === o ? W.pick : 0);
         if (ac.friends.length) v -= this.v2FF(u, act, ac.friends);
       }
     }
@@ -430,7 +434,8 @@ Sim.prototype.v2AimValue = function (u, a, p, ctx) {
   let v;
   if (p.targets[0] === u && (a.target === 'self' || a._range === 0)) v = this.v2SelfValue(u, act, ctx);
   else if (a.type === 'heal' || a.type === 'buff') v = p.targets.reduce((s, t) => s + this.v2AllyValue(u, act, t, ctx), 0);
-  else { v = this.v2Value(u, act, p.targets[0], ctx).val; if (p.area) for (const o of p.targets.slice(1)) v += Math.max(0, this.v2Value(u, act, o, ctx, true).val); }
+  else if (p.area) { v = 0; p.targets.forEach((o, i) => { v += Math.max(0, this.v2Value(u, act, o, ctx, true).val) * (i ? u.v2P.w.area : 1); }); }     // an area: everyone at its bare value
+  else v = this.v2Value(u, act, p.targets[0], ctx).val;
   return v - this.v2PaceCost(u, a, v, p.castL);
 };
 /* the bonus action: 'pre' = a self-buff worth taking before it moves (Rage), 'post' = the best one from where it ended up */

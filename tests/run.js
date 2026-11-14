@@ -1419,6 +1419,29 @@ section('Several attack rolls in one action: each swing picks its own target whe
   }
 }
 
+section('An area is worth what it does to everyone in it (v2 breath aim)');
+{
+  // a tier Young Red Dragon against Zaki's party (learn): its breaths catch more of the party since every creature caught counts at its bare
+  // value (before: the aim's main target at full value, the rest bare; 2.42 caught a breath over 300 days, now 2.94)
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const s = ctx.M.find(m => m.name === 'Young Red Dragon'), drg = cp(Parser.parse(s.text).monsters[0]); drg.id = s.id; drg.mode = 'custom'; drg.count = 1; drg.actions.forEach((a, i) => { a.id = s.id + i; });
+  let breaths = 0, caught = 0;
+  for (let i = 0; i < 40; i++) {
+    const r = Tac.runDay({ players: cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players), encounters: [{ monsters: [cp(drg)] }] },
+      { seed: 1000 + i * 7919, ai: { party: 'v2', foes: 'tiers' }, partyAI: 'tactical', record: true, know: { party: 'learn', foes: 'learn' } })[0];
+    const team = {}; for (const x of r.units) team[x.uid] = x.team;
+    let open = null;
+    for (const e of r.events) {
+      if (e.kind === 'aoe') { open = team[e.uid] === 'foes' ? new Set() : null; if (open) breaths++; continue; }
+      if (open && e.kind === 'save' && team[e.target] === 'party') { if (!open.has(e.target)) { open.add(e.target); caught++; } continue; }
+      if (open && !['effect', 'down', 'death', 'react', 'deathsave', 'trigger', 'fail', 'heal'].includes(e.kind)) open = null;
+    }
+  }
+  check(breaths > 20 && caught / breaths >= 2.6, `a tier Young Red Dragon's breath catches ${(caught / Math.max(1, breaths)).toFixed(2)} of Zaki's party on average over ${breaths} breaths (at least 2.6)`);
+}
+
 section('HP at the start of a fight, and the replay\'s max HP after an Aid cast in the fight');
 {
   // The report: the War Table showed Zaki's party at 38/48 at the start of a fight. The replay's unit table was taken after the fight,

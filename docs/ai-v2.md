@@ -2162,3 +2162,26 @@ turn. After these, the only old-AI calls left come from the creatures still on i
   the old AI. `foes: 'tiers'` is unchanged.
 - *The party's `regular` setting* (`partyAI`, War Table "The party plays"): with the party on v2 it plays v2 like `tactical` (the `balanced`
   profile). The planned "by the book" profile for it is not built; until then the setting does nothing on v2 (the user's call).
+
+### An area is worth what it does to everyone in it (step 6, item 3)
+
+**What was wrong.** Tier dragons caught fewer of Zaki's party per breath than old-AI dragons: learn, 300 days, E1 (Young Red Dragon) 2.42
+against 2.76, E2 (+ 2 Ogres) 2.23 against 2.78, F1 (2 Young Green Dragons) 2.41 against 2.68; first breaths 2.71 / 2.81 / 2.85 against
+3.20 / 3.53 / 3.25. Ruled out: the dragon's height (at 30 ft, where most breaths happen, old AI 2.85 and tiers 2.29; the square search
+already tilts cones from the flyer's real height), its self-care (`risk`, `hurt`, `oa` 0: 2.42). On the ground (S1, S2) the two catch the same.
+**The cause** is how an area aim is scored: the aim's main target counted at its full `v2Value` (focus, posture, guard, healer and caster
+bonuses) and every other creature at its bare value (damage and kill chance). An aim built round a favourite target therefore beat an aim
+that caught one more creature with the same breath, and the extra creatures barely moved the choice.
+
+**The change.** In the square search (`v2TurnInner`) and in the re-aim after moving (`v2Aim`), an area option is the sum of the **bare**
+values of everyone it catches (× `w.area` past the first), plus the posture's pick bonus for whichever of them is the posture target, less
+friendly fire as before. One currency: a creature in the area is worth what the area does to it, whoever the aim was built round. A single-target
+option keeps its full value. Same seeds, learn, 300 days: E1 2.42 → 2.94 caught a breath, E2 2.23 → 2.44, F1 2.41 → 2.58.
+The same holds for `v2AimValue` (how an aimed option compares with others after moving).
+
+**Results.** Every family, v2 party + tiers, 200 runs, same seeds, against the step 4 baseline: open 225 rows, mean 69.6 → 69.9, **0 worse**
+/ 2 better beyond 2 SE; learn 216, 69.1 → 69.3, 0 / 3; blind 216, 67.7 → 67.5, 0 / 2 (the better rows are B2 / B8, the +14-save dragon,
+2 → 6). The party's own areas use the same scoring, so both sides moved: the young-dragon rows barely change in win rate (the party also
+spreads and aims better). Zaki's days (600 runs, open / learn / blind): hard 97.0 / 96.0 / 94.8 → 98.0 / 95.8 / 95.7, boss 86.8 / 66.2 / 72.5
+→ 89.5 / 74.3 / 73.2 (learn +8, about 3 SE). Hashes: old AI and `PREFIGHT=0` unchanged; v2 open 86, learn 78, blind 82, tiers learn 80,
+tiers open 90, old AI + tiers 48 of 96; `hashes-v2-learn.txt` regenerated.
