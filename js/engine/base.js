@@ -22,8 +22,8 @@
      core.js        the rules: events, buffs & conditions, uses, movement, rolling, damage/healing/death, damage zones,
                     triggers, executing actions (resolveAttackAction, doAction)
      reactions.js   reactions as a layer: Shield, Silvery Barbs, Lucky, the damage cutters, Counterspell, Ready
-     ai-v1.js       the classic AI: spell choice, tactical turn planning (tacticalTurnInner, plan), choose
-     ai-v2.js       AI v2: who plays it, casters, pacing, danger, posture, what an option is worth, the burn plan
+     choose.js      the plain picker the rest of the engine uses: choose, plan / planInner, mayHitDowned, slotCost
+     ai-v2.js       the AI: casters, pacing, danger, posture, what an option is worth, the burn plan
      ai-boss.js     the boss tier: legendary and lair actions, Legendary Resistance, recharge, ext.aiPlan
      ai-v2-turn.js  the v2 turn: squares × options (v2TurnInner), intent lines, re-aiming, bonus actions, surges
      encounter.js   a creature's turn (turn), flying height, legendary & lair, morale, running an encounter, placement
@@ -194,12 +194,6 @@ function avgPerTurn(actions) {
   return a ? avgDice(a.dpr) * (a.useSaves ? 1 : (a.targets || 1)) : 0;
 }
 
-const AI_TYPES = ['regular', 'tactical', 'beast'];
-// Default when the creature doesn't say: animals, oozes and plants fight like beasts, everything else like a regular monster
-function autoAI(tpl) {
-  const t = String(tpl.type || '').toLowerCase();
-  return ['beast', 'ooze', 'plant'].includes(t) ? 'beast' : 'regular';
-}
 
 /* ---------------- spellbooks ----------------
    ext.spellbook = { slots: [L1, L2, … L9], slotReset: 'lr' | 'sr', conSave?: n,
@@ -223,7 +217,7 @@ function casterKind(tpl) {
   return HALF_CASTERS.includes(cls) ? 'half' : 'third';
 }
 /* Divine Smite (2024): a bonus-action spell cast right after a melee weapon hit (docs/ai-v2.md "Hybrids"). The spell keeps its old
-   self-buff shape for the old AI and the exports; ext.smite (or the name, for sheets read before it existed) tells v2 it is a rider */
+   self-buff shape for the exports; ext.smite (or the name, for sheets read before it existed) tells v2 it is a rider */
 const SMITE_DEF = { dice: '2d8', up: 1, max: 5, type: 'radiant', foes: ['fiend', 'undead'], foeDice: 1 };
 function smiteOf(a) {
   if (!a || !a._spell || !a._spell.level) return null;
@@ -329,8 +323,6 @@ function makeUnit(tpl, team, idx, count, isPC) {
     athletics: typeof ex.athletics === 'number' ? ex.athletics : ((ex.escapeBonus !== undefined && ex.escapeBonus !== '') ? Number(ex.escapeBonus) : (ex.saves && typeof ex.saves.str === 'number' ? ex.saves.str : (tpl.saveBonus || 0))),
     legendaryMax: typeof ex.legendaryActions === 'number' ? ex.legendaryActions : 3,
     hasLegendary: actions.some(a => a.actionSlot === 2),
-    aiSet: AI_TYPES.includes(ex.ai) ? ex.ai : null,
-    ai: AI_TYPES.includes(ex.ai) ? ex.ai : autoAI(tpl),
     dpr: avgPerTurn(actions),
     uses: new Map(),           // day-persistent limited uses
     x: 0, y: 0,
@@ -405,9 +397,6 @@ function Sim(opts) {
   // rule variants (docs/ai-v2.md, "Counterspell rules option", "Rules accuracy pass"): rest 'hitdice' (default) spends Hit Dice on a short rest, 'full' heals everyone fully
   this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024', rest: opts.rules && opts.rules.rest === 'full' ? 'full' : 'hitdice' };
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
-  // AI v2 for non-casters (docs/ai-v2.md): 'v2' for both sides, or { party: 'v2', foes: 'v1' }
-  const ai = opts.ai;
-  this.aiV2 = ai === 'v2' ? { party: true, foes: true } : ai && typeof ai === 'object' && (ai.party === 'v2' || ai.foes === 'v2' || ai.foes === 'tiers') ? { party: ai.party === 'v2', foes: ai.foes === 'v2' || ai.foes === 'tiers', tiers: ai.foes === 'tiers' } : null;
   const kn = opts.know || {};
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
@@ -416,5 +405,5 @@ function Sim(opts) {
   this.setTerrain(null);
 }
 
-Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, AI_TYPES, autoAI, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim });
+Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim });
 })(typeof window !== 'undefined' ? window : globalThis);

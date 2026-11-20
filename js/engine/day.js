@@ -4,7 +4,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { makeRng, parseDice, rollDice, avgDice, finalizeAction, inferRange, damageMultFor, AI_TYPES, autoAI, casterKind, recoverSlots, makeUnit, freqKind, resetFightState, Sim, areaSpec, areaCells, inArea, AI_BASE, AI_PROFILES, aiProfile, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, hitP, castCopy, deathOdds } = ENG;
+const { makeRng, parseDice, rollDice, avgDice, finalizeAction, inferRange, damageMultFor, casterKind, recoverSlots, makeUnit, freqKind, resetFightState, Sim, areaSpec, areaCells, inArea, AI_BASE, AI_PROFILES, aiProfile, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, hitP, castCopy, deathOdds } = ENG;
 
 /* ---------------- a whole adventuring day ---------------- */
 function expandTeam(list, team, isPC) {
@@ -124,7 +124,6 @@ function runDay(day, opts) {
     }
     party.forEach(u => { if (!u.dead && u.hp <= 0) u.hp = 1; resetFightState(u); (u.dayBuffs || []).forEach(d => sim.addBuff(u, { uid: d.src }, d.action, d.data)); });
     const foes = expandTeam(enc.monsters, 'foes', false);
-    party.forEach(u => { if (!u.aiSet) u.ai = AI_TYPES.includes(opts.partyAI) ? opts.partyAI : 'tactical'; });
     sim.events = [];
     const layout = (opts.layouts && opts.layouts[realIdx]) || opts.layout || {};
     const later = encs.slice(ei + 1).filter(e => e && e.monsters && e.monsters.length);
@@ -250,7 +249,7 @@ function aurasOf(u) {
 function sheetOf(u) {
   const ex = (u.tpl && u.tpl.ext) || {};
   return { ac: u.baseAC, speed: u.speed, fly: u.fly || 0, climb: u.climb || 0, saves: u.saves, saveBonus: u.saveBonus, mods: u.dmgMods, condImmune: u.condImmune && u.condImmune.length ? u.condImmune : null,
-    type: u.tpl && u.tpl.type, cr: u.tpl && u.tpl.cr, build: ex.build || '', ai: u.ai, slots: u.slotsMax ? u.slotsMax.map(n => n + '/' + n).slice(0, u.slotsMax.reduce((m, n, i) => n ? i + 1 : m, 0)).join(' ') : '' };
+    type: u.tpl && u.tpl.type, cr: u.tpl && u.tpl.cr, build: ex.build || '', tier: u.isPC ? '' : tierOf(u.tpl), slots: u.slotsMax ? u.slotsMax.map(n => n + '/' + n).slice(0, u.slotsMax.reduce((m, n, i) => n ? i + 1 : m, 0)).join(' ') : '' };
 }
 function areasOf(u) {
   return u.actions.map(a => { const s = areaSpec(a); return s ? { name: a.name, shape: s.shape, size: s.size, range: Math.max(5, a._range || 5) } : null; }).filter(Boolean);
@@ -267,6 +266,6 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { shortRestHp, Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, AI_TYPES, autoAI, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { shortRestHp, Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
 })(typeof window !== 'undefined' ? window : globalThis);
 

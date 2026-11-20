@@ -3,7 +3,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { rollDice, parseDice, avgDice, damageMultFor, freqKind, Sim, otherTeam, reactFits } = ENG;
+const { rollDice, parseDice, avgDice, damageMultFor, Sim, otherTeam, reactFits } = ENG;
 
 /* ----- reactions as a layer (docs/ai-v2.md, "Reactions as a layer") ----- */
 /* what a reaction action is, from its shape; REACT_ON is what each kind is offered at, ext.react.on overrides it */
@@ -68,64 +68,6 @@ const hitP = (b, ac) => Math.min(0.95, Math.max(0.05, (21 + b - ac) / 20));
 /* faces of a reroll that miss, of 20 (the new die is taken if lower, so only a miss turns a hit into one) */
 function missFaces(b, ac) { let n = 0; for (let f = 1; f <= 20; f++) if (f === 1 || (f !== 20 && f + b < ac)) n++; return n; }
 
-/* ---- the old thresholds, moved out of attackRoll unchanged; v1 creatures use them (S = the roll so far: r, total, hit, crit, ac, toHit) ---- */
-Sim.prototype.reactBarbsOld = function (S, opt) {
-  const att = S.att, tgt = S.tgt, a = S.a, r = S.r, toHit = S.toHit;
-  let total = S.total, hit = S.hit, crit = S.crit, ac = S.ac;
-  // Silvery-Barbs-style reactions from the target's side: reroll, take the lower
-  if (hit && !opt.noReact) {
-    const avgHit = avgDice(a.dpr) * (r === 20 ? 1.6 : 1);
-    const matters = r === 20 || avgHit >= tgt.maxHp * 0.25 || avgHit >= tgt.hp || (a.ext && (a.ext.grapple || a.ext.swallow)) || !!a.riderEffect;
-    const helper = this.alliesOf(tgt).find(h => !h.v2 && h.reaction && !this.incap(h) && h.onBoard && this.dist(h, att) <= 60 && this.losU(h, att) && (h.ai !== 'tactical' || matters) &&
-      h.actions.some(x => x.actionSlot === 4 && x.type === 'debuff' && x.buff && x.buff.condition === 'Attacks with Disadvantage' && !(x.ext && x.ext.cancelAction) && (!(x.ext && x.ext.selfOnly) || h === tgt) && this.usable(h, x) && this.condOk(h, x)));
-    if (helper) {
-      const x = helper.actions.find(y => y.actionSlot === 4 && y.type === 'debuff' && y.buff && y.buff.condition === 'Attacks with Disadvantage' && !(y.ext && y.ext.cancelAction) && (!(y.ext && y.ext.selfOnly) || helper === tgt) && this.usable(helper, y) && this.condOk(helper, y));
-      helper.reaction = false; this.spend(helper, x);
-      const xdc = Number(avgDice(x.saveDC));
-      const resisted = xdc < 99 && this.saveRoll(att, xdc, helper, x.ext && x.ext.saveAbility).success;
-      const r2 = resisted ? r : Math.min(r, this.R.d(20));
-      if (resisted) this.ev('react', `${helper.name} uses ${x.name}, but ${att.name} resists`, { uid: helper.uid, target: att.uid });
-      else this.ev('react', `${helper.name} ${x._spell ? 'casts' : 'uses'} ${x.name}: ${att.name} rerolls (${r} → ${r2})`, { uid: helper.uid, target: att.uid });
-      total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
-    }
-  }
-  S.total = total; S.hit = hit; S.crit = crit; S.ac = ac;
-};
-
-Sim.prototype.reactLuckyOld = function (S, opt) {
-  const att = S.att, tgt = S.tgt, a = S.a, r = S.r, toHit = S.toHit;
-  let total = S.total, hit = S.hit, crit = S.crit, ac = S.ac;
-  // Lucky: the target spends a luck point to impose disadvantage on a hit that matters
-  if (hit && !opt.noReact && !tgt.v2 && tgt.luckMax && (tgt.uses.get('__luck') || 0) > 0) {
-    const avgHit2 = avgDice((a.ext && a.ext.wtDpr) || a.dpr) * (r === 20 ? 1.6 : 1);
-    if (r === 20 || avgHit2 >= tgt.hp || avgHit2 >= tgt.maxHp * 0.3 || tgt.ai !== 'tactical') {
-      tgt.uses.set('__luck', tgt.uses.get('__luck') - 1);
-      const r2 = Math.min(r, this.R.d(20));
-      total = r2 + toHit; hit = r2 === 20 || (r2 !== 1 && total >= ac); crit = r2 === 20;
-      this.ev('react', `${tgt.name} spends a luck point: ${att.name} rerolls (${r} → ${r2})`, { uid: tgt.uid, target: att.uid });
-    }
-  }
-  S.total = total; S.hit = hit; S.crit = crit; S.ac = ac;
-};
-
-Sim.prototype.reactShieldOld = function (S, opt) {
-  const att = S.att, tgt = S.tgt, a = S.a, r = S.r, toHit = S.toHit;
-  let total = S.total, hit = S.hit, crit = S.crit, ac = S.ac;
-  // Shield-style reactions on the target: an AC boost that would turn the hit into a miss
-  if (hit && !crit && !opt.noReact && !tgt.v2 && tgt.reaction && !this.incap(tgt)) {
-    const sh = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac !== undefined && this.usable(tgt, x) && this.condOk(tgt, x));
-    const hurts = !sh || tgt.ai !== 'tactical' || r === 20 || avgDice(a.dpr) >= tgt.hp * 0.3 || tgt.hp < tgt.maxHp * 0.6 || freqKind(sh.freq) === 'at will';
-    if (sh && hurts && total < ac + avgDice(sh.buff.ac)) {
-      tgt.reaction = false; this.spend(tgt, sh);
-      this.addBuff(tgt, tgt, sh, sh.buff);
-      ac = this.ac(tgt) + this.coverAC(att, tgt); hit = false;
-      this.ev('react', `${tgt.name} ${sh._spell ? 'casts' : 'uses'} ${sh.name} (AC ${ac})`, { uid: tgt.uid });
-    }
-  }
-  S.total = total; S.hit = hit; S.crit = crit; S.ac = ac;
-};
-
-
 /* ---- v2: the same reactions, scored ---- */
 /* Shield: this hit if it turns it into a miss, + the attacks still to come before its next turn */
 Sim.prototype.reactShieldValue = function (S, tgt, x) {
@@ -149,15 +91,15 @@ Sim.prototype.reactHitV2 = function (S, opt) {
     const tgt = S.tgt, att = S.att;
     // Shield on the target
     if (!S.crit) {
-      const sh = tgt.v2 ? this.reactFind(tgt, 'ac', 'hit') : null;
+      const sh = this.reactFind(tgt, 'ac', 'hit');
       if (sh) { const val = this.reactShieldValue(S, tgt, sh), net = val - this.reactPrice(tgt, sh, val, 0); if (net > 0) cands.push({ who: tgt, x: sh, net, kind: 'ac' }); }
     }
     // a coin-flip reaction on the target (Call It in the Air): it shares the one reaction with Shield and the rest, the best net wins
-    const cn = tgt.v2 ? this.reactFind(tgt, 'coin', 'hit') : null;
+    const cn = this.reactFind(tgt, 'coin', 'hit');
     if (cn) { const val = this.reactCoinValue(S, tgt, cn), net = val - this.reactPrice(tgt, cn, val, 0); if (net > 0) cands.push({ who: tgt, x: cn, net, kind: 'coin' }); }
     // Silvery Barbs from any v2 ally that sees the attacker
     for (const h of this.alliesOf(tgt)) {
-      if (!h.v2 || !h.reaction || !h.onBoard || this.dist(h, att) > 60) continue;
+      if (!h.reaction || !h.onBoard || this.dist(h, att) > 60) continue;
       const x = this.reactFind(h, 'barbs', 'hit');
       if (!x || (x.ext && x.ext.selfOnly && h !== tgt) || !this.losU(h, att)) continue;
       const ally = this.v2AllyGain(h);
@@ -173,7 +115,7 @@ Sim.prototype.reactHitV2 = function (S, opt) {
   }
   // Lucky (no reaction): a luck point against a hit
   const tgt = S.tgt;
-  if (S.hit && tgt.v2 && tgt.luckMax && (tgt.uses.get('__luck') || 0) > 0) {
+  if (S.hit && tgt.luckMax && (tgt.uses.get('__luck') || 0) > 0) {
     const val = this.reactRerollValue(S, tgt, tgt);
     if (val > tgt.v2P.react.luck) {
       tgt.uses.set('__luck', tgt.uses.get('__luck') - 1);
@@ -239,7 +181,7 @@ Sim.prototype.reactSaveV2 = function (t, dc, src, ab) {
   const stakes = this._saveStakes || 0, dmg = (this._saveDmg || 0) * (this._saveHalf ? 0.5 : 1);
   let pick = null;
   for (const h of this.alliesOf(src)) {
-    if (!h.v2 || !h.reaction || !h.onBoard || this.dist(h, t) > 60) continue;
+    if (!h.reaction || !h.onBoard || this.dist(h, t) > 60) continue;
     const x = this.reactFind(h, 'barbs', 'save', { roll: false });
     if (!x || (x.ext && x.ext.selfOnly) || !this.losU(h, t)) continue;
     // the new die fails the save when it is below what the save needs: faces 1 .. need - 1, of 20
@@ -325,16 +267,16 @@ Sim.prototype.counterCheck = function (u, a, plan) {
     if (!x || !this.losU(o, u)) continue;
     const dc = this.spellDcOf(o);
     let net, L = 0;
-    if (o.v2 && this.rules.counterspell === '2014') {
+    if (this.rules.counterspell === '2014') {
       const R = o.v2P.react, SL = this.counterKnown(o, u, a) ? this.castSpellLevel(u, a) : R.blindLevel, val = this.counterValue(o, u, a, plan);
       net = -Infinity;
       for (const op of this.counterOptions2014(o, SL, this.counterBonus(o), true)) { const n = op.p * val - this.reactPrice(o, x, val, op.L); if (n > net) { net = n; L = op.L; } }
-    } else if (o.v2) {
+    } else {
       // P(its save fails) x what the spell is worth, against the slot and the reaction (paid whether or not it works)
       const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(o, u, 'con') - dc) / 20));
       const val = this.counterValue(o, u, a, plan);
       net = pFail * val - this.reactPrice(o, x, val, 0);
-    } else net = (!a._spell || a._spell.level >= 1) && (a.type === 'atk' || a.type === 'debuff') ? 1 : -1;
+    }
     if (net > 0 && (!pick || net > pick.net)) pick = { o, x, dc, net, L };
   }
   if (this.learning(otherTeam(u.team))) { const k = this.kind(otherTeam(u.team), u); (k.spells = k.spells || {})[a.id] = true; }
@@ -361,16 +303,14 @@ Sim.prototype.counterCheck = function (u, a, plan) {
 };
 
 /* Deflect Attacks, redirect (2024): a hit cut to 0 can be sent back for 1 Focus Point: the attacker (within 5 ft of a melee attack, 60 ft of a ranged one)
-   saves against the monk's DC or takes two Martial Arts dice + Dex. v2 weighs P(the save fails) x the damage against the point's pacing price; v1 always does it. */
+   saves against the monk's DC or takes two Martial Arts dice + Dex. It weighs P(the save fails) x the damage against the point's pacing price. */
 Sim.prototype.reactRedirect = function (u, r, src, info) {
   const rd = r.ext.react.redirect, key = 'res:' + rd.resource;
   if (!src || src === u || src.team === u.team || src.dead || src.hp <= 0 || !src.onBoard || (u.uses.get(key) || 0) < (rd.cost || 1)) return;
   const melee = !info.a || (info.a._range || 5) <= 10;
   if (this.dist(u, src) > (melee ? 5 : 60) || !this.losU(u, src)) return;
-  if (u.v2) {
-    const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(u, src, 'dex') - rd.dc) / 20)), val = pFail * avgDice(rd.dice);
-    if (val <= this.v2PaceCost(u, { id: r.id + ':redirect', ext: { resource: rd.resource, resourceCost: rd.cost || 1 } }, val, 0)) return;
-  }
+  const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(u, src, 'dex') - rd.dc) / 20)), val = pFail * avgDice(rd.dice);
+  if (val <= this.v2PaceCost(u, { id: r.id + ':redirect', ext: { resource: rd.resource, resourceCost: rd.cost || 1 } }, val, 0)) return;
   u.uses.set(key, u.uses.get(key) - (rd.cost || 1));
   const sv = this.saveRoll(src, rd.dc, u, 'dex');
   if (sv.success) { this.ev('react', `${u.name} redirects the blow at ${src.name}, who dodges it (Dex save ${sv.total} vs DC ${rd.dc})`, { uid: u.uid, target: src.uid }); return; }

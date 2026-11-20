@@ -1500,7 +1500,7 @@ play thousands of fights in the browser). Half and third casters, Divine Smite, 
 
 ## Monster intelligence tiers (phase 4)
 
-Status: design written before the code. Results are added below when the harness has run.
+Status: design written before the code. Results are added below when the harness has run. (Phase 6 step 2 note: the old AI, the `opts.ai` option and the `foes: 'v2'` setting described below are gone, every monster plays on its tier, and the genius tier was merged into cunning: see "Phase 6 step 2" at the end.)
 
 **What the old gate did.** `v2Eligible` let a monster onto v2 only when its `ai` was `tactical` (the parser sets that for Int ≥ 10) or it named
 an `ext.aiProfile`. `regular` (Int 4-9) and `beast` (Int ≤ 3, oozes, plants) monsters always played the old AI, and every monster that did
@@ -2414,3 +2414,84 @@ eight. The ablation sweep's other flags were mostly the full kit's luck on a see
 paired SE does not cover the base run's own luck. Outside load on the machine (another program's 20 Python processes from 04:41) slowed every
 table after that by about 2.5× uniformly; run times were therefore compared A/B, alternating old and new code under the same load.
 
+
+## Phase 6 step 2: the old AI is deleted (November 2026)
+
+**Getting the old AI back.** The commit before the deletion is tagged `old-ai-final` (`git tag` lists it; `git worktree add ../old-ai old-ai-final`
+gives a second folder with the whole old engine, `js/engine/ai-v1.js` included). From the deletion on, v2 for the party and tiers for the monsters is
+the only AI; no setting chooses one.
+
+**The frozen comparison** (the phase 6 step 1 gate table, copied here so the history survives the deletion). Every ai-compare family, 200 runs, same
+seeds, the AI forced in every arm: the old AI on both sides against v2 + tiers on both sides. Party win %; for a monster row lower is a stronger monster.
+
+| family | rows | open: old AI / v2 + tiers | learn | blind | old AI higher beyond 2 SE (o / l / b) | v2 + tiers higher (o / l / b) |
+|---|---|---|---|---|---|---|
+| A (area vs single target) | 8 | 91.8 / 95.6 | 93.1 / 93.4 | 91.8 / 91.5 | 0 / 0 / 0 | 1 / 0 / 0 |
+| B (Legendary Resistance) | 13 | 14.8 / 27.7 | 12.0 / 19.7 | 9.8 / 15.2 | 0 / 1 / 1 | 10 / 10 / 6 |
+| BOSS | 15 | 35.0 / 45.3 | 37.5 / 50.0 | 38.6 / 50.3 | 2 / 2 / 2 | 9 / 10 / 10 |
+| C (casters) | 11 | 89.4 / 92.3 | 86.5 / 89.9 | 85.3 / 89.4 | 0 / 0 / 0 | 2 / 3 / 3 |
+| D (downed allies) | 11 | 55.8 / 79.1 | 56.2 / 76.8 | 54.3 / 75.2 | 0 / 1 / 1 | 10 / 9 / 10 |
+| DUMB | 11 | 91.0 / 91.2 | 91.0 / 90.6 | 91.3 / 90.8 | 0 / 0 / 0 | 0 / 0 / 0 |
+| E (Brew, dragons) | 6 | 73.7 / 96.2 | 74.3 / 92.3 | 75.3 / 92.2 | 0 / 0 / 0 | 4 / 4 / 4 |
+| ELIA | 12 | 99.8 / 100.0 | 100.0 / 99.7 | 100.0 / 99.0 | 0 / 0 / 2 | 0 / 0 / 0 |
+| F (flyers) | 2 | 12.3 / 60.0 | 12.0 / 53.5 | 10.0 / 43.0 | 0 / 0 / 0 | 2 / 2 / 2 |
+| H (hybrids) | 9 | 54.1 / 77.7 | 58.8 / 75.8 | 58.4 / 74.1 | 0 / 0 / 0 | 7 / 5 / 5 |
+| K (control) | 8 | 57.4 / 61.9 | 48.9 / 53.4 | 40.3 / 39.3 | 1 / 2 / 1 | 2 / 3 / 3 |
+| PASQ | 6 | 97.6 / 99.0 | 97.8 / 98.4 | 91.6 / 89.7 | 0 / 0 / 0 | 1 / 0 / 0 |
+| R (revive) | 21 | 62.1 / 77.0 | 62.5 / 72.9 | 59.3 / 70.6 | 0 / 0 / 0 | 18 / 12 / 12 |
+| RC (reactions) | 8 | 37.4 / 49.0 | 34.5 / 43.1 | 33.4 / 44.8 | 3 / 2 / 1 | 5 / 4 / 4 |
+| S (spacing) | 6 | 73.8 / 92.7 | 71.2 / 87.4 | 68.1 / 86.0 | 0 / 1 / 1 | 5 / 4 / 4 |
+| T | 5 | 96.4 / 95.5 | 95.6 / 93.5 | 90.1 / 88.5 | 0 / 1 / 0 | 0 / 0 / 0 |
+| TIER | 63 | 53.9 / 57.8 | 58.3 / 61.4 | 58.3 / 61.6 | 13 / 6 / 6 | 20 / 20 / 14 |
+| step 1–2 scenarios (incl. the foe-side Manticores and Gnoll swarm) | 10 | 79.7 / 67.7 | 75.7 / 63.8 | 74.1 / 64.5 | 2 / 3 / 3 | 2 / 2 / 3 |
+| **all** | 225 / 216 / 216 | **62.1 / 70.0** | **63.0 / 69.3** | **61.6 / 67.6** | **21 / 19 / 18** | 98 / 88 / 80 |
+
+Every "old AI higher" row is a monster-side row (tier monsters beat the party more than old-AI monsters do); on the party side the old AI was higher
+only on the blind goblin pack. Details are in "The gate report" above.
+
+**Baseline for this job** (main at `old-ai-final`): `npm test` 925 / 925 checks; the hash sets of `tests/flagoff-hash.js` for v2 (`AI=v2`) and v2 + tiers
+(`AI=v2 FOES=tiers`) in open / learn / blind, and both with `PREFIGHT=0`, were recorded and every commit of the deletion must reproduce them
+(commits of kind A change no behaviour). The one behaviour change (step 4, genius merged into cunning) is its own last commit.
+(The script is `tests/play-hash.js` since this job; it was `tests/flagoff-hash.js`.)
+
+### What was removed (phase 6 step 2)
+
+Branch `remove-old-ai`: commits of kind A (behaviour byte-identical to v2 for the party and tiers for the monsters) and one of kind B (step 4).
+
+- **Files:** `js/engine/ai-v1.js` (446 lines: `optionValue`, `rankSpells`, `notePacing`, `dashWorthIt`, `tacticalTurn`, `tacticalTurnInner`, `intent`), `tests/verify-compare.js` (an old-vs-v2 copy of the harness, 746 lines).
+- **Other engine files** (about 810 lines out, 95 in, tools and the other engine files together): `reactions.js` `reactBarbsOld` / `reactLuckyOld` / `reactShieldOld`; `encounter.js` `surge`, `approach`, the teleport-when-cornered block and the dash-or-walk-and-Dodge block of `turn`, every `u.v2` branch, `u.mauling`; `choose.js` the beast and regular branches of `planInner` and the old `mayHitDowned` rules; `base.js` `AI_TYPES`, `autoAI`, `aiV2` (the `opts.ai` parsing) and the unit fields `ai` / `aiSet`; `day.js` `opts.partyAI`; `core.js` `anyV1` and the old-AI gate on Indomitable (`t.ai !== 'tactical'`); `ai-v2.js` `v2Eligible` and the `u.v2` flag; `knowledge.js` and `grid.js` the `u.ai === 'tactical'` tests. `tools/engine-files.js` lost `V1TRAP` (`v1Trap`, `V1_ONLY`) and the file entry; `index.html` the script tag; every changed script tag got `?v=20261120a`.
+- **Options gone:** `opts.ai` (`'v2'`, `{ party, foes: 'v2' | 'tiers' }`), `opts.partyAI`, the unit fields `u.ai`, `u.v2`, `u.mauling`. Still there: `opts.know`, `opts.rules` (counterspell, rest), `opts.morale`, `opts.threat` (the classic learn reading is not the old AI), `ext.aiProfile`, `ext.aiTier`.
+- **Kept on purpose:** `choose.js` (`choose`, `plan` / `planInner`, `mayHitDowned`, `slotCost`: legendary and lair actions below the boss tier, passives, `doAction`'s default plan, Hide, Hellish Rebuke's price) and `kAreas`, `holdsResource`, `fightInHand`. A later job can move those to the AI's scoring.
+
+### What the settings migration does
+
+Nothing is rewritten and nothing is lost; the dead values are simply never read.
+- **War Table state** (`war-table-v1`): `partyAI`, `aiParty` and `aiFoes` are dropped from the loaded settings (so they are not saved again); everything else loads as before. The three selects (The party plays, Party AI, Enemy AI) are gone from the AI tab, whose text now says everyone plays the one AI. Everyone who had Classic selected now plays the new AI: that is the point of the job.
+- **Creatures** (`ext.ai` = `regular` / `tactical` / `beast`, "Fights like"): the Forge and War Table selects are gone. The saved value stays in the file (exports are unchanged: `ext` is ignored by plain exports) and is read in one place only, `tierOf`, as an Int hint for a statblock with neither ability scores nor an Int save. It does **not** override the tier, on purpose: the parser wrote `ext.ai` on every import (`beast` for Int ≤ 3, oozes and plants; `tactical` for Int ≥ 10; else `regular`), so a saved `beast` cannot be told from a user's choice, and mapping it to a tier would have turned every derived mindless ooze into an animal and moved the tier hashes in a kind A commit (tiers already ignored `ext.ai`). Auto is the derived tier; a Smartness the user set (`ext.aiTier`) is the override, as before. The statblock converter's prompt no longer asks Claude for an `ai` field.
+- **Smartness** (`ext.aiTier`): `genius` reads as `cunning` (step 4); the Forge and War Table selects show it as Cunning and no longer offer Genius. The War Table creature editor's old "AI" select became the same Smartness select (monsters only). The sidebar and the token inspector show the tier ("Cunning AI") where they showed "Tactical AI".
+- Smoke test (`tests/smoke.js`): a workspace with `ext.ai` values and a saved `genius`, and War Table state with the three old settings, loads without error, ignores them, keeps the knowledge setting and plays a fight.
+
+### Hashes and tables through step 3 (kind A)
+
+`tests/play-hash.js` sets recorded on `main` before the first change and compared after every commit (48 rows each: 6 days × open and walled map × 4 seeds): v2 + tiers in open, learn and blind knowledge, and v2 + tiers with `PREFIGHT=0`: **identical** after every commit of steps 1-3.
+The sets that played the monsters on the **old AI** (`AI=v2` alone, with and without `PREFIGHT=0`) and the learn fixture built from one of them (`hashes-v2-learn.txt`) cannot exist any more: the old AI is gone. The fixture was regenerated from the v2 + tiers learn set (byte-equal to the baseline recorded on `main`) and renamed `hashes-learn.txt`; that is not a behaviour change.
+The 12-run BOSS + TIER table (`node tests/ai-compare.js 12 '^(BOSS|TIER)'`): all 165 rows of the arms that still exist (tiers auto / mindless / animal / cunning / genius, and the BOSS genius and boss arms, in open / learn / blind) are identical to `main` in win %, rounds, deaths, damage dealt and taken (every column but `ms`). The 42 rows that vanished are the `v1` and `foes: 'v2'` arms. A second check: the hybrid fights on the walled map (Paladin and Artificer, 6 seeds) hash the same on the tag with `ai: { party: 'v2', foes: 'tiers' }` as on the branch.
+
+### Tests (phase 6 step 2)
+
+`npm test` 925 → 874 checks (−53 removed, +2 added; counted per section from the verbose output of both trees). Removed, and why:
+- **5** the shipped-script checks (syntax, loads) of `ai-v1.js` and **1** its entry in the engine-modules check: the file is gone.
+- **40**: the per-AI rule sections of `tests/run.js` (two fixtures × `tactical`, `regular`, `v2`, `tiers` × open and walled, 5 checks each) became default and learn + morale (two arms): the old tactical and regular arms and the first v2 arm played the old AI or the AI the other arms play.
+- **3**: the swinger's "old AI" arm (the old selector's pick) in the three knowledge modes.
+- **1** `without the flag nobody uses v2`, **1** `foes: "v2" puts every monster on v2`, **1** `the old AI never casts it` (Revivify), **1** `geniuses never lose their nerve` (step 4: no genius tier).
+Duplicated arms that kept their checks: Spirit Guardians and Moonbeam (8 fights → 4, thresholds halved), the full-HP check (8 days → 4), the flyer check. Rewritten, each with a comment: Hideous Laughter (the AI rarely casts the spell now; the rule is set up by hand), the hybrid walls check (seeds shifted off the open issue below), the Aid-in-the-fight scene (seed 1000), and the Healing Word, Rage-for-the-boss, burn-plan, Cure Wounds and short-rest checks (their foes now play tiers, so a count or a threshold moved: an animal foe for the downed-ally section, only days on which the Barbarian acts in the boss fight, a day short allowed in the burn plan, ≥ 3 Cure Wounds, a harder first fight). Added: the legacy-workspace and Smartness-select checks in the smoke test (+2). Hand-built Sims in the tests (no `runEncounter`) call `v2Setup` themselves now, since every creature has a profile.
+
+**Run time** (limit +10%): `node tests/run.js` on the tag and on the branch, alternating on one machine, 190 s / 162 s on the tag against 148 s / 174 s on the branch (352 s against 322 s, −8.5%); `npm test` alone 184 s on `main` before the job and 167 s after step 3. The 12-run BOSS + TIER table 8 min 32 s on `main` (with the old arms) against 6 min 03 s. The old AI's code was never on the hot path of v2 play, so no speed-up is claimed beyond the fewer checks and arms.
+
+### Step 4 (kind B): genius merged into cunning
+
+The default tier for Int ≥ 16 is cunning; `AI_TIERS.tiers` is mindless, animal, cunning, boss; `geniusInt` and `profiles.genius` are gone (the boss profile keeps its own copy of the careful weights); a saved `ext.aiTier: 'genius'` reads as cunning. The phase 6 step 1 report ("Genius and cunning") found the genius tier measurably equal to cunning except for morale (a genius never flees) and the squishy-and-healer weights. SRD monsters that moved: **Mage, Assassin, Young Green Dragon** (the only non-boss creatures with Int ≥ 16; the Lich and the Adult Red Dragon are bosses) and the test statblock `mage-2014.txt`. Rows that moved in `tests/play-hash.js` (3 / 7 / 4 / 4 of 48 in open / learn / blind / `PREFIGHT=0`): only days with one of them: default party vs hard-day (a Mage), default party and casters vs medium-day (a Mage), casters vs goblins / ogres / mage, casters vs priests + young dragon. `hashes-learn.txt` was regenerated in that commit (7 lines). The harness `genius` arms went with the tier (the BOSS family's `genius` arm is `cunning` now).
+
+### Open issue found on the way (not fixed: a fix moves hashes, so not in a kind A job)
+
+A Spirit Guardians cast whose area comes out empty: with the Cleric in a doorway of the test map, `areaCatch` falls back to `{ cells: [] }` ("walls in the way: just the target"), the cast goes ahead, the zone has no squares, and the one "target" still takes the damage and a save, one square outside where the spell reaches. Seen in the hybrid walls scenario (Artificer seed 300 + 4 × 7919, Arcane Trickster 300 + 2 × 7919, fight 2); the same log on the tag with `foes: 'tiers'`, so it predates this job (it is the roadmap's "a Spirit Guardians hit one square outside its zone"). The hybrid test uses other seeds. A fix is an AI change: no cast when the area catches nobody (a term in `v2AimValue`, not a veto), with a harness row and a learn fixture update.

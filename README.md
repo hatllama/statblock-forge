@@ -21,8 +21,8 @@ Run the engine checks with Node 18 or newer:
 
 ```bash
 npm test                # engine, parser, sheet reader and AI checks
-npm run compare         # old AI vs AI v2 tables (tests/ai-compare.js [runs] [filter])
-npm run flagoff         # hashes of classic-AI fight logs; must not change after an AI change
+npm run compare         # AI scenario tables (tests/ai-compare.js [runs] [filter])
+npm run hashes          # hashes of recorded fight logs; must not change after a change that should not move play
 npm run build-party     # regenerate data/party.js
 npm run build-srd       # regenerate data/srd-monsters.js
 npm run serve           # static server for the app at http://localhost:8080
@@ -42,22 +42,22 @@ js/spell-data.js               combat spells the parser knows (damage, saves, ar
 js/statblock-parser.js         statblock text → Forge creatures, no AI (exposes StatblockParser)
 js/sheet-reader.js             character sheets (D&D Beyond, Foundry, text/PDF) → party members
 js/forge.js                    Forge view: workshop UI (sidebar, sheet, statblock, encounter page, quick odds, library), editor, validation, export, autosave, migrations
-js/engine/                     War Table engine (pure JS, no DOM) — exposes TacEngine. Twelve files, loaded in the order of tools/engine-files.js:
+js/engine/                     War Table engine (pure JS, no DOM) — exposes TacEngine. Twelve files (the old AI, ai-v1.js, is gone: git tag `old-ai-final` has it), loaded in the order of tools/engine-files.js:
   base.js                        dice, constants, damage types, unit construction, spellbooks, the Sim constructor
   grid.js                        areas of effect, terrain, line of sight, cover, distances, movement maps
   ai-v2-data.js                  every AI v2 weight and threshold (AI_BASE, AI_PROFILES, AI_TIERS)
   knowledge.js                   what each side knows (the k* accessors, learning) and the estimates both AIs use
   core.js                        the rules: buffs, uses, rolling, damage, zones, executing actions
   reactions.js                   Shield, Silvery Barbs, Lucky, damage cutters, Counterspell, Ready
-  ai-v1.js                       the old AI (tacticalTurnInner, plan, choose)
-  ai-v2.js, ai-boss.js, ai-v2-turn.js   AI v2: scoring, the boss tier, the turn search
+  choose.js                      the plain picker the rest of the engine uses (choose, plan, mayHitDowned, slotCost)
+  ai-v2.js, ai-boss.js, ai-v2-turn.js   the AI: scoring, the boss tier, the turn search
   encounter.js                   a creature's turn, flying, legendary and lair actions, morale, running a fight
   day.js                         a whole adventuring day, odds runs, summaries, the TacEngine export
 tools/engine-files.js          the engine's file list and loadEngine() for Node scripts
 js/war-table.js                War Table UI: board, terrain painting, odds, replay
 tests/run.js                   engine and parser checks (wall/LoS violations, dead or hidden-in-plain-sight actors, odds sanity)
-tests/ai-compare.js            old AI vs v2 win-rate tables (not part of npm test)
-tests/flagoff-hash.js          flag-off regression hashes
+tests/ai-compare.js            AI scenario win-rate tables (not part of npm test)
+tests/play-hash.js             regression hashes of recorded fight logs
 tests/sheets/                  character sheets the sheet reader is tested on
 tests/fixtures/                sample adventuring days used by the tests
 tests/statblocks/              statblocks in different formats the parser is tested on
@@ -78,7 +78,7 @@ For contributors and AI work: [CLAUDE.md](CLAUDE.md) (working notes and where th
 | The Forge layout and pages | `js/forge.js`: `renderSide` (sidebar), `sheetHtml` (creature sheet), `statblockHtml` (read-only statblock), `encounterHtml` + `runQuickOdds`, `libraryHtml`. The selection lives in `sel` |
 | Editor fields for actions and creatures | `js/forge.js`, around `actionEditor`, `mechanicsPanel` (War Table fields) and `handleFieldChange`; creature fields in `sheetHtml`, `onCoreField` and the `data-ext` handler |
 | Validation and export | `js/forge.js`, around `validateMonster`, `checkRealSchema`, `exportCreature`, `compileSpellbook` |
-| How War Table creatures choose what to do | The old AI: `js/engine/ai-v1.js`, especially `tacticalTurnInner` (where to stand), `optionValue` / `rankSpells` (which spell), and `targetValue` in `js/engine/knowledge.js` (who to hit). AI v2: `js/engine/ai-v2.js`, `ai-v2-turn.js`, weights in `ai-v2-data.js` |
+| How War Table creatures choose what to do | `js/engine/ai-v2.js` and `ai-v2-turn.js` (what an option is worth, where to stand, which spell), `ai-boss.js` (bosses); weights in `ai-v2-data.js`; `docs/ai-v2.md` explains it |
 | Rules: attacks, saves, damage, conditions | `js/engine/core.js`: `attackRoll`, `saveRoll`, `damage`, `addBuff` |
 | Board drawing and replay | `js/war-table.js` |
 

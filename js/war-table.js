@@ -44,7 +44,7 @@ const S = {
   get day(){ return { name: (document.getElementById('dayNameInput') || {}).value || 'Adventuring Day', players: PARTY_PLAYERS, encounters: encounters }; },
   enc: 0,
   layouts: {},                       // encIndex -> { gapFt, positions: {key:{x,y}} }
-  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', partyAI: 'tactical', tpkKills: false, climbDC: 10, knowParty: 'learn', knowFoes: 'open', morale: 'off', aiParty: 'v1', aiFoes: 'v1', settingsVer: 2 },
+  settings: { surprise: '2024', escape: 'smart', runs: 500, map: '24x16', tpkKills: false, climbDC: 10, knowParty: 'learn', knowFoes: 'open', morale: 'off', settingsVer: 2 },
   mode: 'setup',
   odds: {},                          // encIndex -> summary
   replay: null,                      // { events, frames, units, idx }
@@ -53,8 +53,8 @@ const W = () => +S.settings.map.split('x')[0];
 const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
-const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, partyAI: S.settings.partyAI, tpkKills: !!S.settings.tpkKills, prefightBuffs: S.settings.prefightBuffs !== false,
-  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, expectFights: +S.settings.expectFights > 0 ? +S.settings.expectFights : undefined, morale: S.settings.morale || 'off', rules: { counterspell: S.settings.rulesCounter === '2014' ? '2014' : '2024', rest: S.settings.rulesRest === 'full' ? 'full' : 'hitdice' }, ai: { party: S.settings.aiParty === 'v2' ? 'v2' : 'v1', foes: S.settings.aiFoes === 'tiers' ? 'tiers' : S.settings.aiFoes === 'v2' ? 'v2' : 'v1' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
+const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, tpkKills: !!S.settings.tpkKills, prefightBuffs: S.settings.prefightBuffs !== false,
+  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, expectFights: +S.settings.expectFights > 0 ? +S.settings.expectFights : undefined, morale: S.settings.morale || 'off', rules: { counterspell: S.settings.rulesCounter === '2014' ? '2014' : '2024', rest: S.settings.rulesRest === 'full' ? 'full' : 'hitdice' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -207,7 +207,7 @@ function renderInspect(){
   const maxHp = st.maxHp || u.maxHp;      // a frame carries maxHp once it rose in the fight (Aid)
   const hp = Math.max(0, Math.round(st.hp)), frac = Math.max(0, Math.min(1, st.hp / maxHp));
   const col = frac > .5 ? '#6fc28f' : frac > .25 ? '#d9a24f' : '#d9573f';
-  const sub = [sh.ai ? cap1(sh.ai) + ' AI' : '', u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
+  const sub = [sh.tier ? cap1(sh.tier) + ' AI' : '', u.size, sh.type, sh.cr !== undefined && sh.cr !== '' && u.team === 'foes' ? 'CR ' + sh.cr : '', sh.build].filter(Boolean).join(' · ');
   // height: the ground it stands on plus how high it flies
   const ground = st.ground || 0, alt = st.alt || 0;
   const height = alt ? `flying ${alt} ft up${ground ? ` (${ground + alt} ft above the floor)` : ''}` : ground > 0 ? `on ${ground} ft high ground` : ground < 0 ? `in a ${-ground} ft dip` : 'ground level';
@@ -732,7 +732,7 @@ function renderStats(){
       <label class="cr-field">Init <input type="number" data-c="${gi}" data-f="initBonus" value="${ex.initBonus ?? ''}" placeholder="+0"></label>
       <label class="cr-field"><input type="checkbox" data-c="${gi}" data-f="initAdvantage" ${ex.initAdvantage?'checked':''}> Init adv.</label>
       <label class="cr-field" title="Can Disengage as a bonus action"><input type="checkbox" data-c="${gi}" data-f="bonusDisengage" ${(ex.bonusDisengage===true || (ex.bonusDisengage!==false && (c.actions||[]).some(a=>a.actionSlot===1&&/cunning action|nimble escape|disengage/i.test(a.name||''))))?'checked':''}> Bonus Disengage</label>
-      <label class="cr-field">AI <select data-c="${gi}" data-f="ai" class="ai-sel">${[['auto', team==='party' ? 'Party setting' : 'Auto (' + TacEngine.autoAI(c) + ')'],['regular','Regular'],['tactical','Tactical'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${((ex.ai||'auto')===v)?'selected':''}>${l}</option>`).join('')}</select></label>
+      ${team==='party' ? '' : `<label class="cr-field" title="How it thinks: who it targets, whether it flees, what it knows of the party">Smartness <select data-c="${gi}" data-f="aiTier" class="ai-sel">${[['auto', 'Auto (' + TacEngine.tierOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { aiTier: undefined }) })) + ')'],['mindless','Mindless'],['animal','Animal instinct'],['cunning','Cunning'],['boss','Boss']].map(([v,l])=>`<option value="${v}" ${(((ex.aiTier==='genius'?'cunning':ex.aiTier)||'auto')===v)?'selected':''}>${l}</option>`).join('')}</select></label>`}
     </div><div class="acts">${acts.map((a,ai)=>{
       const fa = a.type === 'template' ? { ...a, name: a.templateOptions?.templateName || 'template', actionSlot: 4, target: 'self' } : a;
       const r = TacEngine.inferRange(fa);
@@ -750,9 +750,9 @@ function renderStats(){
     if(!Object.keys(c.ext).length) delete c.ext;
     changed();
   });
-  body.querySelectorAll('select[data-f="ai"]').forEach(sel=>sel.onchange = ()=>{
+  body.querySelectorAll('select[data-f="aiTier"]').forEach(sel=>sel.onchange = ()=>{
     const c = creature(sel.dataset.c); c.ext = c.ext || {};
-    if(sel.value === 'auto') delete c.ext.ai; else c.ext.ai = sel.value;
+    if(sel.value === 'auto') delete c.ext.aiTier; else c.ext.aiTier = sel.value;
     if(!Object.keys(c.ext).length) delete c.ext;
     changed();
   });
@@ -781,9 +781,6 @@ document.getElementById('wt-escape').onchange = ev=>{ S.settings.escape = ev.tar
 document.getElementById('wt-climb').onchange = ev=>{ S.settings.climbDC = +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-tpk').onchange = ev=>{ S.settings.tpkKills = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-prefight').onchange = ev=>{ S.settings.prefightBuffs = ev.target.checked; S.odds = {}; renderOdds(); scheduleSave(); };
-document.getElementById('wt-partyAI').onchange = ev=>{ S.settings.partyAI = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
-document.getElementById('wt-aiParty').onchange = ev=>{ S.settings.aiParty = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
-document.getElementById('wt-aiFoes').onchange = ev=>{ S.settings.aiFoes = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-expectFights').onchange = ev=>{ S.settings.expectFights = ev.target.value === 'exact' ? undefined : +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-rulesCounter').onchange = ev=>{ S.settings.rulesCounter = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-rulesRest').onchange = ev=>{ S.settings.rulesRest = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
@@ -797,9 +794,6 @@ function renderAll(){
   document.getElementById('wt-surprise').value = S.settings.surprise;
   document.getElementById('wt-escape').value = S.settings.escape;
   document.getElementById('wt-runs').value = String(S.settings.runs);
-  document.getElementById('wt-partyAI').value = S.settings.partyAI || 'tactical';
-  document.getElementById('wt-aiParty').value = S.settings.aiParty === 'v2' ? 'v2' : 'v1';
-  document.getElementById('wt-aiFoes').value = S.settings.aiFoes === 'tiers' ? 'tiers' : S.settings.aiFoes === 'v2' ? 'v2' : 'v1';
   document.getElementById('wt-rulesRest').value = S.settings.rulesRest === 'full' ? 'full' : 'hitdice';
   document.getElementById('wt-morale').value = S.settings.morale || 'off';
   document.getElementById('wt-rulesCounter').value = S.settings.rulesCounter === '2014' ? '2014' : '2024';
@@ -835,7 +829,7 @@ function show(){
 (async function init(){
   try{
     const raw = await store.get();
-    if(raw){ const w = JSON.parse(raw); if(w.layouts) S.layouts = w.layouts; if(w.settings){ const old = !w.settings.settingsVer; Object.assign(S.settings, w.settings); if(old){ S.settings.knowParty = 'learn'; S.settings.settingsVer = 2; } } if(typeof w.enc === 'number') S.enc = w.enc; }
+    if(raw){ const w = JSON.parse(raw); if(w.layouts) S.layouts = w.layouts; if(w.settings){ const old = !w.settings.settingsVer; Object.assign(S.settings, w.settings); for(const k of ['partyAI','aiParty','aiFoes']) delete S.settings[k];     /* the old AI choices: everyone plays the one AI now, so they are dropped (they are not read anywhere) */ if(old){ S.settings.knowParty = 'learn'; S.settings.settingsVer = 2; } } if(typeof w.enc === 'number') S.enc = w.enc; }
   }catch(e){}
   ready = true;
   setMode('setup');

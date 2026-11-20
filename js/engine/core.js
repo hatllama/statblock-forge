@@ -385,15 +385,15 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   const failDmg = this._saveDmg || 0;
   // Indomitable: reroll a failed save with a bonus (saved for ones that matter)
   if (total < dc && t.indomitable && (t.uses.get('__indom') || 0) > 0 && dc < 99 &&
-      ((this._saveStakes || 0) >= 1 || failDmg >= t.hp * 0.25 || t.ai !== 'tactical')) {
+      ((this._saveStakes || 0) >= 1 || failDmg >= t.hp * 0.25)) {
     t.uses.set('__indom', t.uses.get('__indom') - 1);
     const r2 = this.d20(adv, dis, false);
     const tot2 = r2 + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + flat + t.indomitable.bonus;
     this.ev('react', `${t.name} uses Indomitable: rerolls the save (${Math.round(total)} → ${Math.round(tot2)})`, { uid: t.uid });
     r = r2; total = tot2;
   }
-  // Silvery Barbs against a save that went our way (v2 reactors): reroll, keep the lower die
-  if (total >= dc && this.aiV2 && src && src.team && src.team !== t.team && ((this._saveDmg || 0) > 0 || (this._saveStakes || 0) >= 1)) {
+  // Silvery Barbs against a save that went our way: reroll, keep the lower die
+  if (total >= dc && src && src.team && src.team !== t.team && ((this._saveDmg || 0) > 0 || (this._saveStakes || 0) >= 1)) {
     const pk = this.reactSaveV2(t, dc, src, ab);
     if (pk) {
       this.reactTake(pk.h, pk.x, 0);
@@ -404,7 +404,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
     }
   }
   // the boss tier weighs the use (bossLR) and remembers the worst effect it has been shown (learn learns the party's save-or-suck spells)
-  const weighLR = t.legResMax && t.v2 && t.v2P.boss.legRes === 'weigh' && dc < 99 && src && src.team && src.team !== t.team;
+  const weighLR = t.legResMax && t.v2P.boss.legRes === 'weigh' && dc < 99 && src && src.team && src.team !== t.team;
   let seenLR = 0;
   if (weighLR) { seenLR = t.lrSeen || 0; t.lrSeen = Math.max(seenLR, this.bossEffectOf(t, dc, ab)); }
   const dangerous = weighLR ? total < dc && (t.uses.get('__legres') || 0) > 0 && this.bossLR(t, dc, ab, failDmg, seenLR)
@@ -447,16 +447,12 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   let crit = r === 20 || (hit && !a._spell && r >= (att.critOn || 20));
   if (r !== 20 && r !== 1 && !opt.inside) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
   this.learnAtk(att, tgt, ac, r !== 20 && r !== 1 && !adv && !dis, hit);
-  // reactions on the target's side (docs/ai-v2.md, "Reactions as a layer"): v1 creatures keep their thresholds, v2 creatures score theirs
+  // reactions on the target's side (docs/ai-v2.md, "Reactions as a layer"): every creature scores its own
   const S = { att, tgt, a, r, d: r, toHit, total, hit, crit, ac, adv, dis };
   // Push Your Luck: its own miss, rerolled for a price in hit points (v2 decides)
-  if (!hit && att.pushLuck && att.v2 && !opt.noReact && this.pushLuckTry(S)) { r = S.d; total = S.total; hit = S.hit; crit = S.hit && (S.d === 20 || (!a._spell && S.d >= (att.critOn || 20))); }
+  if (!hit && att.pushLuck && !opt.noReact && this.pushLuckTry(S)) { r = S.d; total = S.total; hit = S.hit; crit = S.hit && (S.d === 20 || (!a._spell && S.d >= (att.critOn || 20))); }
   if (hit && !opt.noReact) {
-    const v1 = this.anyV1 !== false;      // the old thresholds only act for creatures not on v2; with everyone on v2 they are skipped
-    if (v1) this.reactBarbsOld(S, opt);
-    if (this.aiV2) this.reactHitV2(S, opt);
-    if (v1) this.reactLuckyOld(S, opt);
-    if (v1) this.reactShieldOld(S, opt);
+    this.reactHitV2(S, opt);
     total = S.total; hit = S.hit; crit = S.crit; ac = S.ac;
   }
   // Mirror Image: each duplicate left gives a d6; any 3+ means a duplicate took the hit instead
@@ -509,7 +505,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   if (info.attack && tgt.reaction && !this.incap(tgt) && tgt.hp > 0) {
     const r = tgt.actions.find(x => x.actionSlot === 4 && x.type === 'buff' && x.target === 'self' && x.buff && x.buff.ac === undefined &&
       (x.buff.damageTakenMultiplier !== undefined || x.buff.damageReduction !== undefined) && reactFits(x, info) && this.usable(tgt, x) && this.condOk(tgt, x));
-    if (r && (!tgt.v2 || this.v2ReactOk(tgt, r, dmg, src, info))) {
+    if (r && this.v2ReactOk(tgt, r, dmg, src, info)) {
       tgt.reaction = false; this.spend(tgt, r);
       const red = Math.floor(Math.max(0, dmg * (typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1) - avgDice(r.buff.damageReduction || 0)));
       this.ev('react', `${tgt.name} uses ${r.name} (${dmg} → ${red})`, { uid: tgt.uid });
@@ -783,8 +779,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     return;
   }
   // attack rolls: `targets` = number of attacks, re-aimed if the target drops or leaves the board (fled, swallowed):
-  // each swing then picks its own target among those in range from where it stands (v2: v2Repick, the same scoring as the first pick;
-  // the old AI: its selector)
+  // each swing then picks its own target among those in range from where it stands (v2Repick, the same scoring as the first pick)
   let n = a.targets || 1;
   let cur = targets[0];
   for (let i = 0; i < n; i++) {
@@ -793,7 +788,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
       const range = Math.max(5, a._range || 5);
       const opts = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e) && (opt.inside ? e.uid === u.swallowedBy : this.dist(u, e) <= range && this.canSee(u.x, u.y, e)));
       if (!opts.length) break;
-      cur = u.v2 && !opt.inside && opts.length > 1 ? this.v2Repick(u, a, opts, n - i) : this.orderBySelector(opts, a.target)[0];
+      cur = !opt.inside && opts.length > 1 ? this.v2Repick(u, a, opts, n - i) : this.orderBySelector(opts, a.target)[0];
     }
     this._strikeBy = u; this._strikesLeft = n - i - 1;       // reactions read how many swings are still to come
     // a routine of unlike swings (ext.seq: "four attacks, one of them a burst"): each swing rolls its own damage and bonus
@@ -853,7 +848,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       u.mhHit.set.add(t.uid);
     }
     // Divine Smite (v2 only): decided now the hit is known, one damage instance with the weapon's, each part of its own type
-    const sm = u.v2 && u.smiteSeq === this.turnSeq ? this.v2SmiteHit(u, a, t, r.crit, raw) : null;
+    const sm = u.smiteSeq === this.turnSeq ? this.v2SmiteHit(u, a, t, r.crit, raw) : null;
     raw *= this.multBuff(u, 'damageMultiplier');
     let apart = 0;
     if (sm) {
@@ -1204,7 +1199,7 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
         // spend as many dice from the pool as the wound needs, up to the per-use cap
         const avgDie = ((hx.pool.die || 6) + 1) / 2, left = u.uses.get(a.id) || 0;
         const need = t.hp <= 0 ? t.maxHp * 0.5 : t.maxHp - t.hp;
-        const pick = u.v2 && isHpPool(a) && u._poolPick ? u._poolPick.get(a.id + "|" + t.uid) : 0;      // v2 chose the points (v2HpPool)
+        const pick = isHpPool(a) && u._poolPick ? u._poolPick.get(a.id + "|" + t.uid) : 0;      // v2 chose the points (v2HpPool)
         const n = Math.max(1, Math.min(hx.pool.maxPer || left, left, pick || Math.ceil(need / avgDie)));
         u.uses.set(a.id, left - n);
         amt = rollDice(n + 'd' + (hx.pool.die || 6), this.R, false);

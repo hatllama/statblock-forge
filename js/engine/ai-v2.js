@@ -9,27 +9,20 @@ const { rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, sizeIdx, s
 
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
-/* which creatures v2 drives: every creature on a side with the flag (phase 6 step 1: the old Int >= 10 gate for monsters under foes 'v2',
-   the party's 'regular' setting, swallowers and non-heal dice pools no longer keep anyone on the old AI; docs/ai-v2.md "Cutting the old AI loose").
-   Every caster kind plays on v2 (step 3a); casterKind only says who stands at the back (backLine) */
-Sim.prototype.v2Eligible = function (u) {
-  return !!(this.aiV2 && this.aiV2[u.team]);
-};
+/* every creature plays this AI: the party on the one profile (ext.aiProfile picks another), the monsters on their tier (docs/ai-v2.md "Phase 6 step 2").
+   casterKind only says who stands at the back (backLine) */
 /* stands at the back: a spellbook, and a full caster or no melee attack (a paladin or an Eldritch Knight is a front-liner) */
 Sim.prototype.backLine = function (o) {
   return !!o.hasSpells && (o.casterKind === 'full' || !this.hasMelee(o));
 };
 Sim.prototype.v2Setup = function (u) {
-  u.v2 = this.v2Eligible(u);
   u._v2c = null;
   u.reviver = null;
   u.smiteA = null; u.smiteSeq = 0;
-  if (!u.v2) return;
   u.smiteA = u.actions.find(a => smiteOf(a)) || null;     // Divine Smite: a rider on a hit, not a bonus option (docs/ai-v2.md "Hybrids")
   u._poolPick = new Map();                                  // Lay on Hands: the points v2 chose, per action and target
   u.reviver = u.isPC && u.slots ? u.actions.find(a => a.ext && a.ext.revivify && a._spell) || null : null;
-  u.ai = 'tactical';
-  u.tier = this.aiV2.tiers && !u.isPC ? tierOf(u.tpl) : null;      // foes: 'tiers' (docs/ai-v2.md)
+  u.tier = !u.isPC ? tierOf(u.tpl) : null;      // monsters: their tier (docs/ai-v2.md)
   u.v2P = u.tier ? tierProfile(u.tier, u.tpl.ext && u.tpl.ext.aiProfile, u.tpl) : aiProfile(u.tpl.ext && u.tpl.ext.aiProfile);
   u.v2Start = new Map(u.uses);      // what it had when the fight started, for pacing
   u.v2Slots0 = slotLevels(u);
@@ -180,7 +173,7 @@ Sim.prototype.v2PaceCost = function (u, a, val, L) {
   return p.base + p.tax * Math.max(0, val || 0);
 };
 /* a limited damage-cutting reaction (Stone's Endurance): only on a hit that uses most of it, or that would drop it,
-   and is worth the use (at-will ones like Uncanny Dodge keep the old rule: the first hit) */
+   and is worth the use (at-will ones like Uncanny Dodge go to the first hit) */
 Sim.prototype.v2ReactOk = function (u, r, dmg, src, info) {
   if (!this.v2Pool(u, r)) return this.reactCutNow(u, r, dmg, src, info);       // at will: this hit, or a bigger one still to come
   const P = u.v2P.pacing, mult = typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1, cut = avgDice(r.buff.damageReduction || 0);
@@ -522,7 +515,7 @@ Sim.prototype.v2SmiteHold = function (u, a, t) {
 };
 // a hit has landed (rawW: its dice): smite now, at which level? Spends the slot and returns the extra dice, or null
 Sim.prototype.v2SmiteHit = function (u, a, t, crit, rawW) {
-  if (!u.v2 || u.smiteSeq !== this.turnSeq || this.current !== u || t.hp <= 0 || t.dead) return null;
+  if (u.smiteSeq !== this.turnSeq || this.current !== u || t.hp <= 0 || t.dead) return null;
   const s = this.v2SmiteReady(u, a);
   if (!s) return null;
   const k = this._strikesLeft || 0, per = k ? this.expected(u, a, t) / Math.max(1, a.targets || 1) : 0;
@@ -859,7 +852,7 @@ Sim.prototype.v2BurnPlan = function (u, ctx, doubt) {
   // every disabling save-effect a caster of ours could throw at it: its chance to fail the save, its price, its value once LR is gone
   const cands = [], learnMode = this.kMode(u.team) === 'learn';
   for (const o of ctx.myTeam) {
-    if (!o.v2 || this.incap(o) || !o.hasSpells) continue;
+    if (this.incap(o) || !o.hasSpells) continue;
     for (const a of o.actions) {
       if (a.actionSlot !== 0 || a.type !== 'debuff' || !a.buff || !DANGER_CONDS.includes(a.buff.condition) || (a.ext && a.ext.teleport) || !this.usable(o, a) || !this.condOk(o, a)) continue;
       const lv = this.v2CastLevels(o, a);

@@ -27,7 +27,7 @@ Sim.prototype.kMode = function (team) { return (this.know && this.know[team]) ||
 /* what u itself reads: its side's mode, except that a tier's profile (know: 'blind') makes a dull creature read blind even in open mode */
 Sim.prototype.kModeFor = function (u) {
   const m = this.kMode(u.team);
-  return m === 'open' && u.v2 && u.v2P && u.v2P.know === 'blind' ? 'blind' : m;
+  return m === 'open' && u.v2P && u.v2P.know === 'blind' ? 'blind' : m;
 };
 /* null when u sees the truth about t (its own side, or open mode), else the mode */
 Sim.prototype.kOf = function (u, t) {
@@ -45,7 +45,7 @@ Sim.prototype.kind = function (team, t) {
 };
 Sim.prototype.learning = function (team) { return this.kMode(team) === 'learn'; };
 /* a learning side on AI v2: reads the bloodied flag and its own net damage, not the classic reading */
-Sim.prototype.keen = function (team) { return this.threatMode > 0 && !!this.aiV2 && !!this.aiV2[team] && this.kMode(team) === 'learn'; };
+Sim.prototype.keen = function (team) { return this.threatMode > 0 && this.kMode(team) === 'learn'; };
 /* the party starts from the threat estimate; a keen foe side keeps its size priors */
 Sim.prototype.threatOn = function (team) { return this.threatMode === 2 && team === 'party' && this.keen(team); };
 Sim.prototype.learnAC = function (att, tgt, base, hit) {
@@ -274,7 +274,7 @@ Sim.prototype.kDpr = function (u, t) {
    can still use (spells while it has the slot), blended with what it has dealt this fight, as learn blends its prior (docs/ai-v2.md "Boss tier") */
 /* u reads t's DPR through kDprOpen: open mode, the other side, a v2 reader whose profile asks for it (dprSeenPC for the party, dprSeen for monsters) */
 Sim.prototype.dprSeenBy = function (u, t) {
-  return !!(u && t && u.team !== t.team && u.v2 && u.v2P && (u.isPC ? u.v2P.w.dprSeenPC : u.v2P.w.dprSeen) && !this.kOf(u, t));
+  return !!(u && t && u.team !== t.team && u.v2P && (u.isPC ? u.v2P.w.dprSeenPC : u.v2P.w.dprSeen) && !this.kOf(u, t));
 };
 /* the DPR an option's worth in v2Value is weighed by (the damage weight and the kill): on kDprOpen's reading, the sheet's figure plus dprSeenGap of what
    the better reading adds. A martial foe the sheet already reads right keeps its weight; a caster's or a boss's rises partway (docs/ai-v2.md) */
@@ -622,7 +622,7 @@ Sim.prototype.fightInHand = function (u) {
   return roundsToLose >= roundsToWin * 3 && mine.every(o => o.hp > o.maxHp * 0.35);
 };
 Sim.prototype.holdsResource = function (u, a) {
-  if (u.ai !== 'tactical' || !(a.type === 'atk' || a.type === 'debuff')) return false;
+  if (!(a.type === 'atk' || a.type === 'debuff')) return false;
   const k = freqKind(a.freq);
   if (k === 'at will' || k === 'recharge' || k === '1/fight') return false;
   if (u._noHold) return false;                                   // holding back would mean wasting the turn
