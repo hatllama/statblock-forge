@@ -2414,3 +2414,41 @@ eight. The ablation sweep's other flags were mostly the full kit's luck on a see
 paired SE does not cover the base run's own luck. Outside load on the machine (another program's 20 Python processes from 04:41) slowed every
 table after that by about 2.5× uniformly; run times were therefore compared A/B, alternating old and new code under the same load.
 
+
+## Phase 6 step 2: the old AI is deleted (November 2026)
+
+**Getting the old AI back.** The commit before the deletion is tagged `old-ai-final` (`git tag` lists it; `git worktree add ../old-ai old-ai-final`
+gives a second folder with the whole old engine, `js/engine/ai-v1.js` included). From the deletion on, v2 for the party and tiers for the monsters is
+the only AI; no setting chooses one.
+
+**The frozen comparison** (the phase 6 step 1 gate table, copied here so the history survives the deletion). Every ai-compare family, 200 runs, same
+seeds, the AI forced in every arm: the old AI on both sides against v2 + tiers on both sides. Party win %; for a monster row lower is a stronger monster.
+
+| family | rows | open: old AI / v2 + tiers | learn | blind | old AI higher beyond 2 SE (o / l / b) | v2 + tiers higher (o / l / b) |
+|---|---|---|---|---|---|---|
+| A (area vs single target) | 8 | 91.8 / 95.6 | 93.1 / 93.4 | 91.8 / 91.5 | 0 / 0 / 0 | 1 / 0 / 0 |
+| B (Legendary Resistance) | 13 | 14.8 / 27.7 | 12.0 / 19.7 | 9.8 / 15.2 | 0 / 1 / 1 | 10 / 10 / 6 |
+| BOSS | 15 | 35.0 / 45.3 | 37.5 / 50.0 | 38.6 / 50.3 | 2 / 2 / 2 | 9 / 10 / 10 |
+| C (casters) | 11 | 89.4 / 92.3 | 86.5 / 89.9 | 85.3 / 89.4 | 0 / 0 / 0 | 2 / 3 / 3 |
+| D (downed allies) | 11 | 55.8 / 79.1 | 56.2 / 76.8 | 54.3 / 75.2 | 0 / 1 / 1 | 10 / 9 / 10 |
+| DUMB | 11 | 91.0 / 91.2 | 91.0 / 90.6 | 91.3 / 90.8 | 0 / 0 / 0 | 0 / 0 / 0 |
+| E (Brew, dragons) | 6 | 73.7 / 96.2 | 74.3 / 92.3 | 75.3 / 92.2 | 0 / 0 / 0 | 4 / 4 / 4 |
+| ELIA | 12 | 99.8 / 100.0 | 100.0 / 99.7 | 100.0 / 99.0 | 0 / 0 / 2 | 0 / 0 / 0 |
+| F (flyers) | 2 | 12.3 / 60.0 | 12.0 / 53.5 | 10.0 / 43.0 | 0 / 0 / 0 | 2 / 2 / 2 |
+| H (hybrids) | 9 | 54.1 / 77.7 | 58.8 / 75.8 | 58.4 / 74.1 | 0 / 0 / 0 | 7 / 5 / 5 |
+| K (control) | 8 | 57.4 / 61.9 | 48.9 / 53.4 | 40.3 / 39.3 | 1 / 2 / 1 | 2 / 3 / 3 |
+| PASQ | 6 | 97.6 / 99.0 | 97.8 / 98.4 | 91.6 / 89.7 | 0 / 0 / 0 | 1 / 0 / 0 |
+| R (revive) | 21 | 62.1 / 77.0 | 62.5 / 72.9 | 59.3 / 70.6 | 0 / 0 / 0 | 18 / 12 / 12 |
+| RC (reactions) | 8 | 37.4 / 49.0 | 34.5 / 43.1 | 33.4 / 44.8 | 3 / 2 / 1 | 5 / 4 / 4 |
+| S (spacing) | 6 | 73.8 / 92.7 | 71.2 / 87.4 | 68.1 / 86.0 | 0 / 1 / 1 | 5 / 4 / 4 |
+| T | 5 | 96.4 / 95.5 | 95.6 / 93.5 | 90.1 / 88.5 | 0 / 1 / 0 | 0 / 0 / 0 |
+| TIER | 63 | 53.9 / 57.8 | 58.3 / 61.4 | 58.3 / 61.6 | 13 / 6 / 6 | 20 / 20 / 14 |
+| step 1–2 scenarios (incl. the foe-side Manticores and Gnoll swarm) | 10 | 79.7 / 67.7 | 75.7 / 63.8 | 74.1 / 64.5 | 2 / 3 / 3 | 2 / 2 / 3 |
+| **all** | 225 / 216 / 216 | **62.1 / 70.0** | **63.0 / 69.3** | **61.6 / 67.6** | **21 / 19 / 18** | 98 / 88 / 80 |
+
+Every "old AI higher" row is a monster-side row (tier monsters beat the party more than old-AI monsters do); on the party side the old AI was higher
+only on the blind goblin pack. Details are in "The gate report" above.
+
+**Baseline for this job** (main at `old-ai-final`): `npm test` 925 / 925 checks; the hash sets of `tests/flagoff-hash.js` for v2 (`AI=v2`) and v2 + tiers
+(`AI=v2 FOES=tiers`) in open / learn / blind, and both with `PREFIGHT=0`, were recorded and every commit of the deletion must reproduce them
+(commits of kind A change no behaviour). The one behaviour change (step 4, genius merged into cunning) is its own last commit.
