@@ -21,13 +21,13 @@ function check(ok, msg) { checks++; if (!ok) { failures++; console.log('  FAIL',
 function section(name) { console.log('\n' + name); }
 
 /* The learn log baseline (tests/fixtures/hashes-learn.txt) must match what the engine plays now, so it cannot drift
-   silently: `KNOW=learn node tests/flagoff-hash.js` runs in a child process beside these checks (it takes ~15 s on its own
+   silently: `KNOW=learn node tests/play-hash.js` runs in a child process beside these checks (it takes ~15 s on its own
    and overlaps them) and is compared at the end. Line endings are ignored (a Windows checkout writes the fixture with CRLF).
    After a change that moves play on purpose, regenerate the fixture and say what moved. */
 const v2LearnHashes = new Promise(resolve => {
   const env = Object.assign({}, process.env, { KNOW: 'learn' });
   delete env.PREFIGHT;
-  require('child_process').execFile(process.execPath, [path.join(__dirname, 'flagoff-hash.js')], { env, maxBuffer: 1 << 24 }, (err, out) => resolve(err ? { err } : { out }));
+  require('child_process').execFile(process.execPath, [path.join(__dirname, 'play-hash.js')], { env, maxBuffer: 1 << 24 }, (err, out) => resolve(err ? { err } : { out }));
 });
 
 section('Shipped scripts: they load, and use only syntax older Safari/iOS can run');
@@ -3077,7 +3077,7 @@ require('./smoke.js').smoke().then(results => {
   else {
     const want = lines(fs.readFileSync(path.join(__dirname, 'fixtures', 'hashes-learn.txt'), 'utf8')), got = lines(h.out);
     const diff = want.filter((l, i) => got[i] !== l);
-    check(want.length === got.length && !diff.length, `${diff.length} of ${want.length} lines differ (first: ${diff[0] || '-'}); regenerate with KNOW=learn node tests/flagoff-hash.js > tests/fixtures/hashes-learn.txt if the change is on purpose`);
+    check(want.length === got.length && !diff.length, `${diff.length} of ${want.length} lines differ (first: ${diff[0] || '-'}); regenerate with KNOW=learn node tests/play-hash.js > tests/fixtures/hashes-learn.txt if the change is on purpose`);
   }
 }).then(() => {
   console.log(`\n${checks - failures}/${checks} checks passed`);

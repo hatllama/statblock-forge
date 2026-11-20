@@ -1,6 +1,6 @@
 /* The tactical engine's files, in load order: the one place the list lives.
    index.html has the same files in the same order as script tags (`npm test` checks it), and every Node script
-   (tests/run.js, tests/flagoff-hash.js, tests/ai-compare.js, tests/verify-compare.js, tools/build-threat.js) loads the
+   (tests/run.js, tests/play-hash.js, tests/ai-compare.js, tools/build-threat.js) loads the
    engine through loadEngine(). How the files share names is described at the top of js/engine/base.js. */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm');

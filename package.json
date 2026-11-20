@@ -6,7 +6,7 @@
   "scripts": {
     "test": "node tests/run.js",
     "compare": "node tests/ai-compare.js",
-    "flagoff": "node tests/flagoff-hash.js",
+    "hashes": "node tests/play-hash.js",
     "build-party": "node tools/build-party.js",
     "build-srd": "node tools/build-srd.js",
     "build-threat": "node tools/build-threat.js",

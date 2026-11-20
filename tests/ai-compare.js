@@ -1,10 +1,10 @@
-/* Old AI vs AI v2 (docs/ai-v2.md), side by side. Not part of `npm test`:
+/* The scenario tables for the AI (docs/ai-v2.md). Not part of `npm test`:
      node tests/ai-compare.js [runs per scenario, default 200] [scenario name filter]
-   Every scenario plays the same seeds with the party on the old AI and on v2 (`ai: { party: 'v2' }`); monsters keep
-   the old AI in both, so the difference is the party's play (scenarios marked side: 'foes' switch the monsters instead).
-   Full casters use v2 with the flag (step 2), and since step 3a half and third casters (Paladin, Ranger, Artificer, Eldritch Knight,
-   Arcane Trickster) do too; scenario names that still say "the Paladin stays v1" are kept so their rows compare across commits.
-   The "dumb behavior" scenarios each count one thing the old AI does that looks wrong at the table; the A scenarios
+   Every scenario plays the same seeds with the party on the AI and the monsters on their tiers; arms inside a family
+   (burn plan on and off, forced tiers, the boss tier...) change one thing. The old AI is gone (phase 6 step 2): its rows are frozen
+   in docs/ai-v2.md ("Phase 6 step 2") and the tag old-ai-final has the engine, with the old two-arm version of this file.
+   Scenario names that still say "the Paladin stays v1" or "casters on v1" are kept so their rows compare across commits.
+   The "dumb behavior" scenarios each count one thing that looks wrong at the table; the A scenarios
    show how a caster chooses between an area spell and a single-target one. win ± its standard error. */
 'use strict';
 const fs = require('fs');
@@ -312,7 +312,7 @@ const SCENARIOS = [
 ];
 
 /* ---- step 2.6: burn the boss's Legendary Resistance, or race its HP (docs/ai-v2.md) ----
-   Three arms on the same seeds: the old AI (v1), v2 without the burn plan (burn.bias 0 = the step 2.5 behavior), v2 with it. */
+   Arms on the same seeds: without the burn plan (burn.bias 0 = the step 2.5 behavior), with it, and forced (always burns). */
 const lrBurned = r => r.events.filter(e => /uses Legendary Resistance/.test(e.text || '')).length;
 const saidIn = re => r => r.events.some(e => e.kind === 'intent' && re.test(e.text || '')) ? 1 : 0;
 const BURN_METRICS = {
@@ -371,11 +371,11 @@ function playBurn(sc, N) {
   const forced = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { bias: 30 } }; });   // always burns when it can: shows what burning costs or wins
   const noProbe = pl => pl.forEach(p => { p.ext = p.ext || {}; p.ext.aiProfile = { burn: { probeBias: 0 } }; });   // learn mode as step 2.6 played it: a doubt in the plan, no probes
   const learn = sc.know && sc.know.party === 'learn';
-  const arms = V2ONLY ? [['v2+', { party: 'v2' }, null]] : [['v1', undefined, null], ['v2-', { party: 'v2' }, noBurn]].concat(learn ? [['v2o', { party: 'v2' }, noProbe]] : [], [['v2+', { party: 'v2' }, null], ['v2!', { party: 'v2' }, forced]]);
+  const arms = V2ONLY ? [['v2+', null]] : [['v2-', noBurn]].concat(learn ? [['v2o', noProbe]] : [], [['v2+', null], ['v2!', forced]]);
   const cs = Object.assign({ record: true, metrics: BURN_METRICS }, sc);
   console.log('\n' + sc.name);
   console.log('  ' + [pad('AI', 4), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BURN_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  for (const [label, ai, tw] of arms) console.log(row(label, play(cs, ai, N, tw)));
+  for (const [label, tw] of arms) console.log(row(label, play(cs, N, tw)));
 }
 
 /* ---- step 2.9: does the party cast its strong control when the save looks winnable? (docs/ai-v2.md, Legendary Resistance) ----
@@ -411,7 +411,7 @@ const CTL_SCENARIOS = [
 function playCtl(sc, N) {
   console.log('\n' + sc.name);
   console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(CTL_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: CTL_METRICS, know: { party: mode } }), N)));
 }
 
 
@@ -442,7 +442,7 @@ const REACT_SCENARIOS = [
 function playReact(sc, N) {
   console.log(String.fromCharCode(10) + sc.name);
   console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(REACT_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: REACT_METRICS, know: { party: mode } }), { party: 'v2' }, N)));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: REACT_METRICS, know: { party: mode } }), N)));
 }
 
 /* ---- downed allies (step 2.12) ---- */
@@ -488,10 +488,10 @@ const DOWN_SCENARIOS = [
   { name: 'D10 two downed, the Wizard at two failures, the Fighter at none; Cleric, Bard, Rogue vs 2 Hill Giants + 3 Ogres', party: ['Fighter', 'Wizard', 'Cleric', 'Bard', 'Rogue'], day: 'Hill Giant*2,Ogre*3', down: ['Fighter', 'Wizard:2'] },
   { name: 'D11 the same, the Fighter at two failures, the Wizard at none', party: ['Fighter', 'Wizard', 'Cleric', 'Bard', 'Rogue'], day: 'Hill Giant*2,Ogre*3', down: ['Fighter:2', 'Wizard'] },
 ];
-/* DOWNED=1: per downed ally, did a v2 creature that could have healed it do so? A chance = a turn of a standing creature with a
+/* DOWNED=1: per downed ally, did a creature that could have healed it do so? A chance = a turn of a standing creature with a
    heal in reach of it (move + range, line of sight not checked); an event = one time at 0 HP with at least one chance */
 function downedRate(sc, N, know) {
-  const c = { ev: 0, evHealed: 0, bTurns: 0, bUsed: 0, aTurns: 0, aUsed: 0, v1Turns: 0, v1Used: 0 };
+  const c = { ev: 0, evHealed: 0, bTurns: 0, bUsed: 0, aTurns: 0, aUsed: 0 };
   const proto = Tac.Sim.prototype, wrapped = proto.turn;
   const seen = new Map();
   const note = key => { let e = seen.get(key); if (!e) { e = { healed: 0 }; seen.set(key, e); } return e; };
@@ -507,25 +507,24 @@ function downedRate(sc, N, know) {
     wrapped.call(this, u);
     const up = could.filter(t => t.hp > 0 && u.healed > before);
     for (const t of up) note(this.fightNo + '|' + t.uid + '|' + t.downs).healed = 1;
-    if (!u.v2) { c.v1Turns++; if (up.length) c.v1Used++; return; }
     if (bon.length) { c.bTurns++; if (up.length) c.bUsed++; } else { c.aTurns++; if (up.length) c.aUsed++; }
   };
   for (let i = 0; i < N; i++) {
     const encounters = sc.encounters ? sc.encounters() : fights(sc.day), players = sc.players ? sc.players() : sc.party.map(pc);
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
     seen.clear(); DOWN_NOW = sc.down || null;
-    Tac.runDay({ players, encounters }, { seed: (1000 + i * 7919) >>> 0, ai: { party: 'v2' }, partyAI: 'tactical', layouts, know: sc.know || { party: know } });
+    Tac.runDay({ players, encounters }, { seed: (1000 + i * 7919) >>> 0, layouts, know: sc.know || { party: know } });
     for (const e of seen.values()) { c.ev++; c.evHealed += e.healed; }
   }
   proto.turn = wrapped; DOWN_NOW = null;
   const rate = (a, b) => b ? lpad((a / b * 100).toFixed(0) + '%', 5) : lpad('-', 5);
-  console.log(['  ' + pad(sc.name.slice(0, 74), 74), lpad(c.ev, 6), rate(c.evHealed, c.ev), lpad(c.bTurns, 6), rate(c.bUsed, c.bTurns), lpad(c.aTurns, 6), rate(c.aUsed, c.aTurns), lpad(c.v1Turns, 6), rate(c.v1Used, c.v1Turns)].join(' '));
+  console.log(['  ' + pad(sc.name.slice(0, 74), 74), lpad(c.ev, 6), rate(c.evHealed, c.ev), lpad(c.bTurns, 6), rate(c.bUsed, c.bTurns), lpad(c.aTurns, 6), rate(c.aUsed, c.aTurns)].join(' '));
   return c;
 }
 function playDown(sc, N) {
   console.log('\n' + sc.name);
   console.log('  ' + [pad('mode', 6), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(AREA_COLS.map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({ record: true }, sc, { know: { party: mode }, metrics: Object.assign({}, sc.metrics, AREA_METRICS) }), { party: 'v2' }, N))); DOWN_NOW = null; }
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) { DOWN_NOW = sc.down || null; console.log(row(mode, play(Object.assign({ record: true }, sc, { know: { party: mode }, metrics: Object.assign({}, sc.metrics, AREA_METRICS) }), N))); DOWN_NOW = null; }
 }
 /* the enemy's area attacks (breaths, cones, Fireballs) against the party: party creatures caught per use, the day's first use of each and the later ones */
 const foeAreas = r => r.events.filter(e => e.kind === 'aoe' && e.shape !== 'aura' && teamOf(r, e.uid) === 'foes');
@@ -599,7 +598,7 @@ function playRevive(sc, N) {
   console.log('  ' + [pad('mode', 12), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6), lpad('revived/day', 13)].join(' '));
   for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) for (const [tag, tw] of [['', noRevivify], ['+nokeep', noKeep], ['+revive', null]]) {
     KILL_NOW = sc.kill || null;
-    console.log(row(mode + tag, play(Object.assign({}, sc, { know: { party: mode }, metrics: REVIVE_METRICS }), { party: 'v2' }, N, tw)).replace(/^ {2}(\S+)\s/, (m, l) => '  ' + pad(l, 12) + ' '));
+    console.log(row(mode + tag, play(Object.assign({}, sc, { know: { party: mode }, metrics: REVIVE_METRICS }), N, tw)).replace(/^ {2}(\S+)\s/, (m, l) => '  ' + pad(l, 12) + ' '));
     KILL_NOW = null;
   }
 }
@@ -622,18 +621,16 @@ const TIER_SCENARIOS = [
   { name: 'TIER legendary with a lair: the Ember Tyrant (140 HP, 0.4 damage)', party: ['Fighter', 'Barbarian', 'Cleric', 'Wizard'], encounters: () => [{ monsters: [scaled(withHp(statblock('long-homebrew-boss.txt'), 140), 0.4)] }] },
   { name: 'TIER day: goblins / wolves + ogres / Mage + Guards', party: TIER_PARTY, day: 'Goblin Warrior*6/Wolf*4,Ogre/Mage,Guard*3' },
 ];
-const TIER_ARMS = [['v1', undefined], ['v2', { party: 'v2', foes: 'v2' }], ['auto', { party: 'v2', foes: 'tiers' }], ['mindless', 'mindless'], ['animal', 'animal'], ['cunning', 'cunning'], ['genius', 'genius']];
+const TIER_ARMS = ['auto', 'mindless', 'animal', 'cunning', 'genius'];       // auto: each monster on its own tier; the others force one tier on every monster
 function playTier(sc, N) {
   console.log('\n' + sc.name);
   console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
   const mkEnc = () => { const base = sc.encounters ? sc.encounters() : fights(sc.day); if (TIER_FORCE) for (const e of base) for (const m of e.monsters) m.ext.aiTier = TIER_FORCE; return base; };
   const mine = Object.assign({}, sc, { encounters: mkEnc });
-  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const [label, arm] of TIER_ARMS) {
-    if (label === 'v1' && know !== 'open') continue;     // the old AI ignores the monsters' knowledge
-    TIER_FORCE = ['mindless', 'animal', 'cunning', 'genius'].includes(arm) ? arm : null;
-    const ai = typeof arm === 'string' ? { party: 'v2', foes: 'tiers' } : arm ? arm : { party: 'v2' };
-    const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), ai, N);
-    console.log(row(pad(label === 'v1' ? 'v1 (any)' : know + ' ' + label, 14), r).replace(/^ {2}(\S+)\s/, (m) => m));
+  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const label of TIER_ARMS) {
+    TIER_FORCE = label === 'auto' ? null : label;
+    const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), N);
+    console.log(row(pad(know + ' ' + label, 14), r).replace(/^ {2}(\S+)\s/, (m) => m));
   }
   TIER_FORCE = null;
 }
@@ -664,9 +661,9 @@ function playBoss(sc, N) {
   console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BOSS_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
   const mkEnc = () => { const base = sc.encounters(); for (const e of base) for (const m of e.monsters) if (BOSS_FORCE && Tac.tierOf(m) === 'boss') m.ext.aiTier = BOSS_FORCE; return base; };
   const mine = Object.assign({}, sc, { encounters: mkEnc, metrics: BOSS_METRICS, record: true });
-  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['v1', 'genius', 'boss']) {
+  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['genius', 'boss']) {
     BOSS_FORCE = arm === 'genius' ? 'genius' : null;
-    const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), arm === 'v1' ? { party: 'v2' } : { party: 'v2', foes: 'tiers' }, N);
+    const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), N);
     console.log(row(pad(know + ' ' + arm, 14), r));
   }
   BOSS_FORCE = null;
@@ -689,7 +686,7 @@ function playPasq(N) {
     console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(PASQ_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
     for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const [label, noCoin, cheap] of [['coin', false], ['no coin', true], ['coin, cheap react', false, true]]) {
       const sc = { name: 'PASQ', players: zaki, encounters: () => [{ monsters: [pasquale(noCoin, hp, cheap)] }], metrics: PASQ_METRICS, record: true, know: { party: know, foes: know } };
-      console.log(row(pad(know + ' ' + label, 20), play(sc, { party: 'v2', foes: 'v2' }, N)));
+      console.log(row(pad(know + ' ' + label, 20), play(sc, N)));
     }
   }
 }
@@ -718,7 +715,7 @@ function playElia(N) {
     console.log('  ' + [pad('arm', 22), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(ELIA_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
     for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['as written', 'no push', 'no bolts', 'no burst', 'no grouping', 'plain']) {
       const sc = { name: 'ELIA', players: zaki, encounters: () => [{ monsters: [elia(arm, hp)] }], metrics: ELIA_METRICS, record: true, know: { party: know, foes: know } };
-      console.log(row(pad(know + ' ' + arm, 22), play(sc, { party: 'v2', foes: 'v2' }, N)));
+      console.log(row(pad(know + ' ' + arm, 22), play(sc, N)));
     }
   }
 }
@@ -733,7 +730,7 @@ const aiOver = spec => {
 if (process.env.AI_THREAT) Object.assign(Tac.AI_BASE.threat, JSON.parse(process.env.AI_THREAT));     // sweeps: AI_THREAT='{"useSave":0}'
 // KNOW=learn: the party's knowledge in every scenario that doesn't name its own. V2ONLY=1: skip the old-AI and no-burn arms. THREAT=bounds: learn with the bloodied reading alone, THREAT=off: the classic reading.
 const KNOW = process.env.KNOW ? { party: process.env.KNOW } : undefined, V2ONLY = process.env.V2ONLY === '1';
-function play(sc, ai, n, tweak) {
+function play(sc, n, tweak) {
   const out = { n, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() };
   const t0 = Date.now(), downWas = DOWN_NOW;
   if (sc.down) DOWN_NOW = sc.down;              // a plain scenario can start with someone down too (H9); playDown sets it itself
@@ -744,7 +741,7 @@ function play(sc, ai, n, tweak) {
     if (tweak) tweak(players);
     if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, ai, partyAI: 'tactical', record: !!sc.record, layouts, know: sc.know || KNOW, rules: process.env.CS ? { counterspell: process.env.CS } : undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, morale: process.env.MORALE === 'on' ? 'on' : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
+    let res = Tac.runDay({ players, encounters }, { seed, record: !!sc.record, layouts, know: sc.know || KNOW, rules: process.env.CS ? { counterspell: process.env.CS } : undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, morale: process.env.MORALE === 'on' ? 'on' : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);
@@ -797,7 +794,7 @@ function accuracy(sc, N) {
     for (let i = 0; i < N; i++) {
       const encounters = sc.encounters ? sc.encounters() : fights(sc.day), players = sc.players ? sc.players() : sc.party.map(pc);
       const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-      Tac.runDay({ players, encounters }, { seed: (1000 + i * 7919) >>> 0, ai: { party: 'v2' }, partyAI: 'tactical', layouts, know: { party: 'learn' }, threat });
+      Tac.runDay({ players, encounters }, { seed: (1000 + i * 7919) >>> 0, layouts, know: { party: 'learn' }, threat });
     }
     proto.ev = ev; proto.learnHp = learnHp;
     return got;
@@ -817,12 +814,12 @@ function row(label, o) {
 
 const N = Math.max(1, parseInt(process.argv[2], 10) || 200);
 const only = process.argv[3] ? new RegExp(process.argv[3], 'i') : null;
-console.log(`Old AI (v1) vs AI v2 for the party, ${N} seeded runs per scenario. Per day: win = won every fight; rounds, PC deaths, damage dealt and taken by the party; ms per day.`);
+console.log(`The AI (party on v2, monsters on tiers), ${N} seeded runs per scenario. Per day: win = won every fight; rounds, PC deaths, damage dealt and taken by the party; ms per day.`);
 const spellLine = o => Array.from(o.spells).sort((p, q) => q[1] - p[1]).slice(0, 6).map(([k, v]) => `${k} ${(v / o.n).toFixed(2)}`).join(', ');
 if (process.env.DOWNED === '1') {
   const all = BURN_SCENARIOS.concat(CTL_SCENARIOS, SCENARIOS, DOWN_SCENARIOS).filter(sc => sc.side !== 'foes' && (!only || only.test(sc.name)));
   for (const know of KNOW ? [KNOW.party] : ['learn', 'open', 'blind']) {
-    console.log('\n' + pad(know, 76) + ' events healed | turns with a bonus heal, used | with only an action heal, used | v1 creatures, used');
+    console.log('\n' + pad(know, 76) + ' events healed | turns with a bonus heal, used | with only an action heal, used');
     const sum = { ev: 0, evHealed: 0, bTurns: 0, bUsed: 0, aTurns: 0, aUsed: 0 };
     for (const sc of all) { const c = downedRate(sc, N, know); for (const k in sum) sum[k] += c[k]; }
     console.log(`  TOTAL events ${sum.ev}, healed ${(sum.evHealed / sum.ev * 100).toFixed(1)}%; bonus-heal turns ${sum.bTurns}, used ${(sum.bUsed / sum.bTurns * 100).toFixed(1)}%; action-heal turns ${sum.aTurns}, used ${(sum.aUsed / sum.aTurns * 100).toFixed(1)}%`);
@@ -847,22 +844,20 @@ for (const sc of FLYER_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N
 for (const sc of SPACE_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of SCENARIOS) {
   if (only && !only.test(sc.name)) continue;
-  const v2 = sc.side === 'foes' ? { foes: 'v2' } : { party: 'v2' };
-  const a = V2ONLY ? { n: N, won: 0, rounds: 0, deaths: 0, dealt: 0, taken: 0, ms: 0, m: {}, spells: new Map() } : play(sc, undefined, N), b = play(sc, v2, N);
-  const extra = Object.keys(a.m).filter(k => k[0] !== '_');
+  const b = play(sc, N);
+  const extra = Object.keys(b.m).filter(k => k[0] !== '_');
   console.log('\n' + sc.name);
   console.log('  ' + [pad('AI', 4), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(extra.map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
-  if (!V2ONLY) console.log(row('v1', a));
   console.log(row('v2', b));
-  if (sc.spells) { console.log('    v1 casts/day: ' + spellLine(a)); console.log('    v2 casts/day: ' + spellLine(b)); }
+  if (sc.spells) console.log('    casts/day: ' + spellLine(b));
 }
 // what a day costs to simulate with no replay recorded (as the odds runs play it)
 if (!only || only.test('timing')) {
   const T = Math.max(20, Math.round(N / 2));
-  const time = (players, encounters, ai) => { const t0 = Date.now(); for (let i = 0; i < T; i++) Tac.runDay({ players: players(), encounters: encounters() }, { seed: 5000 + i * 7919, ai, partyAI: 'tactical' }); return (Date.now() - t0) / T; };
+  const time = (players, encounters) => { const t0 = Date.now(); for (let i = 0; i < T; i++) Tac.runDay({ players: players(), encounters: encounters() }, { seed: 5000 + i * 7919 }); return (Date.now() - t0) / T; };
   console.log(`\nTiming, ${T} days each, no replay (ms per day):`);
   for (const [label, pl, en] of [
     ['default party vs hard-day', () => clone(D.PP), () => clone(fixture('hard-day.json').encounters)],
     ['Wizard, Cleric, Sorcerer, Bard vs goblins / ogres', () => ['Wizard', 'Cleric', 'Sorcerer', 'Bard'].map(pc), () => fights('Goblin Warrior*10/Ogre*3')],
-  ]) console.log(`  ${pad(label, 52)} v1 ${lpad(time(pl, en, undefined).toFixed(1), 7)}   v2 ${lpad(time(pl, en, 'v2').toFixed(1), 7)}`);
+  ]) console.log(`  ${pad(label, 52)} ${lpad(time(pl, en).toFixed(1), 7)}`);
 }

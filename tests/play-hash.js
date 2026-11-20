@@ -1,7 +1,7 @@
-/* Flag-off check: hashes of recorded fight logs with the old AI only (no opts.ai). Run before and after an AI change;
-   the hashes must match. `node tests/flagoff-hash.js > before.txt` … `node tests/flagoff-hash.js | diff before.txt -`
-   AI=v2 and KNOW=learn|blind|open hash the same days with the party on v2 or in that knowledge mode. The v2 learn logs change
-   on purpose when a default changes; tests/fixtures/hashes-v2-learn.txt is their baseline: regenerate it then and say what moved. */
+/* Play check: hashes of recorded fight logs (a few days, open and walled maps, four seeds each). Run before and after a change that should
+   not move play; the hashes must match. `node tests/play-hash.js > before.txt` … `node tests/play-hash.js | diff before.txt -`
+   KNOW=learn|blind|open sets the party's knowledge mode, PREFIGHT=0 turns the morning buffs off. The learn logs change on purpose when a
+   default changes; tests/fixtures/hashes-learn.txt is their baseline (`npm test` replays it): regenerate it then and say what moved. */
 'use strict';
 const fs = require('fs'), path = require('path'), vm = require('vm'), crypto = require('crypto');
 const ROOT = path.join(__dirname, '..');
