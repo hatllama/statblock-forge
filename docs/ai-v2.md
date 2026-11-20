@@ -2479,11 +2479,14 @@ The 12-run BOSS + TIER table (`node tests/ai-compare.js 12 '^(BOSS|TIER)'`): all
 
 ### Tests (phase 6 step 2)
 
-`npm test` 925 → 874 checks. Removed, and why:
+`npm test` 925 → 874 checks (−53 removed, +2 added; counted per section from the verbose output of both trees). Removed, and why:
+- **5** the shipped-script checks (syntax, loads) of `ai-v1.js` and **1** its entry in the engine-modules check: the file is gone.
 - **40**: the per-AI rule sections of `tests/run.js` (two fixtures × `tactical`, `regular`, `v2`, `tiers` × open and walled, 5 checks each) became default and learn + morale (two arms): the old tactical and regular arms and the first v2 arm played the old AI or the AI the other arms play.
 - **3**: the swinger's "old AI" arm (the old selector's pick) in the three knowledge modes.
 - **1** `without the flag nobody uses v2`, **1** `foes: "v2" puts every monster on v2`, **1** `the old AI never casts it` (Revivify), **1** `geniuses never lose their nerve` (step 4: no genius tier).
 Duplicated arms that kept their checks: Spirit Guardians and Moonbeam (8 fights → 4, thresholds halved), the full-HP check (8 days → 4), the flyer check. Rewritten, each with a comment: Hideous Laughter (the AI rarely casts the spell now; the rule is set up by hand), the hybrid walls check (seeds shifted off the open issue below), the Aid-in-the-fight scene (seed 1000), and the Healing Word, Rage-for-the-boss, burn-plan, Cure Wounds and short-rest checks (their foes now play tiers, so a count or a threshold moved: an animal foe for the downed-ally section, only days on which the Barbarian acts in the boss fight, a day short allowed in the burn plan, ≥ 3 Cure Wounds, a harder first fight). Added: the legacy-workspace and Smartness-select checks in the smoke test (+2). Hand-built Sims in the tests (no `runEncounter`) call `v2Setup` themselves now, since every creature has a profile.
+
+**Run time** (limit +10%): `node tests/run.js` on the tag and on the branch, alternating on one machine, 190 s / 162 s on the tag against 148 s / 174 s on the branch (352 s against 322 s, −8.5%); `npm test` alone 184 s on `main` before the job and 167 s after step 3. The 12-run BOSS + TIER table 8 min 32 s on `main` (with the old arms) against 6 min 03 s. The old AI's code was never on the hot path of v2 play, so no speed-up is claimed beyond the fewer checks and arms.
 
 ### Step 4 (kind B): genius merged into cunning
 
