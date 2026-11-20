@@ -192,21 +192,21 @@ function scanRules(r, layout, acc) {
 
 for (const file of ['worms-day.json', 'bandit-day.json']) {
   const day = fixture(file);
-  // 'v2': AI v2 on both sides for non-casters and full casters (docs/ai-v2.md), the old tactical AI for half casters
-  for (const ai of ['tactical', 'regular', 'v2', 'tiers']) for (const layout of [null, walled]) {
-    section(`${file} · ${ai} AI · ${layout ? 'walled map' : 'open field'}`);
+  // the one AI, in open knowledge, and with learning and morale on (half the days each mode of the knowledge settings)
+  for (const ai of ['default', 'learn + morale']) for (const layout of [null, walled]) {
+    section(`${file} · ${ai} · ${layout ? 'walled map' : 'open field'}`);
     const runs = [];
     let wallSteps = 0, throughWalls = 0, deadActs = 0, incapActs = 0, badHide = 0, events = 0;
     const t0 = Date.now();
     for (let i = 0; i < 25; i++) {
       const seed = 1000 + i * 7919;
-      const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, partyAI: ai === 'v2' || ai === 'tiers' ? 'tactical' : ai, ai: ai === 'v2' ? 'v2' : ai === 'tiers' ? { party: 'v2', foes: 'tiers' } : undefined, know: ai === 'tiers' ? { party: 'learn', foes: i % 2 ? 'learn' : 'open' } : undefined, morale: ai === 'tiers' ? 'on' : undefined, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
+      const res = Tac.runDay(JSON.parse(JSON.stringify(day)), { seed, know: ai !== 'default' ? { party: 'learn', foes: i % 2 ? 'learn' : 'open' } : undefined, morale: ai !== 'default' ? 'on' : undefined, record: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
       runs.push({ seed, res });
       const acc = { wallSteps, throughWalls, deadActs, incapActs, badHide, events };
       for (const r of res) scanRules(r, layout, acc);
       ({ wallSteps, throughWalls, deadActs, incapActs, badHide, events } = acc);
     }
-    const S = Tac.summarize(day, runs, { partyAI: ai === 'v2' || ai === 'tiers' ? 'tactical' : ai });
+    const S = Tac.summarize(day, runs, {});
     const ms = (Date.now() - t0) / runs.length;
     console.log('  ' + S.encounters.map((e, i) => `fight ${i + 1}: win ${(e.winRate * 100).toFixed(0)}% · a PC dies ${(e.anyDeath * 100).toFixed(1)}%`).join(' | ') + ` · ${ms.toFixed(0)} ms/day · ${events} events`);
     check(S.encounters.every(e => e.winRate >= 0 && e.winRate <= 1 && e.anyDeath >= 0 && e.anyDeath <= 1), 'odds are probabilities');
@@ -371,7 +371,7 @@ section('Creature sizes');
   for (const [z, n] of [['Large', 2], ['Huge', 3], ['Gargantuan', 4]]) for (const layout of [null, walled]) for (let i = 0; i < 4; i++) {
     const mon = { id: 'bg', name: z + ' Brute', type: 'dragon', cr: '8', count: 2, hp: 150, AC: 15, saveBonus: 3, mode: 'custom', ext: { size: z },
       actions: [{ id: 'bg1', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '3d8+5', toHit: 8, target: 'enemy with least HP', ext: { range: 10 } }] };
-    for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify(day.players)), encounters: [{ monsters: [mon] }] }, { seed: 300 + i * 17, partyAI: 'tactical', record: true, layouts: layout ? { 0: layout } : undefined })) {
+    for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify(day.players)), encounters: [{ monsters: [mon] }] }, { seed: 300 + i * 17, record: true, layouts: layout ? { 0: layout } : undefined })) {
       const sz = {}; for (const u of r.units) sz[u.uid] = u.size === 'Large' ? 2 : u.size === 'Huge' ? 3 : u.size === 'Gargantuan' ? 4 : 1;
       let st = {};
       for (const e of r.events) {
@@ -493,7 +493,7 @@ section('Creature sizes');
       const mon = { id: 'bz', name: z + ' Brute', type: 'dragon', cr: '8', count: 2, hp: 120, AC: 15, saveBonus: 3, mode: 'custom', ext: { size: z },
         actions: [{ id: 'bz1', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '3d8+5', toHit: 8, target: 'enemy with least HP', ext: { range: 10 } }] };
       let res;
-      try { res = Tac.runDay({ players: JSON.parse(JSON.stringify(day.players)), encounters: [{ monsters: [mon] }] }, { seed: 41, partyAI: 'tactical', record: true, layouts: layout ? { 0: layout } : undefined }); } finally { proto.ev = ev; }
+      try { res = Tac.runDay({ players: JSON.parse(JSON.stringify(day.players)), encounters: [{ monsters: [mon] }] }, { seed: 41, record: true, layouts: layout ? { 0: layout } : undefined }); } finally { proto.ev = ev; }
       const r = res[0], foot = {}; for (const u of r.units) foot[u.uid] = wtFoot[u.size] || 1;
       let cur = {};
       r.events.forEach((e, i) => {
@@ -619,7 +619,7 @@ section('Statblock parser (no AI)');
     expect(ba(/Action Surge/).ext.extraAction && ba(/Battle Fury/).buff.damage === '1d8' && ba(/Battle Fury/).ext.speedBonus === 10 && ba(/^Brace/).ext.brace && ba(/Spellguard/).ext.spellbreaker, 'Action Surge, a timed self-buff, Brace and a spell-blunting reaction');
     const mon = JSON.parse(JSON.stringify(bm)); mon.id = 'bm'; mon.mode = 'custom'; mon.actions.forEach((a, i) => { a.id = 'bm' + i; });
     const seen = {};
-    for (let i = 0; i < 6; i++) for (const r of Tac.runDay({ players: fixture('worms-day.json').players, encounters: [{ monsters: [mon] }] }, { seed: 70 + i, partyAI: 'tactical', record: true }))
+    for (let i = 0; i < 6; i++) for (const r of Tac.runDay({ players: fixture('worms-day.json').players, encounters: [{ monsters: [mon] }] }, { seed: 70 + i, record: true }))
       for (const e of r.events) for (const [k, re] of [['surge', /uses Action Surge/], ['riposte', /ripostes/], ['trip', /with Trip Attack/], ['indom', /uses Indomitable/]]) if (re.test(e.text)) seen[k] = 1;
     check(seen.surge && seen.riposte && seen.trip, `the duelist surges, ripostes and trips on the War Table (${Object.keys(seen).join(', ')})`);
   }
@@ -631,13 +631,13 @@ section('Statblock parser (no AI)');
     (mon.actions || []).forEach((a, i) => { a.id = f + i; });
     if (mon.ext.spellbook) mon.ext.spellbook.spells.forEach((s, i) => { s.id = f + 's' + i; });
     const day = { players: party, encounters: [{ monsters: [mon] }] };
-    try { for (let i = 0; i < 5; i++) Tac.runDay(JSON.parse(JSON.stringify(day)), { seed: 7 + i, partyAI: 'tactical' }); } catch (e) { tacErr++; console.log('  War Table error on', f, e.message); }
+    try { for (let i = 0; i < 5; i++) Tac.runDay(JSON.parse(JSON.stringify(day)), { seed: 7 + i }); } catch (e) { tacErr++; console.log('  War Table error on', f, e.message); }
   }
   check(tacErr === 0, `${tacErr} parsed creatures broke the War Table`);
   {
     const mon = JSON.parse(JSON.stringify(el)); mon.id = 'elp'; mon.mode = 'custom'; mon.actions.forEach((a, i) => { a.id = 'elp' + i; });
     let cancels = 0, elOA = 0;
-    for (let i = 0; i < 4; i++) for (const r of Tac.runDay({ players: party, encounters: [{ monsters: [mon] }] }, { seed: 40 + i, partyAI: 'tactical', record: true }))
+    for (let i = 0; i < 4; i++) for (const r of Tac.runDay({ players: party, encounters: [{ monsters: [mon] }] }, { seed: 40 + i, record: true }))
       for (const e of r.events) { if (/is cancelled/.test(e.text)) cancels++; if (e.kind === 'oa' && e.uid && e.uid.indexOf('elp') >= 0) elOA++; }
     check(cancels > 0 && elOA === 0, `Elparin voids attacks aimed at him (${cancels}) and never takes opportunity attacks (${elOA})`);
   }
@@ -704,7 +704,7 @@ section('Statblock parser (no AI)');
   const seen = {}; let err = 0;
   for (const group of [CB.slice(0, 7), CB.slice(7)]) for (let i = 0; i < 12; i++) {
     let res;
-    try { res = Tac.runDay({ players: JSON.parse(JSON.stringify(group)), encounters: JSON.parse(JSON.stringify(fx.encounters)) }, { seed: 300 + i * 13, partyAI: 'tactical', record: true }); } catch (e) { err++; console.log('  ', e.message); continue; }
+    try { res = Tac.runDay({ players: JSON.parse(JSON.stringify(group)), encounters: JSON.parse(JSON.stringify(fx.encounters)) }, { seed: 300 + i * 13, record: true }); } catch (e) { err++; console.log('  ', e.message); continue; }
     for (const r of res) for (const e of r.events) {
       const t = e.text || '';
       if (/Luminous Arrow/.test(t)) seen.arrow = 1;
@@ -778,7 +778,7 @@ section('Statblock parser (no AI)');
     const mon = JSON.parse(JSON.stringify(m)); mon.id = s.id; mon.mode = 'custom';
     mon.actions.forEach((a, i) => { a.id = s.id + i; });
     if (mon.ext.spellbook) mon.ext.spellbook.spells.forEach((x, i) => { x.id = s.id + 's' + i; });
-    try { Tac.runDay({ players: party, encounters: [{ monsters: [mon] }] }, { seed: 3, partyAI: 'tactical' }); } catch (e) { err++; console.log('  War Table error on', s.name, e.message); }
+    try { Tac.runDay({ players: party, encounters: [{ monsters: [mon] }] }, { seed: 3 }); } catch (e) { err++; console.log('  War Table error on', s.name, e.message); }
   }
   check(ctx.M.length >= 40 && bad === 0, `${ctx.M.length} official monsters read with their real name, AC, HP and CR (${bad} off)`);
   check(empty === 0 && err === 0, `every official monster has an attack and fights (${empty} without, ${err} errors)`);
@@ -850,7 +850,7 @@ section('Character sheets');
     // Pre-fight buffs on (the default): Eldar, who wears no armor, casts Mage Armor on himself before fight 1 (AC 13 -> 16), whatever the morning budget
     let cast = 0;
     for (let i = 0; i < 6; i++) {
-      const r0 = Tac.runDay({ players: JSON.parse(JSON.stringify([eld])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 59, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, partyAI: 'tactical', record: true })[0];
+      const r0 = Tac.runDay({ players: JSON.parse(JSON.stringify([eld])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 59, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, record: true })[0];
       if (r0.events.some(e => /Eldar Yollavien cast Mage Armor this morning: Eldar Yollavien AC 16/.test(e.text || ''))) cast++;
     }
     check(eld.AC === 13 && eld.ext.unarmored === true && cast === 6, `Eldar casts Mage Armor before fight 1 and his AC goes 13 -> 16 (${cast}/6 days)`);
@@ -866,7 +866,7 @@ section('Character sheets');
     'a level-11 barbarian sheet: Brutal Critical, Relentless Rage, healing potions as a bonus-action heal (still listed in the notes), armor as notes only');
   {
     // Relentless Rage: a raging barbarian dropped to 0 sometimes stays up on 2 × level HP; one at level 7 never does
-    const run = c => { let n = 0; for (let i = 0; i < 40; i++) for (const r of Tac.runDay({ players: [Object.assign(JSON.parse(JSON.stringify(c)), { hp: 12 })], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 200, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 8, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 100 + i, partyAI: 'tactical', record: true })) n += r.events.filter(e => /Relentless Rage keeps it up/.test(e.text || '')).length; return n; };
+    const run = c => { let n = 0; for (let i = 0; i < 40; i++) for (const r of Tac.runDay({ players: [Object.assign(JSON.parse(JSON.stringify(c)), { hp: 12 })], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 200, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 8, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 100 + i, record: true })) n += r.events.filter(e => /Relentless Rage keeps it up/.test(e.text || '')).length; return n; };
     const k = run(b11), k7 = run(rl);
     check(k > 0 && k7 === 0, `Relentless Rage keeps a raging barbarian up sometimes (${k} times at level 11, ${k7} at level 7)`);
   }
@@ -904,7 +904,7 @@ section('Character sheets');
   check(kr && kr.AC === 16 && kr.hp === 30 && kr.ext.speed === 40 && kr.ext.initBonus === 6 && kr.ext.size === 'Small' && kr.ext.resources['Focus Points'].uses === 4 && ka(/^Flurry/).ext.resource === 'Focus Points' && ka(/^Elemental Strikes/).ext.range === 15, 'Kraax from D&D Beyond: Alert, unarmored movement, Focus Points spent by Flurry, Elemental Strikes');
   {
     let flurries = 0, maxSpent = 0;
-    for (let i = 0; i < 6; i++) for (const r of Tac.runDay({ players: [JSON.parse(JSON.stringify(kr))], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 90, AC: 11, saveBonus: 0, count: 1, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1d8 + 2', toHit: 4, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 21 + i, partyAI: 'tactical', record: true })) {
+    for (let i = 0; i < 6; i++) for (const r of Tac.runDay({ players: [JSON.parse(JSON.stringify(kr))], encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 90, AC: 11, saveBonus: 0, count: 1, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1d8 + 2', toHit: 4, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 21 + i, record: true })) {
       let n = 0; for (const e of r.events) if (/Kraax.*(Flurry|Patient Defense|Elemental Attunement)/.test(e.text || '') && /^Kraax/.test(e.text || '') && !/→.*Flurry/.test('')) n++;
       flurries += n; maxSpent = Math.max(maxSpent, n);
     }
@@ -919,7 +919,7 @@ section('Character sheets');
       && pot(p['eldar-yollavien.txt'])[0].amount === '2d4 + 2' && p['eldar-yollavien.txt'].ext.resources['Potion of Healing'].uses === 1 && !pot(p['tacitus-roll20.txt']).length && !(p['tacitus-roll20.txt'].ext.resources && p['tacitus-roll20.txt'].ext.resources['Potion of Healing']),
       'inventory Healing potions become a pool (uses = quantity) and a bonus-action heal within 5 ft; a sheet without potions gets neither');
     let drunk = 0, fed = 0, over = 0;
-    for (let i = 0; i < 24; i++) for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify([bb, p['eldar-yollavien.txt']])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 130, AC: 11, saveBonus: 0, count: 8, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, partyAI: 'tactical', record: true })) {
+    for (let i = 0; i < 24; i++) for (const r of Tac.runDay({ players: JSON.parse(JSON.stringify([bb, p['eldar-yollavien.txt']])), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 130, AC: 11, saveBonus: 0, count: 8, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 1 + i, record: true })) {
       const by = {};
       for (const e of r.events) { const m = /^(.+?) → (.+?): Potion of Healing, \+\d+ HP/.exec(e.text || ''); if (m) { by[m[1]] = (by[m[1]] || 0) + 1; if (m[1] === m[2]) drunk++; else fed++; } }
       for (const k in by) if (by[k] > (/Eldar/.test(k) ? 1 : 2)) over++;
@@ -928,13 +928,12 @@ section('Character sheets');
   }
   let err = 0;
   const party = Object.values(got);
-  for (let i = 0; i < 4; i++) try { Tac.runDay({ players: JSON.parse(JSON.stringify(party)), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 68, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 11 + i, partyAI: 'tactical' }); } catch (e) { err++; console.log('  ', e.message); }
+  for (let i = 0; i < 4; i++) try { Tac.runDay({ players: JSON.parse(JSON.stringify(party)), encounters: [{ monsters: [{ id: 'og', name: 'Ogre', mode: 'custom', hp: 68, AC: 11, saveBonus: 0, count: 2, actions: [{ id: 'og1', name: 'Greatclub', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d8 + 4', toHit: 6, target: 'enemy with least HP', ext: { range: 5 } }] }] }] }, { seed: 11 + i }); } catch (e) { err++; console.log('  ', e.message); }
   check(err === 0, `characters read from sheets fight on the War Table (${err} errors)`);
 }
 
-// AI v2 (docs/ai-v2.md): non-casters and full casters on v2, half casters on the old AI in the same fight; the martial
-// features, pacing, profiles and knowledge modes; then the casters. The rule checks (walls, the dead, hiding, odds) run
-// above as the "v2 AI" sections, and again below for caster-heavy days.
+// The AI (docs/ai-v2.md): the martial features, pacing, profiles and knowledge modes; then the casters. The rule checks (walls, the dead,
+// hiding, odds) run above as the per-fixture sections, and again below for caster-heavy days.
 {
   section('AI v2 (non-casters)');
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
@@ -961,7 +960,7 @@ section('Character sheets');
 
   // the martial roster: Rage, Reckless each turn, Action Surge, Stunning Strike / Flurry, Sneak Attack, Second Wind
   const seen = {};
-  for (let i = 0; i < 10; i++) for (const r of run({ players: martials(), encounters: cp(fixture('bandit-day.json').encounters) }, { seed: 300 + i * 13, ai: { party: 'v2' }, record: true })) {
+  for (let i = 0; i < 10; i++) for (const r of run({ players: martials(), encounters: cp(fixture('bandit-day.json').encounters) }, { seed: 300 + i * 13, record: true })) {
     let reckless = 0;
     for (const e of r.events) {
       const t = e.text || '';
@@ -978,7 +977,7 @@ section('Character sheets');
   // pacing: three easy fights then a hard one; the Barbarian still has a Rage for the boss
   let boss = 0, bossDays = 0;
   for (let i = 0; i < 8; i++) {
-    const res = run({ players: martials(), encounters: [0, 1, 2].map(() => ({ monsters: [srd('Goblin Warrior', 3)] })).concat([{ monsters: [srd('Troll'), srd('Ogre')] }]) }, { seed: 900 + i * 7919, ai: { party: 'v2' }, record: true });
+    const res = run({ players: martials(), encounters: [0, 1, 2].map(() => ({ monsters: [srd('Goblin Warrior', 3)] })).concat([{ monsters: [srd('Troll'), srd('Ogre')] }]) }, { seed: 900 + i * 7919, record: true });
     // only days on which the Barbarian got to act in the boss fight count (the Troll sometimes drops it before its first turn)
     if (res.length === 4 && res[3].events.some(e => /^Barbarian →/.test(e.text))) { bossDays++; if (res[3].events.some(e => /^Barbarian: Rage$/.test(e.text))) boss++; }
   }
@@ -988,13 +987,13 @@ section('Character sheets');
   const goliath = pc('Fighter');
   goliath.actions.push({ id: 'g-stone', name: "Stone's Endurance", actionSlot: 4, freq: { reset: 'lr', uses: 3 }, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', damageReduction: '1d12 + 3' } });
   let small = 0, uses = 0;
-  for (let i = 0; i < 6; i++) for (const r of run({ players: [cp(goliath), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 10)] }, { monsters: [srd('Ogre', 3)] }] }, { seed: 50 + i * 7919, ai: { party: 'v2' }, record: true }))
+  for (let i = 0; i < 6; i++) for (const r of run({ players: [cp(goliath), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 10)] }, { monsters: [srd('Ogre', 3)] }] }, { seed: 50 + i * 7919, record: true }))
     { const st = {}; for (const e of r.events) { const m = e.kind === 'react' && /Stone's Endurance \((\d+) →/.exec(e.text); if (m) { uses++; if (+m[1] < 7 && !(st[e.uid] && st[e.uid].hp <= +m[1])) small++; } for (const k in e.state || {}) st[k] = e.state[k]; } }
   check(uses > 0 && small === 0, `Stone's Endurance is kept for real hits: a big one or one that would drop it (${uses} uses, ${small} on hits under 7 that would not)`);
 
   // no Dodge-crawling toward archers: the Monk dashes in instead
   let crawl = 0;
-  for (let i = 0; i < 6; i++) for (const r of run({ players: [pc('Monk'), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 6)] }] }, { seed: 60 + i * 7919, ai: { party: 'v2' }, record: true, layouts: { 0: { gapFt: 60 } } }))
+  for (let i = 0; i < 6; i++) for (const r of run({ players: [pc('Monk'), pc('Rogue')], encounters: [{ monsters: [srd('Goblin Warrior', 6)] }] }, { seed: 60 + i * 7919, record: true, layouts: { 0: { gapFt: 60 } } }))
     crawl += r.events.filter(e => e.kind === 'buff' && /^Monk .*Dodg/.test(e.text)).length;
   check(crawl <= 1, `the Monk closes on archers without Dodge-crawling (${crawl} Dodge turns)`);
 
@@ -1004,12 +1003,12 @@ section('Character sheets');
   const mp = Tac.aiProfile({ base: 'cautious', w: { risk: 2 } });
   check(mp.w.risk === 2 && mp.w.oa === Tac.AI_PROFILES.cautious.w.oa && Tac.AI_PROFILES.cautious.w.risk !== 2 && Tac.aiProfile('nonsense') === Tac.AI_PROFILES.balanced, 'a profile override merges over its preset without changing it');
   const ogre = srd('Ogre');
-  const prof = run({ players: martials(), encounters: [{ monsters: [Object.assign(cp(ogre), { ext: Object.assign({}, ogre.ext, { aiProfile: 'berserker' }) }), cp(ogre)] }] }, { seed: 5, ai: 'v2', _keep: true });
+  const prof = run({ players: martials(), encounters: [{ monsters: [Object.assign(cp(ogre), { ext: Object.assign({}, ogre.ext, { aiProfile: 'berserker' }) }), cp(ogre)] }] }, { seed: 5, _keep: true });
   const ogres = prof._sim ? prof._sim.units.filter(u => u.team === 'foes') : [];
   check(ogres.length === 2 && ogres[0].v2P.reckless === 'always' && ogres[1].v2P.reckless !== 'always', 'ext.aiProfile picks a monster\'s profile on top of its tier; the one without keeps the tier\'s');
   const berserk = pc('Barbarian'); berserk.ext.aiProfile = 'berserker';
   let swingTurns = 0, recklessTurns = 0;
-  for (let i = 0; i < 4; i++) for (const r of run({ players: [berserk, pc('Fighter')], encounters: [{ monsters: [srd('Ogre', 2)] }] }, { seed: 70 + i, ai: { party: 'v2' }, record: true })) {
+  for (let i = 0; i < 4; i++) for (const r of run({ players: [berserk, pc('Fighter')], encounters: [{ monsters: [srd('Ogre', 2)] }] }, { seed: 70 + i, record: true })) {
     let turn = false, swung = false, rk = false;
     const flush = () => { if (turn && swung) { swingTurns++; if (rk) recklessTurns++; } };
     for (const e of r.events) {
@@ -1022,7 +1021,7 @@ section('Character sheets');
   check(swingTurns > 0 && recklessTurns === swingTurns, `a berserker profile is Reckless on every melee turn (${recklessTurns}/${swingTurns})`);
 
   // knowledge modes: v2 reads the other side only through the k* estimates and runs blind and learning
-  for (const mode of ['blind', 'learn']) for (let i = 0; i < 3; i++) run({ players: cp(ctx.PP).concat(martials()), encounters: cp(hard.encounters) }, { seed: 400 + i, ai: 'v2', know: { party: mode, foes: mode }, morale: 'on' });
+  for (const mode of ['blind', 'learn']) for (let i = 0; i < 3; i++) run({ players: cp(ctx.PP).concat(martials()), encounters: cp(hard.encounters) }, { seed: 400 + i, know: { party: mode, foes: mode }, morale: 'on' });
   check(err === 0, `${err} v2 days threw`);
 
   section('AI v2 (casters)');
@@ -1038,7 +1037,7 @@ section('Character sheets');
   const actedBy = new Set();
   let MS = null;
   for (let i = 0; i < 4; i++) {
-    const mix = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Paladin', 'Ranger'].map(pc), encounters: [{ monsters: [Object.assign(cp(mageTpl), { count: 2 }), srd('Guard', 3)] }] }, { seed: 3 + i, ai: 'v2', record: true, _keep: true });
+    const mix = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Paladin', 'Ranger'].map(pc), encounters: [{ monsters: [Object.assign(cp(mageTpl), { count: 2 }), srd('Guard', 3)] }] }, { seed: 3 + i, record: true, _keep: true });
     MS = mix._sim;
     for (const r of mix) for (const e of r.events) if (['attack', 'save', 'heal', 'buff', 'aoe'].includes(e.kind)) { const u = MS.units.find(x => x.uid === e.uid); if (u) actedBy.add(u.name.replace(/ \d+$/, '')); }
   }
@@ -1083,7 +1082,7 @@ section('Character sheets');
   }
   // bloodied is a disclosure, and the threat estimate reads strength from what it sees (docs/ai-v2.md)
   {
-    const keen = (extra) => { const S = new Tac.Sim(Object.assign({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: true }, extra)); S.ev = (kind, text) => { S.events.push({ kind, text }); }; return S; };
+    const keen = (extra) => { const S = new Tac.Sim(Object.assign({ seed: 1, know: { party: 'learn' }, threat: true }, extra)); S.ev = (kind, text) => { S.events.push({ kind, text }); }; return S; };
     const foeWith = (hp, count) => { const m = srd('Ogre'); m.hp = hp; m.count = count || 1; return Tac.expandTeam([m], 'foes', false); };
     const pc1 = () => Tac.expandTeam([srd('Ogre')], 'party', true)[0];
     const said = (S, re) => S.events.filter(e => re.test(e.text || '')).length;
@@ -1120,7 +1119,7 @@ section('Character sheets');
       check(c.bloodied && noTrue(), 'the record holds no true HP while it stands');
       C.damage(me2, c, 60, { attack: true });
       check(c.dead && kc.hpHi === 120 && noTrue() && C.kMax(me2, c) !== 97, `a kill bounds max by the hits as rolled (<= ${kc.hpHi}), not the true 97 (reads ${Math.round(C.kMax(me2, c))})`);
-      const O = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: false }), [o] = foeWith(97), me3 = pc1(); O.units = [me3, o];
+      const O = new Tac.Sim({ seed: 1, know: { party: 'learn' }, threat: false }), [o] = foeWith(97), me3 = pc1(); O.units = [me3, o];
       O.damage(me3, o, 150, { attack: true });
       check(O.kind('party', o).hpHi === 97, 'threat: false keeps the classic reading (it writes the exact maximum on a kill)');
     }
@@ -1147,9 +1146,9 @@ section('Character sheets');
       check(ks.dc === 19 && ks.atk.length === 1 && ks.th > ks.thPrior, 'an announced high save DC raises the score');
     }
     {
-      const lv = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' } }), bl = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'blind' }, threat: true }), bd = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: 'bounds' }), off = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: 'learn' }, threat: false });
-      check(lv.keen('party') && lv.threatOn('party') && !bl.keen('party') && !new Tac.Sim({ seed: 1, ai: { party: 'v2' }, threat: true }).keen('party') && bd.keen('party') && !bd.threatOn('party') && !off.keen('party'), 'the threat estimate is the default for learn only: not blind, not open; threat: bounds is the bloodied reading alone, false the classic reading');
-      const S = keen({ ai: 'v2', know: { party: 'open', foes: 'learn' } }), me = pc1(), [t] = foeWith(60); me.maxHp = 80; me.hp = 80; me.startFull = true; S.units = [me, t];
+      const lv = new Tac.Sim({ seed: 1, know: { party: 'learn' } }), bl = new Tac.Sim({ seed: 1, know: { party: 'blind' }, threat: true }), bd = new Tac.Sim({ seed: 1, know: { party: 'learn' }, threat: 'bounds' }), off = new Tac.Sim({ seed: 1, know: { party: 'learn' }, threat: false });
+      check(lv.keen('party') && lv.threatOn('party') && !bl.keen('party') && !new Tac.Sim({ seed: 1, threat: true }).keen('party') && bd.keen('party') && !bd.threatOn('party') && !off.keen('party'), 'the threat estimate is the default for learn only: not blind, not open; threat: bounds is the bloodied reading alone, false the classic reading');
+      const S = keen({ know: { party: 'open', foes: 'learn' } }), me = pc1(), [t] = foeWith(60); me.maxHp = 80; me.hp = 80; me.startFull = true; S.units = [me, t];
       S.damage(t, me, 45, { attack: true });
       const k = S.kind('foes', me);
       check(me.bloodied && k.hpHi === 90 && k.hpLo === 46 && !S.threatOn('foes') && S.keen('foes'), 'the same flag and bounds for a foe side that learns; it keeps its size priors');
@@ -1158,14 +1157,14 @@ section('Character sheets');
 
   // control into Legendary Resistance is priced by the uses left; the burn plan is open mode's alone (docs/ai-v2.md)
   {
-    const holdWizard = () => { const u = Tac.expandTeam([pc('Wizard')], 'party', true)[0]; u.ai = 'tactical'; return u; };
-    const S = new Tac.Sim({ seed: 1, ai: { party: 'v2' } }), me = holdWizard(), m = srd('Ogre'); m.ext.legendaryResistance = 3;
+    const holdWizard = () => { const u = Tac.expandTeam([pc('Wizard')], 'party', true)[0]; return u; };
+    const S = new Tac.Sim({ seed: 1 }), me = holdWizard(), m = srd('Ogre'); m.ext.legendaryResistance = 3;
     const [t] = Tac.expandTeam([m], 'foes', false); S.units = [me, t]; me.onBoard = t.onBoard = true; S.v2Setup(me);
     const a = me.actions.find(x => x.type === 'debuff' && x.buff && x.buff.condition === 'Paralyzed');
     const ctx = S.v2Ctx(me, 30), full = S.v2Control(me, a, t, ctx, true), at = n => { t.uses.set('__legres', n); ctx.burn = null; return S.v2Control(me, a, t, ctx); };
     const v3 = at(3), v2 = at(2), v1 = at(1), v0 = at(0);
     check(v3 < v2 && v2 < v1 && v1 < full && Math.abs(v0 - full) < 1e-6, `control into LR is worth more as uses run out (3: ${v3.toFixed(1)}, 2: ${v2.toFixed(1)}, 1: ${v1.toFixed(1)}, none: ${v0.toFixed(1)})`);
-    const cast = know => { const L = new Tac.Sim({ seed: 1, ai: { party: 'v2' }, know: { party: know } }), w = holdWizard(), [b] = Tac.expandTeam([m], 'foes', false); L.units = [w, b]; w.onBoard = b.onBoard = true; L.v2Setup(w); b.legSeen = 1; L.kind('party', b).legRes = 1; return L.v2Burn(w, L.v2Ctx(w, 30)); };
+    const cast = know => { const L = new Tac.Sim({ seed: 1, know: { party: know } }), w = holdWizard(), [b] = Tac.expandTeam([m], 'foes', false); L.units = [w, b]; w.onBoard = b.onBoard = true; L.v2Setup(w); b.legSeen = 1; L.kind('party', b).legRes = 1; return L.v2Burn(w, L.v2Ctx(w, 30)); };
     check(cast('learn') === null && cast('blind') === null, 'no burn plan in learn or blind, even once Legendary Resistance has been seen');
   }
 
@@ -1182,7 +1181,7 @@ section('Character sheets');
       const t = { burn: 0, race: 0, lr: 0, n: 6 };
       for (let i = 0; i < t.n; i++) {
         const pl = party(); if (bias !== undefined) pl.forEach(p => { p.ext.aiProfile = { burn: { bias } }; });
-        for (const r of run({ players: pl, encounters: [{ monsters: [boss()] }] }, { seed: 900 + i * 13, ai: { party: 'v2' }, record: true })) {
+        for (const r of run({ players: pl, encounters: [{ monsters: [boss()] }] }, { seed: 900 + i * 13, record: true })) {
           if (r.events.some(e => e.kind === 'intent' && /wants the party to burn/.test(e.text))) t.burn++;
           if (r.events.some(e => e.kind === 'intent' && /reckons the party should race/.test(e.text))) t.race++;
           t.lr += r.events.filter(e => /uses Legendary Resistance/.test(e.text || '')).length;
@@ -1204,7 +1203,7 @@ section('Character sheets');
     const acc = { wallSteps: 0, throughWalls: 0, deadActs: 0, incapActs: 0, badHide: 0, events: 0 }, runs = [];
     let negSlots = 0, ff = 0, days = 0;
     for (let i = 0; i < 12; i++) {
-      const res = run(cday(), { seed: 700 + i * 7919, ai: 'v2', record: true, layouts: layout ? { 0: layout, 1: layout, 2: layout } : undefined });
+      const res = run(cday(), { seed: 700 + i * 7919, record: true, layouts: layout ? { 0: layout, 1: layout, 2: layout } : undefined });
       runs.push({ seed: 700 + i * 7919, res }); days++;
       for (const r of res) {
         scanRules(r, layout, acc);
@@ -1215,28 +1214,28 @@ section('Character sheets');
         }
       }
     }
-    const Sx = Tac.summarize(cday(), runs, { partyAI: 'tactical' });
+    const Sx = Tac.summarize(cday(), runs, {});
     check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `casters on v2, ${layout ? 'walled map' : 'open field'}: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides`);
     check(negSlots === 0, `${negSlots} negative slot counts`);
     check(ff <= days * 0.5, `friendly fire from area spells stays rare (${ff} allies caught in ${days} days)`);
     check(Sx.encounters.every(e => e.winRate >= 0 && e.winRate <= 1 && e.anyDeath >= 0 && e.anyDeath <= 1), 'caster odds are probabilities');
   }
 
-  // what the caster terms are for (tests/ai-compare.js has the old-vs-v2 numbers)
+  // what the caster terms are for (tests/ai-compare.js has the scenario tables)
   let fodder = 0, lr = 0, stacked = 0, dropped = 0, fire = 0, hold = 0, misty = 0;
   const walkR = (r, fn) => { let prev = {}; for (const e of r.events) { const cur = Object.assign({}, prev); for (const k in e.state || {}) cur[k] = Object.assign({}, prev[k] || {}, e.state[k]); fn(e, prev); prev = cur; } };
   for (let i = 0; i < 8; i++) {
     // an easy opener before ogres: the 2nd-level and higher slots wait, the cantrips do the work
-    const d1 = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Bard'].map(pc), encounters: [{ monsters: [srd('Goblin Warrior', 3)] }, { monsters: [srd('Ogre', 2)] }] }, { seed: 40 + i * 7919, ai: { party: 'v2' }, record: true });
+    const d1 = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Bard'].map(pc), encounters: [{ monsters: [srd('Goblin Warrior', 3)] }, { monsters: [srd('Ogre', 2)] }] }, { seed: 40 + i * 7919, record: true });
     if (d1[0]) fodder += d1[0].events.filter(e => e.kind !== 'intent' && /^(Wizard|Cleric|Bard) (→ [^:]*: [^,]*\(L[2-9]\)|unleashes [^,]*\(L[2-9]\))/.test(e.text || '')).length;
     if (d1[0] && d1[0].events.some(e => e.kind === 'intent' && /holds its spell slots/.test(e.text))) hold++;
     // a boss with Legendary Resistance and a good Wisdom save: no Hold Person into it
     const g2 = srd('Gladiator'); g2.ext.legendaryResistance = 3;
-    const d2 = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Bard'].map(pc), encounters: [{ monsters: [g2, srd('Bandit', 2)] }] }, { seed: 50 + i * 7919, ai: { party: 'v2' }, record: true });
+    const d2 = run({ players: ['Fighter', 'Wizard', 'Cleric', 'Bard'].map(pc), encounters: [{ monsters: [g2, srd('Bandit', 2)] }] }, { seed: 50 + i * 7919, record: true });
     // (a control spell is a save with no damage: "— affected" / "— saved"; damage saves can burn a use too, and that's fine)
     if (d2[0]) walkR(d2[0], (e, prev) => { if (e.kind === 'save' && /^(Wizard|Cleric|Bard) → Gladiator[^:]*: .*, DC \d+ \w+ — (auto-fails, )?(affected|saved)/.test(e.text) && !/damage/.test(e.text) && prev[e.target] && /^[1-9]/.test(prev[e.target].legRes || '')) lr++; });
     // a Bard and a Cleric against four ogres: the pattern is kept, nothing is stacked on a disabled ogre
-    const d3 = run({ players: ['Cleric', 'Bard', 'Barbarian', 'Fighter'].map(pc), encounters: [{ monsters: [srd('Ogre', 4)] }] }, { seed: 60 + i * 7919, ai: { party: 'v2' }, record: true });
+    const d3 = run({ players: ['Cleric', 'Bard', 'Barbarian', 'Fighter'].map(pc), encounters: [{ monsters: [srd('Ogre', 4)] }] }, { seed: 60 + i * 7919, record: true });
     if (d3[0]) walkR(d3[0], (e, prev) => {
       if (e.kind === 'effect' && /snaps out of it/.test(e.text) && e.uid && prev[e.uid]) prev[e.uid].conds = [];   // that line carries no state of its own
       if (e.kind === 'save' && /^(Bard|Cleric) → Ogre[^:]*: [^,]*, DC \d+ \w+ — (affected|saved)/.test(e.text) && prev[e.target] && (prev[e.target].conds || []).some(c => INCAP.includes(c))) stacked++;
@@ -1244,13 +1243,13 @@ section('Character sheets');
       if (held === 'Hypnotic Pattern' && now && now !== held && Object.keys(prev).some(k => prev[k].hp > 0 && (prev[k].buffs || []).some(b => /Hypnotic Pattern/.test(b[0])))) dropped++;
     });
     // a Sorcerer with Fireball against a crowd says what it's doing
-    const d4 = run({ players: ['Fighter', 'Sorcerer'].map(pc), encounters: [{ monsters: [srd('Goblin Warrior', 8)] }] }, { seed: 70 + i * 7919, ai: { party: 'v2' }, record: true });
+    const d4 = run({ players: ['Fighter', 'Sorcerer'].map(pc), encounters: [{ monsters: [srd('Goblin Warrior', 8)] }] }, { seed: 70 + i * 7919, record: true });
     if (d4[0] && d4[0].events.some(e => e.kind === 'intent' && /^Sorcerer casts (Fireball|Lightning Bolt) to catch [2-9]/.test(e.text))) fire++;
     // a Wizard with cantrips and Misty Step, between two slow Basilisks: walking off provokes, Disengage costs its action
     const wm = pc('Wizard'); wm.ext.spellbook.spells = wm.ext.spellbook.spells.filter(x => !x.level || /Misty/.test(x.name));
     const bas = srd('Basilisk', 2), mpos = { 'party|c5-wizard|0': { x: 10, y: 8 }, 'party|c5-fighter|0': { x: 3, y: 8 } };
     mpos['foes|' + bas.id + '|0'] = { x: 11, y: 8 }; mpos['foes|' + bas.id + '|1'] = { x: 9, y: 8 };
-    const d5 = run({ players: [wm, pc('Fighter')], encounters: [{ monsters: [bas] }] }, { seed: 80 + i * 7919, ai: { party: 'v2' }, record: true, layouts: { 0: { positions: mpos } } });
+    const d5 = run({ players: [wm, pc('Fighter')], encounters: [{ monsters: [bas] }] }, { seed: 80 + i * 7919, record: true, layouts: { 0: { positions: mpos } } });
     if (d5[0] && d5[0].events.some(e => e.kind === 'move' && /^Wizard teleports/.test(e.text))) misty++;
   }
   check(fodder <= 1, `v2 keeps 2nd-level and higher slots off a trivial opener (${fodder} such casts in 8 days)`);
@@ -1263,7 +1262,7 @@ section('Character sheets');
   check(err === 0, `${err} v2 days threw`);
 }
 
-// Lingering damage (Spirit Guardians, Moonbeam…): a concentration area keeps hurting each round, on the old AI and v2
+// Lingering damage (Spirit Guardians, Moonbeam…): a concentration area keeps hurting each round
 section('Lingering damage zones');
 {
   const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
@@ -1277,30 +1276,30 @@ section('Lingering damage zones');
   };
   const dummy = (dmg, save) => ({ id: 'dm', name: 'Dummy', mode: 'custom', hp: 600, AC: 8, saveBonus: save, count: 2, speed: 30,
     actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: dmg, toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] });
-  const fight = (party, foe, seed, ai) => Tac.runDay({ players: party, encounters: [{ monsters: [foe] }] }, { seed, partyAI: 'tactical', ai, record: true, maxRounds: 6 })[0];
+  const fight = (party, foe, seed) => Tac.runDay({ players: party, encounters: [{ monsters: [foe] }] }, { seed, record: true, maxRounds: 6 })[0];
   const ticks = (r, spell, who) => r.events.filter(e => e.kind === 'save' && new RegExp(`^${who || 'Cleric'} → Dummy [0-9]: ${spell}`).test(e.text));
   const byRound = list => { const m = {}; for (const e of list) m[e.round] = (m[e.round] || 0) + 1; return m; };
 
   // a foe that starts its turn in the emanation takes the damage every round, once a round, for as long as it holds
   let steady = 0, once = 0;
-  for (const ai of [undefined, 'v2']) for (let s = 1; s <= 4; s++) {
-    const r = fight([only('Cleric', 'Spirit Guardians', [0, 0, 1])], dummy('0', 0), s, ai), m = byRound(ticks(r, 'Spirit Guardians'));
+  for (let s = 1; s <= 4; s++) {
+    const r = fight([only('Cleric', 'Spirit Guardians', [0, 0, 1])], dummy('0', 0), s), m = byRound(ticks(r, 'Spirit Guardians'));
     if ([2, 3, 4].every(k => m[k] === 2)) steady++;
     if (Object.values(m).every(n => n <= 2)) once++;
   }
-  check(steady >= 7, `Spirit Guardians hurts both foes standing in it in rounds 2, 3 and 4, not just when cast (${steady} of 8 fights)`);
-  check(once === 8, 'a foe is hit at most once a round by a zone');
+  check(steady >= 3, `Spirit Guardians hurts both foes standing in it in rounds 2, 3 and 4, not just when cast (${steady} of 4 fights)`);
+  check(once === 4, 'a foe is hit at most once a round by a zone');
 
   // a zone that follows its caster hurts nobody on the far side of a wall (the cells are cut by walls, as for a burst)
   let wallHits = 0, openHits = 0;
-  for (const ai of [undefined, 'v2']) for (let sd = 1; sd <= 4; sd++) {
+  for (let sd = 1; sd <= 4; sd++) {
     const foe = dummy('0', 0); foe.ext = { speed: 0 };
     const pos = { 'party|c5-cleric|0': { x: 10, y: 2 }, ['foes|dm|0']: { x: 9, y: 2 }, ['foes|dm|1']: { x: 12, y: 2 } };
-    const r = Tac.runDay({ players: [only('Cleric', 'Spirit Guardians', [0, 0, 1])], encounters: [{ monsters: [foe] }] }, { seed: sd, partyAI: 'tactical', ai, record: true, maxRounds: 6, layouts: { 0: { gapFt: 30, positions: pos, terrain: { cells } } } })[0];
+    const r = Tac.runDay({ players: [only('Cleric', 'Spirit Guardians', [0, 0, 1])], encounters: [{ monsters: [foe] }] }, { seed: sd, record: true, maxRounds: 6, layouts: { 0: { gapFt: 30, positions: pos, terrain: { cells } } } })[0];
     const hits = n => ticks(r, 'Spirit Guardians').filter(e => e.text.includes('Dummy ' + n + ':')).length;
     openHits += hits(1) ? 1 : 0; wallHits += hits(2);
   }
-  check(openHits >= 6 && wallHits === 0, `Spirit Guardians reaches the foe beside the Cleric (${openHits} of 8 fights) and never the one behind the wall (${wallHits} hits)`);
+  check(openHits >= 3 && wallHits === 0, `Spirit Guardians reaches the foe beside the Cleric (${openHits} of 4 fights) and never the one behind the wall (${wallHits} hits)`);
 
   // concentration breaks: the zone is gone and nothing ticks until it is cast again
   let ends = 0, ghosts = 0;
@@ -1336,13 +1335,13 @@ section('Lingering damage zones');
 
   // Moonbeam: the caster's action moves it, with no new slot (one 2nd-level slot, several casts), and it keeps hurting
   let moved = 0, recasts = 0, hits = 0;
-  for (const ai of [undefined, 'v2']) for (let s = 1; s <= 4; s++) {
-    const r = fight([only('Druid', 'Moonbeam', [0, 1])], dummy('0', 0), s, ai);
+  for (let s = 1; s <= 4; s++) {
+    const r = fight([only('Druid', 'Moonbeam', [0, 1])], dummy('0', 0), s);
     recasts += r.events.filter(e => e.kind === 'aoe' && /Moonbeam/.test(e.text)).length;
     moved += r.events.filter(e => e.kind === 'zoneEnd' && /Moonbeam.* moves/.test(e.text)).length;
     hits += ticks(r, 'Moonbeam', 'Druid').length;
   }
-  check(recasts >= 16 && moved >= 8, `Moonbeam is moved by a free action with no new slot (${recasts} casts and ${moved} moves in 8 fights with one slot)`);
+  check(recasts >= 8 && moved >= 4, `Moonbeam is moved by a free action with no new slot (${recasts} casts and ${moved} moves in 4 fights with one slot)`);
   check(hits > recasts, `…and it also hurts at the start of the foes' turns (${hits} hits)`);
 
   // the zone ends at its duration
@@ -1367,7 +1366,7 @@ section('Pre-fight buffs (Aid cast in the morning; morningShare 1 = every slot m
     actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] };
   const day = slots => ({ players: [cleric(slots), build('Fighter'), build('Wizard'), build('Rogue'), build('Barbarian')], encounters: [{ monsters: [cp(foe)] }, { monsters: [cp(foe)] }] });
   const base = {}; day([0, 0]).players.forEach(p => { base[p.name] = p.hp; });
-  const run = (slots, o) => Tac.runDay(day(slots), Object.assign({ seed: 11, partyAI: 'tactical', record: true, maxRounds: 8, _keep: true, morningShare: 1 }, o));
+  const run = (slots, o) => Tac.runDay(day(slots), Object.assign({ seed: 11, record: true, maxRounds: 8, _keep: true, morningShare: 1 }, o));
   const morning = r => r.events.filter(e => /this morning/.test(e.text || ''));
   const aidHeals = r => r.events.filter(e => e.kind === 'heal' && /: Aid, max HP/.test(e.text));
   const grown = r => r.party.filter(p => p.maxHp > base[p.name]).map(p => p.name).sort();
@@ -1407,9 +1406,9 @@ section('Several attack rolls in one action: each swing picks its own target whe
     actions: [{ id: 'sw1', name: 'Multiattack', actionSlot: 0, freq: 'at will', condition: 'default', targets: 3, type: 'atk', dpr: '10', toHit: 99, target: 'enemy with most HP', ext: { range: 5 } }] };
   const dummy = (id, hp) => ({ id, name: id, mode: 'custom', hp, AC: 5, saveBonus: 0, count: 1, speed: 0, actions: [{ id: id + 'x', name: 'Nothing', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '0', toHit: -99, target: 'enemy with least HP', ext: { range: 5 } }] });
   const pos = { 'party|sw|0': { x: 5, y: 5 }, 'foes|weak|0': { x: 6, y: 5 }, 'foes|tank|0': { x: 6, y: 6 }, 'foes|mid|0': { x: 4, y: 5 }, 'foes|far|0': { x: 28, y: 5 } };
-  for (const [label, ai] of [['old AI', undefined], ['v2', { party: 'v2', foes: 'tiers' }]]) for (const know of ['open', 'learn', 'blind']) {
+  for (const label of ['v2']) for (const know of ['open', 'learn', 'blind']) {
     const r = Tac.runDay({ players: [JSON.parse(JSON.stringify(swinger))], encounters: [{ monsters: [dummy('weak', 5), dummy('tank', 200), dummy('mid', 15), Object.assign(dummy('far', 3), { speed: 5 })] }] },
-      { seed: 5, ai, partyAI: 'tactical', record: true, maxRounds: 1, width: 30, know: { party: know, foes: know }, layouts: { 0: { gapFt: 5, positions: pos } } })[0];
+      { seed: 5, record: true, maxRounds: 1, width: 30, know: { party: know, foes: know }, layouts: { 0: { gapFt: 5, positions: pos } } })[0];
     const me = r.units.find(x => x.name === 'Swinger').uid;
     const turn = r.events.findIndex(e => e.kind === 'turn' && e.uid === me), next = r.events.findIndex((e, i) => i > turn && e.kind === 'turn');
     const hits = r.events.slice(turn, next < 0 ? undefined : next).filter(e => e.kind === 'attack' && e.uid === me);
@@ -1438,7 +1437,7 @@ section('An area is worth what it does to everyone in it (v2 breath aim)');
   let breaths = 0, caught = 0;
   for (let i = 0; i < 40; i++) {
     const r = Tac.runDay({ players: cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players), encounters: [{ monsters: [cp(drg)] }] },
-      { seed: 1000 + i * 7919, ai: { party: 'v2', foes: 'tiers' }, partyAI: 'tactical', record: true, know: { party: 'learn', foes: 'learn' } })[0];
+      { seed: 1000 + i * 7919, record: true, know: { party: 'learn', foes: 'learn' } })[0];
     const team = {}; for (const x of r.units) team[x.uid] = x.team;
     let open = null;
     for (const e of r.events) {
@@ -1459,7 +1458,7 @@ section('Fog Cloud in one currency (v2FogValue)');
     const boss = cp(Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'long-homebrew-boss.txt'), 'utf8')).monsters[0]);
     boss.id = 'tyr'; boss.mode = 'custom'; boss.count = 1; boss.actions.forEach((a, i) => { a.id = 'tyr' + i; if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * scale)); });
     const r = Tac.runDay({ players: cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players), encounters: [{ monsters: [boss] }] },
-      { seed: 3, ai: { party: 'v2', foes: 'tiers' }, partyAI: 'tactical', maxRounds: 1, _keep: true, know: { party: 'open', foes: 'open' } });
+      { seed: 3, maxRounds: 1, _keep: true, know: { party: 'open', foes: 'open' } });
     const s = r._sim, fw = s.units.find(u => /Faithwalker/.test(u.name)), t = s.units.find(u => u.team === 'foes');
     const fog = fw && fw.actions.find(a => a.ext && a.ext.zone && a.ext.zone.fog);
     s.zones = [];
@@ -1479,18 +1478,18 @@ section('HP at the start of a fight, and the replay\'s max HP after an Aid cast 
   const cp = x => JSON.parse(JSON.stringify(x));
   const mon = (name, count) => { const s = ctx.M.find(m => m.name === name), m = cp(Parser.parse(s.text).monsters[0]); m.id = s.id; m.mode = 'custom'; m.count = count || 1; m.actions.forEach((a, i) => { a.id = s.id + i; }); return m; };
   const zaki = () => cp(JSON.parse(fs.readFileSync(path.join(ROOT, 'parties/zaki-party-level-5.json'), 'utf8')).players);
-  // every party member starts fight 1 at full HP, in the sim and in frame 0 of the replay, on both AIs
+  // every party member starts fight 1 at full HP, in the sim and in frame 0 of the replay
   const proto = Tac.Sim.prototype, re = proto.runEncounter;
   let low = 0, frame = 0, days = 0;
   proto.runEncounter = function (party, foes, e, l) { if (this.fightNo === 0) for (const u of party) if (!u.dead && u.hp !== u.maxHp) low++; return re.call(this, party, foes, e, l); };
   try {
-    for (const ai of [undefined, { party: 'v2', foes: 'tiers' }]) for (let i = 0; i < 4; i++) {
-      const r = Tac.runDay({ players: zaki(), encounters: cp(fixture('hard-day.json').encounters).slice(0, 1) }, { seed: 700 + i * 7919, ai, partyAI: 'tactical', record: true, maxRounds: 6 })[0];
+    for (let i = 0; i < 4; i++) {
+      const r = Tac.runDay({ players: zaki(), encounters: cp(fixture('hard-day.json').encounters).slice(0, 1) }, { seed: 700 + i * 7919, record: true, maxRounds: 6 })[0];
       days++;
       for (const u of r.units) if (u.team === 'party' && r.events[0].state[u.uid].hp !== u.maxHp) frame++;
     }
   } finally { proto.runEncounter = re; }
-  check(days === 8 && low === 0, `every party member starts fight 1 with hp = max HP (${low} below, ${days} days)`);
+  check(days === 4 && low === 0, `every party member starts fight 1 with hp = max HP (${low} below, ${days} days)`);
   check(frame === 0, `frame 0 of the replay shows every party member at its full max HP (${frame} shown below)`);
   // an Aid cast in the fight (Zaki's party vs a Mage and 4 Guards, no morning casts: Niko casts Aid at 3rd level; seed 1000 is one where it happens)
   const r = Tac.runDay({ players: zaki(), encounters: [{ monsters: [mon('Mage'), mon('Guard', 4)] }] }, { seed: 1000, record: true, prefightBuffs: false, know: { party: 'learn', foes: 'open' } })[0];
@@ -1528,7 +1527,7 @@ section('Pre-fight buffs: Mage Armor, Death Ward, the table and morningShare');
   const foe = { id: 'dm', name: 'Dummy', mode: 'custom', hp: 30, AC: 8, saveBonus: 0, count: 1, speed: 30,
     actions: [{ id: 'dm1', name: 'Slap', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 99, target: 'enemy with least HP', ext: { range: 5 } }] };
   const day = (spells, slots) => ({ players: [caster(spells, slots), build('Fighter'), mark(build('Wizard'), 3), mark(build('Rogue'), 4), build('Barbarian')], encounters: [{ monsters: [cp(foe)] }, { monsters: [cp(foe)] }] });
-  const run = (d, o) => Tac.runDay(d, Object.assign({ seed: 11, partyAI: 'tactical', record: true, maxRounds: 6, _keep: true }, o));
+  const run = (d, o) => Tac.runDay(d, Object.assign({ seed: 11, record: true, maxRounds: 6, _keep: true }, o));
   const morning = r => r.events.filter(e => /this morning/.test(e.text || ''));
   const unit = (r, n) => r._sim.units.find(u => u.name === n);
   const L = [4, 3, 2];
@@ -1591,7 +1590,7 @@ section('AI v2: downed allies (step 2.12)');
     const players = party.map(build), proto = Tac.Sim.prototype, turn = proto.turn;
     let out = null;
     proto.turn = function (u) { if (!out) { out = this; set(this); } };
-    try { Tac.runDay({ players, encounters: [{ monsters: foes }] }, { seed: 7, partyAI: 'tactical', ai: { party: 'v2' }, maxRounds: 1, _keep: true }); } finally { proto.turn = turn; }
+    try { Tac.runDay({ players, encounters: [{ monsters: foes }] }, { seed: 7, maxRounds: 1, _keep: true }); } finally { proto.turn = turn; }
     return out;
   };
   const worth = (sim, name, target) => {
@@ -1626,7 +1625,7 @@ section('AI v2: downed allies (step 2.12)');
     turn.call(this, u);
     if (want && u.concentrating && u.healed > before) healed++;
   };
-  for (let i = 0; i < 40; i++) Tac.runDay({ players: ['Fighter', 'Cleric', 'Wizard', 'Rogue'].map(build), encounters: [{ monsters: [foe('Brute', 90, 4)] }] }, { seed: 900 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' } });
+  for (let i = 0; i < 40; i++) Tac.runDay({ players: ['Fighter', 'Cleric', 'Wizard', 'Rogue'].map(build), encounters: [{ monsters: [foe('Brute', 90, 4)] }] }, { seed: 900 + i * 7919 });
   proto.turn = turn;
   check(chances > 5 && healed / chances > 0.5, `Healing Word gets a downed ally up on most turns the Cleric already holds its concentration spell (${healed}/${chances})`);
   // a potion goes to a creature at 0 HP within 5 ft
@@ -1636,14 +1635,14 @@ section('AI v2: downed allies (step 2.12)');
   let fed = 0;
   proto.turn = function (u) { if (!this._dropped) { this._dropped = true; const f = this.units.find(o => o.name === 'Fighter'), r = this.units.find(o => o.name === 'Rogue'); f.x = r.x; f.y = r.y + 1; this.boardChanged(); this.downPC(f); } turn.call(this, u); };
   const rec = [];
-  for (let i = 0; i < 12; i++) rec.push(Tac.runDay({ players: [build('Fighter'), cp(rogue), build('Barbarian')], encounters: [{ monsters: [foe('Brute', 60, 3)] }] }, { seed: 300 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true }));
+  for (let i = 0; i < 12; i++) rec.push(Tac.runDay({ players: [build('Fighter'), cp(rogue), build('Barbarian')], encounters: [{ monsters: [foe('Brute', 60, 3)] }] }, { seed: 300 + i * 7919, record: true }));
   proto.turn = turn;
   for (const res of rec) for (const r of res) if (r.events.some(e => e.kind === 'heal' && /Rogue → Fighter: Potion of Healing/.test(e.text || ''))) fed++;
   check(fed >= 6, `a potion is fed to a downed ally within 5 ft (${fed}/12 days)`);
   // Healing Light: a dice-pool heal is an ordinary heal on v2
   const w = build('Warlock');
   w.actions.push({ id: 'w-hl', name: 'Healing Light', actionSlot: 1, freq: { reset: 'lr', uses: 6 }, condition: 'ally under half HP', targets: 1, type: 'heal', amount: '4d6', target: 'ally with the least HP', ext: { range: 60, pool: { dice: 6, die: 6, maxPer: 4 } } });
-  const res = Tac.runDay({ players: [w, build('Fighter')], encounters: [{ monsters: [foe('Brute', 30, 2)] }] }, { seed: 5, partyAI: 'tactical', ai: { party: 'v2' }, _keep: true });
+  const res = Tac.runDay({ players: [w, build('Fighter')], encounters: [{ monsters: [foe('Brute', 30, 2)] }] }, { seed: 5, _keep: true });
   check(!!res._sim.units.find(o => o.name === 'Warlock').v2P, 'a creature with a dice-pool heal plays the AI');
 }
 
@@ -1663,7 +1662,7 @@ section('AI v2: Revivify (step 2.12)');
       return turn.call(this, u);
     };
   };
-  const day = (players, n, o) => Tac.runDay({ players, encounters: Array.from({ length: n }, () => ({ monsters: [foe('Dummy', 12, 2)] })) }, Object.assign({ seed: 21, partyAI: 'tactical', ai: { party: 'v2' }, record: true, _keep: true }, o));
+  const day = (players, n, o) => Tac.runDay({ players, encounters: Array.from({ length: n }, () => ({ monsters: [foe('Dummy', 12, 2)] })) }, Object.assign({ seed: 21, record: true, _keep: true }, o));
   const fighter = r => r.party.find(p => p.name === 'Fighter');
 
   check(build('Cleric').ext.spellbook.spells.some(s => s.name === 'Revivify' && s.ext.revivify && s.ext.wtOnly), 'the Life Cleric has Revivify, War Table only');
@@ -1814,7 +1813,7 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
       probe['imm-' + know] = s.v2SmiteBest(u, sm, t, false, 30, 0).v;
       probe.hold = s.v2SmiteHold(u, u.actions.find(a => /Longsword/.test(a.name)), t);
     });
-    Tac.runDay({ players: [build('Paladin'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 5, partyAI: 'tactical', ai: { party: 'v2' }, know: { party: know } });
+    Tac.runDay({ players: [build('Paladin'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 5, know: { party: know } });
   }
   proto.turn = turn;
   check(probe.L && probe.L.join() === '1,2', `Divine Smite can be cast at each free slot level (${probe.L})`);
@@ -1829,11 +1828,11 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
   let keep = null;
   const rs = [];
   for (let i = 0; i < 6; i++) {
-    const r = Tac.runDay({ players: [pal9(), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 30, 2, 3)] }] }, { seed: 40 + i, partyAI: 'tactical', ai: { party: 'v2' }, record: true, _keep: true });
+    const r = Tac.runDay({ players: [pal9(), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 30, 2, 3)] }] }, { seed: 40 + i, record: true, _keep: true });
     rs.push(r);
   }
   once((s, u) => { s.kill(s.units.find(o => o.name === 'Fighter'), null, 'test'); const sm = u.smiteA; keep = { l3: s.v2PaceCost(u, sm, 20, 3), l1: s.v2PaceCost(u, sm, 20, 1), res: s.v2Reserve(u) }; });
-  Tac.runDay({ players: [pal9(), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 30, 2, 3)] }] }, { seed: 9, partyAI: 'tactical', ai: { party: 'v2' } });
+  Tac.runDay({ players: [pal9(), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 30, 2, 3)] }] }, { seed: 9 });
   proto.turn = turn;
   check(keep && keep.res && keep.res.n === 1 && keep.l3 > keep.l1 + 40, `a dead ally makes the Paladin keep its 3rd-level slot: a smite at L3 costs ${keep && keep.l3.toFixed(1)}, at L1 ${keep && keep.l1.toFixed(1)}`);
   const l3 = rs.reduce((t, r) => t + r[0].events.filter(e => e.kind === 'attack' && /Divine Smite \(L3\)/.test(e.text || '')).length, 0);
@@ -1847,7 +1846,7 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
       if (!this._downed) { this._downed = true; const f = this.units.find(o => o.name === 'Fighter'); f.hp = 0; this.downPC(f); }
       return turn.call(this, u);
     };
-    const r = Tac.runDay({ players: [build('Paladin'), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }, { monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 70 + i * 13, partyAI: 'tactical', ai: { party: 'v2' }, record: true });
+    const r = Tac.runDay({ players: [build('Paladin'), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }, { monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 70 + i * 13, record: true });
     proto.turn = turn;
     loh.runs++;
     const ev = r[0].events.find(e => e.kind === 'heal' && /Paladin → Fighter: Lay on Hands/.test(e.text || ''));
@@ -1867,7 +1866,7 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
         if (!this._downed) { this._downed = true; const f = this.units.find(o => o.name === 'Fighter'), r = this.units.find(o => o.name === 'Rogue'); r.hp = Math.ceil(r.maxHp * 0.6); if (i % 2) { f.hp = 0; this.downPC(f); } else f.hp = Math.ceil(f.maxHp * 0.3); }
         return turn.call(this, u);
       };
-      Tac.runDay({ players: [build('Paladin'), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }, { monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 300 + i * 11, partyAI: 'tactical', ai: { party: 'v2' } });
+      Tac.runDay({ players: [build('Paladin'), build('Fighter'), build('Rogue')], encounters: [{ monsters: [foe('Brute', 45, 2, 9)] }, { monsters: [foe('Brute', 45, 2, 9)] }] }, { seed: 300 + i * 11 });
       proto.turn = turn;
     }
     proto.heal = heal0; proto.doAction = act0;
@@ -1889,7 +1888,7 @@ section('AI v2: a burn is scored as a burn (Caustic Brew)');
   const proto = Tac.Sim.prototype, turn = proto.turn;
   let sim = null;
   proto.turn = function () { sim = sim || this; };
-  Tac.runDay({ players: [w], encounters: [{ monsters: [foe] }] }, { seed: 3, partyAI: 'tactical', ai: { party: 'v2' }, maxRounds: 1, _keep: true });
+  Tac.runDay({ players: [w], encounters: [{ monsters: [foe] }] }, { seed: 3, maxRounds: 1, _keep: true });
   proto.turn = turn;
   const u = sim.units.find(o => o.team === 'party'), t = sim.units.find(o => o.team === 'foes');
   const B = u.actions.find(a => a.name === 'Brew'), O = u.actions.find(a => a.name === 'Orb'), c = sim.v2Ctx(u, 30);
@@ -1943,18 +1942,18 @@ section('A creature that drops loses the rest of its turn');
     return n;
   };
   let bad = 0, heals = 0;
-  for (const ai of ['v2', undefined]) for (const know of ['learn', 'open']) for (let i = 0; i < 40; i++) {
-    const res = Tac.runDay({ players: zaki(), encounters: [{ monsters: [foe('Wyrm', 150, 2, 12, { ext: { fly: 80 } })] }] }, { seed: 77 + i * 7919, ai: ai && { party: ai }, partyAI: 'tactical', know: { party: know }, record: true });
+  for (const know of ['learn', 'open']) for (let i = 0; i < 40; i++) {
+    const res = Tac.runDay({ players: zaki(), encounters: [{ monsters: [foe('Wyrm', 150, 2, 12, { ext: { fly: 80 } })] }] }, { seed: 77 + i * 7919, know: { party: know }, record: true });
     bad += afterDrop(res); heals += res.reduce((t, r) => t + r.events.filter(e => e.kind === 'heal').length, 0);
   }
-  check(bad === 0 && heals > 20, `Zaki's party against flyers: nothing done after dropping in its own turn (${bad} acts, ${heals} heals seen)`);
+  check(bad === 0 && heals > 10, `Zaki's party against flyers: nothing done after dropping in its own turn (${bad} acts, ${heals} heals seen)`);
 
   // scripted: the mover is dropped by an opportunity attack partway along its path, or while changing height
   const proto = Tac.Sim.prototype, att = proto.attackOnce;
   let acted = 0, turns = 0;
   const pass = (setup) => {
     const res = [];
-    for (let i = 0; i < 10; i++) res.push(Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 200, 2, 9)] }] }, { seed: 400 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, maxRounds: 4 }));
+    for (let i = 0; i < 10; i++) res.push(Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 200, 2, 9)] }] }, { seed: 400 + i * 7919, record: true, maxRounds: 4 }));
     return res;
   };
   proto.attackOnce = function (e, a, t, o) { if (o && o.oa && t.team === 'party' && t.hp > 0) { const r = att.call(this, e, a, t, o); if (t.hp > 0) { t.hp = 1; this.damage(e, t, 5, {}); } return r; } return att.call(this, e, a, t, o); };
@@ -1966,7 +1965,7 @@ section('A creature that drops loses the rest of its turn');
   // its own action's side effects: a retaliation that drops it mid-action stops the rest of the turn
   const r2 = []; const dmg = proto.damage;
   proto.damage = function (src, tgt, n, info) { const d = dmg.call(this, src, tgt, n, info); if (src && src.team === 'party' && src === this.current && src.hp > 0 && d > 0) { src.hp = 1; dmg.call(this, tgt, src, 5, {}); } return d; };
-  for (let i = 0; i < 12; i++) r2.push(Tac.runDay({ players: [build('Monk'), build('Rogue'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 300, 1, 2)] }] }, { seed: 500 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, maxRounds: 3 }));
+  for (let i = 0; i < 12; i++) r2.push(Tac.runDay({ players: [build('Monk'), build('Rogue'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 300, 1, 2)] }] }, { seed: 500 + i * 7919, record: true, maxRounds: 3 }));
   proto.damage = dmg;
   const afterOwnHit = res => { let n = 0; for (const r of res) { let cur = null, fell = false, seen = false; for (const e of r.events) { if (e.kind === 'turn') { cur = e.uid; fell = false; } else if (e.kind === 'down' && e.uid === cur) { fell = true; seen = true; } else if (fell && e.uid === cur && (e.kind === 'heal' || e.kind === 'buff' || e.kind === 'dash' || (e.kind === 'move' && !/steps back/.test(e.text || '')))) n++; } } return n; };
   check(r2.every(res => afterOwnHit(res) === 0), 'dropped by the backlash of its own action: no bonus action, move or Dodge after it');
@@ -1974,7 +1973,7 @@ section('A creature that drops loses the rest of its turn');
   // disabled mid-move: alive, but the action is gone
   const r3 = [];
   proto.attackOnce = function (e, a, t, o) { const r = att.call(this, e, a, t, o); if (o && o.oa && t.team === 'party' && t.hp > 0) this.addBuff(t, e, { id: 'stun', name: 'Stunned' }, { duration: '1 round', condition: 'Stunned' }); return r; };
-  for (let i = 0; i < 10; i++) r3.push(Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 200, 2, 2)] }] }, { seed: 600 + i * 7919, partyAI: 'tactical', ai: { party: 'v2' }, record: true, maxRounds: 4 }));
+  for (let i = 0; i < 10; i++) r3.push(Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [foe('Brute', 200, 2, 2)] }] }, { seed: 600 + i * 7919, record: true, maxRounds: 4 }));
   proto.attackOnce = att;
   let stunActs = 0, stunned = 0;
   for (const res of r3) for (const r of res) { let cur = null, hit = false; for (const e of r.events) { if (e.kind === 'turn') { cur = e.uid; hit = false; } else if (e.kind === 'oa' && e.target === cur && r.units.some(u => u.uid === cur && u.team === 'party')) { hit = true; stunned++; } else if (hit && e.uid === cur && ['heal', 'attack', 'save', 'move'].includes(e.kind)) stunActs++; } }
@@ -1989,7 +1988,7 @@ section('A creature that drops loses the rest of its turn');
     for (let i = 0; i < 40; i++) {
       const players = zaki();
       if (!pool) for (const p of players) p.actions = p.actions.filter(a => !(a.ext && a.ext.pool));
-      Tac.runDay({ players, encounters: [{ monsters: [foe('Wyrm', 200, 2, 12)] }] }, { seed: 900 + i * 7919, ai: { party: 'v2' }, partyAI: 'tactical', record: true });
+      Tac.runDay({ players, encounters: [{ monsters: [foe('Wyrm', 200, 2, 12)] }] }, { seed: 900 + i * 7919, record: true });
     }
     proto.doActionInner = inner; proto.heal = heal;
     return got;
@@ -2000,7 +1999,7 @@ section('A creature that drops loses the rest of its turn');
     check(cure.length > 2 && cure.every(inRange), `Cure Wounds stays inside its dice (2d8 per slot level + 4) ${pool ? 'with' : 'without'} a Healing Light pool (${cure.length} heals, top ${Math.max(0, ...cure.map(g => g.amt))})`);
     check(got.every(g => g.temp || g.gained <= g.max), 'no heal gives more than the maximum');
   }
-  const capped = Tac.runDay({ players: zaki(), encounters: [{ monsters: [foe('Wyrm', 200, 2, 12)] }] }, { seed: 31, ai: { party: 'v2' }, partyAI: 'tactical', record: true, _keep: true });
+  const capped = Tac.runDay({ players: zaki(), encounters: [{ monsters: [foe('Wyrm', 200, 2, 12)] }] }, { seed: 31, record: true, _keep: true });
   const roster = {}; capped._sim.units.forEach(u => { roster[u.name] = u.maxHp; });
   check(capped.every(r => r.events.filter(e => e.kind === 'heal' && /→ .*, +d+ HP/.test(e.text || '')).every(e => +(/\+(\d+)/.exec(e.text) || [0, 0])[1] <= roster[/→ ([^:]+):/.exec(e.text)[1]])), 'the log gives what a heal restored, never more than a maximum');
 }
@@ -2026,7 +2025,7 @@ section('Learn: save priors by ability (Adult Red Dragon log)');
     }
     return turn.call(this, u);
   };
-  Tac.runDay({ players: [build('Wizard'), build('Fighter')], encounters: [{ monsters: [boss] }] }, { seed: 4, partyAI: 'tactical', ai: { party: 'v2' }, know: { party: 'learn' } });
+  Tac.runDay({ players: [build('Wizard'), build('Fighter')], encounters: [{ monsters: [boss] }] }, { seed: 4, know: { party: 'learn' } });
   proto.turn = turn;
   check(probe.strong.str > 2 && probe.strong.wis > 2 && probe.strong.str >= probe.weak.str && probe.strong.wis > probe.weak.wis, `an unseen save reads stronger on a strong creature (Str ${probe.strong.str} / ${probe.weak.str}, Wis ${probe.strong.wis} / ${probe.weak.wis})`);
   check(Math.abs(probe.strong.wis - (2 + share * (row.wis - 2))) <= 1, `it moves saveShare of the way to the column (Wis ${probe.strong.wis}, column ${row.wis})`);
@@ -2053,7 +2052,7 @@ section('AI v2: a touch from the air (Adult Red Dragon log, Niko)');
       }
       return turn.call(this, u);
     };
-    const r = Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [cp(wyrm)] }] }, { seed, partyAI: 'tactical', ai: { party: 'v2' }, record: true })[0];
+    const r = Tac.runDay({ players: [build('Cleric'), build('Fighter')], encounters: [{ monsters: [cp(wyrm)] }] }, { seed, record: true })[0];
     proto.turn = turn;
     let seen = 0, said = null, healed = null;
     for (const e of r.events) {
@@ -2113,7 +2112,7 @@ section('AI v2: the ally about to die comes first (Adult Red Dragon log, Faithwa
     }
     return turn.call(this, u);
   };
-  Tac.runDay({ players: [build('Cleric'), build('Fighter'), build('Wizard')], encounters: [{ monsters: [cp(ogre)] }] }, { seed: 6, partyAI: 'tactical', ai: { party: 'v2' } });
+  Tac.runDay({ players: [build('Cleric'), build('Fighter'), build('Wizard')], encounters: [{ monsters: [cp(ogre)] }] }, { seed: 6 });
   proto.turn = turn;
   const f1 = p => p.map(x => x.toFixed(0)).join(' / ');
   check(probe.wizNear[1] > probe.wizNear[0], `the Wizard at two failures comes before the Fighter at one (Fighter / Wizard ${f1(probe.wizNear)})`);
@@ -2173,7 +2172,7 @@ section('AI v2: breath and cone spacing, priced in damage');
       }
       return turn.call(this, who);
     };
-    try { Tac.runDay({ players: [build('Fighter'), build('Wizard'), build('Cleric')], encounters: [{ monsters: [monster] }] }, { seed: 9, partyAI: 'tactical', ai: { party: 'v2' }, know: { party: know } }); } finally { proto.turn = turn; }
+    try { Tac.runDay({ players: [build('Fighter'), build('Wizard'), build('Cleric')], encounters: [{ monsters: [monster] }] }, { seed: 9, know: { party: know } }); } finally { proto.turn = turn; }
     return out;
   };
   const costs = (S, u, d) => { const dz = S.v2Danger(u, [d], S.units.filter(o => o.team === 'party')); return { join: dz.spacing(12 + d.n + 2, 8), apart: dz.spacing(10, 7), far: dz.spacing(12 + d.n + 12, 7) }; };
@@ -2207,7 +2206,7 @@ section('AI v2: reactions as a layer (step 3b)');
   const probe = (players, monsters, opts, fn) => {
     let out = null;
     proto.turn = function (who) { if (out === null) { out = fn(this) || true; } return turn.call(this, who); };
-    try { Tac.runDay({ players, encounters: [{ monsters }] }, Object.assign({ seed: 9, partyAI: 'tactical', ai: { party: 'v2' } }, opts || {})); } finally { proto.turn = turn; }
+    try { Tac.runDay({ players, encounters: [{ monsters }] }, Object.assign({ seed: 9 }, opts || {})); } finally { proto.turn = turn; }
     return out;
   };
   const unit = (S, n) => S.units.find(o => o.name.indexOf(n) === 0);
@@ -2358,22 +2357,21 @@ section('AI v2: monster intelligence tiers (phase 4)');
   let err = 0;
   const acc = { wallSteps: 0, throughWalls: 0, deadActs: 0, incapActs: 0, badHide: 0, events: 0 };
   const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
-  const V2T = { party: 'v2', foes: 'tiers' };
   const tiers = Tac.AI_TIERS.tiers, seenTier = {};
   for (const tier of tiers) for (let i = 0; i < 3; i++) {
-    const res = run({ players: party(), encounters: [{ monsters: [srd('Wolf', 3, tier), srd('Ogre', 1, tier)] }] }, { seed: 30 + i, partyAI: 'tactical', ai: V2T, record: true, _keep: true });
+    const res = run({ players: party(), encounters: [{ monsters: [srd('Wolf', 3, tier), srd('Ogre', 1, tier)] }] }, { seed: 30 + i, record: true, _keep: true });
     for (const r of res) scanRules(r, null, acc);
     if (res._sim) for (const u of res._sim.units) if (u.team === 'foes' && u.tier === tier) seenTier[tier] = (seenTier[tier] || 0) + 1;
   }
   check(tiers.every(t => seenTier[t] > 0) && err === 0, `each tier plays on v2 (${JSON.stringify(seenTier)}), ${err} threw`);
   check(Tac.TIER_PROFILES.mindless.know === 'blind' && Tac.TIER_PROFILES.genius.w.caster > Tac.AI_BASE.w.caster && Tac.TIER_PROFILES.cunning.w.caster === Tac.AI_BASE.w.caster, 'a tier is a profile of plain weights over AI_BASE (nothing names a creature)');
   // a swallower plays the AI like any other monster
-  const sw = run({ players: party(), encounters: [{ monsters: [Object.assign(srd('Wolf', 1), { actions: srd('Wolf', 1).actions.concat([{ id: 'swx', name: 'Swallow', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d6', toHit: 5, target: 'enemy with least HP', ext: { range: 5, swallow: { maxSize: 'Medium' } } }]) })] }] }, { seed: 4, partyAI: 'regular', ai: { party: 'v2', foes: 'tiers' }, _keep: true });
+  const sw = run({ players: party(), encounters: [{ monsters: [Object.assign(srd('Wolf', 1), { actions: srd('Wolf', 1).actions.concat([{ id: 'swx', name: 'Swallow', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d6', toHit: 5, target: 'enemy with least HP', ext: { range: 5, swallow: { maxSize: 'Medium' } } }]) })] }] }, { seed: 4, _keep: true });
   check(sw._sim && sw._sim.units.every(u => u.v2P), 'a swallower and the party all play the AI');
   // morale: mindless never flee; animals flee once bloodied and losing; geniuses never lose their nerve
   const fled = (name, tier, N) => {
     let n = 0;
-    for (let i = 0; i < N; i++) for (const r of run({ players: party(), encounters: [{ monsters: [srd(name, 4, tier)] }] }, { seed: 500 + i * 13, partyAI: 'tactical', ai: V2T, morale: 'on', record: true })) for (const e of r.events) if (e.kind === 'flee') n++;
+    for (let i = 0; i < N; i++) for (const r of run({ players: party(), encounters: [{ monsters: [srd(name, 4, tier)] }] }, { seed: 500 + i * 13, morale: 'on', record: true })) for (const e of r.events) if (e.kind === 'flee') n++;
     return n;
   };
   const zf = fled('Zombie', null, 10), sf = fled('Skeleton', 'mindless', 8), wm = fled('Wolf', 'mindless', 10), wf = fled('Wolf', null, 10), gf = fled('Mage', 'genius', 6);
@@ -2387,13 +2385,13 @@ section('AI v2: monster intelligence tiers (phase 4)');
     if (f && !mk[f.tier]) { const t = this.units.find(o => o.team === 'party'); mk[f.tier] = { m: this.kModeFor(f), max: this.kMax(f, t), realMax: t.maxHp }; }
     return turn.call(this, u);
   };
-  for (const tier of tiers) run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier)] }] }, { seed: 8, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: 'open' } });
+  for (const tier of tiers) run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier)] }] }, { seed: 8, know: { party: 'learn', foes: 'open' } });
   proto.turn = turn;
   check(mk.mindless && mk.animal && mk.cunning && mk.genius && mk.mindless.m === 'blind' && mk.animal.m === 'blind' && mk.cunning.m === 'open' && mk.genius.m === 'open' && mk.cunning.max === mk.cunning.realMax && mk.animal.max !== mk.animal.realMax,
     `open mode: mindless and animal read the party blind (a max HP guess of ${mk.animal && Math.round(mk.animal.max)} for ${mk.animal && mk.animal.realMax}), cunning and genius read it as it is`);
   // blind and learn: every tier, rules intact
   for (const mode of ['blind', 'learn']) for (const tier of tiers) for (let i = 0; i < 3; i++) {
-    for (const r of run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier), srd('Mage', 1, tier)] }] }, { seed: 60 + i, partyAI: 'tactical', ai: V2T, know: { party: mode, foes: mode }, morale: 'on', record: true })) scanRules(r, null, acc);
+    for (const r of run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier), srd('Mage', 1, tier)] }] }, { seed: 60 + i, know: { party: mode, foes: mode }, morale: 'on', record: true })) scanRules(r, null, acc);
   }
   check(err === 0, `${err} tiered days threw in open, blind and learn`);
   check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `tiered monsters: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides`);
@@ -2401,7 +2399,7 @@ section('AI v2: monster intelligence tiers (phase 4)');
   let srdErr = 0, srdFought = 0;
   for (const s of ctx.M) {
     try {
-      const res = Tac.runDay({ players: party(), encounters: [{ monsters: [srd(s.name, 1)] }] }, { seed: 3, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: 'blind' }, maxRounds: 6, _keep: true });
+      const res = Tac.runDay({ players: party(), encounters: [{ monsters: [srd(s.name, 1)] }] }, { seed: 3, know: { party: 'learn', foes: 'blind' }, maxRounds: 6, _keep: true });
       if (res.length && res._sim.units.some(u => u.team === 'foes' && u.tier)) srdFought++;
     } catch (e) { srdErr++; console.log('  ', s.name, e.stack.split('\n').slice(0, 2).join(' ')); }
   }
@@ -2435,7 +2433,6 @@ section('AI v2: the boss tier (phase 4b)');
     'the boss block is neutral in AI_BASE and every other tier (factors 1, weight 0, old pickers); only the boss profile changes it');
 
   const party = () => ['Fighter', 'Barbarian', 'Cleric', 'Wizard'].map(pc);
-  const V2T = { party: 'v2', foes: 'tiers' };
   let err = 0;
   const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
   // legendary actions: only after another side's turn, never more points than it has between its own turns; it waits as well as spends
@@ -2444,7 +2441,7 @@ section('AI v2: the boss tier (phase 4b)');
     for (let i = 0; i < N; i++) {
       const boss = mk(), cost = {}, max = boss.ext.legendaryActions || 3;
       for (const a of boss.actions) if (a.actionSlot === 2) cost[a.name] = (a.ext && a.ext.legendaryCost) || 1;
-      for (const r of run({ players: party(), encounters: [{ monsters: [boss] }] }, Object.assign({ seed: 70 + i * 31, partyAI: 'tactical', ai: V2T, record: true }, opts))) {
+      for (const r of run({ players: party(), encounters: [{ monsters: [boss] }] }, Object.assign({ seed: 70 + i * 31, record: true }, opts))) {
         const team = {}; for (const u of r.units) team[u.uid] = u.team;
         let lastTurn = null, spent = 0, prevKind = null;
         for (const e of r.events) {
@@ -2495,7 +2492,7 @@ section('AI v2: the boss tier (phase 4b)');
         p.ext.spellbook.spells = p.ext.spellbook.spells.filter(x => !x.level || /^(Hold Person|Shield)/.test(x.name));
         for (const x of p.ext.spellbook.spells) if (x.name === 'Hold Person') { x.name = 'Hold Monster'; if (x.ext) delete x.ext.targetTypes; }
       }
-      run({ players: pl, encounters: [{ monsters: [os] }] }, { seed: 90 + i * 17, partyAI: 'tactical', ai: V2T, record: false });
+      run({ players: pl, encounters: [{ monsters: [os] }] }, { seed: 90 + i * 17, record: false });
     }
     proto.saveRoll = sr;
     return got;
@@ -2510,7 +2507,7 @@ section('AI v2: the boss tier (phase 4b)');
     if (f && t) { const m = this.kModeFor(f); mk[m] = mk[m] || { n: 0, offMax: 0, offAc: 0 }; mk[m].n++; if (this.kMax(f, t) !== t.maxHp) mk[m].offMax++; if (this.kAc(f, t) !== t.ac && this.kAc(f, t) !== this.ac(t)) mk[m].offAc++; }
     return turn.call(this, u);
   };
-  for (const mode of ['open', 'learn', 'blind']) run({ players: party(), encounters: [{ monsters: [lairDragon(160)] }] }, { seed: 12, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: mode } });
+  for (const mode of ['open', 'learn', 'blind']) run({ players: party(), encounters: [{ monsters: [lairDragon(160)] }] }, { seed: 12, know: { party: 'learn', foes: mode } });
   proto.turn = turn;
   check(mk.open && mk.learn && mk.blind && mk.open.offMax === 0 && mk.blind.offMax > 0 && mk.learn.offMax > 0, `a boss reads the party as its mode allows: open the sheet, learn and blind a guess (max HP off the sheet on ${mk.learn && mk.learn.offMax}/${mk.learn && mk.learn.n} learn and ${mk.blind && mk.blind.offMax}/${mk.blind && mk.blind.n} blind turns)`);
   // rules intact: no acts by the dead, no steps into walls, no shots through them; open, learn and blind; with walls
@@ -2518,7 +2515,7 @@ section('AI v2: the boss tier (phase 4b)');
   const bosses = [() => lairDragon(160), () => { const m = srd('Lich'); m.hp = 110; return m; }, () => file('brute-legendary-homebrew.txt', null, 260), () => file('long-homebrew-boss.txt', null, 140), () => file('osric-homebrew.txt', null, 120)];
   for (const mode of ['open', 'learn', 'blind']) for (let b = 0; b < bosses.length; b++) for (const lay of [null, walled]) {
     const monsters = [bosses[b]()]; if (b === 4) monsters.push(srd('Bandit', 3));
-    for (const r of run({ players: party(), encounters: [{ monsters }] }, { seed: 40 + b, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: mode }, record: true, layout: lay || undefined, maxRounds: 8 })) scanRules(r, lay, acc);
+    for (const r of run({ players: party(), encounters: [{ monsters }] }, { seed: 40 + b, know: { party: 'learn', foes: mode }, record: true, layout: lay || undefined, maxRounds: 8 })) scanRules(r, lay, acc);
   }
   check(err === 0, `${err} boss days threw`);
   check(acc.wallSteps === 0 && acc.throughWalls === 0 && acc.deadActs === 0 && acc.badHide === 0, `bosses: ${acc.wallSteps} wall steps, ${acc.throughWalls} shots through walls, ${acc.deadActs} acts by the dead, ${acc.badHide} bad hides (${acc.events} events)`);
@@ -2527,7 +2524,7 @@ section('AI v2: the boss tier (phase 4b)');
   const all = ctx.M.filter(s => T(srd(s.name)) === 'boss').map(s => () => srd(s.name)).concat(['long-homebrew-boss.txt', 'osric-homebrew.txt', 'elparin-homebrew.txt', 'brute-legendary-homebrew.txt', 'dragon-legendary-2024.txt', 'adult-red-dragon-2014.txt'].map(f => () => file(f)));
   for (const mk2 of all) {
     try {
-      const res = Tac.runDay({ players: party(), encounters: [{ monsters: [mk2()] }] }, { seed: 5, partyAI: 'tactical', ai: V2T, know: { party: 'learn', foes: 'learn' }, maxRounds: 6, _keep: true });
+      const res = Tac.runDay({ players: party(), encounters: [{ monsters: [mk2()] }] }, { seed: 5, know: { party: 'learn', foes: 'learn' }, maxRounds: 6, _keep: true });
       if (res.length && res._sim.units.some(u => u.team === 'foes' && u.tier === 'boss')) bOk++;
     } catch (e) { bErr++; console.log('  ', e.stack.split('\n').slice(0, 2).join(' ')); }
   }
@@ -2543,7 +2540,7 @@ section('AI v2: the boss tier (phase 4b)');
     for (let i = 0; i < N; i++) {
       const m = file('long-homebrew-boss.txt', null, 140); for (const x of m.actions) if (x.dpr) x.dpr = String(Math.round(Tac.avgDice(x.dpr) * 0.4));
       if (plan) m.ext.aiPlan = plan;
-      run({ players: party(), encounters: [{ monsters: [m] }] }, { seed: 300 + i, partyAI: 'tactical', ai: V2T, record: true });
+      run({ players: party(), encounters: [{ monsters: [m] }] }, { seed: 300 + i, record: true });
     }
     proto.ev = ev;
     return got;
@@ -2629,7 +2626,7 @@ section('Rules pass: prone (2024)');
     const proto = Tac.Sim.prototype, turn = proto.turn;
     let sim = null;
     proto.turn = function (u) { sim = this; if (u.team === 'party' && this.round === 1 && !u._knocked) { u._knocked = true; this.fallProne(u); } const before = this.has(u, ['Prone']); const r = turn.call(this, u); if (before && !this.has(u, ['Prone'])) stood++; if (this.has(u, ['Prone']) && !this.incap(u)) proneAtTurn++; return r; };
-    try { Tac.runDay({ players: [fighter()], encounters: [{ monsters: [foe] }] }, { seed: 3, partyAI: 'tactical', record: true }); } finally { proto.turn = turn; }
+    try { Tac.runDay({ players: [fighter()], encounters: [{ monsters: [foe] }] }, { seed: 3, record: true }); } finally { proto.turn = turn; }
     check(stood === 1 && proneAtTurn === 0, `a creature knocked prone stands when its turn comes and is not prone after it (${stood} stood, ${proneAtTurn} still prone)`);
   }
 }
@@ -2653,7 +2650,7 @@ section('Rules pass: the dead do not roll initiative');
     for (let i = 0; i < 40; i++) {
       // no one to revive them: dead for the rest of the day
       struck = false;
-      const a = Tac.runDay(day(['Fighter', 'Barbarian', 'Wizard']), { seed: 50 + i * 31, partyAI: 'tactical', ai: { party: 'v2' }, record: true, prefightBuffs: false });
+      const a = Tac.runDay(day(['Fighter', 'Barbarian', 'Wizard']), { seed: 50 + i * 31, record: true, prefightBuffs: false });
       if (a.length === 3 && struck) {
         noRez++;
         const bu = a[0].units.find(u => u.name === 'Barbarian').uid;
@@ -2662,7 +2659,7 @@ section('Rules pass: the dead do not roll initiative');
       }
       // a Cleric with Revivify brings them back when the fight is won: they roll again in the next one
       struck = false;
-      const b = Tac.runDay(day(['Cleric', 'Fighter', 'Barbarian']), { seed: 50 + i * 31, partyAI: 'tactical', ai: { party: 'v2' }, record: true, prefightBuffs: false });
+      const b = Tac.runDay(day(['Cleric', 'Fighter', 'Barbarian']), { seed: 50 + i * 31, record: true, prefightBuffs: false });
       if (b.length === 3 && struck && !b[0].party.find(p => p.name === 'Barbarian').dead) {
         rez++;
         const bu = b[1].units.find(u => u.name === 'Barbarian').uid;
@@ -2840,7 +2837,7 @@ section('Pasquale Minuzzi: coin flips, hit riders on a bolt pool, Follow Through
       }
       return turn.call(this, who);
     };
-    try { Tac.runDay({ players: [fighter], encounters: [{ monsters: [m] }] }, { seed: 9, partyAI: 'tactical', ai: { party: 'v2', foes: 'v2' } }); } finally { proto.turn = turn; }
+    try { Tac.runDay({ players: [fighter], encounters: [{ monsters: [m] }] }, { seed: 9 }); } finally { proto.turn = turn; }
     check(out && out.heads.v2, 'Pasquale is on v2 here');
     check(out && !out.heads.r.hit && !out.heads.reaction, 'Call It in the Air, heads: the hit becomes a miss and the reaction is spent');
     check(out && out.tails.r.hit && out.tails.dis && !out.tails.reaction, 'tails: the hit lands and he has disadvantage on his next attack roll');
@@ -2949,7 +2946,7 @@ section('Pasquale Minuzzi: coin flips, hit riders on a bolt pool, Follow Through
       }
       return turn.call(this, who);
     };
-    try { Tac.runDay({ players: [fighterTpl], encounters: [{ monsters: [m] }] }, { seed: 4, partyAI: 'tactical', ai: { party: 'v2', foes: 'v2' } }); } finally { proto.turn = turn; }
+    try { Tac.runDay({ players: [fighterTpl], encounters: [{ monsters: [m] }] }, { seed: 4 }); } finally { proto.turn = turn; }
     check(out && out.v > 0 && out.none === 0, `Double Down is worth ${out && out.v.toFixed(1)} points beside a foe, and a coin with no outcomes is worth ${out && out.none}`);
     check(out && out.pre === false, 'it is not taken before moving (a coin is flipped with the other bonus options)');
   }

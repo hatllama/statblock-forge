@@ -173,7 +173,7 @@ Sim.prototype.v2PaceCost = function (u, a, val, L) {
   return p.base + p.tax * Math.max(0, val || 0);
 };
 /* a limited damage-cutting reaction (Stone's Endurance): only on a hit that uses most of it, or that would drop it,
-   and is worth the use (at-will ones like Uncanny Dodge keep the old rule: the first hit) */
+   and is worth the use (at-will ones like Uncanny Dodge go to the first hit) */
 Sim.prototype.v2ReactOk = function (u, r, dmg, src, info) {
   if (!this.v2Pool(u, r)) return this.reactCutNow(u, r, dmg, src, info);       // at will: this hit, or a bigger one still to come
   const P = u.v2P.pacing, mult = typeof r.buff.damageTakenMultiplier === 'number' ? r.buff.damageTakenMultiplier : 1, cut = avgDice(r.buff.damageReduction || 0);

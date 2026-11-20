@@ -1,6 +1,5 @@
 /* TACTICAL ENGINE, part 7: the classic picker the rest of the engine still uses (file list and how the parts share names: js/engine/base.js).
-   Moved out of ai-v1.js unchanged in phase 6 step 1 (docs/ai-v2.md, "Phase 6 step 1"), so that with v2 on for the party and the tiers for the
-   monsters nothing in ai-v1.js is called: choose (the first usable action of a slot with a plan; legendary and lair actions of every tier but
+   What is left of the old AI's picker after it was deleted (docs/ai-v2.md, "Phase 6 step 2"; tag old-ai-final has the rest): choose (the first usable action of a slot with a plan; legendary and lair actions of every tier but
    the boss), plan / planInner (where to stand and whom to hit; a passive self buff, doAction's default plan, Hide), mayHitDowned (planInner's
    pool), slotCost (the price of a levelled reaction spell, Hellish Rebuke, in onDamaged). */
 (function (root) {
@@ -8,12 +7,8 @@
 const ENG = root.TacEngine._;
 const { sizeIdx, freqKind, Sim, isHideAction } = ENG;
 
-/* ===== SPELLCASTING: which spell is worth it right now =====
-   Every option in the action and bonus-action slots gets a value (what it would actually do this
-   turn, from where the caster could stand) minus what the spell slot costs. Slot cost grows with
-   the slot's level, with how many fights are still ahead and how few slots are left, and shrinks
-   when things are going badly. The slots' actions are then re-ordered best-first, so the normal
-   turn logic (movement, targeting, the tactical square search) simply uses the best one it can. */
+/* What a spell slot costs: it grows with the slot's level, with how many fights are still ahead and how few slots are left,
+   and shrinks when things are going badly (used to price a levelled reaction spell). */
 Sim.prototype.slotCost = function (u, level) {
   if (!level) return 0;
   if (u.team !== 'party') return level * 1.5;
@@ -140,7 +135,7 @@ Sim.prototype.planInner = function (u, a, budget) {
   return pick ? finish(pick.t, pick.d, pick.why) : null;
 };
 
-/* ----- choosing an action (classic AI) ----- */
+/* ----- choosing an action ----- */
 /* first usable action of a slot that has a valid plan within `budget` ft of movement */
 Sim.prototype.choose = function (u, slot, budget) {
   const list = u.actions.filter(a => a.actionSlot === slot && !(a.ext && a.ext.teleport) && this.usable(u, a) && this.condOk(u, a) && !(slot === 0 && this.holdsResource(u, a)));

@@ -7,7 +7,7 @@
 const ENG = root.TacEngine._;
 
 /* ===== AI v2 (docs/ai-v2.md) =====
-   Turned on with opts.ai = 'v2' (martials and every caster kind). Three layers: a posture (what the creature is trying to do this round),
+   The AI every creature plays (martials and every caster kind; no setting turns it off). Three layers: a posture (what the creature is trying to do this round),
    one utility score per (mode, action, target, square), and resource pacing. It decides; the turn code in `turn`
    carries the decision out with the same rules as before. Every weight and threshold lives in AI_PROFILES. */
 const AI_BASE = {
@@ -115,7 +115,7 @@ const AI_BASE = {
           lrKeep: 1, lrSpare: 0.6, lrFloor: 1.5, lrDmg: 1, lrDrop: 3, lrLeg: 0.15, lrTurns: 3, lrHorizon: 3,
           lrCond: { Incapacitated: 1, Stunned: 1.5, Paralyzed: 1.5, Unconscious: 1.5, Petrified: 1.5, Restrained: 0.4, Blinded: 0.4, 'Attacks and saves with Disadvantage': 0.35, Frightened: 0.25, other: 0.1 },
           recharge: 0, rechargeCatch: 0.5, planOpen: 0.5, planSave: 0.8, planTarget: 6 },
-  finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (like the old tactical AI) | 'always'
+  finishDowned: 'second-down',     // downed PCs: 'never' | 'second-down' (the default) | 'always'
   reckless: 'weigh',               // Reckless Attack: 'weigh' each turn | 'always' | 'never'
 };
 const AI_PRESETS = {
@@ -149,7 +149,7 @@ function aiProfile(spec) {
   if (spec && typeof spec === 'object') return mergeProfile(AI_PROFILES[spec.base] || AI_PROFILES.balanced, spec);
   return AI_PROFILES.balanced;
 }
-/* ---- monster intelligence tiers (docs/ai-v2.md "Monster intelligence tiers"): opts.ai.foes = 'tiers' ----
+/* ---- monster intelligence tiers (docs/ai-v2.md "Monster intelligence tiers"): every monster plays on its tier ----
    A tier is a partial profile merged over AI_BASE, picked per creature: ext.aiTier, else from its Intelligence and type.
    rules: Int ceilings (mindless / animal) and floor (genius); types that are mindless at or under mindlessInt; wisRetreat: retreatHp per point of Wisdom modifier (tiers that retreat). */
 const AI_TIERS = {

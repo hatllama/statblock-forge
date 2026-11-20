@@ -22,8 +22,8 @@
      core.js        the rules: events, buffs & conditions, uses, movement, rolling, damage/healing/death, damage zones,
                     triggers, executing actions (resolveAttackAction, doAction)
      reactions.js   reactions as a layer: Shield, Silvery Barbs, Lucky, the damage cutters, Counterspell, Ready
-     ai-v1.js       the classic AI: spell choice, tactical turn planning (tacticalTurnInner, plan), choose
-     ai-v2.js       AI v2: who plays it, casters, pacing, danger, posture, what an option is worth, the burn plan
+     choose.js      the plain picker the rest of the engine uses: choose, plan / planInner, mayHitDowned, slotCost
+     ai-v2.js       the AI: casters, pacing, danger, posture, what an option is worth, the burn plan
      ai-boss.js     the boss tier: legendary and lair actions, Legendary Resistance, recharge, ext.aiPlan
      ai-v2-turn.js  the v2 turn: squares × options (v2TurnInner), intent lines, re-aiming, bonus actions, surges
      encounter.js   a creature's turn (turn), flying height, legendary & lair, morale, running an encounter, placement
@@ -217,7 +217,7 @@ function casterKind(tpl) {
   return HALF_CASTERS.includes(cls) ? 'half' : 'third';
 }
 /* Divine Smite (2024): a bonus-action spell cast right after a melee weapon hit (docs/ai-v2.md "Hybrids"). The spell keeps its old
-   self-buff shape for the old AI and the exports; ext.smite (or the name, for sheets read before it existed) tells v2 it is a rider */
+   self-buff shape for the exports; ext.smite (or the name, for sheets read before it existed) tells v2 it is a rider */
 const SMITE_DEF = { dice: '2d8', up: 1, max: 5, type: 'radiant', foes: ['fiend', 'undead'], foeDice: 1 };
 function smiteOf(a) {
   if (!a || !a._spell || !a._spell.level) return null;

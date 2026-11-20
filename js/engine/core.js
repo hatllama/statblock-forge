@@ -779,8 +779,7 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
     return;
   }
   // attack rolls: `targets` = number of attacks, re-aimed if the target drops or leaves the board (fled, swallowed):
-  // each swing then picks its own target among those in range from where it stands (v2: v2Repick, the same scoring as the first pick;
-  // the old AI: its selector)
+  // each swing then picks its own target among those in range from where it stands (v2Repick, the same scoring as the first pick)
   let n = a.targets || 1;
   let cur = targets[0];
   for (let i = 0; i < n; i++) {
