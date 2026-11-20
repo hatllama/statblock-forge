@@ -27,7 +27,6 @@ Sim.prototype.turn = function (u) {
   this.zoneTick(u);
   if (u.dead) return;
   if (this.incap(u)) this.dropBuffs(u, b => b.endsOnIncap);
-  u.mauling = u.ai === 'beast' && this.R() < 0.05;
   for (const x of this.units) this.dropBuffs(x, b => b.src === u.uid && b.expiry === '1 round');
   u.reaction = true; u.readied = null; u.legendaryLeft = u.legendaryMax;
   for (const a of u.actions) if (freqKind(a.freq) === 'recharge' && u.recharge.get(a.id) === false) {
@@ -66,7 +65,7 @@ Sim.prototype.turn = function (u) {
   // passives (Other 1 / Other 2): self buffs keep themselves up
   for (const a of u.actions) {
     if ((a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && this.usable(u, a) && this.condOk(u, a)) {
-      if (u.v2 && isReckless(a)) continue;     // v2 weighs Reckless Attack each turn (v2Reckless)
+      if (isReckless(a)) continue;     // v2 weighs Reckless Attack each turn (v2Reckless)
       const already = u.buffs.some(b => b.id === a.id);
       if (!already) { this.spend(u, a); this.doAction(u, a, { targets: this.plan(u, a, 0) ? this.plan(u, a, 0).targets : [u] }); }
     }
@@ -76,7 +75,6 @@ Sim.prototype.turn = function (u) {
 
   if (u.swallowedBy) { this.insideTurn(u); this.endTurn(u); return; }
 
-  if (!u.v2) this.rankSpells(u);                // v2 weighs every spell itself
   let actionUsed = false;
   const lost = u.buffs.find(b => b.loseAction);
   if (lost) {
@@ -101,48 +99,19 @@ Sim.prototype.turn = function (u) {
   const out = () => u.dead || u.hp <= 0 || this.incap(u);          // dropped or disabled partway through: the rest of the turn is lost
   // self-buffs that change how the turn goes (Bladesong's speed and AC, Rage…) are invoked before moving
   if (!actionUsed) {
-    const pre = u.v2 ? this.v2Bonus(u, 'pre') : this.choose(u, 1, 0);
+    const pre = this.v2Bonus(u, 'pre');
     if (pre && pre.a.type === 'buff' && pre.a.target === 'self' && !(pre.a._spell && pre.a._spell.level) && !(pre.a.buff && pre.a.buff.condition === 'Invisible')) {
       this.spend(u, pre.a); this.doAction(u, pre.a, pre.p); bonusSpent = true;
     }
   }
   const speed = (this.has(u, ['Restrained']) || u.grappledBy) ? 0 : this.speedOf(u);
-  // non-tactical creatures teleport away when cornered and hurt
-  if (!actionUsed && !bonusSpent && u.ai !== 'tactical' && u.ai !== 'beast' && u.hp < u.maxHp * 0.4 && this.adjacentEnemies(u, u.x, u.y).length) {
-    const j = u.actions.find(a => a.ext && a.ext.teleport && a.actionSlot === 1 && this.usable(u, a));
-    if (j) {
-      const R = Math.round(j.ext.teleport / 5), foesUp = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
-      let bx = null, bd = -1;
-      for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(this.W - 1, u.x + R); x++) {
-        if ((x === u.x && y === u.y) || this.occupant(x, y, u.n, u) || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.losB(u.x, u.y, u.n, x, y, u.n)) continue;
-        const d = Math.min(...foesUp.map(e => this.distXY(x, y, e)));
-        if (d > bd) { bd = d; bx = { x, y }; }
-      }
-      if (bx) {
-        this.spend(u, j); bonusSpent = true;
-        const from = { x: u.x, y: u.y };
-        u.x = bx.x; u.y = bx.y; this.boardChanged();
-        this.ev('move', `${u.name} teleports away (${j.name})`, { uid: u.uid, path: [{ x: bx.x, y: bx.y }], from });
-        if (u.grappledBy) { u.grappledBy = null; u.grappleInfo = null; }
-      }
-    }
-  }
-  if (!actionUsed && u.ai === 'tactical') {
-    let tp = u.v2 ? this.v2Turn(u, speed, bonusSpent) : this.tacticalTurn(u, speed);
-    if (u.v2) { v2tp = tp; this.v2Say(u, tp); if (tp && tp.hold) this.v2NotePacing(u, null); }
-    // if saving resources leaves nothing better than dashing or dodging, spend one instead of wasting the turn
-    else if (tp && (tp.mode === 'dash' || tp.mode === 'dodge' || tp.mode === 'actionDis') && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
-      u._noHold = true;
-      const tp2 = this.tacticalTurn(u, speed);
-      u._noHold = false;
-      if (tp2 && (tp2.mode === 'act' || tp2.mode === 'bonusDis') && tp2.off.val > 0) tp = tp2;
-      else this.notePacing(u);
-    } else this.notePacing(u);
+  if (!actionUsed) {
+    const tp = this.v2Turn(u, speed, bonusSpent);
+    v2tp = tp; this.v2Say(u, tp); if (tp && tp.hold) this.v2NotePacing(u, null);
     if (tp) {
       if (tp.mode === 'act' || tp.mode === 'bonusDis' || (tp.mode === 'jump' && tp.off)) {
-        choice = { a: tp.off.pl.a, p: { targets: [tp.off.t], path: tp.path, why: u.v2 ? '' : tp.off.why } };
-        if (u.v2) choice.p.castL = tp.off.pl.castL;
-        else this.intent(u, choice.a, choice.p);      // v2's own lines come from v2Say (its why is empty here, so intent would say nothing)
+        choice = { a: tp.off.pl.a, p: { targets: [tp.off.t], path: tp.path, why: '' } };
+        choice.p.castL = tp.off.pl.castL;
       }
       if (tp.mode === 'jump') {
         this.spend(u, tp.jumpA); bonusSpent = true;
@@ -179,34 +148,7 @@ Sim.prototype.turn = function (u) {
   if (!actionUsed && !choice && !moved && u.actions.some(a => a.actionSlot === 0 && this.usable(u, a) && this.holdsResource(u, a))) {
     u._noHold = true; choice = this.choose(u, 0, speed); u._noHold = false;     // better a saved spell than a wasted turn
   }
-  if (!actionUsed && !choice && !moved && speed > 0) {
-    // nothing in reach: dash toward the first thing it would like to do, but only if that gets it there a turn sooner;
-    // otherwise walk up and Dodge on the way in
-    const dashing = this.choose(u, 0, speed * 2);
-    const foesUp = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
-    const need = dashing ? Math.max(0, this.reachMap(u, speed * 2).dist[dashing.p.dest.y * this.W + dashing.p.dest.x] * 5)
-                         : Math.max(0, Math.min(...foesUp.map(e => this.dist(u, e))) - 5);
-    if (this.dashWorthIt(u, need, speed) || (!dashing && foesUp.length && need > speed * 2)) {
-      if (dashing) this.moveAlong(u, this.pathTo(this.reachMap(u, speed * 2), dashing.p.dest.x, dashing.p.dest.y));
-      else this.approach(u, speed * 2);
-      this.ev('dash', `${u.name} dashes`, { uid: u.uid });
-    } else {
-      if (dashing) {
-        const full = this.pathTo(this.reachMap(u, speed * 2), dashing.p.dest.x, dashing.p.dest.y);
-        const rm2 = this.reachMap(u, speed * 2);
-        let k = 0;
-        while (k < full.length && rm2.dist[full[k].x + full[k].y * this.W] <= Math.floor(speed / 5)) k++;
-        while (k > 0) { if (!this.occupant(full[k - 1].x, full[k - 1].y, u.n, u)) break; k--; }
-        this.moveAlong(u, full.slice(0, k));
-      } else this.approach(u, speed);
-      if (foesUp.length && !out()) {
-        this.addBuff(u, u, { id: 'dodge', name: 'Dodge' }, { duration: '1 round', condition: 'Is attacked with Disadvantage' });
-        this.ev('buff', `${u.name} closes in carefully, taking the Dodge action`, { uid: u.uid });
-      }
-    }
-    moved = true; actionUsed = true;
-  }
-  if (u.steadyAim && (!u.v2 || (v2tp && v2tp.aim)) && hideAfter === null && !bonusSpent && !actionUsed && choice && choice.a.type === 'atk' && !choice.a.useSaves && !u.movedThisTurn &&
+  if (u.steadyAim && (v2tp && v2tp.aim) && hideAfter === null && !bonusSpent && !actionUsed && choice && choice.a.type === 'atk' && !choice.a.useSaves && !u.movedThisTurn &&
       !(choice.p.path && choice.p.path.length) && choice.p.targets && choice.p.targets[0]) {
     const t = choice.p.targets[0];
     const tc = this.conds(t), atc = this.conds(u);
@@ -219,28 +161,24 @@ Sim.prototype.turn = function (u) {
       this.ev('buff', `${u.name} uses Steady Aim (advantage, can't move this turn)`, { uid: u.uid });
     }
   }
-  if (choice && !moved) { this.intent(u, choice.a, choice.p); this.moveAlong(u, choice.p.path); moved = true; }
+  if (choice && !moved) { this.moveAlong(u, choice.p.path); moved = true; }
   u.disengaged = false;
   if (u.dead || u.hp <= 0) return;
   if (this.incap(u)) { this.endTurn(u); return; }
 
   // bonus action: first usable one, before or after the action depending on what it is
   u.reserveSlot = !!(choice && !actionUsed && choice.a._spell && choice.a._spell.level);
-  const bonus = bonusSpent ? null : u.v2 ? this.v2Bonus(u, 'post', choice && !actionUsed ? choice : null) : this.choose(u, 1, 0);
+  const bonus = bonusSpent ? null : this.v2Bonus(u, 'post', choice && !actionUsed ? choice : null);
   u.reserveSlot = false;
-  if (u.v2) u.smiteSeq = !bonusSpent && !bonus && u.smiteA ? this.turnSeq : 0;     // the bonus action is free for a Divine Smite on a hit
+  u.smiteSeq = !bonusSpent && !bonus && u.smiteA ? this.turnSeq : 0;     // the bonus action is free for a Divine Smite on a hit
   const after = bonus && (bonus.a.type === 'atk' || (bonus.a.buff && bonus.a.buff.condition === 'Invisible'));
-  if (bonus && !after) { if (u.v2) u.castAt = bonus.p.castL || 0; this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, bonus.p); }
+  if (bonus && !after) { u.castAt = bonus.p.castL || 0; this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, bonus.p); }
   if (choice && !actionUsed && !out()) {
     // re-plan from where it ended up: it may have been stopped, or the target may have dropped
     let a = choice.a, p = null;
     // a flyer comes level with the creature it planned to touch before it aims again: from the air the ground is out of reach
-    if (u.v2 && u.fly && choice.p && choice.p.targets && choice.p.targets[0]) this.settleAltitude(u, choice.a, choice.p);
-    if (u.v2) { const c2 = out() ? null : this.v2Act(u, choice); if (c2) { a = c2.a; p = c2.p; } }
-    else {
-      p = this.usable(u, a) && this.condOk(u, a) ? this.plan(u, a, 0) : null;
-      if (!p) { const c2 = this.choose(u, 0, 0); if (c2) { a = c2.a; p = c2.p; } }
-    }
+    if (u.fly && choice.p && choice.p.targets && choice.p.targets[0]) this.settleAltitude(u, choice.a, choice.p);
+    { const c2 = out() ? null : this.v2Act(u, choice); if (c2) { a = c2.a; p = c2.p; } }
     if (p && p.targets.length && u.fly) {
       this.settleAltitude(u, a, p);
       // couldn't get level with it this turn: a melee swing can't reach
@@ -249,55 +187,24 @@ Sim.prototype.turn = function (u) {
       if (out()) p = null;                                       // rising or dropping can draw an opportunity attack
     }
     if (p && p.targets.length) {
-      if (u.v2) this.v2Reckless(u, a, p);
-      if (u.v2) u.castAt = p.castL || 0;
+      this.v2Reckless(u, a, p);
+      u.castAt = p.castL || 0;
       this.spend(u, a); u.castAt = 0; this.doAction(u, a, p, { finishDowned: !!(p.targets[0] && p.targets[0].hp <= 0) });
       if ((a.type === 'atk' || a.type === 'debuff') && p.targets[0] && p.targets[0] !== u) u.focus = p.targets[0].uid;
     }
   }
-  if ((hideAfter !== null || u.ai === 'regular') && !bonusSpent && !(bonus && !after) && !(u.v2 && u.smoteSeq === this.turnSeq) && !out()) {
+  if (hideAfter !== null && !bonusSpent && !(bonus && !after) && u.smoteSeq !== this.turnSeq && !out()) {
     const left = Math.floor(speed / 5) - (u._steps || 0);
     if (this.slipAndHide(u, hideAfter !== null ? Math.min(hideAfter, left) : left)) bonusSpent = true;
   }
   if (bonus && after && !bonusSpent && !out()) {
-    const p = u.v2 ? this.v2Aim(u, bonus.a, bonus.p.targets[0]) : this.plan(u, bonus.a, 0);
-    if (p) { if (u.v2) { this.v2Reckless(u, bonus.a, p); u.castAt = p.castL || 0; } this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, p); }
+    const p = this.v2Aim(u, bonus.a, bonus.p.targets[0]);
+    if (p) { this.v2Reckless(u, bonus.a, p); u.castAt = p.castL || 0; this.spend(u, bonus.a); u.castAt = 0; this.doAction(u, bonus.a, p); }
   }
-  if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) { if (u.v2) this.v2Surge(u); else this.surge(u); }
+  if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) this.v2Surge(u);
   // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
   if (u.fly && !u._settled && !out()) this.settleAltitude(u, null, null);
   this.endTurn(u);
-};
-/* Action Surge: one more action this turn. Monsters use it as soon as it lands an attack; the party holds it while a
-   fight is in hand and more are coming. Its buff (Tactical Supremacy's extra damage) comes with it. */
-Sim.prototype.surge = function (u) {
-  const s = u.surges.find(a => this.usable(u, a));
-  if (!s || !this.enemiesOf(u).some(e => e.onBoard && this.alive(e))) return;
-  if (u.team === 'party' && u.ai === 'tactical' && this.fightInHand(u)) return;
-  const left = this.has(u, ['Restrained']) || u.grappledBy ? 0 : Math.max(0, this.speedOf(u) - (u._steps || 0) * 5);
-  const c = this.choose(u, 0, left);
-  if (!c || !c.p || !c.p.targets.length || (c.a.type !== 'atk' && c.a.type !== 'debuff')) return;
-  this.spend(u, s);
-  if (c.p.path && c.p.path.length) { this.moveAlong(u, c.p.path); if (u.dead || u.hp <= 0) return; }
-  if (s.buff && (s.buff.damage || s.buff.toHit || s.buff.ac || s.buff.condition)) this.addBuff(u, u, s, s.buff);
-  this.ev('buff', `${u.name} uses ${s.name}: one more action`, { uid: u.uid });
-  this.intent(u, c.a, c.p);
-  this.spend(u, c.a);
-  this.doAction(u, c.a, c.p);
-};
-Sim.prototype.approach = function (u, budget) {
-  const foes = this.enemiesOf(u).filter(e => e.onBoard && this.alive(e));
-  if (!foes.length) return;
-  const rm = this.reachMap(u, budget);
-  let best = null, bs = Infinity;
-  for (let i = 0; i < rm.dist.length; i++) {
-    if (rm.dist[i] < 0) continue;
-    const x = i % this.W, y = (i / this.W) | 0;
-    if (this.occupant(x, y, u.n, u)) continue;
-    const d = Math.min(...foes.map(f => this.distXY(x, y, f)));
-    if (d < bs) { bs = d; best = { x, y }; }
-  }
-  if (best) this.moveAlong(u, this.pathTo(rm, best.x, best.y));
 };
 Sim.prototype.insideTurn = function (u) {
   const w = this.byId[u.swallowedBy];
@@ -439,7 +346,7 @@ Sim.prototype.legendary = function (after) {
     hidden.forEach(a => { a.actionSlot = -99; });
     const mn = this._mn;
     this._mn = u.n || 1;     // it measures from its own body, not the creature whose turn just ended
-    const c = u.v2 && u.v2P.boss.legendary === 'weigh' ? this.bossLegendary(u, after) : this.choose(u, 2, 0);   // the boss tier weighs which and when
+    const c = u.v2P && u.v2P.boss.legendary === 'weigh' ? this.bossLegendary(u, after) : this.choose(u, 2, 0);   // the boss tier weighs which and when
     hidden.forEach(a => { a.actionSlot = 2; });
     if (!c) { this._mn = mn; continue; }
     u.legendaryLeft -= (c.a.ext && c.a.ext.legendaryCost) || 1;
@@ -454,7 +361,7 @@ Sim.prototype.lair = function () {
   for (const u of this.units) {
     if (!this.alive(u) || !u.onBoard) continue;
     let c;
-    if (u.v2 && u.v2P.boss.lair === 'weigh') {     // the boss tier: the lair action worth most now, measured from its own body
+    if (u.v2P && u.v2P.boss.lair === 'weigh') {     // the boss tier: the lair action worth most now, measured from its own body
       if (!u.actions.some(a => a.actionSlot === 3)) continue;
       const mn = this._mn; this._mn = u.n || 1; c = this.bossLair(u); this._mn = mn;
     } else c = this.choose(u, 3, 0);
@@ -473,7 +380,7 @@ const FEARLESS = ['undead', 'construct', 'ooze', 'plant'];
 Sim.prototype.moraleBreaks = function (u) {
   if (!this.morale || u.team !== 'foes' || u.isPC || u.legResMax || u.hasLegendary) return false;
   if (FEARLESS.includes(String(u.tpl.type || '').toLowerCase()) || (u.tpl.ext && u.tpl.ext.fearless)) return false;
-  const M = u.v2 && u.v2P && u.v2P.morale;      // AI v2: its profile says which triggers count (a tier's nerve); the base equals the old rule
+  const M = u.v2P && u.v2P.morale;      // its profile says which triggers count (a tier's nerve)
   if (M && M.fearless) return false;
   const side = this.units.filter(o => o.team === u.team);
   const fallen = side.filter(o => o.dead || o.hp <= 0).length;
@@ -517,8 +424,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   this.zones = [];
   this.place(party, foes, layout);
   this.boardChanged();
-  if (this.aiV2) this.units.forEach(u => this.v2Setup(u));
-  this.anyV1 = !this.aiV2 || this.units.some(u => !u.v2);     // someone plays the old AI: its reaction thresholds are offered (attackRoll)
+  this.units.forEach(u => this.v2Setup(u));
   // initiative (2024: surprised creatures roll with disadvantage)
   // the dead (a party member lost in an earlier fight and not revived) take no part: no roll, no place in the order
   // (a revive happens between fights, endFightRevives, so a revived one rolls like anyone else in the next fight)

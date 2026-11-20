@@ -178,7 +178,7 @@ Creature level (on the monster object):
            "speed": <walking speed in feet; if it burrows/flies/swims faster, use the fastest speed it would use in a fight>,
            "initBonus": <its initiative bonus — the Dex modifier, or the "Initiative" value if the statblock lists one>,
            "bonusDisengage": true,  (only if it can Disengage as a bonus action, e.g. Nimble Escape or Cunning Action)
-           "ai": <how it fights: "beast" if INT is 1-3 or it is an animal/mindless creature (attacks the nearest foe, locks onto its prey, turns on whoever hurt it, almost never attacks downed PCs); "tactical" if INT is 10+ and it is a thinking combatant (focuses threats and healers, finishes off the weak, keeps its distance if ranged, and may kill a downed PC who keeps getting back up); otherwise "regular"> }
+         }
   And on EVERY action add "ext": { "range": <feet> } giving how far it reaches: melee reach (5, or 10 for "reach 10 ft."), the normal range for ranged attacks ("range 80/320 ft." → 80), the spell's range, the cone/line length for breath weapons and cones, or the aura radius for passive auras. Use 0 for self-only actions. Merge it with any other "ext" keys on that action.
   For an area effect (a save-based attack or debuff that hits everyone in a shape) also add "ext": { "area": { "shape": "sphere" | "cone" | "line" | "cube", "size": <feet> } } — sphere size is the radius (Fireball 20), cone/line size is the length (a 15-ft cone → 15, a 60-ft line → 60), cube size is the side (Thunderwave 15). For a cone, line or cube that starts at the creature, "range" is the same as the size. Keep "targets" as the usual estimate of how many creatures it catches.
   SAVING THROWS: give every creature "ext": { "saves": { "str": n, "dex": n, "con": n, "int": n, "wis": n, "cha": n } } with its real total bonus for each save: the "Saving Throws" line where the statblock lists one (2014 style), the "Save" column of the ability table (2024 style), otherwise the ability modifier. Keep "saveBonus" equal to the average of those six. On every save-forcing action add "ext": { "saveAbility": "dex" } (str/dex/con/int/wis/cha, from the text: "DC 15 Dexterity saving throw" gives "dex"); if a riderEffect uses a different save from the main one, also add "riderSave". A grapple that allows "a Strength or Dexterity saving throw" needs nothing extra.
@@ -1328,7 +1328,7 @@ function setCreatureExt(c, key, val){
       const list = el.value.split(/[,;]/).map(x=>x.trim()).filter(Boolean).map(x=> k === 'condImmune' ? x.charAt(0).toUpperCase() + x.slice(1).toLowerCase() : x.toLowerCase());
       setCreatureExt(c, k, list.length ? list : undefined);
     }
-    else if(k === 'ai' || k === 'aiTier') setCreatureExt(c, k, el.value === 'auto' ? undefined : el.value);
+    else if(k === 'aiTier') setCreatureExt(c, k, el.value === 'auto' ? undefined : el.value);
     else setCreatureExt(c, k, el.value === 'Medium' ? undefined : el.value);   // Medium is the default
     c._warnings = validateMonster(c);
     refreshPreview();
@@ -1398,14 +1398,7 @@ function fixSel(){
 }
 
 /* ---------------- sidebar ---------------- */
-/* which AI a creature fights with: its own setting, or what the War Table picks from its type */
-function aiOf(c){
-  const a = c && c.ext && c.ext.ai;
-  if(a && a !== 'auto') return a.charAt(0).toUpperCase() + a.slice(1);
-  try{ if(window.TacEngine && TacEngine.autoAI){ const v = TacEngine.autoAI(c); return v.charAt(0).toUpperCase() + v.slice(1); } }catch(e){}
-  return 'Auto';
-}
-/* the tier the War Table gives a monster when Enemy AI is Smart by intelligence */
+/* the tier a monster plays on when its Smartness is Auto (from its Intelligence and type) */
 function tierOfSafe(c){
   try{ if(window.TacEngine && TacEngine.tierOf){ const t = TacEngine.tierOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { aiTier: undefined }) })); return t.charAt(0).toUpperCase() + t.slice(1); } }catch(e){}
   return '?';
@@ -1433,7 +1426,7 @@ function renderSide(){
     h += `<div class="side-group"><button class="side-h enc ${on('enc', ()=>sel.e===ei)?'on':''}" data-sel-enc="${ei}"><span>${escapeHtml(encName(e, ei))}</span>${badge}</button>`;
     h += e.monsters.map((m, mi)=>`<button class="side-row sub ${on('mon', ()=>sel.e===ei && sel.i===mi)?'on':''}" data-sel-mon="${ei}:${mi}">
         <span class="sr-name">${(m.count||1) > 1 ? `<i>${m.count}×</i> ` : ''}${escapeHtml(m.name || 'Unnamed')}${dot(m)}</span>
-        <span class="sr-meta">${escapeHtml([crText(m), 'AC ' + m.AC, m.hp + ' HP', aiOf(m) + ' AI'].filter(Boolean).join(' · '))}</span></button>`).join('');
+        <span class="sr-meta">${escapeHtml([crText(m), 'AC ' + m.AC, m.hp + ' HP', ((m.ext && m.ext.aiTier && m.ext.aiTier !== 'auto') ? m.ext.aiTier.charAt(0).toUpperCase() + m.ext.aiTier.slice(1) : tierOfSafe(m)) + ' AI'].filter(Boolean).join(' · '))}</span></button>`).join('');
     h += `<button class="side-add" data-import-to="${ei}">＋ add creatures</button></div>`;
   });
   h += `<button class="side-new" data-new-enc>＋ New encounter</button>`;
@@ -1503,7 +1496,6 @@ function bonusDisengageOn(c){
 function sheetHtml(key, c){
   const pc = key[0] === 'p';
   const sv = (c.ext && c.ext.saves) || {};
-  const ai = (c.ext && c.ext.ai) || 'auto';
   const sizeSel = `<select data-ext="size" data-owner="${key}" aria-label="Size">${SIZES.map(z=>`<option ${((c.ext&&c.ext.size)||'Medium')===z?'selected':''}>${z}</option>`).join('')}</select>`;
   const ident = pc
     ? `${sizeSel}<select data-cf="class.type" data-owner="${key}" aria-label="Class">${CLASS_LIST.map(x=>`<option ${c.class?.type===x?'selected':''}>${x}</option>`).join('')}</select>
@@ -1580,8 +1572,7 @@ function sheetHtml(key, c){
       <div class="sh-grid">
         ${exInput(key, 'sneakDice', 'Sneak Attack', xv(c,'sneakAttack') && c.ext.sneakAttack.dice, 'placeholder="e.g. 2d6"', 'Once per turn, on a hit with a finesse or ranged weapon, with advantage or an ally next to the target.')}
         ${exInput(key, 'legendaryActions', 'Legendary actions / round', xv(c,'legendaryActions'), 'type="number" min="0" placeholder="3"', 'Only matters if it has legendary actions.')}
-        <label class="sf"><span>Fights like</span><select data-ext="ai" data-owner="${key}">${[['auto', pc ? 'Party setting' : `Auto: ${aiOf(Object.assign({}, c, { ext: Object.assign({}, c.ext, { ai: undefined }) }))}`],['tactical','Tactical'],['regular','Regular'],['beast','Beast']].map(([v,l])=>`<option value="${v}" ${ai===v?'selected':''}>${l}</option>`).join('')}</select></label>
-        ${pc ? '' : `<label class="sf" title="Used when the War Table's Enemy AI is Smart by intelligence: who it targets, whether it flees, how much it knows of the party. Auto reads the Intelligence score and creature type; legendary or lair actions, Legendary Resistance or a reaction that acts on a foe make it a Boss."><span>Smartness</span><select data-ext="aiTier" data-owner="${key}">${[['auto', 'Auto: ' + tierOfSafe(c)],['mindless','Mindless'],['animal','Animal instinct'],['cunning','Cunning'],['genius','Genius'],['boss','Boss']].map(([v,l])=>`<option value="${v}" ${((c.ext&&c.ext.aiTier)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label>`}
+        ${pc ? '' : `<label class="sf" title="Who it targets, whether it flees, how much it knows of the party. Auto reads the Intelligence score and creature type; legendary or lair actions, Legendary Resistance or a reaction that acts on a foe make it a Boss."><span>Smartness</span><select data-ext="aiTier" data-owner="${key}">${[['auto', 'Auto: ' + tierOfSafe(c)],['mindless','Mindless'],['animal','Animal instinct'],['cunning','Cunning'],['genius','Genius'],['boss','Boss']].map(([v,l])=>`<option value="${v}" ${((c.ext&&c.ext.aiTier)||'auto')===v?'selected':''}>${l}</option>`).join('')}</select></label>`}
       </div>
     </section>
 

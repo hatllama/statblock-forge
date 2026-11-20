@@ -194,12 +194,6 @@ function avgPerTurn(actions) {
   return a ? avgDice(a.dpr) * (a.useSaves ? 1 : (a.targets || 1)) : 0;
 }
 
-const AI_TYPES = ['regular', 'tactical', 'beast'];
-// Default when the creature doesn't say: animals, oozes and plants fight like beasts, everything else like a regular monster
-function autoAI(tpl) {
-  const t = String(tpl.type || '').toLowerCase();
-  return ['beast', 'ooze', 'plant'].includes(t) ? 'beast' : 'regular';
-}
 
 /* ---------------- spellbooks ----------------
    ext.spellbook = { slots: [L1, L2, … L9], slotReset: 'lr' | 'sr', conSave?: n,
@@ -329,8 +323,6 @@ function makeUnit(tpl, team, idx, count, isPC) {
     athletics: typeof ex.athletics === 'number' ? ex.athletics : ((ex.escapeBonus !== undefined && ex.escapeBonus !== '') ? Number(ex.escapeBonus) : (ex.saves && typeof ex.saves.str === 'number' ? ex.saves.str : (tpl.saveBonus || 0))),
     legendaryMax: typeof ex.legendaryActions === 'number' ? ex.legendaryActions : 3,
     hasLegendary: actions.some(a => a.actionSlot === 2),
-    aiSet: AI_TYPES.includes(ex.ai) ? ex.ai : null,
-    ai: AI_TYPES.includes(ex.ai) ? ex.ai : autoAI(tpl),
     dpr: avgPerTurn(actions),
     uses: new Map(),           // day-persistent limited uses
     x: 0, y: 0,
@@ -405,9 +397,6 @@ function Sim(opts) {
   // rule variants (docs/ai-v2.md, "Counterspell rules option", "Rules accuracy pass"): rest 'hitdice' (default) spends Hit Dice on a short rest, 'full' heals everyone fully
   this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024', rest: opts.rules && opts.rules.rest === 'full' ? 'full' : 'hitdice' };
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
-  // AI v2 for non-casters (docs/ai-v2.md): 'v2' for both sides, or { party: 'v2', foes: 'v1' }
-  const ai = opts.ai;
-  this.aiV2 = ai === 'v2' ? { party: true, foes: true } : ai && typeof ai === 'object' && (ai.party === 'v2' || ai.foes === 'v2' || ai.foes === 'tiers') ? { party: ai.party === 'v2', foes: ai.foes === 'v2' || ai.foes === 'tiers', tiers: ai.foes === 'tiers' } : null;
   const kn = opts.know || {};
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
   this.mem = { party: new Map(), foes: new Map() };     // learned per kind of creature, kept all day
@@ -416,5 +405,5 @@ function Sim(opts) {
   this.setTerrain(null);
 }
 
-Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, AI_TYPES, autoAI, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim });
+Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim });
 })(typeof window !== 'undefined' ? window : globalThis);

@@ -31,9 +31,7 @@ Sim.prototype.slotCost = function (u, level) {
 
 Sim.prototype.mayHitDowned = function (u, t) {
   if (t.dead || t.hp > 0 || !t.isPC || !t.onBoard) return false;
-  if (u.ai === 'beast') return u.mauling && t.uid === u.focus;
-  if (u.ai === 'tactical') return t.downs >= 2;
-  return (this.revives[t.team] || 0) >= 2;
+  return t.downs >= 2;
 };
 
 /* Find where to stand and whom to hit for an action, according to the creature's AI.
@@ -63,7 +61,6 @@ Sim.prototype.planInner = function (u, a, budget) {
   const types = a.ext && Array.isArray(a.ext.targetTypes) && a.ext.targetTypes.length ? a.ext.targetTypes.map(x => String(x).toLowerCase()) : null;
   if (types) pool = pool.filter(t => types.includes(String(t.isPC ? 'humanoid' : (t.tpl.type || '')).toLowerCase()));
   if (!pool.length) return null;
-  const ai = u.ai || 'regular';
   const canMove = !this.has(u, ['Restrained']) && !u.grappledBy && this.speedOf(u) > 0;
   const rm = this.reachMap(u, canMove ? budget : 0);
   const W = this.W;
@@ -98,20 +95,15 @@ Sim.prototype.planInner = function (u, a, budget) {
       if (this.distXY(x, y, t) > range || !this.canSee(x, y, t)) continue;
       const steps = rm.dist[i];
       let sc = steps * 10;
-      if (ai !== 'beast') {
-        const adjN = ci.adj[i];
-        if (casterish && adjN) sc += ai === 'tactical' ? 60 : 35;              // casters and archers keep out of melee
-        if (ai === 'regular' && casterish && steps > 0 && ci.nd[i] <= 10) sc += 12;   // ...and don't stop right next to them
-        if (steps > 0 && engaged) sc += ci.leave[i] * 60;                      // leaving reach provokes
-        if (ai === 'tactical') {
-          if (casterish) {
-            const nd = ci.nd[i];
-            if (nd <= 10) sc += 15;                                             // one step from a melee enemy
-            sc -= Math.min(nd, range) / 5 * 2;                                 // otherwise, the further the better
-          } else {
-            sc += Math.max(0, adjN - 1) * 12;                                   // don't get surrounded
-          }
-        }
+      const adjN = ci.adj[i];
+      if (casterish && adjN) sc += 60;                                          // casters and archers keep out of melee
+      if (steps > 0 && engaged) sc += ci.leave[i] * 60;                         // leaving reach provokes
+      if (casterish) {
+        const nd = ci.nd[i];
+        if (nd <= 10) sc += 15;                                                 // one step from a melee enemy
+        sc -= Math.min(nd, range) / 5 * 2;                                     // otherwise, the further the better
+      } else {
+        sc += Math.max(0, adjN - 1) * 12;                                       // don't get surrounded
       }
       if (sc < bs) { bs = sc; best = { x, y, cost: sc }; }
     }
@@ -135,50 +127,17 @@ Sim.prototype.planInner = function (u, a, budget) {
     return { dest: { x: d.x, y: d.y }, path: this.pathTo(rm, d.x, d.y), targets, why };
   };
 
-  /* TACTICAL: score every target it could reach and pick the best */
-  if (ai === 'tactical') {
-    let pick = null, bestVal = -Infinity;
-    for (const t of pool) {
-      const d = bestDest(t);
-      if (!d) continue;
-      const tv = this.targetValue(u, a, t, pool, d.x, d.y);
-      if (tv.friendly && tv.val <= 0) continue;                 // not worth catching our own people
-      const val = tv.val - d.cost / 10;
-      if (val > bestVal) { bestVal = val; pick = { t, d, why: tv.why }; }
-    }
-    return pick ? finish(pick.t, pick.d, pick.why) : null;
-  }
-
-  /* BEAST: nearest prey, sticks with what it's biting, turns on whoever hurt it */
-  let ordered;
-  if (ai === 'beast' && offensive) {
-    const sel = this.selectorKey(a.target);
-    ordered = pool.slice().sort((p, q) => (this.dist(u, p) - this.dist(u, q)) || (sel(p) - sel(q)));
-    const pri = [u.lastAttacker, u.focus].map(id => pool.find(t => t.uid === id)).filter(Boolean);
-    ordered = pri.concat(ordered.filter(t => !pri.includes(t)));
-    for (const t of ordered) {
-      const d = bestDest(t);
-      if (!d) continue;
-      const why = t.hp <= 0 ? 'maul' : t.uid === u.lastAttacker && t.uid !== u.focus ? 'retaliate' : t.uid === u.focus ? '' : 'nearest';
-      return finish(t, d, why);
-    }
-    return null;
-  }
-
-  /* REGULAR: follow the action's own targeting, but fight who is in front of it rather than provoke */
-  ordered = this.orderBySelector(pool, a.target);
-  if (offensive && !ranged && engaged) {
-    const near = ordered.filter(t => this.dist(u, t) <= range);
-    if (near.length) ordered = near.concat(ordered.filter(t => !near.includes(t)));
-  }
-  for (const t of ordered) {
+  /* score every target it could reach and pick the best */
+  let pick = null, bestVal = -Infinity;
+  for (const t of pool) {
     const d = bestDest(t);
     if (!d) continue;
-    const res = finish(t, d, t.hp <= 0 ? 'grudge' : '');
-    if (res.friends && res.friends.length && (res.friends.some(f => f.hp <= 0) || res.friends.length >= res.targets.length)) continue;
-    return res;
+    const tv = this.targetValue(u, a, t, pool, d.x, d.y);
+    if (tv.friendly && tv.val <= 0) continue;                 // not worth catching our own people
+    const val = tv.val - d.cost / 10;
+    if (val > bestVal) { bestVal = val; pick = { t, d, why: tv.why }; }
   }
-  return null;
+  return pick ? finish(pick.t, pick.d, pick.why) : null;
 };
 
 /* ----- choosing an action (classic AI) ----- */
@@ -190,7 +149,7 @@ Sim.prototype.choose = function (u, slot, budget) {
     const p = this.plan(u, a, budget);
     if (!p) continue;
     if (a.ext && a.ext.minCatch && p.targets.filter(t => t.team !== u.team).length < a.ext.minCatch) continue;
-    if (u.ai === 'tactical' && (a.type === 'atk' || a.type === 'debuff')) {
+    if (a.type === 'atk' || a.type === 'debuff') {
       const k2 = freqKind(a.freq), limited = k2 !== 'at will' && k2 !== 'recharge';
       const rest = list.slice(k + 1).filter(b => b.type === 'atk' && freqKind(b.freq) === 'at will');
       if (limited && rest.length) {

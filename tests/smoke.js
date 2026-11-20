@@ -135,7 +135,6 @@ function loadSite(saved) {
     try { page.run(fs.readFileSync(path.join(ROOT, f), 'utf8'), f); }
     catch (e) { page.loadErrors.push(f + ' threw while loading: ' + String((e && e.stack) || e).split('\n').slice(0, 3).join(' | ')); }
   }
-  if (process.env.V1TRAP && page.ctx.TacEngine && page.ctx.TacEngine.runDay) require('../tools/engine-files.js').v1Trap(page.ctx.TacEngine);     // the old AI unreachable (tools/engine-files.js)
   return page;
 }
 
@@ -153,7 +152,7 @@ async function smoke() {
   const missing = GLOBALS.filter(g => page.run('typeof ' + g) === 'undefined');
   check(!missing.length, 'the globals the app needs exist' + (missing.length ? '; missing: ' + missing.join(', ') : ''));
   if (page.loadErrors.length || missing.length) return out;
-  check(page.run('typeof TacEngine.runDay === "function" && typeof WarTable.show === "function" && Object.keys(TacEngine).length') >= 28, 'TacEngine and WarTable are whole');
+  check(page.run('typeof TacEngine.runDay === "function" && typeof WarTable.show === "function" && Object.keys(TacEngine).length') >= 26, 'TacEngine and WarTable are whole');
   await page.fireWindow('DOMContentLoaded'); await page.settle();
   const first = page.run('PARTY_PLAYERS[0].name');
   check(page.el('forgeSide').innerHTML.includes(first) && page.el('forgeDynamic').innerHTML.length > 200, 'the Forge drew its sidebar (with ' + first + ') and its main panel');
@@ -195,9 +194,9 @@ async function smoke() {
   page.run('showView("war")'); await page.settle();
   check(page.el('viewWar').style.display === '' && page.el('viewForge').style.display === 'none', 'the War Table view opens');
   const set = (id, v) => { const e = page.el(id); e.value = v; return e.fire('change', { target: e }); };
-  await set('wt-rulesCounter', '2014'); await set('wt-aiFoes', 'tiers'); await set('wt-aiParty', 'v2');
+  await set('wt-rulesCounter', '2014');
   const so = page.run('JSON.parse(JSON.stringify(WarTable.simOpts(0)))');
-  check(so.rules && so.rules.counterspell === '2014' && so.ai && so.ai.foes === 'tiers' && so.ai.party === 'v2', 'the Counterspell and Enemy AI selects reach the sim options: ' + JSON.stringify({ rules: so.rules, ai: so.ai }));
+  check(so.rules && so.rules.counterspell === '2014' && so.ai === undefined && so.partyAI === undefined && !page.el('wt-aiFoes') && !page.el('wt-aiParty') && !page.el('wt-partyAI'), 'the Counterspell select reaches the sim options, and no select picks the AI any more: ' + JSON.stringify({ rules: so.rules, ai: so.ai }));
   await set('wt-rulesCounter', '2024');
   check(page.run('WarTable.simOpts(0).rules.counterspell') === '2024', 'and back to 2024');
   check(page.run('WarTable.simOpts(0).rules.rest') === 'hitdice' && page.el('wt-rulesRest').value === 'hitdice', 'the short rest rule starts as Hit Dice (a workspace saved before it existed has no setting and reads the same)');
@@ -262,6 +261,18 @@ async function smoke() {
   const patched = loadSite({ 'forge-workspace-v1': JSON.stringify(holed) });
   await patched.fireWindow('DOMContentLoaded'); await patched.settle();
   check(!patched.errors.length && /Restored|✓ Saved/.test(String(patched.el('saveStatus').textContent)) && patched.run('encounters[0].monsters.length') === snap.encounters[0].monsters.length, 'a saved encounter with an empty slot in its monster list still loads');
+  // a workspace and War Table state saved while the old AI choices existed (Party AI / Enemy AI / The party plays, "Fights like" per creature,
+  // the old Smartness values) load silently, the dead settings are dropped, and a fight plays with the one AI
+  const legacy = JSON.parse(JSON.stringify(snap));
+  for (const e of legacy.encounters) for (const m of e.monsters) { m.ext = Object.assign({}, m.ext, { ai: 'regular', aiTier: 'genius' }); }
+  legacy.players.forEach((p, i) => { p.ext = Object.assign({}, p.ext, { ai: i % 2 ? 'regular' : 'beast' }); });
+  const wtOld = JSON.stringify({ settings: { surprise: '2024', escape: 'smart', runs: 100, map: '24x16', partyAI: 'regular', aiParty: 'v1', aiFoes: 'v1', knowParty: 'blind', knowFoes: 'open', morale: 'off', settingsVer: 2 }, layouts: {}, enc: 0 });
+  const leg = loadSite({ 'forge-workspace-v1': JSON.stringify(legacy), 'war-table-v1': wtOld });
+  await leg.fireWindow('DOMContentLoaded'); await leg.settle();
+  leg.run('showView("war")'); await leg.settle();
+  const lso = leg.run('JSON.parse(JSON.stringify(WarTable.simOpts(0)))');
+  await leg.el('wt-btnOne').fire('click', {}); await leg.settle();
+  check(!leg.loadErrors.length && !leg.errors.length && lso.ai === undefined && lso.partyAI === undefined && lso.know.party === 'blind', 'a workspace and War Table state saved with the old AI settings load, ignore them, keep the knowledge setting, and play a fight: ' + JSON.stringify([leg.loadErrors, lso.ai, lso.partyAI, lso.know]) + (leg.errors.length ? ' || ' + errs(leg) : ''));
   return out;
 }
 

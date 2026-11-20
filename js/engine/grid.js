@@ -491,7 +491,7 @@ Sim.prototype.areaAt = function (a, spec, t, ox, oy, ax, ay, pool, caster, fast)
 /* how good an aim is: for a tactical caster, the damage (or effect) it lands on enemies minus what it costs our
    own side (a downed ally takes a failed death save); otherwise simply more enemies, fewer allies */
 Sim.prototype.aimScore = function (a, caster, extra, friends, memo) {
-  if (!caster || caster.ai !== 'tactical') return extra.length * 10 - friends.reduce((q, f) => q + (f.hp <= 0 ? 60 : 16), 0);
+  if (!caster) return extra.length * 10 - friends.reduce((q, f) => q + (f.hp <= 0 ? 60 : 16), 0);
   let v = 0;
   for (const o of extra) {
     let e = memo && memo.get(o);
