@@ -151,11 +151,12 @@ function aiProfile(spec) {
 }
 /* ---- monster intelligence tiers (docs/ai-v2.md "Monster intelligence tiers"): every monster plays on its tier ----
    A tier is a partial profile merged over AI_BASE, picked per creature: ext.aiTier, else from its Intelligence and type.
-   rules: Int ceilings (mindless / animal) and floor (genius); types that are mindless at or under mindlessInt; wisRetreat: retreatHp per point of Wisdom modifier (tiers that retreat). */
+   rules: Int ceilings (mindless / animal); types that are mindless at or under mindlessInt; wisRetreat: retreatHp per point of Wisdom modifier (tiers that retreat).
+   There was a genius tier (Int 16 and up) until phase 6 step 2; it is cunning now (a saved ext.aiTier 'genius' reads as cunning). */
 const AI_TIERS = {
-  tiers: ['mindless', 'animal', 'cunning', 'genius', 'boss'],
+  tiers: ['mindless', 'animal', 'cunning', 'boss'],
   // boss: what makes a creature a boss (legendary actions, lair actions, Legendary Resistance, a reaction that acts on a foe)
-  rules: { mindlessInt: 6, mindlessTypes: ['ooze', 'plant', 'construct', 'undead'], mindlessAny: 0, animalInt: 7, geniusInt: 16, wisRetreat: 0.03,
+  rules: { mindlessInt: 6, mindlessTypes: ['ooze', 'plant', 'construct', 'undead'], mindlessAny: 0, animalInt: 7, wisRetreat: 0.03,
            boss: { legendary: true, lair: true, legRes: true, react: true } },
   profiles: {
     mindless: {
@@ -169,12 +170,7 @@ const AI_TIERS = {
       w: { caster: 0, healer: 0, wounded: 6, pick: 2, guard: 0, focus: 1.5, oa: 0.7, dodge: 0.2, hide: 0, areaRisk: 0.4, ffValue: 0.3, casterRisk: 0.5 },
     },
     cunning: {},
-    genius: {
-      morale: { bloodied: false, half: false, leader: false },
-      posture: { retreatHp: 0.35, retreatDanger: 0.4 },
-      w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2 },
-    },
-    // genius, plus the boss block: little self-care when alone, legendary and lair actions and Legendary Resistance weighed, recharge priced
+    // the careful weights of the old genius tier, plus the boss block: little self-care when alone, legendary and lair actions and Legendary Resistance weighed, recharge priced
     boss: {
       morale: { bloodied: false, half: false, leader: false },
       posture: { retreatHp: 0.35, retreatDanger: 0.4 },
@@ -190,6 +186,7 @@ for (const k of AI_TIERS.tiers) TIER_PROFILES[k] = mergeProfile(AI_BASE, AI_TIER
 /* a creature's tier: ext.aiTier, else the statblock (ext.scores from the parser; an older saved monster uses its Int save) */
 function tierOf(tpl) {
   const ex = (tpl && tpl.ext) || {}, R = AI_TIERS.rules;
+  if (ex.aiTier === 'genius') return 'cunning';          // a saved choice from when the genius tier existed
   if (AI_TIERS.tiers.includes(ex.aiTier)) return ex.aiTier;
   const B = R.boss, acts = (tpl && tpl.actions) || [];
   if (B && ((B.legendary && (ex.legendaryActions > 0 || acts.some(a => a.actionSlot === 2))) || (B.lair && acts.some(a => a.actionSlot === 3)) ||
@@ -198,7 +195,7 @@ function tierOf(tpl) {
   const int = ex.scores && typeof ex.scores.int === 'number' ? ex.scores.int : ex.saves && typeof ex.saves.int === 'number' ? 10 + 2 * ex.saves.int : (ex.ai === 'beast' ? 3 : ex.ai === 'tactical' ? 12 : 8);
   if (int <= R.mindlessAny || /\bswarm\b/i.test(String((tpl && tpl.name) || '')) || (R.mindlessTypes.includes(type) && int <= R.mindlessInt)) return 'mindless';
   if (type === 'beast' || int <= R.animalInt) return 'animal';
-  return int >= R.geniusInt ? 'genius' : 'cunning';
+  return 'cunning';
 }
 /* the profile of a tiered creature: its tier, a Wisdom nudge to when it retreats, then ext.aiProfile on top */
 function tierProfile(tier, spec, tpl) {

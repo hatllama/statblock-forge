@@ -604,7 +604,7 @@ function playRevive(sc, N) {
 }
 
 
-/* ---- monster tiers (docs/ai-v2.md "Monster intelligence tiers"): the same fight with the monsters on the old AI, on v2 (old gate) and on v2 by tier ----
+/* ---- monster tiers (docs/ai-v2.md "Monster intelligence tiers"): the same fight with the monsters on their own tiers and with one tier forced on all of them ----
    node tests/ai-compare.js 200 '^TIER'   (MORALE=on lets the tiers' nerve show). The party is on v2 and learns in every arm; the monsters' knowledge is the row's mode.
    Lower party win = stronger monsters. */
 let TIER_FORCE = null;
@@ -621,7 +621,7 @@ const TIER_SCENARIOS = [
   { name: 'TIER legendary with a lair: the Ember Tyrant (140 HP, 0.4 damage)', party: ['Fighter', 'Barbarian', 'Cleric', 'Wizard'], encounters: () => [{ monsters: [scaled(withHp(statblock('long-homebrew-boss.txt'), 140), 0.4)] }] },
   { name: 'TIER day: goblins / wolves + ogres / Mage + Guards', party: TIER_PARTY, day: 'Goblin Warrior*6/Wolf*4,Ogre/Mage,Guard*3' },
 ];
-const TIER_ARMS = ['auto', 'mindless', 'animal', 'cunning', 'genius'];       // auto: each monster on its own tier; the others force one tier on every monster
+const TIER_ARMS = ['auto', 'mindless', 'animal', 'cunning'];       // auto: each monster on its own tier; the others force one tier on every monster
 function playTier(sc, N) {
   console.log('\n' + sc.name);
   console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].join(' '));
@@ -634,7 +634,7 @@ function playTier(sc, N) {
   }
   TIER_FORCE = null;
 }
-/* ---- the boss tier (docs/ai-v2.md "Boss tier"): the same fight with the boss on the old AI, on v2 genius and on the boss tier ----
+/* ---- the boss tier (docs/ai-v2.md "Boss tier"): the same fight with the boss forced to cunning and on the boss tier ----
    node tests/ai-compare.js 200 '^BOSS'   (TIER_MODES=open picks the modes). Only the boss is forced; an escort keeps its own tier.
    The party is on v2 and learns; the monsters' knowledge is the row's mode. Lower party win = a stronger boss. */
 const DRAGON_LAIR = '\nLair Actions\nOn initiative count 20 (losing initiative ties), the dragon takes one lair action.\n' +
@@ -661,8 +661,8 @@ function playBoss(sc, N) {
   console.log('  ' + [pad('arm', 14), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BOSS_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
   const mkEnc = () => { const base = sc.encounters(); for (const e of base) for (const m of e.monsters) if (BOSS_FORCE && Tac.tierOf(m) === 'boss') m.ext.aiTier = BOSS_FORCE; return base; };
   const mine = Object.assign({}, sc, { encounters: mkEnc, metrics: BOSS_METRICS, record: true });
-  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['genius', 'boss']) {
-    BOSS_FORCE = arm === 'genius' ? 'genius' : null;
+  for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of ['cunning', 'boss']) {
+    BOSS_FORCE = arm === 'cunning' ? 'cunning' : null;
     const r = play(Object.assign({}, mine, { know: { party: 'learn', foes: know } }), N);
     console.log(row(pad(know + ' ' + arm, 14), r));
   }

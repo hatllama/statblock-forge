@@ -1,7 +1,7 @@
 default party vs hard-day | open | 500 | 8799df474773
 default party vs hard-day | open | 8419 | fe42bcfe6232
 default party vs hard-day | open | 16338 | 963c2df1d694
-default party vs hard-day | open | 24257 | 8a6f5439762b
+default party vs hard-day | open | 24257 | 2743b7b52bb6
 default party vs hard-day | walled | 500 | 6139397386dd
 default party vs hard-day | walled | 8419 | 5b2013e5e0ca
 default party vs hard-day | walled | 16338 | f220d8395090
@@ -30,19 +30,19 @@ casters vs priests + young dragon | walled | 500 | 67720cc8067e
 casters vs priests + young dragon | walled | 8419 | 3401a10207f1
 casters vs priests + young dragon | walled | 16338 | 49c06fb004cc
 casters vs priests + young dragon | walled | 24257 | ba25d3ee7d54
-default party vs medium-day | open | 500 | 7ab17ba35984
+default party vs medium-day | open | 500 | 8d02e62cecb8
 default party vs medium-day | open | 8419 | bb034fd77a47
 default party vs medium-day | open | 16338 | 1d9c1e6321ca
 default party vs medium-day | open | 24257 | b41f6f3587c8
-default party vs medium-day | walled | 500 | 0776ae6ab2f0
-default party vs medium-day | walled | 8419 | 4f160a764b43
-default party vs medium-day | walled | 16338 | ab2de0cf2dbd
-default party vs medium-day | walled | 24257 | 1d326eed94ad
+default party vs medium-day | walled | 500 | 64e5aa3a00e2
+default party vs medium-day | walled | 8419 | ac6dafba0bf7
+default party vs medium-day | walled | 16338 | dfb0d73bafe2
+default party vs medium-day | walled | 24257 | 57cef5208f52
 casters vs medium-day | open | 500 | bedc41bd4c19
 casters vs medium-day | open | 8419 | 2f9526de5717
 casters vs medium-day | open | 16338 | 97f05f08ff35
 casters vs medium-day | open | 24257 | e306b5a53cf7
-casters vs medium-day | walled | 500 | 14099f385ccc
+casters vs medium-day | walled | 500 | a5166fb62ee2
 casters vs medium-day | walled | 8419 | a24351abed11
 casters vs medium-day | walled | 16338 | dcccbbc0cf28
 casters vs medium-day | walled | 24257 | cd541519fe34

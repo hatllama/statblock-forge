@@ -184,11 +184,11 @@ async function smoke() {
   // 4. the Forge's Smartness select writes ext.aiTier, and "auto" clears it
   const key = page.run('String(encounters[activeIdx].monsters.findIndex(m => m.name === "Ogre"))');
   const pick = v => page.el('forgeDynamic').fire('change', { target: { tagName: 'SELECT', type: 'select-one', value: v, checked: false, dataset: { ext: 'aiTier', owner: key } } });
-  await pick('genius');
+  await pick('boss');
   const tier1 = page.run('(encounters[activeIdx].monsters[' + key + '].ext || {}).aiTier');
   await pick('auto');
   const tier2 = page.run('(encounters[activeIdx].monsters[' + key + '].ext || {}).aiTier');
-  check(tier1 === 'genius' && tier2 === undefined, 'the Smartness select sets ext.aiTier and "auto" clears it (' + tier1 + ', ' + tier2 + ')');
+  check(tier1 === 'boss' && tier2 === undefined, 'the Smartness select sets ext.aiTier and "auto" clears it (' + tier1 + ', ' + tier2 + ')');
 
   // 5. the War Table opens, plays one fight, runs the odds; its selects reach the sim options
   page.run('showView("war")'); await page.settle();
@@ -273,6 +273,9 @@ async function smoke() {
   const lso = leg.run('JSON.parse(JSON.stringify(WarTable.simOpts(0)))');
   await leg.el('wt-btnOne').fire('click', {}); await leg.settle();
   check(!leg.loadErrors.length && !leg.errors.length && lso.ai === undefined && lso.partyAI === undefined && lso.know.party === 'blind', 'a workspace and War Table state saved with the old AI settings load, ignore them, keep the knowledge setting, and play a fight: ' + JSON.stringify([leg.loadErrors, lso.ai, lso.partyAI, lso.know]) + (leg.errors.length ? ' || ' + errs(leg) : ''));
+  // a saved Smartness of "genius" (the tier is gone) reads as cunning in the Forge's select, which no longer offers Genius
+  const sheet = String(leg.run('sheetHtml("0", [].concat(...encounters.map(e => e.monsters)).find(m => m.ext && m.ext.aiTier === "genius"))'));
+  check(/<option value="cunning" selected>/.test(sheet) && !/genius/i.test(sheet.replace(/title="[^"]*"/g, '')) && !/Fights like/.test(sheet), 'the Smartness select shows a saved "genius" as Cunning, has no Genius option, and the Fights like select is gone');
   return out;
 }
 

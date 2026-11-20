@@ -2346,9 +2346,9 @@ section('AI v2: monster intelligence tiers (phase 4)');
   const T = Tac.tierOf;
   check(T(srd('Wolf')) === 'animal' && T(srd('Dire Wolf')) === 'animal' && T(srd('Hill Giant')) === 'animal', 'a wolf, a dire wolf and a hill giant are animals (instinct)');
   check(T(tpl('Gelatinous Cube', 'ooze', 1)) === 'mindless' && T(srd('Zombie')) === 'mindless' && T(srd('Stone Golem')) === 'mindless' && T(tpl('Swarm of Rats', 'beast', 2)) === 'mindless', 'an ooze, a zombie, a golem and a swarm are mindless');
-  check(T(srd('Mage')) === 'genius' && T(srd('Assassin')) !== 'boss', 'a mage is a genius (a lich and an adult dragon are bosses: see the boss tier)');
+  check(T(srd('Mage')) === 'cunning' && T(srd('Assassin')) === 'cunning' && T(srd('Young Green Dragon')) === 'cunning', 'a mage, an assassin and a young dragon (Int 16 and up) are cunning: there is no genius tier (a lich and an adult dragon are bosses: see the boss tier)');
   check(T(srd('Goblin Warrior')) === 'cunning' && T(srd('Knight')) === 'cunning' && T(srd('Hobgoblin Captain')) === 'cunning', 'goblins, knights and hobgoblins are cunning');
-  check(T(srd('Wolf', 1, 'genius')) === 'genius' && T(tpl('X', 'beast', 3, 10, { aiTier: 'bogus' })) === 'animal', 'ext.aiTier overrides; an unknown tier is ignored');
+  check(T(srd('Wolf', 1, 'cunning')) === 'cunning' && T(srd('Wolf', 1, 'genius')) === 'cunning' && T(tpl('X', 'beast', 3, 10, { aiTier: 'bogus' })) === 'animal', 'ext.aiTier overrides (a saved "genius" reads as cunning); an unknown tier is ignored');
   check(T({ name: 'Old Ogre', type: 'giant', ext: { saves: { int: -3 }, ai: 'regular' } }) === 'animal', 'a saved monster without ability scores reads its Int save');
   const parsed = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'mage-2014.txt'), 'utf8')).monsters[0];
   check(parsed.ext.scores && parsed.ext.scores.int === 17, 'the parser keeps the Int and Wis scores for tiers (ext.scores)');
@@ -2364,21 +2364,20 @@ section('AI v2: monster intelligence tiers (phase 4)');
     if (res._sim) for (const u of res._sim.units) if (u.team === 'foes' && u.tier === tier) seenTier[tier] = (seenTier[tier] || 0) + 1;
   }
   check(tiers.every(t => seenTier[t] > 0) && err === 0, `each tier plays on v2 (${JSON.stringify(seenTier)}), ${err} threw`);
-  check(Tac.TIER_PROFILES.mindless.know === 'blind' && Tac.TIER_PROFILES.genius.w.caster > Tac.AI_BASE.w.caster && Tac.TIER_PROFILES.cunning.w.caster === Tac.AI_BASE.w.caster, 'a tier is a profile of plain weights over AI_BASE (nothing names a creature)');
+  check(Tac.TIER_PROFILES.mindless.know === 'blind' && !Tac.TIER_PROFILES.genius && Tac.AI_TIERS.tiers.join() === 'mindless,animal,cunning,boss' && Tac.TIER_PROFILES.boss.w.caster > Tac.AI_BASE.w.caster && Tac.TIER_PROFILES.cunning.w.caster === Tac.AI_BASE.w.caster, 'a tier is a profile of plain weights over AI_BASE (nothing names a creature)');
   // a swallower plays the AI like any other monster
   const sw = run({ players: party(), encounters: [{ monsters: [Object.assign(srd('Wolf', 1), { actions: srd('Wolf', 1).actions.concat([{ id: 'swx', name: 'Swallow', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d6', toHit: 5, target: 'enemy with least HP', ext: { range: 5, swallow: { maxSize: 'Medium' } } }]) })] }] }, { seed: 4, _keep: true });
   check(sw._sim && sw._sim.units.every(u => u.v2P), 'a swallower and the party all play the AI');
-  // morale: mindless never flee; animals flee once bloodied and losing; geniuses never lose their nerve
+  // morale: mindless never flee; animals flee once bloodied and losing
   const fled = (name, tier, N) => {
     let n = 0;
     for (let i = 0; i < N; i++) for (const r of run({ players: party(), encounters: [{ monsters: [srd(name, 4, tier)] }] }, { seed: 500 + i * 13, morale: 'on', record: true })) for (const e of r.events) if (e.kind === 'flee') n++;
     return n;
   };
-  const zf = fled('Zombie', null, 10), sf = fled('Skeleton', 'mindless', 8), wm = fled('Wolf', 'mindless', 10), wf = fled('Wolf', null, 10), gf = fled('Mage', 'genius', 6);
+  const zf = fled('Zombie', null, 10), sf = fled('Skeleton', 'mindless', 8), wm = fled('Wolf', 'mindless', 10), wf = fled('Wolf', null, 10);
   check(zf === 0 && sf === 0 && wm === 0, `mindless creatures never flee (zombies ${zf}, skeletons ${sf}, wolves forced mindless ${wm})`);
   check(wf > 0, `animals flee when bloodied and losing (${wf} flights in 10 wolf fights)`);
-  check(gf === 0, `geniuses never lose their nerve (${gf} flights)`);
-  // knowledge: in open mode a mindless or animal creature reads the party as blind, a cunning or genius one as open
+  // knowledge: in open mode a mindless or animal creature reads the party as blind, a cunning one as open
   const mk = {}, proto = Tac.Sim.prototype, turn = proto.turn;
   proto.turn = function (u) {
     const f = this.units.find(o => o.team === 'foes');
@@ -2387,8 +2386,8 @@ section('AI v2: monster intelligence tiers (phase 4)');
   };
   for (const tier of tiers) run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier)] }] }, { seed: 8, know: { party: 'learn', foes: 'open' } });
   proto.turn = turn;
-  check(mk.mindless && mk.animal && mk.cunning && mk.genius && mk.mindless.m === 'blind' && mk.animal.m === 'blind' && mk.cunning.m === 'open' && mk.genius.m === 'open' && mk.cunning.max === mk.cunning.realMax && mk.animal.max !== mk.animal.realMax,
-    `open mode: mindless and animal read the party blind (a max HP guess of ${mk.animal && Math.round(mk.animal.max)} for ${mk.animal && mk.animal.realMax}), cunning and genius read it as it is`);
+  check(mk.mindless && mk.animal && mk.cunning && mk.mindless.m === 'blind' && mk.animal.m === 'blind' && mk.cunning.m === 'open' && mk.cunning.max === mk.cunning.realMax && mk.animal.max !== mk.animal.realMax,
+    `open mode: mindless and animal read the party blind (a max HP guess of ${mk.animal && Math.round(mk.animal.max)} for ${mk.animal && mk.animal.realMax}), cunning reads it as it is`);
   // blind and learn: every tier, rules intact
   for (const mode of ['blind', 'learn']) for (const tier of tiers) for (let i = 0; i < 3; i++) {
     for (const r of run({ players: party(), encounters: [{ monsters: [srd('Wolf', 2, tier), srd('Mage', 1, tier)] }] }, { seed: 60 + i, know: { party: mode, foes: mode }, morale: 'on', record: true })) scanRules(r, null, acc);
@@ -2428,8 +2427,8 @@ section('AI v2: the boss tier (phase 4b)');
   check(['Bandit Captain', 'Knight', 'Gladiator', 'Warrior Veteran', 'Mage', 'Hill Giant', 'Owlbear', 'Young Red Dragon', 'Goblin Boss'].every(n => T(srd(n)) !== 'boss'), 'ordinary monsters are not bosses (Parry is a self buff, not a boss reaction; young dragons have no legendary actions)');
   const nonBoss = ctx.M.filter(s => T(srd(s.name)) === 'boss').map(s => s.name);
   check(nonBoss.join() === 'Adult Red Dragon,Lich', `of the SRD monsters only the Adult Red Dragon and the Lich are bosses (${nonBoss.join(', ')})`);
-  check(T(srd('Lich', 1, 'genius')) === 'genius' && T(srd('Wolf', 1, 'boss')) === 'boss', 'ext.aiTier overrides the boss rule both ways');
-  check(Tac.TIER_PROFILES.boss.boss.legendary === 'weigh' && Tac.AI_BASE.boss.legendary === 'rule' && Tac.AI_BASE.boss.solo === 1 && Tac.AI_BASE.boss.recharge === 0 && ['mindless', 'animal', 'cunning', 'genius'].every(k => Tac.TIER_PROFILES[k].boss.solo === 1 && Tac.TIER_PROFILES[k].boss.legRes === 'rule'),
+  check(T(srd('Lich', 1, 'cunning')) === 'cunning' && T(srd('Wolf', 1, 'boss')) === 'boss', 'ext.aiTier overrides the boss rule both ways');
+  check(Tac.TIER_PROFILES.boss.boss.legendary === 'weigh' && Tac.AI_BASE.boss.legendary === 'rule' && Tac.AI_BASE.boss.solo === 1 && Tac.AI_BASE.boss.recharge === 0 && ['mindless', 'animal', 'cunning'].every(k => Tac.TIER_PROFILES[k].boss.solo === 1 && Tac.TIER_PROFILES[k].boss.legRes === 'rule'),
     'the boss block is neutral in AI_BASE and every other tier (factors 1, weight 0, old pickers); only the boss profile changes it');
 
   const party = () => ['Fighter', 'Barbarian', 'Cleric', 'Wizard'].map(pc);
