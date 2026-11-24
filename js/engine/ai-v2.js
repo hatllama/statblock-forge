@@ -1024,5 +1024,11 @@ Sim.prototype.v2FF = function (u, a, friends) {
   return p * W.ffValue;
 };
 
+/* ---- custom mechanics the AI decides (ext.traits with optional: true; docs/custom-mechanics.md) ---- */
+/* how many of `top` extra swings to buy for action a (extraAttacks); the scoring is v2PatienceSpend */
+Sim.prototype.v2ExtraAttacks = function (u, a, targets, top, out) { return top; };
+/* flip the coin before action a? (coin) */
+Sim.prototype.v2FlipBefore = function (u, a, targets, coin, out) { return false; };
+
 Object.assign(ENG, { isReckless, castCopy, deathOdds });
 })(typeof window !== 'undefined' ? window : globalThis);

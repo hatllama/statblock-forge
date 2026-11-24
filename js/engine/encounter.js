@@ -17,6 +17,7 @@ Sim.prototype.turn = function (u) {
   u._settled = false;
   if (u.alt > 0) this.fallCheck(u);
   u.tookTurn = true; u.movedThisTurn = false; u._steps = 0;
+  if (u.traits && u.traits.turnStart) this.traitRun(u, 'turnStart', {});
   // ongoing damage (Tasha's Caustic Brew, burning…) at the start of the creature's turn
   for (const b of u.buffs.slice()) if (b.dot && !u.dead) {
     const src = this.byId[b.src] || u, at = this.mark();
@@ -87,7 +88,7 @@ Sim.prototype.turn = function (u) {
     const g = this.byId[u.grappledBy];
     const canSwallow = g && g.actions.some(a => a.ext && a.ext.swallow);
     if (this.escapePolicy === 'always' || (this.escapePolicy === 'smart' && canSwallow)) {
-      const r = this.R.d(20) + u.escapeBonus;
+      const r = this.d20(false, false, false, u, 'check') + u.escapeBonus;
       actionUsed = true;
       const dc = u.grappleInfo.escapeDC;
       if (r >= dc) { u.grappledBy = null; u.grappleInfo = null; this.ev('escape', `${u.name} breaks free (${r} vs DC ${dc})`, { uid: u.uid }); }
@@ -164,7 +165,8 @@ Sim.prototype.turn = function (u) {
   if (choice && !moved) { this.moveAlong(u, choice.p.path); moved = true; }
   u.disengaged = false;
   if (u.dead || u.hp <= 0) return;
-  if (this.incap(u)) { this.endTurn(u); return; }
+  const used = () => { if (u.traits) { if (actionUsed) u._actSeq = this.turnSeq; if (bonusSpent) u._bonSeq = this.turnSeq; } };   // for turnEnd (Patience)
+  if (this.incap(u)) { used(); this.endTurn(u); return; }
 
   // bonus action: first usable one, before or after the action depending on what it is
   u.reserveSlot = !!(choice && !actionUsed && choice.a._spell && choice.a._spell.level);
@@ -204,6 +206,7 @@ Sim.prototype.turn = function (u) {
   if (u.surges && u.surges.length && !u.dead && u.hp > 0 && !this.incap(u)) this.v2Surge(u);
   // a flyer that didn't need a particular height this turn settles out of reach with what movement it has left
   if (u.fly && !u._settled && !out()) this.settleAltitude(u, null, null);
+  used();
   this.endTurn(u);
 };
 Sim.prototype.insideTurn = function (u) {
@@ -227,12 +230,13 @@ Sim.prototype.insideTurn = function (u) {
 };
 Sim.prototype.endTurn = function (u) {
   if (u.vex && (u.turnNo || 0) > u.vex.turn) u.vex = null;
+  if (u.traits && u.traits.turnEnd && !u.dead) this.traitRun(u, 'turnEnd', { unused: this.tUnused(u) });   // Patience: one for each part of the turn left unused
   // "repeat the save each round" effects on this creature
   for (const b of u.buffs.slice()) {
     if (b.expiry === 'repeat the save each round' && typeof b.dc === 'number' && b.dc < 99) {
-      this._saveCond = b.data && b.data.condition;
+      this._saveCond = b.data && b.data.condition; this._saveMagic = !!b.magic;
       const s = this.saveRoll(u, b.dc, null, b.saveAbility);
-      this._saveCond = null;
+      this._saveCond = null; this._saveMagic = false;
       if (s.success) { u.buffs = u.buffs.filter(x => x !== b); this._flyMapVer = -1; this._rmCache = null; this.ev('save', `${u.name} shakes off ${b.name}`, { uid: u.uid }); }
     }
   }
@@ -393,7 +397,7 @@ Sim.prototype.moraleBreaks = function (u) {
   const fresh = triggers.filter(k => !u.moraleSeen[k]);
   if (!fresh.length || !this.losing(u)) return false;
   fresh.forEach(k => { u.moraleSeen[k] = true; });
-  const r = this.d20(false, false, false) + this.saveBonusFor(u, 'wis');
+  const r = this.d20(false, false, false, u, 'save') + this.saveBonusFor(u, 'wis');
   return r < (M && M.dc || 10);
 };
 Sim.prototype.leave = function (u) {
@@ -431,7 +435,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   for (const u of this.units) {
     if (u.dead) { u.init = undefined; continue; }
     const sur = this.surprised[u.team] && this.surpriseRules === '2024';
-    u.init = this.d20(u.initAdv, sur, false) + u.initBonus + this.R() * 0.01;
+    u.init = this.d20(u.initAdv, sur, false, u, 'check') + u.initBonus + this.R() * 0.01;
   }
   this.order = this.units.filter(u => !u.dead).sort((a, b) => b.init - a.init);
   this.ev('start', 'Initiative: ' + this.order.map(u => `${u.name} ${Math.floor(u.init)}`).join(', '), { order: this.order.map(u => u.uid) });

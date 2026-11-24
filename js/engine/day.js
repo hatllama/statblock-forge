@@ -4,7 +4,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { makeRng, parseDice, rollDice, avgDice, finalizeAction, inferRange, damageMultFor, casterKind, recoverSlots, makeUnit, freqKind, resetFightState, Sim, areaSpec, areaCells, inArea, AI_BASE, AI_PROFILES, aiProfile, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, hitP, castCopy, deathOdds } = ENG;
+const { makeRng, parseDice, rollDice, avgDice, finalizeAction, inferRange, damageMultFor, casterKind, recoverSlots, makeUnit, freqKind, resetFightState, Sim, areaSpec, areaCells, inArea, AI_BASE, AI_PROFILES, aiProfile, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, hitP, castCopy, deathOdds, TRAITS_VERSION, TRAIT_WHEN, TRAIT_IF, TRAIT_DO, validateTraits, compileTraits, traitAiWords } = ENG;
 
 /* ---------------- a whole adventuring day ---------------- */
 function expandTeam(list, team, isPC) {
@@ -266,6 +266,7 @@ function previewPlacement(day, encIndex, layout, opts) {
     state: sim.unitState(u) }));
 }
 
-root.TacEngine = { shortRestHp, Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam };
+root.TacEngine = { shortRestHp, Sim, AI_BASE, AI_PROFILES, AI_TIERS, TIER_PROFILES, tierOf, tierProfile, aiProfile, casterKind, deathOdds, castCopy, damageMultFor, areaSpec, areaCells, inArea, previewPlacement, runDay, monteCarlo, summarize, describeRanges, makeRng, rollDice, avgDice, parseDice, inferRange, expandTeam,
+  TRAITS_VERSION, TRAIT_WHEN, TRAIT_IF, TRAIT_DO, validateTraits, compileTraits, traitAiWords };      // custom mechanics (docs/custom-mechanics.md)
 })(typeof window !== 'undefined' ? window : globalThis);
 

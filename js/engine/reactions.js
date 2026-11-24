@@ -287,7 +287,7 @@ Sim.prototype.counterCheck = function (u, a, plan) {
     // SRD 5.1: 3rd level or lower fails; 4th or higher needs an ability check against 10 + its level, unless the slot used is at least its level; the slot of the spell is spent either way
     const SL = this.castSpellLevel(u, a), used = o.castLevel || 3, bonus = this.counterBonus(o);
     let how = '', ok = SL <= 3 || used >= SL;
-    if (!ok) { const r = this.d20(false, false, false); ok = r + bonus >= 10 + SL; how = ' (check ' + (r + bonus) + ' vs DC ' + (10 + SL) + ')'; }
+    if (!ok) { const r = this.d20(false, false, false, o, 'check'); ok = r + bonus >= 10 + SL; how = ' (check ' + (r + bonus) + ' vs DC ' + (10 + SL) + ')'; }
     if (!ok) { this.ev('react', `${o.name} casts ${x.name} on ${u.name}'s ${a.name}, but it goes off${how}`, { uid: o.uid, target: u.uid }); return false; }
     if (a._spell && a._spell.conc && u.concentrating === a.id) u.concentrating = null;
     this.ev('react', `${o.name} casts ${x.name}${used > 3 ? ' at level ' + used : ''}: ${u.name}'s ${a.name} fizzles${how}`, { uid: o.uid, target: u.uid });
@@ -333,7 +333,7 @@ Sim.prototype.pushLuckTry = function (S) {
   const dmg = avgDice((a.ext && a.ext.wtDpr) || a.dpr) * this.multBuff(att, 'damageMultiplier') * damageMultFor(a, S.tgt) + this.sumBuff(att, 'damage', false);
   if (p * dmg <= P.cost * avgDice(pl.dice)) return false;
   const cost = Math.max(0, Math.floor(rollDice(pl.dice, this.R, false)));
-  const was = Math.round(S.total), d2 = this.d20(S.adv, S.dis, att.elvenAccuracy);
+  const was = Math.round(S.total), d2 = this.d20(S.adv, S.dis, att.elvenAccuracy, att, 'attack');
   att.hp = Math.max(1, att.hp - cost);
   this.reactApplyDie(S, d2);
   this.ev('react', `${att.name} pushes their luck, taking ${cost}: the attack roll ${was} rerolls to ${Math.round(S.total)} vs AC ${Math.round(S.ac)}, ${S.hit ? 'a hit' : 'still a miss'}`, { uid: att.uid, target: att.uid, dmg: cost });

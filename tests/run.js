@@ -3064,6 +3064,202 @@ section('Elia Dantes: Chain Bolts (speed halved), Push Your Luck, the burst rout
   }
 }
 
+section('Trait vocabulary (custom mechanics, ext.traits v1: docs/custom-mechanics.md): one check or more per word');
+{
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const V = Tac.validateTraits;
+  const pools = { Patience: { uses: 5, start: 0, reset: 'fight' } };
+  const shot = { id: 'sh', name: 'Rifle', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d6', toHit: 5, target: 'enemy with most HP', ext: { range: 120, damageType: 'piercing' } };
+  const aimed = Object.assign(cp(shot), { id: 'ai', name: 'Aimed Shot', ext: { range: 120, damageType: 'piercing', weapon: 'Rifle', req: [{ notMoved: true }], wtOnly: true } });
+  // one creature, a dummy target; traits as given; forced dice where a result must be one thing
+  const mk = (traits, o) => {
+    o = o || {};
+    const s = new Tac.Sim({ width: 30, height: 10, seed: o.seed || 7, record: true });
+    const me = { id: 'me', name: 'Sniper', mode: 'custom', hp: 80, AC: 15, saveBonus: 2, count: 1, ext: Object.assign({ size: 'Small', resources: cp(pools), traits: cp(traits) }, o.ext || {}), actions: [cp(shot), cp(aimed)] };
+    const tg = { id: 'tg', name: 'Dummy', mode: 'custom', hp: o.tgHp || 5000, AC: o.ac || 10, saveBonus: 0, count: 1, ext: Object.assign({ size: 'Medium' }, o.tgExt || {}), actions: [{ id: 'tg0', name: 'Slash', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1d6', toHit: 5, target: 'enemy with most HP', ext: { range: 5 } }] };
+    const u = Tac.expandTeam([me], 'foes', false)[0], t = Tac.expandTeam([tg], 'party', false)[0];
+    u.x = 2; u.y = 2; t.x = 10; t.y = 2; s.units = [u, t]; s.byId = { [u.uid]: u, [t.uid]: t };
+    s._last = {}; s.turnSeq = 1; s.round = 1; s.current = u; u.turnNo = 1; s.boardChanged(); s.units.forEach(x => s.v2Setup(x));
+    return { s, u, t, A: n => u.actions.find(a => a.name === n) };
+  };
+  const P = u => u.uses.get('res:Patience');
+  const atkEv = s => s.events.filter(e => e.kind === 'attack');
+  const gainT = { name: 'Patience', when: 'turnEnd', do: [{ gain: { res: 'Patience', perUnused: ['move', 'bonus', 'action'], cap: 5 } }] };
+  const loseT = { name: 'Patience', when: 'onDamaged', do: [{ lose: { res: 'Patience', frac: 0.5, round: 'up' } }] };
+
+  // validation: good traits pass, every kind of mistake is named
+  check(V({ resources: pools, traits: [gainT, loseT] }).length === 0, 'valid traits: no messages');
+  const msg = (t, extra) => V(Object.assign({ resources: pools, traits: [t] }, extra || {})).join(' | ');
+  check(/unknown trigger "onTuesday"/.test(msg({ when: 'onTuesday', do: [{ advantage: true }] })), 'an unknown trigger is refused by name');
+  check(/unknown condition "sunny"/.test(msg({ when: 'onHit', if: [{ sunny: true }], do: [{ extraDamage: { dice: '1d6' } }] })), 'an unknown condition is refused by name');
+  check(/unknown effect "gian" \(known: gain/.test(msg({ when: 'turnEnd', do: [{ gian: { res: 'Patience' } }] })), 'an unknown effect is refused, with the known words listed');
+  check(/unknown key "then"/.test(msg({ when: 'turnEnd', then: 1, do: [{ gain: { res: 'Patience' } }] })), 'an unknown key on a trait is refused');
+  check(/effect "extraDamage" must be/.test(msg({ when: 'onHit', do: [{ extraDamage: { dice: 'lots' } }] })), 'a bad value is refused with the shape it wants');
+  check(/no resource "Focus"/.test(msg({ when: 'turnEnd', do: [{ gain: { res: 'Focus' } }] })), 'a word naming a pool the creature lacks is refused');
+  check(/"perUnused" only works with when: turnEnd/.test(msg({ when: 'onHit', do: [{ gain: { res: 'Patience', perUnused: ['move'] } }] })), 'perUnused outside turnEnd is refused');
+  check(/only works with when: onHit/.test(msg({ when: 'turnEnd', do: [{ extraDamage: { dice: '1d6' } }] })), 'an effect on the wrong trigger is refused');
+  check(/"optional" only works with a word the AI decides/.test(msg({ when: 'turnEnd', optional: true, do: [{ gain: { res: 'Patience' } }] })), 'optional on a word the AI does not decide is refused');
+  check(/one word/.test(msg({ when: 'turnEnd', do: [{ gain: { res: 'Patience' }, lose: { res: 'Patience', n: 1 } }] })), 'an effect with two words is refused (each effect is one word, in order)');
+  check(/a coin inside a coin/.test(msg({ when: 'beforeAction', do: [{ coin: { heads: [{ coin: {} }] } }] })), 'a coin inside a coin is refused');
+  check(/version 2/.test(V({ traitsV: 2, traits: [] }).join(' ')), 'a newer vocabulary version is refused');
+  check(/Action "X" \(requires\): unknown condition "standing"/.test(V({}, [{ name: 'X', ext: { req: [{ standing: true }] } }]).join(' ')), 'an action precondition with an unknown word is refused');
+  const comp = Tac.compileTraits({ resources: pools, traits: [gainT, { when: 'turnEnd', do: [{ gian: 1 }] }] });
+  check(comp && comp.turnEnd.length === 1 && comp.turnEnd[0].name === 'Patience', 'compileTraits keeps the valid trait and skips the invalid one whole');
+  check(Tac.compileTraits({}) === null && Tac.compileTraits({ traits: [] }) === null, 'no traits: nothing compiled (u.traits null)');
+
+  // resources: start, reset per fight; gain per unused part of the turn (cap); lose a fraction rounded up
+  {
+    const { s, u } = mk([gainT, loseT]);
+    check(P(u) === 0, 'a pool with start: 0 begins the fight empty');
+    s.endTurn(u);
+    check(P(u) === 3, 'turnEnd gain perUnused: nothing used = 3');
+    s.turnSeq = 2; u.movedThisTurn = true; s.spend(u, u.actions[0]); s.endTurn(u);
+    check(P(u) === 4, 'moved and used its action: +1 (the bonus action) = 4');
+    s.turnSeq = 3; u.movedThisTurn = false; s.endTurn(u);
+    check(P(u) === 5, 'never above the cap of 5');
+    s.damage(s.units[1], u, 3, { attack: true });
+    check(P(u) === 2, 'onDamaged lose half rounded up: 5 → 2');
+    s.damage(s.units[1], u, 3, { attack: true });
+    check(P(u) === 1, '2 → 1');
+    s.damage(s.units[1], u, 3, { attack: true });
+    check(P(u) === 0, '1 → 0 (half of 1, rounded up, is 1)');
+    u.uses.set('res:Patience', 4); u.temp = 50; s.damage(s.units[1], u, 3, { attack: true });
+    check(P(u) === 2, 'damage soaked by temporary hit points is still damage taken: 4 → 2');
+  }
+  {
+    // reset: 'fight' — a party member keeps its pools all day, but this one starts each fight at `start` again
+    const day = { players: [{ id: 'r', name: 'Keeper', mode: 'custom', hp: 200, AC: 30, saveBonus: 9, count: 1, ext: { resources: cp(pools), traits: [gainT] }, actions: [cp(shot)] }],
+      encounters: [1, 2].map(() => ({ monsters: [{ id: 'g', name: 'Rat', mode: 'custom', hp: 3, AC: 5, saveBonus: 0, count: 1, ext: {}, actions: [{ id: 'g0', name: 'Bite', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '1', toHit: 0, target: 'enemy with most HP', ext: { range: 5 } }] }] })) };
+    const res = Tac.runDay(day, { seed: 3, record: true });
+    const firstGain = r => (r.events || []).filter(e => /gains \d+ Patience/.test(e.text)).map(e => +e.text.match(/: (\d+)\//)[1])[0];
+    check(res.length === 2 && firstGain(res[1]) !== undefined && firstGain(res[1]) <= 3, `reset: 'fight' — the second fight starts from 0 again (first gain there leaves ${firstGain(res[1])})`);
+  }
+  {
+    const { s, u } = mk([gainT]);
+    s.turnSeq = 5; u._steps = 0; u.stoodTurn = 5; s.endTurn(u);
+    check(P(u) === 2, 'standing up from prone uses movement: +2');
+    const { s: s2, u: u2 } = mk([{ when: 'turnStart', do: [{ gain: { res: 'Patience', n: 2 } }] }]);
+    s2.turn(u2);
+    check(P(u2) >= 2, 'turnStart gain n: 2 at the start of its turn');
+  }
+  // preconditions (ext.req): notMoved, has
+  {
+    const { s, u, A } = mk([]);
+    check(s.usable(u, A('Aimed Shot')), 'Aimed Shot is usable before it moves');
+    u.movedThisTurn = true;
+    check(!s.usable(u, A('Aimed Shot')) && s.usable(u, A('Rifle')), 'after moving only the plain shot is usable (notMoved)');
+    u.movedThisTurn = false; A('Aimed Shot').ext.req = [{ has: { res: 'Patience', min: 2 } }];
+    check(!s.usable(u, A('Aimed Shot')), 'has: needs 2 Patience, holds 0');
+    u.uses.set('res:Patience', 2);
+    check(s.usable(u, A('Aimed Shot')), 'has: holds 2');
+  }
+  // extraAttacks (not optional: all of it), ignoreCover, autoHit / autoCrit / ignoreResistance on the first swing
+  const aimT = { name: 'Aimed Shot', when: 'beforeAction', if: [{ action: 'Aimed Shot' }], do: [{ extraAttacks: { pay: 'Patience' } }, { ignoreCover: true }, { noLongRangeDisadvantage: true }, { ignoreLoading: true }] };
+  {
+    const { s, u, t, A } = mk([aimT]);
+    u.uses.set('res:Patience', 3);
+    s.doAction(u, A('Aimed Shot'), { targets: [t] });
+    check(atkEv(s).length === 4 && P(u) === 0, `extraAttacks: one swing and one per Patience spent (${atkEv(s).length} swings, ${P(u)} left)`);
+    const n0 = atkEv(s).length; s.doAction(u, A('Rifle'), { targets: [t] });
+    check(atkEv(s).length === n0 + 1, 'another action is not touched (the trait names Aimed Shot)');
+    const max = mk([{ when: 'beforeAction', if: [{ action: 'Aimed Shot' }], do: [{ extraAttacks: { pay: 'Patience', max: 1 } }] }]);
+    max.u.uses.set('res:Patience', 3); max.s.doAction(max.u, max.A('Aimed Shot'), { targets: [max.t] });
+    check(atkEv(max.s).length === 2 && P(max.u) === 2, 'extraAttacks max: 1');
+  }
+  {
+    const { s, u, t, A } = mk([aimT]);
+    s.coverAC = () => 5;
+    const plain = s.attackRoll(u, t, A('Rifle'), {});
+    s._tAct = { u, id: A('Aimed Shot').id, out: s.traitRun(u, 'beforeAction', { a: A('Aimed Shot') }) }; s._tSwingI = 0;
+    const aimedR = s.attackRoll(u, t, A('Aimed Shot'), {});
+    s._tAct = null;
+    check(plain.ac === 15 && aimedR.ac === 10, `ignoreCover: AC ${plain.ac} with cover for the plain shot, ${aimedR.ac} for Aimed Shot`);
+  }
+  {
+    const insane = { name: 'Insane', when: 'beforeAction', if: [{ action: 'Aimed Shot' }], do: [{ extraAttacks: { pay: 'Patience' } }, { autoHit: 'first' }, { autoCrit: 'first' }, { ignoreResistance: 'first' }] };
+    const { s, u, t, A } = mk([insane], { ac: 30, tgExt: { resist: ['piercing'] } });
+    u.uses.set('res:Patience', 1); s.d20 = () => 2;
+    s.doAction(u, A('Aimed Shot'), { targets: [t] });
+    const ev = atkEv(s);
+    check(ev.length === 2 && ev[0].hit && ev[0].crit && !ev[1].hit, `autoHit + autoCrit "first": the first swing hits as a critical hit against AC 30 on a 2, the second misses (${ev.map(e => e.text).join(' / ')})`);
+    // a 2d6 crit = 4d6 (4-24); resistance would halve it, so ignoring it leaves at least 4
+    check(ev[0].dmg >= 4 && t.hp === 5000 - ev[0].dmg, 'ignoreResistance: the critical hit is not halved by resistance to piercing');
+    let sum = 0; for (let i = 0; i < 40; i++) { const w = mk([insane], { ac: 1, seed: 100 + i, tgExt: { resist: ['piercing'] } }); w.u.uses.set('res:Patience', 0); w.s.doAction(w.u, w.A('Aimed Shot'), { targets: [w.t] }); sum += atkEv(w.s)[0].dmg; }
+    const critOnly = Object.assign(cp(insane), { do: insane.do.filter(e => !e.ignoreResistance) });
+    let sum0 = 0; for (let i = 0; i < 40; i++) { const w = mk([critOnly], { ac: 1, seed: 100 + i, tgExt: { resist: ['piercing'] } }); w.u.uses.set('res:Patience', 0); w.s.doAction(w.u, w.A('Aimed Shot'), { targets: [w.t] }); sum0 += atkEv(w.s)[0].dmg; }
+    check(sum / 40 > 11 && sum0 / 40 < 9, `ignoreResistance: 40 crits of 4d6 average ${(sum / 40).toFixed(1)}, the same crits without the word ${(sum0 / 40).toFixed(1)} (14 unhalved, 7 halved)`);
+    const imm = mk([insane], { ac: 1, tgExt: { immune: ['piercing'] } }); imm.s.doAction(imm.u, imm.A('Aimed Shot'), { targets: [imm.t] });
+    check(atkEv(imm.s)[0].dmg === 0, 'ignoreResistance does not get through immunity');
+  }
+  // extraDamage onHit, weapon / ownTurn / once: turn; nthHit; onMiss
+  {
+    const eye = { name: "Sniper's Eye", when: 'onHit', if: [{ weapon: 'Rifle' }, { ownTurn: true }], once: 'turn', do: [{ extraDamage: { dice: '3d6', type: 'piercing' } }] };
+    const { s, u, t, A } = mk([eye], { ac: 1 });
+    s.d20 = () => 15;
+    s.attackOnce(u, A('Rifle'), t, {}); s.attackOnce(u, A('Aimed Shot'), t, {});
+    const ev = atkEv(s);
+    check(/Sniper's Eye/.test(ev[0].text) && !/Sniper's Eye/.test(ev[1].text), 'extraDamage once a turn: the first hit with the weapon gets it, the second not');
+    s.turnSeq = 2; s.attackOnce(u, A('Aimed Shot'), t, {});
+    check(/Sniper's Eye/.test(atkEv(s)[2].text), 'weapon: Aimed Shot shoots the Rifle (ext.weapon); a new turn, a new use');
+    s.turnSeq = 3; s.current = t; s.attackOnce(u, A('Rifle'), t, {});
+    check(!/Sniper's Eye/.test(atkEv(s)[3].text), 'ownTurn: not on another creature\'s turn');
+    const nth = mk([{ name: 'Second', when: 'onHit', if: [{ nthHit: 2 }], do: [{ extraDamage: { dice: '1d4' } }] }], { ac: 1 });
+    nth.s.d20 = () => 15; for (let i = 0; i < 3; i++) nth.s.attackOnce(nth.u, nth.A('Rifle'), nth.t, {});
+    check(atkEv(nth.s).map(e => /Second/.test(e.text) ? 1 : 0).join('') === '010', 'nthHit 2: only the second hit on the target this turn');
+    const miss = mk([{ name: 'Grit', when: 'onMiss', do: [{ gain: { res: 'Patience', n: 1 } }] }], { ac: 40 });
+    miss.s.d20 = () => 5; miss.s.attackOnce(miss.u, miss.A('Rifle'), miss.t, {});
+    check(P(miss.u) === 1, 'onMiss: gains on a miss');
+  }
+  // onSave advantage vs magic; roll reroll natural 1
+  {
+    const suit = { name: 'Suit', when: 'onSave', if: [{ vs: 'magic' }], do: [{ advantage: true }] };
+    const { s, u } = mk([suit]);
+    let sawAdv = null; const d0 = s.d20; s.d20 = function (adv, dis) { sawAdv = adv && !dis; return d0.apply(this, arguments); };
+    s._saveA = { name: 'Hold Person', _spell: { level: 2 } }; s.saveRoll(u, 15, s.units[1], 'wis');
+    const spell = sawAdv;
+    s._saveA = { name: 'Bite', ext: {} }; s.saveRoll(u, 15, s.units[1], 'wis');
+    const plain = sawAdv;
+    s._saveA = { name: 'Fey Step', ext: { innateSpell: true } }; s.saveRoll(u, 15, s.units[1], 'wis');
+    s._saveA = null;
+    check(spell === true && plain === false && sawAdv === true, 'onSave vs magic: advantage against a spell and an innate spell, not against a bite');
+    const luck = { name: 'Halfling Luck', when: 'roll', if: [{ natural: 1 }, { rollIs: ['attack', 'save', 'check'] }], do: [{ reroll: 'must' }] };
+    const L = mk([luck]), N = mk([]);
+    const seq = vals => { let i = 0; const R = () => 0.5; R.d = () => vals[i++ % vals.length]; return R; };
+    L.s.R = seq([1, 15]); N.s.R = seq([1, 15]);
+    check(L.s.d20(false, false, false, L.u, 'attack') === 15 && N.s.d20(false, false, false, N.u, 'attack') === 1, 'reroll a natural 1: 1 → 15; without the trait it stays 1');
+    L.s.R = seq([1, 12, 20]);
+    check(L.s.d20(true, false, false, L.u, 'save') === 20, 'with advantage each die is rerolled on its own (1 → 12, then 20)');
+    const onlyAtk = mk([{ when: 'roll', if: [{ natural: 1 }, { rollIs: ['attack'] }], do: [{ reroll: 'must' }] }]);
+    onlyAtk.s.R = seq([1, 15]);
+    check(onlyAtk.s.d20(false, false, false, onlyAtk.u, 'save') === 1, 'rollIs: a save is not an attack roll');
+  }
+  // coin before an action: heads runs its list, tails burns the action (no swing, nothing paid, the action counts as used)
+  {
+    const callT = { name: 'Call the Shot', when: 'beforeAction', if: [{ action: 'Aimed Shot' }], do: [{ coin: { p: 0.5, heads: [{ autoHit: 'first' }, { autoCrit: 'first' }, { ignoreResistance: 'first' }], tails: [{ burn: true }] } }] };
+    const rig = (s, v) => { const R = () => v; R.d = n => 1 + Math.floor(0.3 * n); s.R = R; };
+    const h = mk([aimT, callT], { ac: 30 }); h.u.uses.set('res:Patience', 2); rig(h.s, 0.1);
+    h.s.doAction(h.u, h.A('Aimed Shot'), { targets: [h.t] });
+    const he = atkEv(h.s);
+    check(he.length === 3 && he[0].crit && h.s.events.some(e => /flips the coin \(Call the Shot\): heads/.test(e.text)), `coin heads: the first of three swings is an automatic critical hit (${he.map(e => e.text).join(' / ')})`);
+    const tl = mk([gainT, aimT, callT]); tl.u.uses.set('res:Patience', 2); rig(tl.s, 0.9);
+    tl.s.spend(tl.u, tl.A('Aimed Shot')); tl.s.doAction(tl.u, tl.A('Aimed Shot'), { targets: [tl.t] });
+    check(atkEv(tl.s).length === 0 && P(tl.u) === 2 && tl.s.events.some(e => /burnt/.test(e.text)), 'coin tails: burnt, no attack, the Patience kept');
+    tl.s.endTurn(tl.u);
+    check(P(tl.u) === 4, 'a burnt action counts as used: +2 at the end of the turn (movement and bonus action), not +3');
+    const opt = mk([aimT, Object.assign(cp(callT), { optional: true })]); rig(opt.s, 0.9);
+    opt.s.doAction(opt.u, opt.A('Aimed Shot'), { targets: [opt.t] });
+    check(!opt.s.events.some(e => /flips the coin/.test(e.text)) && atkEv(opt.s).length === 1, 'optional coin: the AI may decline the flip (then the action goes ahead)');
+    let draws = 0; const cnt = mk([aimT, callT]); const R0 = cnt.s.R; const R1 = function () { draws++; return R0(); }; R1.d = R0.d; cnt.s.R = R1;
+    cnt.s.coinHeads({ p: 0.5 });
+    check(draws === 1, 'the trait coin is one draw of the seeded generator (coinHeads, shared with ext.coin)');
+  }
+  // the runtime ignores words it does not know (a newer file in an older engine): the trait never fires
+  {
+    const { s, u } = mk([]);
+    check(s.tCond(u, [{ moonPhase: 'full' }], {}) === false, 'an unknown condition never holds at run time');
+  }
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {
