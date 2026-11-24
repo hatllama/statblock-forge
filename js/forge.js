@@ -383,6 +383,9 @@ function validateMonster(m){
   validateOrdering(m, issues);
   validateExt(m, issues);
   validateSpellbook(m, issues);
+  // custom mechanics (ext.traits, an action's ext.req): the engine's own vocabulary check, so the Forge refuses exactly what the War Table would skip
+  if(m.ext && (m.ext.traits !== undefined || m.ext.traitsV !== undefined || (m.actions || []).some(a=>a.ext && a.ext.req)) && typeof TacEngine !== 'undefined' && TacEngine.validateTraits)
+    TacEngine.validateTraits(m.ext, m.actions || []).forEach(w=>issues.push(w));
   return issues;
 }
 
@@ -1581,6 +1584,8 @@ function sheetHtml(key, c){
       ${resourcesPanel(key, c)}
     </section>
 
+    ${customMechanicsPanel(key, c)}
+
     <section class="sh">
       <h3>Actions</h3>
       ${actionEditor(key, c)}
@@ -1655,6 +1660,7 @@ function statblockHtml(c, pc){
   };
   const traits = [];
   if(ex.legendaryResistance) traits.push([(ex.legResName || 'Legendary Resistance') + ' (' + ex.legendaryResistance + '/Day)', 'If it fails a saving throw, it can choose to succeed instead.' + (ex.legResName ? ' (Legendary Resistance.)' : '')]);
+  ((Array.isArray(ex.traits) && ex.traits) || []).forEach(t=>traits.push([(t && t.name) || 'Custom mechanic', traitLine(t || {}).replace(/^[^—]*— /, '')]));
   if(ex.packTactics) traits.push(['Pack Tactics', 'Advantage on an attack roll against a creature if at least one of its allies is within 5 ft of it and isn\'t incapacitated.']);
   if(ex.sneakAttack && ex.sneakAttack.dice) traits.push(['Sneak Attack (1/Turn)', `Extra ${ex.sneakAttack.dice} damage on a hit with advantage, or with an ally next to the target.`]);
   if(ex.elvenAccuracy) traits.push(['Elven Accuracy', 'Rolls three d20s when it has advantage.']);
@@ -1868,13 +1874,61 @@ function resourcesPanel(key, c){
   return `<div class="res-list">${names.map((n, i)=>{ const r = R[n] || {}, u = users(n); return `<div class="res-row">
       <label class="sf"><span>Name</span><input data-res="${i}" data-rf="name" data-owner="${key}" value="${escapeAttr(n)}"></label>
       <label class="sf"><span>Amount</span><input data-res="${i}" data-rf="uses" data-owner="${key}" type="number" min="0" value="${+r.uses || 0}"></label>
-      <label class="sf"><span>Comes back on</span><select data-res="${i}" data-rf="reset" data-owner="${key}">${[['sr','a short rest'],['lr','a long rest']].map(([v,l])=>`<option value="${v}" ${(r.reset||'lr')===v?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="sf"><span>Comes back on</span><select data-res="${i}" data-rf="reset" data-owner="${key}">${[['sr','a short rest'],['lr','a long rest'],['fight','each fight (from its start)']].map(([v,l])=>`<option value="${v}" ${(r.reset||'lr')===v?'selected':''}>${l}</option>`).join('')}</select></label>
+      <label class="sf" title="What it holds when a fight starts. Blank = full (the amount). Patience-style pools that build up start at 0; the amount is then the most it can hold."><span>Starts at</span><input data-res="${i}" data-rf="start" data-owner="${key}" type="number" min="0" value="${typeof r.start === 'number' ? r.start : ''}" placeholder="full"></label>
       <label class="sf" title="Regains this many when it rolls initiative with none left (Superiority Dice, Uncanny Metabolism and the like). Blank = none."><span>Back on initiative if out</span><input data-res="${i}" data-rf="regainOnInit" data-owner="${key}" type="number" min="0" value="${r.regainOnInit || ''}" placeholder="—"></label>
       <button class="mini-btn" data-res-del="${i}" data-owner="${key}" title="Remove this resource">✕</button>
       <div class="res-users">${u.length ? 'Spent by: ' + escapeHtml(u.join(', ')) : 'No action spends it yet: pick it under an action\'s "Spends from".'}</div>
     </div>`; }).join('')}</div>
     <button class="mini-btn" data-res-add data-owner="${key}">＋ Add a resource</button>
     <p class="hint">Points or dice several actions share, like Ki or Focus Points, Superiority Dice or Sorcery Points. Give an action a cost from one under its frequency.</p>`;
+}
+/* ---------------- custom mechanics (advanced): ext.traits as JSON (docs/custom-mechanics.md) ---------------- */
+const cmDrafts = new Map();      // creature id → { text, messages } while what was typed is not valid yet
+function traitLine(t){
+  const W = typeof TacEngine !== 'undefined' && TacEngine.traitAiWords ? TacEngine.traitAiWords(t) : { scored: [], only: [], inert: [] };
+  const words = (t.do || []).map(e=>e && typeof e === 'object' ? Object.keys(e)[0] : '?').join(', ');
+  const ai = W.only.length ? `simulated on the War Table; the AI does not plan for ${W.only.join(', ')}` : 'simulated, and the AI plans for it';
+  return `${t.name || 'Unnamed'} — when ${t.when}${t.if && t.if.length ? ' (' + t.if.map(c=>Object.keys(c).join('+')).join(', ') + ')' : ''}${t.once ? ', once a ' + t.once : ''}: ${words}. ${ai}${W.inert.length ? '; ' + W.inert.join('; ') : ''}.`;
+}
+function customMechanicsPanel(key, c){
+  const traits = (c.ext && c.ext.traits) || [], dr = cmDrafts.get(c.id);
+  const text = dr ? dr.text : (traits.length ? JSON.stringify(traits, null, 2) : '');
+  const msgs = dr ? dr.messages : [];
+  return `<details class="sh sh-cm" ${traits.length || dr ? 'open' : ''} data-cm-details="${c.id}">
+    <summary>Custom mechanics (advanced) <small>${traits.length ? traits.length + ' trait' + (traits.length > 1 ? 's' : '') : 'none'}</small></summary>
+    <p class="hint">Rules the War Table runs from a small fixed vocabulary: <code>[{ "name", "when", "if": [...], "once", "optional", "do": [...] }]</code>. Triggers: turnStart, turnEnd, beforeAction, onHit, onMiss, onDamaged, onSave, roll. The importer's "isn't modelled" notes offer stubs to paste here. Words are listed in docs/custom-mechanics.md; anything else is refused. A pool a trait names must exist under Resources.</p>
+    <textarea class="cm-box" id="cm-${key}" data-cm-text="${key}" rows="${Math.min(18, Math.max(4, text.split('\n').length + 1))}" spellcheck="false" placeholder='[{ "name": "Patience", "when": "turnEnd", "do": [{ "gain": { "res": "Patience", "perUnused": ["move", "bonus", "action"], "cap": 5 } }] }]'>${escapeHtml(text)}</textarea>
+    <div><button class="mini-btn" data-cm-apply="${key}">Apply</button>${traits.length ? ` <button class="mini-btn" data-cm-clear="${key}">Remove all</button>` : ''}</div>
+    <div id="cm-msg-${key}">${msgs.length ? `<ul class="schema-errors cm-errors">${msgs.map(m=>`<li>${escapeHtml(m)}</li>`).join('')}</ul>` : ''}</div>
+    ${traits.length ? `<ul class="cm-list">${traits.map(t=>`<li>${escapeHtml(traitLine(t))}</li>`).join('')}</ul>` : ''}
+  </details>`;
+}
+/* parse and check what was typed; on success the traits go on the creature. Returns { ok, messages } (the smoke test drives it) */
+function applyCustomMechanics(c, text){
+  const t = String(text || '').trim();
+  let list;
+  if(!t) list = [];
+  else {
+    try{ list = JSON.parse(t); }catch(e){ return { ok: false, messages: ['Not valid JSON: ' + (e && e.message || e)] }; }
+    if(list && !Array.isArray(list) && typeof list === 'object') list = [list];       // one trait on its own is fine
+  }
+  if(!Array.isArray(list)) return { ok: false, messages: ['Custom mechanics must be a list of traits: [ { … }, … ]'] };
+  const ext = Object.assign({}, c.ext || {}, { traits: list, traitsV: 1 });
+  const messages = typeof TacEngine !== 'undefined' && TacEngine.validateTraits ? TacEngine.validateTraits(ext, c.actions || []) : [];
+  if(messages.length) return { ok: false, messages };
+  c.ext = c.ext || {};
+  if(list.length){ c.ext.traits = list; c.ext.traitsV = 1; } else { delete c.ext.traits; delete c.ext.traitsV; }
+  c._warnings = validateMonster(c);
+  return { ok: true, messages: [] };
+}
+function onCustomMechanics(key, clear){
+  const c = creatureByKey(key); if(!c) return;
+  const box = document.getElementById('cm-' + key);
+  const res = applyCustomMechanics(c, clear ? '' : (box ? box.value : ''));
+  if(res.ok){ cmDrafts.delete(c.id); refreshPreview(); if(typeof scheduleSave === 'function') scheduleSave(); }
+  else cmDrafts.set(c.id, { text: box ? box.value : '', messages: res.messages });
+  rerenderFor(key);
 }
 function onResourceField(el){
   const c = creatureByKey(el.dataset.owner); if(!c || !c.ext || !c.ext.resources) return;
@@ -1888,6 +1942,7 @@ function onResourceField(el){
   else if(f === 'uses') r.uses = Math.max(0, parseInt(el.value, 10) || 0);
   else if(f === 'reset') r.reset = el.value;
   else if(f === 'regainOnInit'){ const n = parseInt(el.value, 10); if(n > 0) r.regainOnInit = n; else delete r.regainOnInit; }
+  else if(f === 'start'){ const n = parseInt(el.value, 10); if(n >= 0) r.start = n; else delete r.start; }
   c._warnings = validateMonster(c); refreshPreview(); if(typeof scheduleSave === 'function') scheduleSave();
 }
 
@@ -2091,6 +2146,8 @@ dyn.addEventListener('click', ev=>{
     else { const nm = Object.keys(R)[+d.resDel]; delete R[nm]; (c.actions || []).forEach(a=>{ if(a.ext && a.ext.resource === nm){ delete a.ext.resource; delete a.ext.resourceCost; } if(a.ext && a.ext.bolt && a.ext.bolt.resource === nm){ a.dpr = a.ext.bolt.base; delete a.ext.bolt; } }); if(!Object.keys(R).length) delete c.ext.resources; }
     return rerenderFor(d.owner);
   }
+  if(d.cmApply !== undefined){ onCustomMechanics(d.cmApply, false); return; }
+  if(d.cmClear !== undefined){ onCustomMechanics(d.cmClear, true); return; }
   if(d.sheetRead !== undefined){ readSheet(); return; }
   if(d.sheetClip !== undefined){
     if(!navigator.clipboard || !navigator.clipboard.readText){ setStatus('sheetStatus', 'This browser won\'t let the page read the clipboard: paste into the box above instead.', 'err'); return; }

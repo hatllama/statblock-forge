@@ -276,6 +276,46 @@ async function smoke() {
   // a saved Smartness of "genius" (the tier is gone) reads as cunning in the Forge's select, which no longer offers Genius
   const sheet = String(leg.run('sheetHtml("0", [].concat(...encounters.map(e => e.monsters)).find(m => m.ext && m.ext.aiTier === "genius"))'));
   check(/<option value="cunning" selected>/.test(sheet) && !/genius/i.test(sheet.replace(/title="[^"]*"/g, '')) && !/Fights like/.test(sheet), 'the Smartness select shows a saved "genius" as Cunning, has no Genius option, and the Fights like select is gone');
+
+  // 8. custom mechanics (docs/custom-mechanics.md): Fiorenzo through the importer, his sheet's panel, the panel's checks, the export, a reload, a fight
+  at = page.errors.length;
+  page.run('showView("forge")');
+  page.el('statblockInput').value = fs.readFileSync(path.join(__dirname, 'statblocks', 'fiorenzo.txt'), 'utf8');
+  await page.el('parseBtn').fire('click'); await page.settle();
+  const fk = page.run('String(encounters[activeIdx].monsters.findIndex(m => /Fiorenzo/.test(m.name)))');
+  const fpath = 'encounters[activeIdx].monsters[' + fk + ']';
+  check(+fk >= 0 && page.run(fpath + '.ext.traits.length') === 7 && page.run('validateMonster(' + fpath + ').length') === 0, 'Fiorenzo imports with 7 traits and no warnings: ' + page.run('JSON.stringify(validateMonster(' + fpath + '))'));
+  const fsheet = String(page.run('sheetHtml("' + fk + '", ' + fpath + ')'));
+  check(/Custom mechanics \(advanced\)/.test(fsheet) && /data-cm-apply/.test(fsheet) && /Sniper&#39;s Eye — when onHit/.test(fsheet) && /the AI plans for it/.test(fsheet), 'his sheet has the Custom mechanics panel, one line per trait and what the AI does with it');
+  check(/simulated on the War Table; the AI does not plan for reroll/.test(fsheet), 'a word the AI does not score says so (Halfling Luck: simulated, not planned for)');
+  const cm = text => page.run('(() => { const c = JSON.parse(JSON.stringify(' + fpath + ')); const r = applyCustomMechanics(c, ' + JSON.stringify(text) + '); return { ok: r.ok, m: r.messages, n: (c.ext.traits || []).length }; })()');
+  const good = cm('[{"name":"Grit","when":"onMiss","do":[{"gain":{"res":"Patience","n":1}}]}]');
+  const notJson = cm('[{"name": "Grit", when: onMiss}]');
+  const unknown = cm('[{"name":"Grit","when":"onMiss","do":[{"gian":{"res":"Patience"}}]}]');
+  check(good.ok && good.n === 1 && !good.m.length, 'Custom mechanics: valid JSON is applied (' + JSON.stringify(good) + ')');
+  check(!notJson.ok && /Not valid JSON/.test(notJson.m[0]) && notJson.n === 7, 'invalid JSON is refused with a message and nothing changes: ' + notJson.m[0]);
+  check(!unknown.ok && /unknown effect "gian"/.test(unknown.m.join(' ')) && unknown.n === 7, 'an unknown word is refused with a message and nothing changes: ' + unknown.m.join(' | ').slice(0, 90));
+  // through the panel's Apply button: a refused text is kept with its messages; the creature is untouched
+  page.el('forgeDynamic').innerHTML += '<textarea id="cm-' + fk + '"></textarea>';
+  page.el('cm-' + fk).value = '[{"when":"onTuesday","do":[{"advantage":true}]}]';
+  page.run('onCustomMechanics("' + fk + '", false)'); await page.settle();        // what the Apply button calls (rendered buttons are not clickable here)
+  check(page.run(fpath + '.ext.traits.length') === 7 && /unknown trigger/.test(String(page.run('sheetHtml("' + fk + '", ' + fpath + ')'))), 'the Apply button keeps a refused draft on the sheet with its message, and the traits stay as they were');
+  page.run('cmDrafts.clear()');
+  // the export: valid, his War Table-only actions left out, the plain actions kept
+  const fexp = page.run('(() => { const d = buildDayObject(); const r = checkRealSchema(d); const f = d.encounters[activeIdx].monsters.find(m => /Fiorenzo/.test(m.name)); return { ok: r.ok, errs: r.errors, acts: f.actions.map(a => a.name), traits: !!(f.ext && f.ext.traits) }; })()');
+  check(fexp.ok && fexp.acts.indexOf('La Pazienza') >= 0 && fexp.acts.indexOf('Aimed Shot') < 0 && fexp.acts.indexOf('Stitch Step') < 0, 'the day export with Fiorenzo passes checkRealSchema; Aimed Shot and Stitch Step (War Table only) are left out: ' + JSON.stringify(fexp).slice(0, 160));
+  // a workspace with ext.traits comes back with them
+  const snap2 = page.run('snapshot()');
+  const again2 = loadSite({ 'forge-workspace-v1': snap2 });
+  await again2.fireWindow('DOMContentLoaded'); await again2.settle();
+  const back = again2.run('(() => { const f = [].concat(...encounters.map(e => e.monsters)).find(m => /Fiorenzo/.test(m.name)); return f ? { n: f.ext.traits.length, pool: f.ext.resources.Patience.start, w: validateMonster(f).length } : null; })()');
+  check(!again2.errors.length && back && back.n === 7 && back.pool === 0 && back.w === 0, 'a workspace with ext.traits is restored with them (' + JSON.stringify(back) + ')' + (again2.errors.length ? ' || ' + errs(again2) : ''));
+  // and a fight with him plays on the War Table
+  if (!page.run('PARTY_PLAYERS.length')) page.run('PARTY_PLAYERS.splice(0, 0, ...' + JSON.stringify(snap.players) + ')');      // hard-day.json (step 6b) has no party
+  page.run('(() => { const f = JSON.parse(JSON.stringify(' + fpath + ')); f.id = uid(); encounters.unshift(freshEncounter()); activeIdx = 0; encounters[0].monsters.push(f); select({ kind: "enc", e: activeIdx }); showView("war"); WarTable.openEncounter(activeIdx); })()'); await page.settle();
+  await go(page.el('wt-btnOne'));
+  const flog = String(page.el('wt-log').innerHTML);
+  check(/Fiorenzo/.test(flog) && /La Pazienza|Aimed Shot/.test(flog) && page.errors.length === at, 'a War Table fight with Fiorenzo plays and logs his shots' + (page.errors.length > at ? ': ' + errs(page, at) : ': ' + String(page.el('wt-runStatus').textContent) + ' ' + flog.replace(/<[^>]+>/g, ' ').replace(/\s+/g, ' ').slice(0, 200)));
   return out;
 }
 
