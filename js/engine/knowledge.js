@@ -4,7 +4,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { avgDice, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, damageMultFor, freqKind, Sim, areaSpec, AI_BASE } = ENG;
+const { avgDice, parseDice, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, damageMultFor, freqKind, Sim, areaSpec, AI_BASE } = ENG;
 
 /* ----- expected outcomes, used by the tactical AI ----- */
 /* ===== WHAT EACH SIDE KNOWS =====
@@ -422,7 +422,7 @@ Sim.prototype.hitChance = function (u, t, a) {
   const close = this.dist(u, t) <= 5;
   const adv = ADV_TARGET.some(x => tc.has(x)) || ADV_SELF.some(x => atc.has(x)) || !!this.featureAdv(u, t) || (tc.has('Prone') && close);
   const dis = DIS_TARGET.some(x => tc.has(x)) || DIS_SELF.some(x => atc.has(x)) || (tc.has('Prone') && !close);
-  let p = Math.min(0.95, Math.max(0.05, (21 + avgDice(a.toHit) + this.sumBuff(u, 'toHit', false) - this.kAc(u, t) - this.coverAC(u, t)) / 20));
+  let p = Math.min(0.95, Math.max(0.05, (21 + avgDice(a.toHit) + this.sumBuff(u, 'toHit', false) - this.kAc(u, t) - (a.ext && a.ext._tNoCover ? 0 : this.coverAC(u, t))) / 20));   // _tNoCover: a planning copy whose trait ignores cover (v2TraitCopy)
   if (adv && !dis) p = 1 - Math.pow(1 - p, u.elvenAccuracy ? 3 : 2);
   else if (dis && !adv) p = p * p;
   return p;
@@ -442,6 +442,8 @@ Sim.prototype.expected = function (u, a, t) {
       const two = 1 - Math.pow(1 - hp, nSw) - nSw * hp * Math.pow(1 - hp, nSw - 1);
       ft = avgDice(u.followThrough.dice) * Math.max(0, two) * AI_BASE.follow.weight;
     }
+    const tx = (a.ext && (a.ext._tFirst || a.ext._tAll)) || (u.traits && u.traits.onHit) ? this.tExpected(u, a, t, dmg, hp, nSw) : null;
+    if (tx) return thru * tx + (ft ? thru * ft : 0);
     return thru * dmg * hp * nSw + (ft ? thru * ft : 0);
   }
   if (a.type === 'debuff') {
@@ -454,6 +456,33 @@ Sim.prototype.expected = function (u, a, t) {
   return 0;
 };
 
+/* custom mechanics in the damage estimate (docs/custom-mechanics.md (iv)): a planning copy's swings that auto-hit, crit or ignore resistance
+   (ext._tFirst: the first swing, ext._tAll: every one; set by v2TraitCopy), and onHit extra dice (Sniper's Eye: once a turn = the chance any swing hits).
+   dmg is one swing's average as `expected` reads it, hp its hit chance. Returns the expected damage of the nSw swings, before throughChance. */
+Sim.prototype.tExpected = function (u, a, t, dmg, hp, nSw) {
+  const ex = a.ext || {}, A = ex._tAll || {}, F = ex._tFirst || {};
+  const f = (ex.wtDpr) || a.dpr, pd = parseDice(f), diceAvg = avgDice(f) - pd.flat;
+  const km = this.kMult(u, a, t), dtm = this.multBuff(t, 'damageTakenMultiplier');
+  const base = km > 0 && dtm > 0 ? dmg / (km * dtm) : 0;                         // the swing's damage before resistance
+  const swing = (o) => {
+    const res = o.ignoreResistance && km > 0 ? Math.max(1, km) * Math.max(1, dtm) : km * dtm;
+    const pH = o.autoHit ? 1 : hp, crit = o.autoCrit ? 1 : 0;              // as `expected`: an ordinary swing counts no crits
+    return pH * (base + crit * diceAvg) * res;
+  };
+  const allO = { autoHit: A.autoHit, autoCrit: A.autoCrit, ignoreResistance: A.ignoreResistance };
+  const firstO = { autoHit: A.autoHit || F.autoHit, autoCrit: A.autoCrit || F.autoCrit, ignoreResistance: A.ignoreResistance || F.ignoreResistance };
+  const plain = !(ex._tFirst || ex._tAll);
+  let out = plain ? dmg * hp * nSw : swing(firstO) + Math.max(0, nSw - 1) * swing(allO);
+  // onHit extra dice
+  for (const tr of (u.traits && u.traits.onHit) || []) {
+    const ed = tr.do.filter(e => e.extraDamage);
+    if (!ed.length || !this.tCond(u, tr.if.filter(c => !('nthHit' in c) && !('ownTurn' in c)), { a, tgt: t }) || !this.tOnceFree(u, tr)) continue;
+    const p1 = firstO.autoHit ? 1 : hp, pAny = 1 - (1 - p1) * Math.pow(1 - hp, Math.max(0, nSw - 1));
+    const add = ed.reduce((s, e) => s + avgDice(e.extraDamage.dice), 0) * km * dtm;
+    out += (tr.once ? pAny : p1 + hp * Math.max(0, nSw - 1)) * add;
+  }
+  return out;
+};
 /* How much a tactical creature wants to use action `a` on `t`, standing at (x,y) */
 Sim.prototype.friendPenalty = function (u, a, friends) {
   let p = 0;

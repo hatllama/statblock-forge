@@ -3308,7 +3308,7 @@ section('Trait vocabulary (custom mechanics, ext.traits v1: docs/custom-mechanic
     check(atkEv(tl.s).length === 0 && P(tl.u) === 2 && tl.s.events.some(e => /burnt/.test(e.text)), 'coin tails: burnt, no attack, the Patience kept');
     tl.s.endTurn(tl.u);
     check(P(tl.u) === 4, 'a burnt action counts as used: +2 at the end of the turn (movement and bonus action), not +3');
-    const opt = mk([aimT, Object.assign(cp(callT), { optional: true })]); rig(opt.s, 0.9);
+    const opt = mk([aimT, Object.assign(cp(callT), { optional: true })]); rig(opt.s, 0.9); opt.s.v2FlipBefore = () => false;    // the AI says no (its scoring is tested with Fiorenzo)
     opt.s.doAction(opt.u, opt.A('Aimed Shot'), { targets: [opt.t] });
     check(!opt.s.events.some(e => /flips the coin/.test(e.text)) && atkEv(opt.s).length === 1, 'optional coin: the AI may decline the flip (then the action goes ahead)');
     let draws = 0; const cnt = mk([aimT, callT]); const R0 = cnt.s.R; const R1 = function () { draws++; return R0(); }; R1.d = R0.d; cnt.s.R = R1;
@@ -3319,6 +3319,121 @@ section('Trait vocabulary (custom mechanics, ext.traits v1: docs/custom-mechanic
   {
     const { s, u } = mk([]);
     check(s.tCond(u, [{ moonPhase: 'full' }], {}) === false, 'an unknown condition never holds at run time');
+  }
+}
+
+section('Fiorenzo Minuzzi on the War Table: his mechanics through the vocabulary, and v2\'s choices (AI_BASE.trait)');
+{
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const fio = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'fiorenzo.txt'), 'utf8')).monsters[0];
+  const foe = (hp, ac, ext) => ({ id: 'tg', name: 'Target', mode: 'custom', hp, AC: ac, saveBonus: 2, count: 1, ext: Object.assign({ size: 'Medium' }, ext || {}), actions: [{ id: 'tg0', name: 'Cantrip', actionSlot: 0, freq: 'at will', condition: 'default', targets: 1, type: 'atk', dpr: '2d10', toHit: 7, target: 'enemy with most HP', ext: { range: 120 } }] });
+  const mk = (o) => {
+    o = o || {};
+    const s = new Tac.Sim({ width: 40, height: 12, seed: o.seed || 9, record: true });
+    const m = cp(fio); m.id = 'fio'; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = 'fio' + i; });
+    const ts = (o.foes || [foe(o.hp || 5000, o.ac || 15, o.tgExt)]).map((f, i) => Object.assign(cp(f), { id: 'tg' + i, name: 'Target ' + (i + 1) }));
+    const u = Tac.expandTeam([m], 'foes', false)[0], tt = Tac.expandTeam(ts, 'party', false);
+    u.x = 2; u.y = 5; tt.forEach((t, i) => { t.x = 25; t.y = 2 + i * 3; });
+    s.units = [u].concat(tt); s.byId = {}; s.units.forEach(x => { s.byId[x.uid] = x; });
+    s._last = {}; s.turnSeq = 1; s.round = 1; s.current = u; u.turnNo = 1; s.encountersLeft = 0; s.boardChanged(); s.units.forEach(x => s.v2Setup(x));
+    return { s, u, t: tt[0], ts: tt, A: n => u.actions.find(a => a.name === n) };
+  };
+  const P = u => u.uses.get('res:Patience');
+  const swings = s => s.events.filter(e => e.kind === 'attack' && /^Fiorenzo/.test(e.text)).length;
+  {
+    const { s, u } = mk();
+    check(P(u) === 0 && u.traits && u.traits.turnEnd && u.traits.onDamaged && u.legResMax === 3 && u.legResName === 'Lucky Seam', 'he starts the fight with 0 Patience; Lucky Seam is 3 uses of Legendary Resistance');
+    check(Tac.tierOf(Object.assign(cp(fio), { mode: 'custom' })) === 'boss', 'Lucky Seam makes him a boss-tier creature, as Legendary Resistance does for anyone');
+    s.endTurn(u); check(P(u) === 3, 'a turn spent doing nothing: +3');
+    s.turnSeq = 2; s.spend(u, u.actions.find(a => a.name === 'La Pazienza')); s.endTurn(u); check(P(u) === 5, 'shooting without moving: +2, capped at 5');
+    s.damage(s.units[1], u, 4, { attack: true }); check(P(u) === 2, 'any damage: half lost, rounded up (5 → 2)');
+  }
+  {
+    // damage during his own turn (an opportunity attack on the way) halves it before the end-of-turn gain
+    const { s, u, t } = mk(); u.uses.set('res:Patience', 4); s.turnSeq = 3;
+    s.damage(t, u, 3, { attack: true }); s.spend(u, u.actions.find(a => a.name === 'La Pazienza')); u.movedThisTurn = true; s.endTurn(u);
+    check(P(u) === 3, 'hurt on his own turn: 4 → 2, then +1 at its end (moved and shot) = 3');
+  }
+  {
+    const { s, u, A } = mk();
+    check(s.usable(u, A('Aimed Shot')), 'Aimed Shot before moving'); u.movedThisTurn = true;
+    check(!s.usable(u, A('Aimed Shot')) && s.usable(u, A('La Pazienza')), 'after walking: La Pazienza only');
+    u.movedThisTurn = false; s.spend(u, A('Stitch Step'));
+    check(s.usable(u, A('Aimed Shot')), 'a teleport is not a move: Aimed Shot after Stitch Step');
+    s.spend(u, A('Stitch Step')); s.spend(u, A('Stitch Step'));
+    check(!s.usable(u, A('Stitch Step')), 'Stitch Step: 3 a day');
+  }
+  {
+    // a big target: every Patience goes into swings (one swing + one per point)
+    const { s, u, t, A } = mk({ hp: 5000 }); u.uses.set('res:Patience', 4); s.R = Tac.makeRng(5);
+    Tac.Sim.prototype.v2FlipBefore.call(s, u, A('Aimed Shot'), [t], null, {});
+    const keep = s.v2FlipBefore; s.v2FlipBefore = () => false;
+    s.doAction(u, A('Aimed Shot'), { targets: [t] }); s.v2FlipBefore = keep;
+    check(swings(s) === 5 && P(u) === 0, `against a target with 5000 HP he spends all 4 Patience: ${swings(s)} swings, ${P(u)} left`);
+    const se = s.events.filter(e => /Sniper's Eye/.test(e.text)).length;
+    check(se <= 1, `Sniper's Eye on one hit of the five at most (${se})`);
+  }
+  {
+    // the last foe, nearly dead: a point held is worth nothing once the fight ends, so every swing that makes the kill surer is bought
+    const last = mk({ hp: 12, ac: 10 }); last.u.uses.set('res:Patience', 4);
+    const kl = last.s.v2ExtraAttacks(last.u, last.A('Aimed Shot'), [last.t], 4, { first: {}, all: {} });
+    check(kl === 4 && last.s.v2PointValue(last.u, 'Patience', last.s.v2Ctx(last.u, 0)) === 0, `the fight is nearly over: he spends all 4 (bought ${kl})`);
+    // the same nearly dead target with a long fight still ahead (a 5000-HP foe far from it): the extra swings would be wasted on it, so he keeps them
+    const { s, u, t, A } = mk({ foes: [foe(12, 10), foe(5000, 15)] }); u.uses.set('res:Patience', 4);
+    const k = s.v2ExtraAttacks(u, A('Aimed Shot'), [t], 4, { first: {}, all: {} });
+    check(k <= 1 && s.v2PointValue(u, 'Patience', s.v2Ctx(u, 0)) > 0, `a 12-HP target with the fight going on: he buys ${k} extra swings of 4 and keeps the rest`);
+    // the stay-still term: a turn that leaves its movement unused earns a point more than one that walks; nothing past the cap
+    const acc = s.v2Accrual(u, s.v2Ctx(u, 0));
+    u.uses.set('res:Patience', 0);
+    const still = acc.gain(['move', 'bonus'], 0), walk = acc.gain(['bonus'], 0);
+    u.uses.set('res:Patience', 5);
+    check(still > walk && walk > 0 && acc.gain(['move', 'bonus'], 0) === 0, `accrual: standing still ${still.toFixed(1)} > walking ${walk.toFixed(1)} > 0; at the cap 0`);
+    const plainU = Tac.expandTeam([foe(30, 12)], 'foes', false)[0]; s.units.push(plainU); s.byId[plainU.uid] = plainU; s.v2Setup(plainU);
+    check(plainU.traits === null && s.v2Accrual(plainU, s.v2Ctx(plainU, 0)) === null, 'a creature without traits: no accrual term (neutral)');
+  }
+  {
+    // the coin: against a big, armoured, resistant target the insane shot is worth the risk; against one a plain shot drops, it is not
+    const big = mk({ hp: 400, ac: 24, tgExt: { resist: ['piercing'] } }), small = mk({ hp: 20, ac: 12 });
+    const fb = big.s.v2FlipBefore(big.u, big.A('Aimed Shot'), [big.t], null, {}), fs2 = small.s.v2FlipBefore(small.u, small.A('Aimed Shot'), [small.t], null, {});
+    check(fb === true && fs2 === false, `Call the Shot: flips against AC 24 with resistance (${fb}), not against a 20-HP target a plain hit drops (${fs2})`);
+    const tails = mk({ hp: 400 }); tails.u.uses.set('res:Patience', 3);
+    const R = () => 0.9; R.d = n => 1 + Math.floor(0.5 * n); tails.s.R = R; tails.s.v2FlipBefore = () => true;
+    tails.s.spend(tails.u, tails.A('Aimed Shot')); tails.s.doAction(tails.u, tails.A('Aimed Shot'), { targets: [tails.t] });
+    check(swings(tails.s) === 0 && P(tails.u) === 3, 'tails: the action is burnt and all 3 Patience are kept');
+    const heads = mk({ hp: 400, ac: 40, tgExt: { resist: ['piercing'] } });
+    const Rh = () => 0.1; Rh.d = n => 1 + Math.floor(0.1 * n); heads.s.R = Rh; heads.s.v2FlipBefore = () => true;
+    heads.s.doAction(heads.u, heads.A('Aimed Shot'), { targets: [heads.t] });
+    const he = heads.s.events.filter(e => e.kind === 'attack' && /^Fiorenzo/.test(e.text))[0];
+    check(he && he.crit && he.hit && he.dmg >= 4 * 2 + 7 + 3 * 2, `heads: an automatic critical hit against AC 40, resistance ignored (${he && he.text})`);
+  }
+  {
+    // the Suit: advantage on saves against spells only
+    const { s, u, t } = mk();
+    let adv = []; const d0 = s.d20; s.d20 = function (a, d) { adv.push(!!a && !d); return d0.apply(this, arguments); };
+    s._saveA = { name: 'Hold Person', _spell: { level: 2 } }; s.saveRoll(u, 30, t, 'wis');
+    s._saveA = { name: 'Breath', ext: {} }; s.saveRoll(u, 30, t, 'dex');
+    s._saveA = null;
+    check(adv[0] === true && adv[1] === false, 'the Suit: advantage on a save against a spell, not against a breath');
+    // Lucky Seam: three dangerous failed saves become successes, the fourth does not
+    const L = mk(); L.s.d20 = () => 2; let saved = 0;
+    L.u.v2P = Object.assign({}, L.u.v2P, { boss: Object.assign({}, L.u.v2P.boss, { legRes: 'rule' }) });    // the rule itself (the boss tier weighs each use: the boss-tier tests cover that)
+    for (let i = 0; i < 4; i++) { L.s._saveStakes = 1; const r = L.s.saveRoll(L.u, 25, L.t, 'wis'); L.s._saveStakes = 0; if (r.success) saved++; }
+    check(saved === 3 && L.s.events.filter(e => /uses Lucky Seam \(Legendary Resistance, \d left\)/.test(e.text)).length === 3, `Lucky Seam: ${saved} of 4 failed saves turned into successes`);
+  }
+  {
+    // Fitted Cut through the reaction layer: a hit by 3 or less becomes a miss; one reaction a round
+    const { s, u, t } = mk();
+    const big = { id: 'big', name: 'Big shot', actionSlot: 0, type: 'atk', dpr: '6d10', toHit: 10, targets: 1, _range: 120, ext: { range: 120, damageType: 'force' } };
+    s.current = t; s.d20 = () => 13;
+    const r1 = s.attackRoll(t, u, big, {}), r2 = s.attackRoll(t, u, big, {});
+    check(!r1.hit && !u.reaction && r2.hit && s.events.some(e => /uses Fitted Cut/.test(e.text)), 'Fitted Cut: 23 against AC 22 becomes a miss; the next hit lands (one reaction a round)');
+  }
+  {
+    // v2 in a fight: he shoots, spends Patience on Aimed Shot when he has it, and the log says what happened
+    const day = { players: [Object.assign(foe(400, 14), { id: 'p1', name: 'Knight' }), Object.assign(foe(400, 14), { id: 'p2', name: 'Squire' })], encounters: [{ monsters: [Object.assign(cp(fio), { id: 'fio', mode: 'custom', count: 1, hp: 300, actions: cp(fio.actions).map((a, i) => Object.assign(a, { id: 'fio' + i })) })] }] };
+    let aimed = 0, gained = 0, flips = 0;
+    for (let i = 0; i < 6; i++) { const r = Tac.runDay(cp(day), { seed: 40 + i, record: true })[0]; aimed += r.events.filter(e => /spends \d+ Patience/.test(e.text)).length; gained += r.events.filter(e => /gains \d+ Patience/.test(e.text)).length; flips += r.events.filter(e => /flips the coin \(Call the Shot\)/.test(e.text)).length; }
+    check(gained > 0 && aimed > 0, `six fights against two slow 400-HP targets: he builds Patience (${gained} gains) and spends it on Aimed Shot (${aimed} times), flips ${flips} coins`);
   }
 }
 

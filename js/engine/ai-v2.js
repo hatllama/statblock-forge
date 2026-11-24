@@ -1025,10 +1025,110 @@ Sim.prototype.v2FF = function (u, a, friends) {
 };
 
 /* ---- custom mechanics the AI decides (ext.traits with optional: true; docs/custom-mechanics.md) ---- */
-/* how many of `top` extra swings to buy for action a (extraAttacks); the scoring is v2PatienceSpend */
-Sim.prototype.v2ExtraAttacks = function (u, a, targets, top, out) { return top; };
-/* flip the coin before action a? (coin) */
-Sim.prototype.v2FlipBefore = function (u, a, targets, coin, out) { return false; };
+/* One currency: every term below is v2Value points (expected damage × the target's worth), so a swing bought, a point held, a point gained and a coin
+   flipped compare with every other option. Weights: AI_BASE.trait. Nothing here runs for a creature without traits (u.traits null). */
+/* u's beforeAction traits that apply to action a as things stand (null: none) */
+Sim.prototype.v2TraitsFor = function (u, a) {
+  const list = u.traits && u.traits.beforeAction;
+  if (!list) return null;
+  const live = list.filter(t => this.tCond(u, t.if, { a }));
+  return live.length ? live : null;
+};
+/* the planning copy of action a: k more swings, and what its traits (and, when heads, the coin's heads list) do to the swings */
+Sim.prototype.v2TraitCopy = function (u, a, k, heads, tr) {
+  const ex = Object.assign({}, a.ext), F = {}, A = {};
+  const put = e => { const w = Object.keys(e)[0], v = e[w]; if (w === 'ignoreCover') ex._tNoCover = true; else if (w === 'autoHit' || w === 'autoCrit' || w === 'ignoreResistance') (v === 'first' ? F : A)[w] = true; };
+  for (const t of tr || []) for (const e of t.do) { if (e.coin) { if (heads) (e.coin.heads || []).forEach(put); } else put(e); }
+  if (Object.keys(F).length) ex._tFirst = F;
+  if (Object.keys(A).length) ex._tAll = A;
+  return Object.assign({}, a, { targets: (a.targets || 1) + (k || 0), ext: ex });
+};
+/* the extraAttacks word in these traits: { pay, top (what it may buy now), ai (the AI decides) } or null */
+Sim.prototype.v2Extra = function (u, tr) {
+  for (const t of tr || []) for (const e of t.do) if (e.extraAttacks) {
+    const have = u.uses.get('res:' + e.extraAttacks.pay) || 0;
+    return { pay: e.extraAttacks.pay, top: Math.min(have, typeof e.extraAttacks.max === 'number' ? e.extraAttacks.max : have), ai: !!t.optional };
+  }
+  return null;
+};
+/* the worth of one point of pool `res` held to the next turn: the best swing it buys then (an action whose extraAttacks pays with it) × keep × the
+   chance it is not lost to damage first × the fight going on. 0 when nothing spends the pool (the AI does not value what it cannot use). */
+Sim.prototype.v2PointValue = function (u, res, ctx) {
+  const T = u.v2P.trait, W = u.v2P.w;
+  const ck = ctx.key + '|' + res;
+  if (u._tPV && u._tPV.k === ck) return u._tPV.v;
+  let best = 0;
+  for (const a of u.actions) {
+    // next turn's use: the trait's conditions on the action, not on this turn (it may have moved, or hold nothing yet)
+    const tr = (u.traits.beforeAction || []).filter(t => t.do.some(e => e.extraAttacks && e.extraAttacks.pay === res) && this.tCond(u, t.if.filter(c => !('notMoved' in c) && !('has' in c)), { a }));
+    if (!tr.length) continue;
+    const one = this.v2TraitCopy(u, a, 0, false, tr);
+    for (const t of ctx.foes) if (t.hp > 0) best = Math.max(best, this.expected(u, one, t) * (1 + this.kDprW(u, t) / W.dprScale) * W.damage);
+  }
+  let frac = 0;
+  for (const t of (u.traits.onDamaged || [])) for (const e of t.do) if (e.lose && e.lose.res === res) frac = Math.max(frac, e.lose.frac || Math.min(1, (e.lose.n || 1) / Math.max(1, u.uses.get('res:' + res) || 1)));
+  const pHit = 1 - Math.exp(-ctx.danger.at(u.x, u.y) / Math.max(0.1, T.hitScale));
+  const v = best * T.keep * (1 - pHit * frac) * Math.min(1, Math.max(0, ctx.rounds - 1));
+  u._tPV = { k: ck, v };
+  return v;
+};
+/* the best way to use action a on t with its traits: how many swings to buy (k) and whether to flip (flip), in v2Value points net of the points spent.
+   heads: the coin already came up heads (the swings are bought after the coin) */
+Sim.prototype.v2TraitValue = function (u, a, t, ctx, tr, heads) {
+  const T = u.v2P.trait, X = this.v2Extra(u, tr), h = X ? this.v2PointValue(u, X.pay, ctx) : 0;
+  const bestK = hd => {
+    let best = null;
+    const ks = !X ? [0] : X.ai ? Array.from({ length: X.top + 1 }, (_, i) => i) : [X.top];
+    for (const k of ks) {
+      const r = this.v2Value(u, this.v2TraitCopy(u, a, k, hd, tr), t, ctx);
+      const net = r.val - k * h;
+      if (!best || net > best.net + 1e-9) best = { k, net, r };
+    }
+    return best;
+  };
+  const coinT = heads ? null : tr.find(x => x.do.some(e => e.coin));
+  const plain = bestK(!!heads);
+  if (!coinT) return { val: plain.net, why: plain.r.why, pKill: plain.r.pKill, k: plain.k, flip: false };
+  const c = coinT.do.find(e => e.coin).coin, p = typeof c.p === 'number' ? c.p : 0.5;
+  const burns = (c.tails || []).some(e => e.burn);
+  const hd = bestK(true), tl = burns ? { net: 0, k: 0, r: { why: '', pKill: 0 } } : plain;     // tails that burn: nothing done, nothing spent
+  const flipV = (p * hd.net + (1 - p) * tl.net) * T.coin;
+  if (!coinT.optional || flipV > plain.net + T.coinMargin) return { val: coinT.optional ? flipV : p * hd.net + (1 - p) * tl.net, why: hd.r.why, pKill: p * hd.r.pKill, k: hd.k, flip: true };
+  return { val: plain.net, why: plain.r.why, pKill: plain.r.pKill, k: plain.k, flip: false };
+};
+/* how many of `top` extra swings to buy for action a now (extraAttacks, optional): the k v2TraitValue picks on the first target */
+Sim.prototype.v2ExtraAttacks = function (u, a, targets, top, out) {
+  const t = targets && targets[0], tr = this.v2TraitsFor(u, a);
+  if (!t || !tr || !u.v2P) return top;
+  const r = this.v2TraitValue(u, a, t, this.v2Ctx(u, 0), tr, out && out.coin === 'heads');
+  return Math.min(top, r.k);
+};
+/* flip the coin before action a? (coin, optional) */
+Sim.prototype.v2FlipBefore = function (u, a, targets, coin, out) {
+  const t = targets && targets[0], tr = this.v2TraitsFor(u, a);
+  if (!t || !tr || !u.v2P) return false;
+  return this.v2TraitValue(u, a, t, this.v2Ctx(u, 0), tr).flip;
+};
+/* accrual (turnEnd gain perUnused) as a term: what leaving parts of this turn unused adds, in points held (v2PointValue). null when nothing accrues
+   or nothing spends what accrues. gain(parts, spent): parts = the parts of the turn left unused, spent = points this turn's action spends. */
+Sim.prototype.v2Accrual = function (u, ctx) {
+  const T = u.v2P.trait, out = [];
+  for (const t of (u.traits && u.traits.turnEnd) || []) for (const e of t.do) {
+    if (!e.gain || !e.gain.perUnused) continue;
+    const pv = this.v2PointValue(u, e.gain.res, ctx);
+    if (!(pv > 0)) continue;
+    const pool = u.resMax && u.resMax[e.gain.res];
+    out.push({ res: e.gain.res, n: typeof e.gain.n === 'number' ? e.gain.n : 1, per: e.gain.perUnused, cap: typeof e.gain.cap === 'number' ? e.gain.cap : +(pool && pool.uses) || 0, pv });
+  }
+  if (!out.length) return null;
+  return {
+    canWait: !!T.wait && out.some(g => g.per.indexOf('action') >= 0),
+    gain: (parts, spent) => out.reduce((s, g) => {
+      const have = Math.max(0, (u.uses.get('res:' + g.res) || 0) - (spent || 0)), n = g.n * g.per.filter(p => parts.indexOf(p) >= 0).length;
+      return s + Math.max(0, Math.min(n, g.cap - have)) * g.pv * T.accrue;
+    }, 0),
+  };
+};
 
 Object.assign(ENG, { isReckless, castCopy, deathOdds });
 })(typeof window !== 'undefined' ? window : globalThis);
