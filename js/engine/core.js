@@ -130,6 +130,7 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   if (ax.loseAction && holder !== src) { delete b.data.condition; b.loseAction = true; }
   if (ax.saveOnDamage && holder !== src) b.saveOnDamage = ax.saveOnDamage;
   if (ax.damageType) { b.dtype = ax.damageType; b.dmagic = !!(action._spell || ax.magical); }
+  if (holder.traits) b.magic = tMagic(action);                                // its repeat saves are against magic (custom mechanics: vs 'magic')
   // the export's averaged resistance gives way to the real damage types when the creature lists them
   if (ax.avgResist && holder.dmgMods && typeof b.data.damageTakenMultiplier === 'number') b.data.damageTakenMultiplier = Math.round(b.data.damageTakenMultiplier / ax.avgResist * 100) / 100;   // real duplicates here, an average in the export
   if (extra) Object.assign(b, extra);
@@ -156,6 +157,7 @@ Sim.prototype.slotFor = function (u, level) {
 };
 Sim.prototype.usable = function (u, a) {
   if (a.ext && (a.ext.prefight || a.ext.revivify)) return false;     // pre-fight buffs are cast in the morning only (morningCasts), Revivify when the fight ends (endFightRevives)
+  if (a.ext && a.ext.req && !this.tCond(u, a.ext.req, { a })) return false;   // a precondition in the trait words (Aimed Shot: has not moved this turn)
   if (a._spell) {
     if (!a._spell.level) return true;
     if (a.actionSlot === 4 && u.reviver && this.v2Eats(u, this.slotFor(u, a._spell.level))) return false;   // no scorer for reactions yet (roadmap phase 3): they leave a kept slot alone
@@ -179,6 +181,7 @@ Sim.prototype.sustaining = function (u, a) {
 };
 Sim.prototype.spend = function (u, a) {
   u.usedThisFight.add(a.id);
+  if (u.traits && this.current === u) { if (a.actionSlot === 0) u._actSeq = this.turnSeq; else if (a.actionSlot === 1) u._bonSeq = this.turnSeq; }   // what turnEnd counts as used
   if (a.ext && a.ext.pool) return;       // dice are taken from the pool when the healing is rolled
   if (a._spell && this.sustaining(u, a)) { u.castAt = 0; u.castLevel = u.concLevel || a._spell.level; return; }
   if (a._spell) {
@@ -296,7 +299,7 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
     const rise = this.T.anyH && !u.fly ? this.hAt(step.x, step.y) - this.hAt(u.x, u.y) : 0;
     if ((rise >= 2 || rise <= -2) && !u.climb) {
       // scaling a ledge of 10 ft or more: Athletics check
-      const r = this.R.d(20), tot = r + (u.athletics || 0), dc = this.climbDC;
+      const r = this.d20(false, false, false, u, 'check'), tot = r + (u.athletics || 0), dc = this.climbDC;
       if (tot < dc) {
         flush();
         if (rise > 0) { this.ev('effect', `${u.name} fails to climb the ${rise * 5}-ft ledge (Athletics ${tot} vs DC ${dc >= 99 ? '—' : dc})`, { uid: u.uid }); return; }
@@ -335,11 +338,20 @@ Sim.prototype.moveAlongSteps = function (u, path, trail) {
 };
 
 /* ----- rolling ----- */
-Sim.prototype.d20 = function (adv, dis, elven) {
+/* who (optional) is the roller and kind 'attack' | 'save' | 'check': its `roll` traits (Halfling Luck) may reroll each die it shows */
+Sim.prototype.d20 = function (adv, dis, elven, who, kind) {
   const R = this.R;
-  if (adv && !dis) { const n = elven ? 3 : 2; let b = 0; for (let i = 0; i < n; i++) b = Math.max(b, R.d(20)); return b; }
-  if (dis && !adv) return Math.min(R.d(20), R.d(20));
-  return R.d(20);
+  const d = who && who.traits && who.traits.roll ? () => this.tD20(who, kind) : () => R.d(20);
+  if (adv && !dis) { const n = elven ? 3 : 2; let b = 0; for (let i = 0; i < n; i++) b = Math.max(b, d()); return b; }
+  if (dis && !adv) return Math.min(d(), d());
+  return d();
+};
+Sim.prototype.tD20 = function (who, kind) {
+  const v = this.R.d(20), o = this.traitRun(who, 'roll', { natural: v, kind });
+  if (!o || !o.reroll) return v;
+  const v2 = this.R.d(20);
+  if (this.record) this.ev('react', `${who.name} rerolls a natural ${v} (${kind}): ${v2}`, { uid: who.uid });
+  return v2;
 };
 /* the creature's bonus for a given saving throw: its real save when known, else the average */
 Sim.prototype.saveBonusFor = function (t, ab) {
@@ -362,9 +374,10 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   const physical = ab === 'str' || ab === 'dex' || ab === 'strdex';
   // paralysed, stunned, unconscious or petrified creatures automatically fail Strength and Dexterity saves
   if (physical && ['Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].some(x => c.has(x))) return { success: false, roll: 0, total: 0, autoFail: true };
-  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || (t.dexAdv && ab === 'dex' && !this.incap(t) && !c.has('Blinded') && !c.has('Deafened')) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
+  const tS = t.traits && t.traits.onSave ? this.traitRun(t, 'onSave', { a: this._saveA || this._actA, src, magic: !!this._saveMagic }) : null;    // the Suit: advantage against magic
+  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || !!(tS && tS.advantage) || (t.dexAdv && ab === 'dex' && !this.incap(t) && !c.has('Blinded') && !c.has('Deafened')) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
   const dis = c.has('Save with Disadvantage') || c.has('Attacks and saves with Disadvantage') || ((ab === 'dex') && c.has('Restrained'));
-  let r = this.d20(adv, dis, false);
+  let r = this.d20(adv, dis, false, t, 'save');
   const flat = (sopt && sopt.bonus) || 0;            // a flat extra the caller owns (Bladesong on a concentration save)
   let total = r + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + flat;
   // half cover helps Dexterity saves against something coming from elsewhere (the area's point, or the caster)
@@ -387,7 +400,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   if (total < dc && t.indomitable && (t.uses.get('__indom') || 0) > 0 && dc < 99 &&
       ((this._saveStakes || 0) >= 1 || failDmg >= t.hp * 0.25)) {
     t.uses.set('__indom', t.uses.get('__indom') - 1);
-    const r2 = this.d20(adv, dis, false);
+    const r2 = this.d20(adv, dis, false, t, 'save');
     const tot2 = r2 + this.saveBonusFor(t, ab) + this.sumBuff(t, 'save', true) + flat + t.indomitable.bonus;
     this.ev('react', `${t.name} uses Indomitable: rerolls the save (${Math.round(total)} → ${Math.round(tot2)})`, { uid: t.uid });
     r = r2; total = tot2;
@@ -413,7 +426,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
     t.legSeen = (t.legSeen || 0) + 1;
     if (this.learning(otherTeam(t.team))) { const k = this.kind(otherTeam(t.team), t); k.legRes = Math.max(k.legRes || 0, t.legSeen); k.seen++; }
-    this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
+    this.ev('react', `${t.name} uses ${t.legResName ? t.legResName + ' (Legendary Resistance, ' : 'Legendary Resistance ('}${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
   }
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };
@@ -439,14 +452,18 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   if (tc.has('Prone') && !opt.inside) { if (this.dist(att, tgt) <= 5) adv = true; else dis = true; }      // prone: easy up close, hard from afar
   // ranged attack with any enemy (that can see you and isn't incapacitated) within 5 ft
   if ((a._range || 5) > 10 && !opt.inside && !att.closeShot && this.enemiesOf(att).some(e => e.onBoard && this.alive(e) && !this.incap(e) && this.dist(e, att) <= 5 && !this.isHidden(att))) dis = true;
-  let r = this.d20(adv, dis, att.elvenAccuracy);
+  const tw = att.traits ? this.tSwing(att, a) : null;       // this swing's trait effects (Aimed Shot, Call the Shot)
+  if (tw && tw.advantage) adv = true;
+  let r = this.d20(adv, dis, att.elvenAccuracy, att, 'attack');
   const toHit = Number(avgDice(a.toHit)) + this.sumBuff(att, 'toHit', true);
   let total = r + toHit;
-  let ac = this.ac(tgt) + this.coverAC(att, tgt);
+  let ac = this.ac(tgt) + (tw && tw.ignoreCover ? 0 : this.coverAC(att, tgt));
   let hit = r === 20 || (r !== 1 && total >= ac);
   let crit = r === 20 || (hit && !a._spell && r >= (att.critOn || 20));
-  if (r !== 20 && r !== 1 && !opt.inside) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
-  this.learnAtk(att, tgt, ac, r !== 20 && r !== 1 && !adv && !dis, hit);
+  if (tw && tw.autoHit) { hit = true; opt = Object.assign({}, opt, { noReact: true }); }    // no roll to change: no Shield, no Push Your Luck
+  if (tw && tw.autoCrit && hit) crit = true;
+  if (r !== 20 && r !== 1 && !opt.inside && !(tw && tw.autoHit)) this.learnAC(att, tgt, total - this.sumBuff(tgt, 'ac', false) - this.coverAC(att, tgt), hit);
+  if (!(tw && tw.autoHit)) this.learnAtk(att, tgt, ac, r !== 20 && r !== 1 && !adv && !dis, hit);
   // reactions on the target's side (docs/ai-v2.md, "Reactions as a layer"): every creature scores its own
   const S = { att, tgt, a, r, d: r, toHit, total, hit, crit, ac, adv, dis };
   // Push Your Luck: its own miss, rerolled for a price in hit points (v2 decides)
@@ -472,7 +489,8 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
   let coinHit = null;   // a coin's buff (ext.coin) is spent by the roll; the extra damage it carries is added by attackOnce on a hit
   if (att.buffs.some(b => b.expiry === 'next attack roll')) { coinHit = att.buffs.filter(b => b.expiry === 'next attack roll' && b.hitDmg); if (!coinHit.length) coinHit = null; this.dropBuffs(att, b => b.expiry === 'next attack roll'); }
   this.dropBuffs(tgt, b => b.expiry === 'until next attack taken');
-  return { hit, crit, total: Math.round(total * 10) / 10, ac: Math.round(ac * 10) / 10, roll: r, adv: adv && !dis, dis: dis && !adv, mirror, fa, coinHit };
+  return { hit, crit, total: Math.round(total * 10) / 10, ac: Math.round(ac * 10) / 10, roll: r, adv: adv && !dis, dis: dis && !adv, mirror, fa, coinHit,
+           auto: !!(tw && tw.autoHit), ignoreRes: !!(tw && tw.ignoreResistance) };
 };
 
 /* ----- damage, healing, death ----- */
@@ -492,13 +510,15 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   info = info || {};
   if (tgt.dead) return 0;
   // damage type against resistances, immunities and vulnerabilities
-  const tm = info.a || info.type ? damageMultFor(info.a, tgt, info.type) : 1;
-  if (raw > 0) this.learnType(tgt, info, tm);
+  const tm0 = info.a || info.type ? damageMultFor(info.a, tgt, info.type) : 1;
+  const tm = info.ignoreRes && tm0 > 0 && tm0 < 1 ? 1 : tm0;                 // Call the Shot's insane shot: resistance ignored, immunity not
+  if (raw > 0) this.learnType(tgt, info, tm);                                // what the table saw
   if (tm !== 1 && raw > 0) {
     info.typeNote = tm === 0 ? 'immune' : tm < 1 ? 'resisted' : tm > 1 ? 'vulnerable' : '';
     if (tm === 0 && this.record) this.ev('effect', `${tgt.name} is immune to ${info.type || (info.a && (bestTypeFor(info.a, tgt) || info.a.ext.damageType))} damage`, { uid: tgt.uid });
   }
-  let dmg = Math.max(0, raw * tm * this.multBuff(tgt, 'damageTakenMultiplier') - this.sumBuff(tgt, 'damageReduction', false));
+  const dtm = this.multBuff(tgt, 'damageTakenMultiplier');
+  let dmg = Math.max(0, raw * tm * (info.ignoreRes && dtm < 1 ? 1 : dtm) - this.sumBuff(tgt, 'damageReduction', false));
   dmg = Math.floor(dmg);
   if (dmg <= 0) return 0;
   // a defensive reaction on the target that reduces damage (e.g. "until next attack taken" resistance)
@@ -514,6 +534,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
     }
   }
   src.dmgDealt += dmg; tgt.dmgTaken += dmg;
+  if (tgt.traits && tgt.traits.onDamaged) this.traitRun(tgt, 'onDamaged', { src, a: info.a });    // Patience: half of it lost to any damage, on its own turn too
   this.learnDmg(src, tgt, dmg, info);
   if (info.attack && src.team !== tgt.team) tgt.lastAttacker = src.uid;
   if (src.swallowedBy === tgt.uid) tgt.insideDamage.set(src.uid, (tgt.insideDamage.get(src.uid) || 0) + dmg);
@@ -566,7 +587,9 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
   // "…each time it takes damage, it repeats the save" (Hideous Laughter: with advantage)
   if (tgt.hp > 0 && !tgt.dead && dmg > 0) for (const b of tgt.buffs.slice()) {
     if (!b.saveOnDamage || typeof b.dc !== 'number' || b.dc >= 99 || tgt.buffs.indexOf(b) < 0) continue;
+    this._saveMagic = !!b.magic;
     const s = this.saveRoll(tgt, b.dc, this.byId[b.src] || null, b.saveAbility, { adv: b.saveOnDamage === 'adv' });
+    this._saveMagic = false;
     if (s.success) { tgt.buffs = tgt.buffs.filter(x => x !== b); this._flyMapVer = -1; this._rmCache = null; this.ev('save', `${tgt.name} is hurt out of ${b.name} (${s.total} vs DC ${b.dc}${b.saveOnDamage === 'adv' ? ', advantage' : ''})`, { uid: tgt.uid }); }
   }
   return dmg;
@@ -780,9 +803,11 @@ Sim.prototype.resolveAttackAction = function (u, a, targets, opt) {
   }
   // attack rolls: `targets` = number of attacks, re-aimed if the target drops or leaves the board (fled, swallowed):
   // each swing then picks its own target among those in range from where it stands (v2Repick, the same scoring as the first pick)
-  let n = a.targets || 1;
+  const tA = this._tAct && this._tAct.u === u && this._tAct.id === a.id ? this._tAct.out : null;      // Aimed Shot's swings bought with Patience
+  let n = (a.targets || 1) + (tA ? tA.extra : 0);
   let cur = targets[0];
   for (let i = 0; i < n; i++) {
+    if (tA) this._tSwingI = i;
     if (!cur || cur.dead || (cur.hp <= 0 && !cur.isPC) || (cur.hp <= 0 && !opt.finishDowned) || (!cur.onBoard && !opt.inside)) {
       opt = Object.assign({}, opt, { finishDowned: false });
       const range = Math.max(5, a._range || 5);
@@ -847,6 +872,13 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       if (!u.mhHit || u.mhHit.seq !== this.turnSeq) u.mhHit = { seq: this.turnSeq, set: new Set() };
       u.mhHit.set.add(t.uid);
     }
+    // custom mechanics on a hit (ext.traits, onHit: Sniper's Eye): extra dice in the same damage instance, doubled on a critical hit
+    if (u.traits && u.traits.onHit) {
+      const th = u.tHits && u.tHits.seq === this.turnSeq ? u.tHits : (u.tHits = { seq: this.turnSeq, n: {} });
+      th.n[t.uid] = (th.n[t.uid] || 0) + 1;
+      const hx = this.traitRun(u, 'onHit', { a, tgt: t, nth: th.n[t.uid] });
+      if (hx) for (const d of hx.dmg) { raw += rollDice(d.dice, this.R, r.crit); smTag += ' + ' + d.name; }
+    }
     // Divine Smite (v2 only): decided now the hit is known, one damage instance with the weapon's, each part of its own type
     const sm = u.smiteSeq === this.turnSeq ? this.v2SmiteHit(u, a, t, r.crit, raw) : null;
     raw *= this.multBuff(u, 'damageMultiplier');
@@ -857,7 +889,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
       if (sR > 0) this.learnType(t, { type: sm.type }, tmS);
       if (tmW > 0) raw += sR * tmS / tmW; else apart = sR;
     }
-    dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, roll: true, crit: r.crit, a });
+    dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), r.ignoreRes ? { attack: true, roll: true, crit: r.crit, a, ignoreRes: true } : { attack: true, roll: true, crit: r.crit, a });
     if (apart > 0 && !t.dead) dealt += this.damage(u, t, Math.floor(apart), { attack: true, crit: r.crit, type: sm.type });
   }
   const tag = (r.adv ? ' (adv' + (r.fa === 'assassinate' ? ', Assassinate' : r.fa === 'vex' ? ', Vex' : r.fa === 'pack' ? ', Pack Tactics' : '') + ')' : r.dis ? ' (dis)' : '') + (sa ? ' + Sneak Attack' : '') + smTag;
@@ -878,6 +910,7 @@ Sim.prototype.attackOnce = function (u, a, t, opt) {
     this.ev('effect', `${t.name}'s speed is halved until the end of its next turn`, { uid: t.uid });
   }
   if (r.hit && ex.leap) this.leap(u, a, t, opt);
+  if (!r.hit && u.traits && u.traits.onMiss) this.traitRun(u, 'onMiss', { a, tgt: t });
   this.afterHitExt(u, t, a, r.hit);
   if (!r.hit && !opt.inside && !a.useSaves && (a._range || 5) <= 10 && !u.dead && u.onBoard) this.counterAttack(t, u, 'riposte');
   return r;
@@ -1007,8 +1040,10 @@ Sim.prototype.applyRider = function (u, t, a) {
 /* a coin flip (ext.coin = { p: 0.5, heads: OUTCOME, tails: OUTCOME }, docs/ai-v2.md "Pasquale Minuzzi"): the seeded generator decides; the outcome's buff goes
    on the flipper (spent by its next attack roll, ended by `lasts`: 'turn' this turn, 'next' its next turn), with the extra damage carried on it.
    Returns { heads, out }; `out.miss` is for the caller (a reaction that turns a hit into a miss). */
+/* the coin itself, one draw of the seeded generator: heads with chance c.p (default even). Shared by ext.coin and the trait word `coin` */
+Sim.prototype.coinHeads = function (c) { return this.R() < (typeof c.p === 'number' ? c.p : 0.5); };
 Sim.prototype.coinFlip = function (u, a) {
-  const c = a.ext.coin, heads = this.R() < (typeof c.p === 'number' ? c.p : 0.5), out = (heads ? c.heads : c.tails) || {};
+  const c = a.ext.coin, heads = this.coinHeads(c), out = (heads ? c.heads : c.tails) || {};
   if (out.buff) {
     const extra = {};
     if (out.lasts === 'turn') extra.endTurn = u.turnNo || 0;
@@ -1017,6 +1052,103 @@ Sim.prototype.coinFlip = function (u, a) {
     this.addBuff(u, u, { id: a.id + ':coin', name: a.name }, Object.assign({}, out.buff, { duration: 'next attack roll' }), extra);
   }
   return { heads, out };
+};
+/* ----- custom mechanics: the trait hooks (ext.traits; docs/custom-mechanics.md) -----
+   traitRun(u, when, sc) runs u's traits for one trigger: each one whose conditions hold (and whose `once` is free) applies its effects to `out`,
+   which the caller reads: { first, all, dmg, extra, burn, advantage, reroll }. sc is the scope: { a, tgt, natural, kind, nth, unused, src, targets }.
+   beforeAction runs the coins first (a burn stops everything after it, nothing is paid), then the rest. Returns null when nothing fired. */
+const tLow = s => String(s || '').replace(/ \(L\d\)$/, '').trim().toLowerCase();
+const tMagic = a => !!(a && (a._spell || (a.ext && (a.ext.innateSpell || a.ext.magical))));
+Sim.prototype.tCond = function (u, list, sc) {
+  for (const c of list || []) for (const k in c) {
+    const v = c[k], a = sc.a;
+    if (k === 'notMoved') { if (u.movedThisTurn) return false; }
+    else if (k === 'has') { if ((u.uses.get('res:' + v.res) || 0) < (v.min === undefined ? 1 : v.min)) return false; }
+    else if (k === 'action') { if (!a || tLow(a.name) !== tLow(v)) return false; }
+    else if (k === 'weapon') { if (!a || (tLow(a.name) !== tLow(v) && !(a.ext && a.ext.weapon && tLow(a.ext.weapon) === tLow(v)))) return false; }
+    else if (k === 'ranged') { if (!a || ((a._range || 5) > 10) !== v) return false; }
+    else if (k === 'melee') { if (!a || ((a._range || 5) <= 10) !== v) return false; }
+    else if (k === 'natural') { if (sc.natural !== v) return false; }
+    else if (k === 'rollIs') { if (v.indexOf(sc.kind) < 0) return false; }
+    else if (k === 'vs') { if (!tMagic(a) && !sc.magic) return false; }
+    else if (k === 'nthHit') { if (sc.nth !== v) return false; }
+    else if (k === 'ownTurn') { if ((this.current === u) !== v) return false; }
+    else return false;                                   // a word this engine does not know: the trait never fires
+  }
+  return true;
+};
+Sim.prototype.tOnceFree = function (u, t) {
+  if (!t.once) return true;
+  const s = t.once === 'round' ? 'r' + this.round : 't' + this.turnSeq;
+  return !(u.tOnce && u.tOnce[t.idx] === s);
+};
+Sim.prototype.tMark = function (u, t) {
+  if (!t.once) return;
+  (u.tOnce = u.tOnce || {})[t.idx] = t.once === 'round' ? 'r' + this.round : 't' + this.turnSeq;
+};
+Sim.prototype.traitRun = function (u, when, sc) {
+  const list = u.traits && u.traits[when];
+  if (!list) return null;
+  sc = sc || {};
+  const live = list.filter(t => this.tOnceFree(u, t) && this.tCond(u, t.if, sc));
+  if (!live.length) return null;
+  const out = { first: {}, all: {}, dmg: [], extra: 0, burn: false, advantage: false, reroll: false, said: [] };
+  live.forEach(t => this.tMark(u, t));
+  const isCoin = e => e && Object.prototype.hasOwnProperty.call(e, 'coin');
+  const passes = when === 'beforeAction' ? [true, false] : [null];
+  for (const coins of passes) for (const t of live) {
+    if (out.burn) break;
+    for (const e of t.do) if (coins === null || isCoin(e) === coins) { this.tDo(u, t, e, sc, out); if (out.burn) break; }
+  }
+  if (out.said.length && this.record) this.ev('effect', out.said.join('; '), { uid: u.uid });
+  return out;
+};
+Sim.prototype.tDo = function (u, t, e, sc, out) {
+  const k = Object.keys(e)[0], v = e[k], nm = t.name || 'a trait';
+  if (k === 'gain' || k === 'lose') {
+    const key = 'res:' + v.res, pool = u.resMax && u.resMax[v.res];
+    if (!pool) return;
+    const cur = u.uses.get(key) || 0, cap = typeof v.cap === 'number' ? v.cap : +pool.uses || 0;
+    let n;
+    if (k === 'gain') n = (typeof v.n === 'number' ? v.n : 1) * (v.perUnused ? v.perUnused.filter(p => (sc.unused || []).indexOf(p) >= 0).length : 1);
+    else n = typeof v.n === 'number' ? v.n : (v.round === 'down' ? Math.floor : Math.ceil)(cur * v.frac - 1e-9);
+    const now = k === 'gain' ? Math.max(cur, Math.min(cap, cur + n)) : Math.max(0, cur - n);
+    if (now === cur) return;
+    u.uses.set(key, now);
+    out.said.push(`${u.name} ${k === 'gain' ? 'gains' : 'loses'} ${Math.abs(now - cur)} ${v.res} (${nm}): ${now}/${cap}`);
+  } else if (k === 'extraAttacks') {
+    const key = 'res:' + v.pay, have = u.uses.get(key) || 0, top = Math.min(have, typeof v.max === 'number' ? v.max : have);
+    const n = t.optional ? Math.max(0, Math.min(top, Math.round(this.v2ExtraAttacks(u, sc.a, sc.targets || [], top, out)))) : top;
+    if (n > 0) { u.uses.set(key, have - n); out.extra += n; out.said.push(`${u.name} spends ${n} ${v.pay} for ${n} more attack${n > 1 ? 's' : ''} (${nm})`); }
+  } else if (k === 'coin') {
+    if (t.optional && !this.v2FlipBefore(u, sc.a, sc.targets || [], v, out)) return;
+    const heads = this.coinHeads(v), fx = (heads ? v.heads : v.tails) || [];
+    out.said.push(`${u.name} flips the coin (${nm}): ${heads ? 'heads' : 'tails'}${fx.length ? ' — ' + fx.map(x => Object.keys(x)[0]).join(', ') : ''}`);
+    out.coin = heads ? 'heads' : 'tails';
+    for (const x of fx) { this.tDo(u, t, x, sc, out); if (out.burn) break; }
+  } else if (k === 'autoHit' || k === 'autoCrit' || k === 'ignoreResistance') (v === 'first' ? out.first : out.all)[k] = true;
+  else if (k === 'ignoreCover') out.all.ignoreCover = true;
+  else if (k === 'extraDamage') out.dmg.push({ dice: v.dice, type: v.type || '', name: nm });
+  else if (k === 'advantage') out.advantage = true;
+  else if (k === 'reroll') out.reroll = true;
+  else if (k === 'burn') { out.burn = true; out.said.push(`${u.name}'s ${sc.a ? sc.a.name : 'action'} is burnt: no attack`); }
+  // noLongRangeDisadvantage, ignoreLoading: accepted, nothing to do (the War Table never shoots at long range and never models loading)
+};
+/* the trait effects that apply to one swing of u's action a (beforeAction's, set by doAction): { autoHit, autoCrit, ignoreResistance, ignoreCover, advantage } or null */
+Sim.prototype.tSwing = function (u, a) {
+  const T = this._tAct;
+  if (!T || T.u !== u || T.id !== a.id) return null;
+  const f = this._tSwingI === 0 ? T.out.first : {};
+  return { autoHit: !!(T.out.all.autoHit || f.autoHit), autoCrit: !!(T.out.all.autoCrit || f.autoCrit), ignoreResistance: !!(T.out.all.ignoreResistance || f.ignoreResistance),
+           ignoreCover: !!T.out.all.ignoreCover, advantage: !!T.out.advantage };
+};
+/* which parts of u's turn went unused, for turnEnd (a burnt action counts as used: it was spent) */
+Sim.prototype.tUnused = function (u) {
+  const s = this.turnSeq, out = [];
+  if (!u.movedThisTurn && !((u._steps || 0) > 0) && u.stoodTurn !== s) out.push('move');
+  if (u._bonSeq !== s) out.push('bonus');
+  if (u._actSeq !== s) out.push('action');
+  return out;
 };
 Sim.prototype.coinWords = function (out) {
   const bits = [];
@@ -1091,6 +1223,9 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   if (!plan) plan = this.plan(u, a, 0) || { targets: [] };
   const targets = plan.friends && plan.friends.length ? plan.targets.concat(plan.friends.filter(f => !plan.targets.includes(f) && !f.dead)) : plan.targets;
   if (!targets.length && a.target !== 'self') return false;
+  // custom mechanics before the action (ext.traits, beforeAction): a coin first (tails can burn the action), then swings bought, cover ignored…
+  const tB = u.traits && u.traits.beforeAction && !opt.inside ? this.traitRun(u, 'beforeAction', { a, targets }) : null;
+  if (tB && tB.burn) return true;
   if ((a._spell || (a.ext && a.ext.innateSpell)) && !opt.inside && this.counterCheck(u, a, plan)) return true;      // a foe's Counterspell
   if ((a.type === 'atk' || a.type === 'debuff') && !plan.area && !opt.inside && this.cancelled(u, a, targets)) return true;
   if (a._spell && (a.type === 'atk' || a.type === 'debuff') && !opt.inside) a = this.spellbreak(u, a);
@@ -1127,7 +1262,10 @@ Sim.prototype.doAction = function (u, a, plan, opt) {
   const ar0 = plan.area, keepC = this._coverFrom, keepI = this._ignoreCover;   // reactions can resolve inside another action
   this._coverFrom = ar0 && (ar0.shape === 'sphere' || (ar0.shape === 'cube' && Math.max(Math.abs(ar0.tx - ar0.ox), Math.abs(ar0.ty - ar0.oy)) > 1)) ? { x: ar0.tx, y: ar0.ty } : null;
   this._ignoreCover = /sacred flame/i.test(a.name || '') || !!(a.ext && a.ext.ignoreCover);
-  try { return this.doActionInner(u, a, plan, opt, targets); } finally { this._coverFrom = keepC; this._ignoreCover = keepI; }
+  if (!u.traits && !this._tAct && !this._actA) { try { return this.doActionInner(u, a, plan, opt, targets); } finally { this._coverFrom = keepC; this._ignoreCover = keepI; } }
+  const keepT = this._tAct, keepA = this._actA, keepS = this._tSwingI;
+  this._tAct = tB ? { u, id: a.id, out: tB } : null; this._actA = a; this._tSwingI = 0;
+  try { return this.doActionInner(u, a, plan, opt, targets); } finally { this._coverFrom = keepC; this._ignoreCover = keepI; this._tAct = keepT; this._actA = keepA; this._tSwingI = keepS; }
 };
 /* a reaction that voids an attack or spell aimed at its user (ext.cancelAction): the attacker saves or loses the action */
 Sim.prototype.cancelReaction = function (t) {

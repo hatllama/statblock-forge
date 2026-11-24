@@ -45,10 +45,11 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     for (const L of this.v2CastLevels(u, a)) {
       const act = castCopy(a, L);
       const pl = { a, act, castL: L, slot: L > 0, pool, range: Math.max(5, a._range || 5), self, ally: !self && (a.type === 'heal' || a.type === 'buff'), n: act.targets || 1,
+                   still: !!(a.ext && a.ext.req && a.ext.req.some(c => c.notMoved)), tr: u.traits ? this.v2TraitsFor(u, a) : null,
                    area: !!sp, sphere: !!sp && sp.shape === 'sphere', fog: !!(a.ext && a.ext.zone && a.ext.zone.fog), fogC: new Map(),
                    pace: this.v2Pace(u, a, L), conc: a._spell && a._spell.conc && u.concentrating && !this.sustaining(u, a) ? W.concSwap * holding : 0,
                    vals: new Map(), bare: null, multi: new Map() };
-      for (const t of pool) pl.vals.set(t.uid, this.v2Value(u, act, t, ctx));
+      for (const t of pool) pl.vals.set(t.uid, pl.tr && t !== u && act.type === 'atk' ? this.v2TraitValue(u, act, t, ctx, pl.tr) : this.v2Value(u, act, t, ctx));   // custom mechanics: swings bought, the coin
       if (pl.self && !(pl.vals.get(u.uid).val > 0)) continue;
       if (pl.area && !pl.fog) { pl.bare = new Map(); for (const t of pool) pl.bare.set(t.uid, this.v2Value(u, act, t, ctx, true).val); }
       // several targets with one save (no template): the others near the first
@@ -165,7 +166,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
 
   // the best way to spend the action from (x, y); noSlot: the bonus action already took this turn's spell slot
   const acShared = new Map();
-  let slotRaw = 0;
+  let slotRaw = 0, jumpOff = false;      // jumpOff: weighing teleport squares (a teleport is not a move, so "has not moved" actions stay open)
   const touchPl = pl => pl.range <= 10 && (pl.ally || (pl.a.type === 'atk' && !pl.a.useSaves) || pl.a.type === 'debuff');
   const offAt = (x, y, noSlot, noTouch) => {
     const seen = new Map(), dC = new Map();
@@ -176,6 +177,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     for (const pl of plans) {
       if (noSlot && pl.slot) continue;
       if (noTouch && !pl.self && touchPl(pl)) continue;
+      if (pl.still && !jumpOff && (x !== u.x || y !== u.y)) continue;          // Aimed Shot: only if it has not moved this turn
       if (pl.self) { const raw = pl.vals.get(u.uid).val * offMult, v = net(pl, raw); if (!best || v > best.val) best = { pl, t: u, val: v, raw, why: '' }; continue; }
       if (pl.ally) {
         // heals and buffs: the best targets in reach from here (a multi-target spell sums them)
@@ -223,7 +225,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
         const raw = v * offMult + postBonus(t);
         v = net(pl, raw);
         if (pl.slot && raw > slotRaw) slotRaw = raw;
-        if (!best || v > best.val) best = { pl, t, val: v, raw, why, caught, ff };
+        if (!best || v > best.val) best = b.k ? { pl, t, val: v, raw, why, caught, ff, k: b.k } : { pl, t, val: v, raw, why, caught, ff };
       }
     }
     return { best, dOf, sees, engagedHere };
@@ -261,6 +263,9 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     }
     return (1 - miss) * top;
   };
+  // accrual (custom mechanics: Patience): the points a turn earns for each part of it left unused, worth what they buy later (v2Accrual); null for nearly everyone
+  const acc = u.traits ? this.v2Accrual(u, ctx) : null, bonusFree = !bonusSpent && !bonusOpts.length;
+  const accr = (steps, bonusUsed, actUsed, spent) => acc ? acc.gain([steps > 0 || u.movedThisTurn || u.stoodTurn === this.turnSeq ? '' : 'move', bonusUsed ? '' : 'bonus', actUsed ? '' : 'action'], spent || 0) : 0;
   consider(speed, (x, y, rm, steps) => {
     const { best, dOf, sees } = offAt(x, y, false);
     const th = threat(x, y), sp = ctx.danger.spacing(x, y) * safety * W.areaRisk;
@@ -278,7 +283,7 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
       const alt0 = touch ? ctx.danger.altOa(x, y, this.zOf(best.t) - zHere(x, y)) * Woa : 0, alt = alt0 ? alt0 + dropCost(oa0 + alt0) - dropCost(oa0) : 0;
       let aim = 0;
       if (canAim && steps === 0 && best.pl.a.type === 'atk' && !best.pl.a.useSaves && best.t !== u) aim = this.v2AdvGain(u, best.pl.a, best.t) * W.aim;
-      const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - alt - walk, aim: aim > bon && aim > 0 };
+      const opt = { mode: 'act', x, y, rm, off: best, steps, score: best.val + Math.max(bon, aim) - risk - oa - alt - walk + (acc ? accr(steps, bonusSpent || bon > 0 || aim > 0, true, best.k) : 0), aim: aim > bon && aim > 0 };
       // shoot, then use the rest of the move to get out of sight and Hide
       if (distH && !opt.aim && best.pl.a.type === 'atk') {
         const dh = distH[x + y * Wd];
@@ -291,21 +296,27 @@ Sim.prototype.v2TurnInner = function (u, speed, bonusSpent, onlyAct) {
     }
     if (onlyAct) return;
     if (engaged && steps > 0) options.push({ mode: 'actionDis', x, y, rm, steps, score: -risk - walk + prog - 2 });
-    options.push({ mode: 'dodge', x, y, rm, steps, prog, score: -th * safety * (1 - W.dodge) - sp - keep - oa - walk + prog });
+    options.push({ mode: 'dodge', x, y, rm, steps, prog, score: -th * safety * (1 - W.dodge) - sp - keep - oa - walk + prog + (acc ? accr(steps, !bonusFree, true, 0) : 0) });
+    // custom mechanics: a turn that builds by doing nothing (Patience: the action left unused is a point too), beside Dodge
+    if (acc && acc.canWait) options.push({ mode: 'wait', x, y, rm, steps, prog, score: -th * safety - sp - keep - oa - walk + prog + accr(steps, !bonusFree, false, 0) });
     if (readyA && !best) { const rv = readyAt(x, y); if (rv > 0) options.push({ mode: 'ready', readyA, x, y, rm, steps, prog, score: -th * safety - sp - keep - oa - walk + prog + rv - u.v2P.react.base }); }
     if (distH && distH[x + y * Wd] === 0) options.push({ mode: 'hide', x, y, rm, steps, score: -th * safety * 0.3 - sp - keep - oa - walk + prog });
   });
   // a bonus-action teleport (Misty Step): out of reach without provoking, then the action from there
   const jumpA = !bonusSpent && !onlyAct ? u.actions.find(a => a.actionSlot === 1 && a.ext && a.ext.teleport && this.usable(u, a) && this.condOk(u, a)) : null;
-  if (jumpA && (engaged || threat(u.x, u.y) >= u.hp * 0.4)) {
+  // (a creature whose best shot needs it to stand still also weighs a teleport as a reposition: the shot from the new square, the bonus action's point lost)
+  if (jumpA && (engaged || threat(u.x, u.y) >= u.hp * 0.4 || (u.traits && plans.some(pl => pl.still)))) {
     const R = Math.round(jumpA.ext.teleport / 5), jp = this.v2Pace(u, jumpA), noSlot = !!(jumpA._spell && jumpA._spell.level);
+    jumpOff = true;
+    const repos = !(engaged || threat(u.x, u.y) >= u.hp * 0.4);
     for (let y = Math.max(0, u.y - R); y <= Math.min(this.H - 1, u.y + R); y++) for (let x = Math.max(0, u.x - R); x <= Math.min(Wd - 1, u.x + R); x++) {
       if ((x === u.x && y === u.y) || taken[x + y * Wd] || (u.n > 1 ? !this.fits(u, x, y) : this.isWall(x, y)) || !this.losB(u.x, u.y, u.n, x, y, u.n)) continue;
       const { best } = offAt(x, y, noSlot);
       if (!best) continue;
       const th = threat(x, y), risk = th * safety + ctx.danger.spacing(x, y) * safety * W.areaRisk + (caster ? reachPen(x, y) : 0) + concR(th);
-      options.push({ mode: 'jump', jumpA, x, y, rm: null, off: best, steps: 0, score: best.val - risk - jp.base - jp.tax * Math.max(0, best.val) });
+      options.push({ mode: 'jump', jumpA, x, y, rm: null, off: best, steps: 0, repos, score: best.val - risk - jp.base - jp.tax * Math.max(0, best.val) + (acc ? accr(0, true, true, best.k) : 0) });
     }
+    jumpOff = false;
   }
   // nothing to hit from anywhere it can walk: Dash is the other way to spend the action
   if (!onlyAct && !anyOffense && speed > 0) consider(speed * 2, (x, y, rm, steps) => {
@@ -332,7 +343,8 @@ Sim.prototype.v2Words = function (u, o, ctx, engaged) {
   if (o.mode === 'ready') return { text: `${n} holds its ground and readies an attack for whoever comes into reach`, key: 'ready' };
   if (o.mode === 'dodge') return { text: post.kind === 'retreat' ? `${n} is badly hurt and turns defensive, Dodging` : engaged ? `${n} goes on the defensive and Dodges` : o.prog > 0 ? `${n} closes in carefully, Dodging as it comes` : `${n} holds back and Dodges`, key: 'dodge' };
   if (o.mode === 'dash') return { text: `${n} has nothing in reach and dashes toward the fight`, key: 'dash' };
-  if (o.mode === 'jump') return { text: `${n} teleports out of reach with ${o.jumpA.name}`, key: 'jump' };
+  if (o.mode === 'jump') return { text: `${n} teleports ${o.repos ? 'to a better square' : 'out of reach'} with ${o.jumpA.name}`, key: 'jump' };
+  if (o.mode === 'wait') return { text: `${n} holds still and waits for the shot`, key: 'wait' };
   if (!t) return null;
   // casters: say what the spell is for
   const a = o.off.pl.a, sp = a._spell ? a.name : '';

@@ -271,6 +271,124 @@ function hitDiceOf(tpl) {
   const pb = 2 + Math.floor((lv - 1) / 4), sv = ex.saves && typeof ex.saves.con === 'number' ? ex.saves.con : 0;
   return { die, max: lv, left: lv, con: Math.round(sv - (CON_SAVE_CLASSES[c.type] ? pb : 0)) };
 }
+/* ---------------- custom mechanics: the trait vocabulary (ext.traits, docs/custom-mechanics.md) ----------------
+   A trait is { name, when, if: [conditions], once, optional, do: [effects] }: plain data, every key a word below, nothing evaluated.
+   validateTraits says what is wrong in words; compileTraits keeps the valid ones, grouped by trigger, for makeUnit (u.traits).
+   `ai`: v2 scores the word (docs/custom-mechanics.md (iv)); every other word is simulated and neutral in scoring. */
+const TRAITS_VERSION = 1;
+const TRAIT_WHEN = ['turnStart', 'turnEnd', 'beforeAction', 'onHit', 'onMiss', 'onDamaged', 'onSave', 'roll'];
+const TRAIT_KEYS = ['name', 'when', 'if', 'do', 'once', 'optional'];
+const tStr = v => typeof v === 'string' && v.trim() !== '';
+const tNum = v => typeof v === 'number' && isFinite(v);
+const tDice = v => tNum(v) || (tStr(v) && /^[\d\sd+\-]+$/i.test(v) && /\d/.test(v));
+const tScope = v => v === true || v === 'first' || v === 'all';
+const PARTS = ['move', 'bonus', 'action'], ROLLS = ['attack', 'save', 'check'];
+const TRAIT_IF = {
+  notMoved: { ok: v => v === true, want: 'true' },
+  has: { ok: v => !!v && tStr(v.res) && (v.min === undefined || tNum(v.min)), want: '{ res, min }', res: v => v.res },
+  action: { ok: tStr, want: 'an action name' },
+  weapon: { ok: tStr, want: 'a weapon (action) name' },
+  ranged: { ok: v => typeof v === 'boolean', want: 'true or false' },
+  melee: { ok: v => typeof v === 'boolean', want: 'true or false' },
+  natural: { ok: v => tNum(v) && v >= 1 && v <= 20, want: 'a number 1-20', when: ['roll'] },
+  rollIs: { ok: v => Array.isArray(v) && v.length > 0 && v.every(x => ROLLS.indexOf(x) >= 0), want: 'a list of attack, save, check', when: ['roll'] },
+  vs: { ok: v => v === 'magic', want: '"magic"', when: ['onSave'] },
+  nthHit: { ok: v => tNum(v) && v >= 1, want: 'a number from 1', when: ['onHit'] },
+  ownTurn: { ok: v => typeof v === 'boolean', want: 'true or false' },
+};
+const TRAIT_DO = {
+  gain: { ok: v => !!v && tStr(v.res) && (v.n === undefined || tNum(v.n)) && (v.cap === undefined || tNum(v.cap)) && (v.perUnused === undefined || (Array.isArray(v.perUnused) && v.perUnused.every(x => PARTS.indexOf(x) >= 0))),
+          want: '{ res, n, perUnused: [move, bonus, action], cap }', res: v => v.res, ai: true },
+  lose: { ok: v => !!v && tStr(v.res) && (v.n !== undefined ? tNum(v.n) : tNum(v.frac) && v.frac > 0 && v.frac <= 1) && (v.round === undefined || v.round === 'up' || v.round === 'down'),
+          want: '{ res, n } or { res, frac, round: up|down }', res: v => v.res, ai: true },      // v2PointValue: what damage is expected to take from a held pool
+  extraAttacks: { ok: v => !!v && tStr(v.pay) && (v.max === undefined || tNum(v.max)), want: '{ pay, max }', res: v => v.pay, when: ['beforeAction'], ai: true, optional: true },
+  ignoreCover: { ok: v => v === true, want: 'true', when: ['beforeAction'], ai: true },
+  noLongRangeDisadvantage: { ok: v => v === true, want: 'true', when: ['beforeAction'], inert: 'the War Table never shoots at long range' },
+  ignoreLoading: { ok: v => v === true, want: 'true', when: ['beforeAction'], inert: 'loading is never modelled' },
+  autoHit: { ok: tScope, want: '"first" or "all"', when: ['beforeAction'], ai: true },
+  autoCrit: { ok: tScope, want: '"first" or "all"', when: ['beforeAction'], ai: true },
+  ignoreResistance: { ok: tScope, want: '"first" or "all"', when: ['beforeAction'], ai: true },
+  extraDamage: { ok: v => !!v && tDice(v.dice) && (v.type === undefined || typeof v.type === 'string'), want: '{ dice, type }', when: ['onHit'], ai: true },
+  advantage: { ok: v => v === true, want: 'true', when: ['onSave', 'beforeAction'] },
+  reroll: { ok: v => v === 'must', want: '"must"', when: ['roll'] },
+  coin: { ok: v => !!v && (v.p === undefined || (tNum(v.p) && v.p >= 0 && v.p <= 1)) && (v.heads === undefined || Array.isArray(v.heads)) && (v.tails === undefined || Array.isArray(v.tails)),
+          want: '{ p, heads: [effects], tails: [effects] }', when: ['beforeAction'], ai: true, optional: true },
+  burn: { ok: v => v === true, want: 'true', when: ['beforeAction'], ai: true },         // a coin's tails that burns is priced as nothing done (v2TraitValue)
+};
+const tList = o => Object.keys(o).join(', ');
+/* what is wrong with these traits, in words (an empty list: nothing). ext is the creature's ext; actions (optional) are checked for ext.req */
+function validateTraits(ext, actions) {
+  const out = [], ex = ext || {}, pools = ex.resources && typeof ex.resources === 'object' ? ex.resources : {};
+  if (ex.traitsV !== undefined && !(ex.traitsV === TRAITS_VERSION)) out.push(`Custom mechanics: version ${ex.traitsV} is not one this Forge reads (it reads ${TRAITS_VERSION})`);
+  const pool = (res, where) => { if (tStr(res) && !pools[res]) out.push(`${where}: no resource "${res}" (add it under Resources)`); };
+  const conds = (list, when, where) => {
+    if (!Array.isArray(list)) { out.push(`${where}: "if" must be a list of conditions`); return; }
+    list.forEach((c, j) => {
+      if (!c || typeof c !== 'object' || Array.isArray(c)) { out.push(`${where}, condition ${j + 1}: not an object`); return; }
+      for (const k in c) {
+        const w = TRAIT_IF[k];
+        if (!w) { out.push(`${where}: unknown condition "${k}" (known: ${tList(TRAIT_IF)})`); continue; }
+        if (!w.ok(c[k])) out.push(`${where}: condition "${k}" must be ${w.want}`);
+        else if (w.res) pool(w.res(c[k]), where);
+        if (w.when && when && w.when.indexOf(when) < 0) out.push(`${where}: condition "${k}" only works with when: ${w.when.join(' or ')}`);
+      }
+    });
+  };
+  const effects = (list, when, where, inCoin, optional) => {
+    if (!Array.isArray(list) || (!inCoin && !list.length)) { out.push(`${where}: "do" must be a list of effects`); return; }
+    list.forEach((e, j) => {
+      const keys = e && typeof e === 'object' && !Array.isArray(e) ? Object.keys(e) : null;
+      if (!keys || keys.length !== 1) { out.push(`${where}, effect ${j + 1}: each effect is an object with one word, like { "gain": … }`); return; }
+      const k = keys[0], w = TRAIT_DO[k];
+      if (!w) { out.push(`${where}: unknown effect "${k}" (known: ${tList(TRAIT_DO)})`); return; }
+      if (!w.ok(e[k])) { out.push(`${where}: effect "${k}" must be ${w.want}`); return; }
+      if (w.res) pool(w.res(e[k]), where);
+      if (w.when && when && w.when.indexOf(when) < 0) out.push(`${where}: effect "${k}" only works with when: ${w.when.join(' or ')}`);
+      if (k === 'gain' && e[k].perUnused && when !== 'turnEnd') out.push(`${where}: "perUnused" only works with when: turnEnd`);
+      if (k === 'coin') {
+        if (inCoin) out.push(`${where}: a coin inside a coin`);
+        else { effects(e.coin.heads || [], when, where + ' (heads)', true); effects(e.coin.tails || [], when, where + ' (tails)', true); }
+      }
+    });
+    if (optional && !list.some(e => e && typeof e === 'object' && Object.keys(e).some(k => TRAIT_DO[k] && TRAIT_DO[k].optional))) out.push(`${where}: "optional" only works with a word the AI decides (coin, extraAttacks)`);
+  };
+  if (ex.traits !== undefined) {
+    if (!Array.isArray(ex.traits)) out.push('Custom mechanics: ext.traits must be a list');
+    else ex.traits.forEach((t, i) => {
+      const where = `Trait ${i + 1}${t && tStr(t.name) ? ` ("${t.name}")` : ''}`;
+      if (!t || typeof t !== 'object' || Array.isArray(t)) { out.push(`${where}: not an object`); return; }
+      for (const k in t) if (TRAIT_KEYS.indexOf(k) < 0) out.push(`${where}: unknown key "${k}" (known: ${TRAIT_KEYS.join(', ')})`);
+      if (TRAIT_WHEN.indexOf(t.when) < 0) out.push(`${where}: unknown trigger "${t.when}" (known: ${TRAIT_WHEN.join(', ')})`);
+      if (t.once !== undefined && t.once !== 'turn' && t.once !== 'round') out.push(`${where}: "once" must be "turn" or "round"`);
+      if (t.optional !== undefined && typeof t.optional !== 'boolean') out.push(`${where}: "optional" must be true or false`);
+      if (t.if !== undefined) conds(t.if, t.when, where);
+      effects(t.do, t.when, where, false, t.optional === true);
+    });
+  }
+  (actions || []).forEach(a => { if (a && a.ext && a.ext.req !== undefined) conds(a.ext.req, null, `Action "${a.name || '?'}" (requires)`); });
+  return out;
+}
+/* the valid traits by trigger ({ turnEnd: [trait…], … }), or null when there are none */
+function compileTraits(ext) {
+  const ex = ext || {};
+  if (!Array.isArray(ex.traits) || !ex.traits.length || (ex.traitsV !== undefined && ex.traitsV !== TRAITS_VERSION)) return null;
+  let out = null;
+  ex.traits.forEach((t, i) => {
+    if (validateTraits({ resources: ex.resources, traits: [t] }).length) return;      // an invalid trait is skipped whole, never half-run
+    out = out || {};
+    (out[t.when] = out[t.when] || []).push(Object.assign({ idx: i }, t, { if: t.if || [] }));
+  });
+  return out;
+}
+/* what v2 does with each trait: 'planned' when every word it uses is scored, otherwise the words it only simulates */
+function traitAiWords(t) {
+  const words = [];
+  const walk = list => (list || []).forEach(e => { if (!e || typeof e !== 'object') return; for (const k in e) { words.push(k); if (k === 'coin') { walk(e.coin.heads); walk(e.coin.tails); } } });
+  walk(t && t.do);
+  return { scored: words.filter(k => TRAIT_DO[k] && TRAIT_DO[k].ai), only: words.filter(k => TRAIT_DO[k] && !TRAIT_DO[k].ai), inert: words.filter(k => TRAIT_DO[k] && TRAIT_DO[k].inert).map(k => k + ': ' + TRAIT_DO[k].inert) };
+}
+/* a pool's number at the start of a fight: `start` when the pool says (Patience: 0), else full */
+const poolStart = r => (r && tNum(r.start) ? Math.max(0, r.start) : +(r && r.uses) || 0);
 function makeUnit(tpl, team, idx, count, isPC) {
   const ex = tpl.ext || {};
   const sb = spellbookOf(tpl);
@@ -307,7 +425,8 @@ function makeUnit(tpl, team, idx, count, isPC) {
     sneak: ex.sneakAttack && ex.sneakAttack.dice ? ex.sneakAttack : null,   // { dice: '2d6', assassinate: 4 }
     assassinate: !!ex.assassinate,                                          // advantage vs anyone who hasn't acted yet, round 1
     luckMax: typeof ex.luck === 'number' ? ex.luck : 0,
-    legResMax: typeof ex.legendaryResistance === 'number' ? ex.legendaryResistance : 0,   // Legendary Resistance uses per day                     // Lucky feat points per long rest
+    legResMax: typeof ex.legendaryResistance === 'number' ? ex.legendaryResistance : 0,
+    legResName: typeof ex.legResName === 'string' && ex.legResName ? ex.legResName : '',   // the same rule under another name (Lucky Seam), for the log   // Legendary Resistance uses per day                     // Lucky feat points per long rest
     steadyAim: !!ex.steadyAim,
     packTactics: !!ex.packTactics,                                          // advantage when an ally is next to the target
     speed: Math.max(typeof ex.speed === 'number' ? ex.speed : 30, typeof ex.fly === 'number' ? ex.fly : 0),
@@ -341,7 +460,8 @@ function makeUnit(tpl, team, idx, count, isPC) {
   // "takes one additional action" (Action Surge) sits outside the normal action lists: it's used at the end of a turn
   u.surges = u.actions.filter(a => a.ext && a.ext.extraAction);
   if (u.surges.length) { u.actions = u.actions.filter(a => !u.surges.includes(a)); u.surges.forEach(a => initUses(u, a)); }
-  if (u.resMax) for (const k in u.resMax) u.uses.set('res:' + k, +u.resMax[k].uses || 0);
+  if (u.resMax) for (const k in u.resMax) u.uses.set('res:' + k, poolStart(u.resMax[k]));
+  u.traits = compileTraits(ex);                     // custom mechanics (docs/custom-mechanics.md); null for nearly everyone
   if (u.indomitable) u.uses.set('__indom', u.indomitable.uses);
   u.uses.set('__luck', u.luckMax);
   u.uses.set('__legres', u.legResMax);
@@ -377,6 +497,8 @@ function resetFightState(u) {
   u.onBoard = true;
   // Relentless & co.: rolling initiative with an empty pool gives one back
   if (u.resMax) for (const k in u.resMax) if (u.resMax[k].regainOnInit && !(u.uses.get('res:' + k) > 0)) u.uses.set('res:' + k, +u.resMax[k].regainOnInit);
+  if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'fight') u.uses.set('res:' + k, poolStart(u.resMax[k]));   // a pool that starts every fight afresh (Patience)
+  u.tOnce = null;                                   // traits used this turn / round (once: 'turn' | 'round')
   u.concentrating = null; u.slotTurn = -1; u.reserveSlot = false;
   u.tookTurn = false; u.vex = null; u.saSeq = -1; u.movedThisTurn = false;
   if (u.baseFly !== undefined) u.fly = u.baseFly;
@@ -405,5 +527,6 @@ function Sim(opts) {
   this.setTerrain(null);
 }
 
-Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim });
+Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim,
+  TRAITS_VERSION, TRAIT_WHEN, TRAIT_IF, TRAIT_DO, validateTraits, compileTraits, traitAiWords });
 })(typeof window !== 'undefined' ? window : globalThis);

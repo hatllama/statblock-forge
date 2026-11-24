@@ -103,6 +103,15 @@ const AI_BASE = {
   // Push Your Luck (ext.pushLuck; docs/ai-v2.md "Elia Dantes"): a missed attack roll is rerolled when the chance the new die hits × the hit's damage beats
   // `cost` × the average self-damage; `floor` = hit points kept beyond the dice's maximum (it is never done at or below that maximum)
   push: { cost: 1, floor: 0 },
+  // custom mechanics (ext.traits; docs/custom-mechanics.md (iv)). Read only for a creature with traits, so nothing here moves anyone else.
+  // A point of a pool that buys swings (extraAttacks) is worth the swing it buys later: its expected damage in value points × keep (later is worth less
+  // than now) × the chance it survives to the next turn (damage before then takes `frac` of the pool: chance hit = 1 − e^(−danger / hitScale)) × the fight
+  // going on (rounds left − 1, at most 1). Spending is worth it while a swing now beats a point held; gaining one (accrual from an unused part of the turn,
+  // up to the cap) is worth a point held × accrue. coin: × the flip's expected value (tails = nothing done, nothing spent); flip when it beats not
+  // flipping by more than coinMargin. wait: also weigh a "do nothing" turn beside Dodge for a creature that accrues from an unused action; off, because
+  // Fiorenzo played worse with it (FIO long, open, 200 runs: party win 94.0 ± 1.7 % with it, 85.5 ± 2.5 % without; docs/custom-mechanics.md).
+  // keep 0.5: FIO long, open, 200 runs, party win 85.5 / 79.5 / 79.0 / 77.0 % at keep 0.9 / 0.6 / 0.45 / 0.3 (lower = he spends sooner; below 0.6 within 1 SE)
+  trait: { keep: 0.5, hitScale: 8, accrue: 1, coin: 1, coinMargin: 0, wait: false },
   morale: { fearless: false, bloodied: true, half: true, leader: true, dc: 10 },   // a creature that may lose its nerve (opts.morale on): which triggers count, and the Wisdom save DC; equal to the old rule
   // the boss tier (docs/ai-v2.md "Boss tier"); neutral here (factors 1, weights 0, pickers 'rule'), so only the boss profile changes play.
   // solo/soloOa: self-care and opportunity attacks × solo + (1 − solo) × the share of its side's DPR its allies bring; legendary/lair/legRes: 'rule' (old pickers) or 'weigh' (v2 values);

@@ -1,0 +1,42 @@
+FIORENZO MINUZZI
+Small humanoid (halfling), lawful neutral
+
+Armor Class 22 (magically tailored suit)
+Hit Points 78 (12d6 + 36)
+Speed 25 ft.
+
+STR 8 (-1)  DEX 20 (+5)  CON 16 (+3)  INT 14 (+2)  WIS 18 (+4)  CHA 14 (+2)
+
+Saving Throws Dex +10, Wis +9
+Skills Deception +7, Insight +9, Perception +9, Stealth +10
+Damage Resistances bludgeoning, piercing and slashing from nonmagical attacks
+Senses passive Perception 19
+Languages Common, Halfling
+Challenge 14 (11,500 XP)    Proficiency Bonus +5
+
+First Stake. Fiorenzo's luck works through the holy coin he was given at his Staking, which must be on his person. Without it he loses Patience, Call the Shot and Lucky Seam.
+
+Halfling Luck. When Fiorenzo rolls a 1 on an attack roll, ability check or saving throw, he can reroll the die and must use the new roll.
+
+Magically Tailored Suit. Fiorenzo's suit was cut for him by the Vane family and sold through Magie Infini. He has advantage on saving throws against spells and other magical effects, and nonmagical attacks deal reduced damage to him (see Damage Resistances). If the suit is removed he has AC 15 and loses both.
+
+Lucky Seam (3/Day). If Fiorenzo fails a saving throw, he can choose to succeed instead.
+
+Patience. Fiorenzo gains 1 Patience at the end of each of his turns for each of the following he did not use on that turn: his movement, his bonus action and his action. A burnt action counts as used. He can hold up to 5 Patience. Whenever he takes damage he loses half of his Patience, rounded up.
+
+Sniper's Eye. Once on each of his turns, when Fiorenzo hits a creature with La Pazienza, the target takes an extra 10 (3d6) piercing damage.
+
+ACTIONS
+
+Aimed Shot. Fiorenzo can take this action only if he has La Pazienza and has not moved this turn. He makes one ranged attack with La Pazienza, and he can spend any number of his Patience to make one additional attack with it for each Patience spent. Each attack ignores half and three-quarters cover, has no disadvantage from long range, and ignores the weapon's loading property.
+La Pazienza. Ranged Weapon Attack: +12 to hit, range 200/800 ft., one target. Hit: 33 (4d12 + 7) piercing damage.
+
+Call the Shot. When Fiorenzo takes the Aimed Shot action, he can first flip his coin. On heads, the first attack of that action is an insane shot: it hits automatically, is a critical hit, and ignores any resistance the target has to its damage. On tails, the action is burnt and he makes no attack, but he keeps all of his Patience.
+
+BONUS ACTIONS
+
+Stitch Step (3/Day). Fiorenzo teleports up to 30 feet to an unoccupied space he can see.
+
+REACTIONS
+
+Fitted Cut. When Fiorenzo is hit by an attack, he adds 3 to his AC against that attack, potentially causing it to miss. He can use only one reaction per round.

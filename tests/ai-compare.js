@@ -719,6 +719,43 @@ function playElia(N) {
     }
   }
 }
+/* ---- Fiorenzo Minuzzi (docs/custom-mechanics.md): Patience, Aimed Shot, Call the Shot and the rest, against Zaki's party ----
+   node tests/ai-compare.js 200 '^FIO'   (TIER_MODES=open picks the modes). Monsters and party on v2; both sides' knowledge is the row's mode.
+   Arms: as written; without his custom mechanics (no ext.traits, no Aimed Shot, Stitch Step or Lucky Seam: La Pazienza and Fitted Cut alone);
+   without the coin; without Patience (so Aimed Shot is one shot). Lower party win = a stronger Fiorenzo. */
+const FIO_METRICS = {
+  'aimed/fight': r => r.events.filter(e => e.kind === 'attack' && /Aimed Shot/.test(e.text || '')).length,
+  'aimed acts': r => r.events.filter(e => e.kind === 'effect' && /spends \d+ Patience/.test(e.text || '')).length,
+  'P spent': r => r.events.filter(e => e.kind === 'effect' && /spends \d+ Patience/.test(e.text || '')).reduce((t, e) => t + +e.text.match(/spends (\d+) Patience/)[1], 0),
+  'P gained': r => r.events.filter(e => /gains \d+ Patience/.test(e.text || '')).reduce((t, e) => t + +e.text.match(/gains (\d+) Patience/)[1], 0),
+  'P lost': r => r.events.filter(e => /loses \d+ Patience/.test(e.text || '')).reduce((t, e) => t + +e.text.match(/loses (\d+) Patience/)[1], 0),
+  'flips': r => r.events.filter(e => /flips the coin \(Call the Shot\)/.test(e.text || '')).length,
+  'heads': r => r.events.filter(e => /flips the coin \(Call the Shot\): heads/.test(e.text || '')).length,
+  'steps': r => r.events.filter(e => e.kind === 'move' && /Stitch Step/.test(e.text || '')).length,
+  'seam': r => r.events.filter(e => /uses Lucky Seam/.test(e.text || '')).length,
+  'Fio dmg': r => r.foes.reduce((t, f) => t + (f.dealt || 0), 0),
+};
+const fiorenzo = (arm, hp) => {
+  const m = statblock('fiorenzo.txt');
+  if (hp) m.hp = hp;
+  if (arm === 'plain') { delete m.ext.traits; delete m.ext.traitsV; delete m.ext.resources; delete m.ext.legendaryResistance; delete m.ext.legResName; m.actions = m.actions.filter(a => a.name !== 'Aimed Shot' && a.name !== 'Stitch Step'); }
+  if (arm === 'no coin') m.ext.traits = m.ext.traits.filter(t => t.name !== 'Call the Shot');
+  if (arm === 'no patience') m.ext.traits = m.ext.traits.filter(t => t.name !== 'Patience');
+  return m;
+};
+function playFio(N) {
+  // he has 78 HP against six level-5 characters: the second block gives him three times that (234) for a fight long enough to build and spend Patience
+  for (const [title, hp] of [["FIO Fiorenzo Minuzzi (CR 14, 78 HP) alone against Zaki's party, as written and without his custom mechanics", 0], ['FIO long: the same with 234 HP (3x), a longer fight for Patience and the coin', 234]]) {
+    console.log('\n' + title);
+    console.log('  ' + [pad('arm', 22), lpad('party win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(FIO_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+    for (const know of (process.env.TIER_MODES || 'open,learn,blind').split(',')) for (const arm of (process.env.FIO_ARMS || 'as written,plain,no coin,no patience').split(',')) {
+      const sc = { name: 'FIO', players: zaki, encounters: () => [{ monsters: [fiorenzo(arm, hp)] }], metrics: FIO_METRICS, record: true, know: { party: know, foes: know }, layout: FIO_LAYOUT };
+      console.log(row(pad(know + ' ' + arm, 22), play(sc, N)));
+    }
+  }
+}
+// a sniper wants room: the default 24 × 16 field, with the party placed as usual (FIO_LAYOUT=walled puts the play-hash wall map down instead)
+const FIO_LAYOUT = process.env.FIO_LAYOUT === 'walled' ? (() => { const cells = {}; for (let y = 0; y < 16; y++) if (y < 6 || y > 9) cells['11,' + y] = { t: 'wall' }; for (let y = 2; y < 14; y++) for (let x = 3; x <= 5; x++) cells[x + ',' + y] = { h: 2 }; return { gapFt: 30, terrain: { cells } }; })() : undefined;
 /* ---- running ---- */
 // sweeps: AI_W='{"control":1.5}' (and AI_PACING, AI_BURN) merge into every party member's profile, on top of a scenario's own tweak
 const AI_OVER = ['w', 'pacing', 'burn', 'react'].reduce((o, k) => { const v = process.env['AI_' + k.toUpperCase()]; if (v) (o = o || {})[k] = JSON.parse(v); return o; }, null);
@@ -727,7 +764,9 @@ const aiOver = spec => {
   for (const k in AI_OVER) base[k] = Object.assign({}, base[k], AI_OVER[k]);
   return base;
 };
-if (process.env.AI_THREAT) Object.assign(Tac.AI_BASE.threat, JSON.parse(process.env.AI_THREAT));     // sweeps: AI_THREAT='{"useSave":0}'
+if (process.env.AI_THREAT) Object.assign(Tac.AI_BASE.threat, JSON.parse(process.env.AI_THREAT));
+// sweeps of the custom-mechanics weights (AI_BASE.trait; docs/custom-mechanics.md): AI_TRAIT='{"accrue":0}' patches every built profile, monsters' tiers included
+if (process.env.AI_TRAIT) { const tw = JSON.parse(process.env.AI_TRAIT); [Tac.AI_BASE].concat(Object.values(Tac.AI_PROFILES), Object.values(Tac.TIER_PROFILES || {})).forEach(p => { if (p && p.trait) Object.assign(p.trait, tw); }); }     // sweeps: AI_THREAT='{"useSave":0}'
 // KNOW=learn: the party's knowledge in every scenario that doesn't name its own. V2ONLY=1: skip the old-AI and no-burn arms. THREAT=bounds: learn with the bloodied reading alone, THREAT=off: the classic reading.
 const KNOW = process.env.KNOW ? { party: process.env.KNOW } : undefined, V2ONLY = process.env.V2ONLY === '1';
 function play(sc, n, tweak) {
@@ -834,6 +873,7 @@ for (const sc of TIER_SCENARIOS) if (only && only.test(sc.name)) playTier(sc, N)
 for (const sc of BOSS_SCENARIOS) if (only && only.test(sc.name)) playBoss(sc, N);
 if (only && only.test('PASQ')) playPasq(N);
 if (only && only.test('ELIA')) playElia(N);
+if (only && only.test('FIO')) playFio(N);
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
