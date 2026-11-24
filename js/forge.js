@@ -1870,7 +1870,8 @@ function cloneCreature(src){
 /* ---------------- resources: shared pools (Focus Points, Superiority Dice, Sorcery Points…) ---------------- */
 function resourcesPanel(key, c){
   const R = (c.ext && c.ext.resources) || {}, names = Object.keys(R);
-  const users = n => (c.actions || []).filter(a=>a.ext && (a.ext.resource === n || (a.ext.bolt && a.ext.bolt.resource === n))).map(a=>a.name + (a.ext.bolt && a.ext.bolt.resource === n ? ' (a hit rider, one per hit)' : ''));
+  const users = n => (c.actions || []).filter(a=>a.ext && (a.ext.resource === n || (a.ext.bolt && a.ext.bolt.resource === n))).map(a=>a.name + (a.ext.bolt && a.ext.bolt.resource === n ? ' (a hit rider, one per hit)' : ''))
+    .concat(((c.ext && c.ext.traits) || []).filter(t=>JSON.stringify((t && t.do) || []).indexOf('"' + n + '"') >= 0).map(t=>(t.name || 'a trait') + ' (custom mechanics)')).filter((x, i, arr)=>arr.indexOf(x) === i);
   return `<div class="res-list">${names.map((n, i)=>{ const r = R[n] || {}, u = users(n); return `<div class="res-row">
       <label class="sf"><span>Name</span><input data-res="${i}" data-rf="name" data-owner="${key}" value="${escapeAttr(n)}"></label>
       <label class="sf"><span>Amount</span><input data-res="${i}" data-rf="uses" data-owner="${key}" type="number" min="0" value="${+r.uses || 0}"></label>
@@ -1878,7 +1879,7 @@ function resourcesPanel(key, c){
       <label class="sf" title="What it holds when a fight starts. Blank = full (the amount). Patience-style pools that build up start at 0; the amount is then the most it can hold."><span>Starts at</span><input data-res="${i}" data-rf="start" data-owner="${key}" type="number" min="0" value="${typeof r.start === 'number' ? r.start : ''}" placeholder="full"></label>
       <label class="sf" title="Regains this many when it rolls initiative with none left (Superiority Dice, Uncanny Metabolism and the like). Blank = none."><span>Back on initiative if out</span><input data-res="${i}" data-rf="regainOnInit" data-owner="${key}" type="number" min="0" value="${r.regainOnInit || ''}" placeholder="—"></label>
       <button class="mini-btn" data-res-del="${i}" data-owner="${key}" title="Remove this resource">✕</button>
-      <div class="res-users">${u.length ? 'Spent by: ' + escapeHtml(u.join(', ')) : 'No action spends it yet: pick it under an action\'s "Spends from".'}</div>
+      <div class="res-users">${u.length ? 'Used by: ' + escapeHtml(u.join(', ')) : 'No action spends it yet: pick it under an action\'s "Spends from".'}</div>
     </div>`; }).join('')}</div>
     <button class="mini-btn" data-res-add data-owner="${key}">＋ Add a resource</button>
     <p class="hint">Points or dice several actions share, like Ki or Focus Points, Superiority Dice or Sorcery Points. Give an action a cost from one under its frequency.</p>`;

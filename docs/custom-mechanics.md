@@ -194,3 +194,56 @@ So five of the nine fit v1 as it stands or with one condition word; the other fo
 8. **Conditional recharges** ("recharges when it is bloodied", "regains a use when it scores a critical hit"): an effect that resets an action's use.
 9. **Effects on the target** (slowed, pushed, prone, a condition without a save as a rider): effect words aimed at the scope target (`slow`, `push`, `condition`).
 10. **Distance and position conditions** (`within N ft`, "if no ally is within 5 ft", "while in dim light"): condition words on geometry and light.
+
+## B. As built (branch `fiorenzo`)
+
+Commits of kind B, one per mechanism: the vocabulary and its hooks (`base.js`, `core.js`, `encounter.js`, `d20` knows its roller); the pattern
+library and Fiorenzo's parse (`statblock-parser.js`); v2's scoring (`ai-v2.js`, `ai-v2-turn.js`, `knowledge.js`, `AI_BASE.trait`); the Forge
+panel. Every hook reads `u.traits`, which is null for every creature without `ext.traits`, so nothing else moves.
+
+**Pattern library**: the eight patterns of A2 (i), each with a test that uses other wording and another name (`tests/run.js`, "Pattern library").
+The whole parse of every test statblock and every SRD 5.2 monster was compared before and after: **no data changed**; two notes changed,
+the Hydra's "Multiple Heads" (no hint: the hit points it regains are not a pool) and Elparin's charter ("looks like an aura").
+**Vocabulary**: as listed in A2 (ii), plus the condition `ownTurn` (Sniper's Eye is "once on each of his turns"); `lose` and `burn` count as
+scored (v2 prices a held point's loss and a tails that burns). **Validation**: `validateTraits` (unknown trigger, key, condition or effect,
+a value of the wrong shape, a pool that does not exist, a word on the wrong trigger, `optional` on a word the AI does not decide, two words in one
+effect, a coin in a coin, a newer version), run by the Forge's `validateMonster` and so by `checkRealSchema`; `compileTraits` skips an invalid
+trait whole, and at run time an unknown condition never holds. **Forge**: the panel of A2 (iii), the Resources row's "each fight" reset and
+"Starts at", the statblock view's trait lines, Lucky Seam under its own name.
+
+**What Fiorenzo needed that v1 does not say, and how it was handled**: First Stake (the coin can be lost) and the Suit's removal: the War Table
+has no disarm, so both stay notes; long range and loading: accepted words with nothing to do (the engine never shoots at long range or models
+loading), said on the sheet; Fitted Cut and Stitch Step needed no word (the reaction layer and Misty Step's teleport already do them).
+
+**Weights** (`AI_BASE.trait`): `keep` 0.5, `hitScale` 8, `accrue` 1, `coin` 1, `coinMargin` 0, `wait` false. Calibrated on FIO long, open, 200 runs
+(party win; lower = a stronger Fiorenzo): keep 0.9 / 0.6 / 0.45 / 0.3 → 85.5 / 79.5 / 79.0 / 77.0 %; hitScale 4 / 8 / 16 at keep 0.9 → 83.5 / 85.5 /
+88.5 %; accrual off → 87.0 %; the `wait` option (do nothing to build) on → 94.0 %, off → 85.5 %, so it is off.
+
+**Hash sets** (recorded on `main` before the first change and compared after every commit): `tests/play-hash.js` default, `KNOW=open|learn|blind`,
+`PREFIGHT=0`, and `tests/fixtures/hashes-learn.txt`: **identical**. The 12-run BOSS + TIER table: identical in every column but `ms`.
+`npm test` 877 → 993 checks (+116: vocabulary 54, pattern library 28, Fiorenzo on the War Table 23, smoke 11). Run time: `node tests/run.js`
+on `main` (an exported copy) and on the branch, alternating: 108 / 108 s against 108 / 107 s.
+
+**Scenario** (`node tests/ai-compare.js 200 '^FIO'`, Zaki's party, party and Fiorenzo on v2 with the row's knowledge; per fight; "plain" = no
+traits, no Aimed Shot, Stitch Step or Lucky Seam):
+
+| block, mode | as written | plain | no coin | no patience | as written: Fio dmg, Aimed Shot swings, Patience gained / lost / spent, flips, Stitch Steps, Lucky Seams |
+|---|---|---|---|---|---|
+| 78 HP, open | 100.0 | 100.0 | 100.0 | 100.0 | 82, 0.1, 3.2 / 3.0 / 0.1, 0.00, 1.3, 0.5 |
+| 78 HP, learn | 99.5 ± 0.5 | 100.0 | 99.5 | 100.0 | 106, 0.3, 3.7 / 3.5 / 0.2, 0.00, 1.3, 1.3 |
+| 78 HP, blind | 100.0 | 100.0 | 100.0 | 100.0 | 129, 0.5, 4.6 / 4.1 / 0.3, 0.00, 1.7, 1.4 |
+| 234 HP, open | 79.5 ± 2.9 | 100.0 | 79.0 ± 2.9 | 89.5 ± 2.2 | 368, 3.1, 14.3 / 11.8 / 1.8, 0.01, 2.8, 0.9 |
+| 234 HP, learn | 77.5 ± 3.0 | 99.5 ± 0.5 | 77.0 ± 3.0 | 86.5 ± 2.4 | 377, 2.3, 14.2 / 12.2 / 1.2, 0.03, 2.9, 1.2 |
+| 234 HP, blind | 80.5 ± 2.8 | 100.0 | 80.5 ± 2.8 | 86.5 ± 2.4 | 354, 3.1, 14.2 / 12.0 / 1.6, 0.00, 2.8, 1.4 |
+
+Reading it: as written he lasts 2.7–3.7 rounds at 78 HP and deals 82–129 a fight (24–63 plain); six characters focus him, so the party always
+wins. With three times the HP his custom mechanics take the party from 99.5–100 % to 77.5–80.5 %, and Patience alone is worth 6–10 points of that
+(the "no patience" arm). He gains about 14 Patience in a long fight and loses 12 of them to damage: with six attackers he rarely starts a turn holding
+any, so Aimed Shot buys about one swing a fight. Call the Shot is almost never flipped (0.00–0.03 a fight) and "no coin" equals "as written":
+against these characters (AC 11–16, 28–43 HP) a plain shot nearly always hits and nearly drops its target, so heads adds little and tails loses the
+turn; v2 flips against a target with high AC, resistance and many hit points (`tests/run.js`), which this party does not have.
+
+**In the replay** (War Table, the default party, one fight): he shoots La Pazienza with Sniper's Eye, gains 2 Patience a turn and loses them to the
+next hits, Stitch Steps away when the Fighter closes in, spends a Lucky Seam on a Hold Person the Bard's Cutting Words turned into a fail, and his
+Halfling Luck rerolls a natural 1 on a save; nothing looked wrong. One thing that looks odd but is the rules: after Stitch Step he can still take
+Aimed Shot (a teleport is not a move).

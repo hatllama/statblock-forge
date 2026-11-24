@@ -2415,6 +2415,24 @@ paired SE does not cover the base run's own luck. Outside load on the machine (a
 table after that by about 2.5× uniformly; run times were therefore compared A/B, alternating old and new code under the same load.
 
 
+## Fiorenzo Minuzzi: custom mechanics as data (rules + v2; November 2026)
+
+The full design, the audit, the vocabulary and the results are in `docs/custom-mechanics.md`; this is what the AI side adds. A CR 14 halfling sniper
+(`tests/statblocks/fiorenzo.txt`) whose mechanics are written in a small declarative vocabulary (`ext.traits`) instead of one flag each.
+**Rules** (every AI): Patience (`turnEnd` gain per unused part of the turn, cap 5; `onDamaged` loses half, rounded up, on his own turn too), Aimed
+Shot (`ext.req` notMoved; `extraAttacks` paid with Patience; `ignoreCover`), Call the Shot (a `coin` before the action: heads auto-hit + crit +
+ignore resistance on the first swing, tails `burn`), Sniper's Eye (`onHit` extra 3d6, once on each of his turns, La Pazienza only), Halfling
+Luck (`roll` reroll a natural 1), Lucky Seam (Legendary Resistance under its own name, `ext.legResName`, so the boss tier and `kLegRes` apply),
+the Suit (`onSave` advantage against magic), Stitch Step (Misty Step's `ext.teleport`), Fitted Cut (the reaction layer's `ac` kind, unchanged).
+**v2** (weights `AI_BASE.trait`, read only for a creature with traits): one currency, v2Value points. `v2TraitValue` prices an action with its
+`beforeAction` traits on a target: how many swings to buy (a swing now against `v2PointValue`, the swing a held point buys next turn × `keep`
+× the chance it survives the damage before then × the fight going on) and whether to flip (p × heads, tails = nothing done and nothing spent).
+`v2Accrual` adds what each unused part of the turn earns (the stay-still term). Aimed Shot is planned only from the starting square or a teleport
+square; Stitch Step is weighed as a reposition for a creature whose best shot needs it to stand still. `expected` counts the planning copy's
+auto-hit/crit/ignore-resistance swings and onHit extra dice (`tExpected`). Neutral for everyone else: every hash set identical, and the
+12-run BOSS + TIER table unchanged. Opponents read nothing new: Patience and the coin are not in any `k*` accessor; open mode reads his
+actions' damage (Aimed Shot as one swing) as it reads anyone's.
+
 ## Phase 6 step 2: the old AI is deleted (November 2026)
 
 **Getting the old AI back.** The commit before the deletion is tagged `old-ai-final` (`git tag` lists it; `git worktree add ../old-ai old-ai-final`

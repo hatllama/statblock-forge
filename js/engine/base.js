@@ -300,7 +300,7 @@ const TRAIT_DO = {
   gain: { ok: v => !!v && tStr(v.res) && (v.n === undefined || tNum(v.n)) && (v.cap === undefined || tNum(v.cap)) && (v.perUnused === undefined || (Array.isArray(v.perUnused) && v.perUnused.every(x => PARTS.indexOf(x) >= 0))),
           want: '{ res, n, perUnused: [move, bonus, action], cap }', res: v => v.res, ai: true },
   lose: { ok: v => !!v && tStr(v.res) && (v.n !== undefined ? tNum(v.n) : tNum(v.frac) && v.frac > 0 && v.frac <= 1) && (v.round === undefined || v.round === 'up' || v.round === 'down'),
-          want: '{ res, n } or { res, frac, round: up|down }', res: v => v.res },
+          want: '{ res, n } or { res, frac, round: up|down }', res: v => v.res, ai: true },      // v2PointValue: what damage is expected to take from a held pool
   extraAttacks: { ok: v => !!v && tStr(v.pay) && (v.max === undefined || tNum(v.max)), want: '{ pay, max }', res: v => v.pay, when: ['beforeAction'], ai: true, optional: true },
   ignoreCover: { ok: v => v === true, want: 'true', when: ['beforeAction'], ai: true },
   noLongRangeDisadvantage: { ok: v => v === true, want: 'true', when: ['beforeAction'], inert: 'the War Table never shoots at long range' },
@@ -313,7 +313,7 @@ const TRAIT_DO = {
   reroll: { ok: v => v === 'must', want: '"must"', when: ['roll'] },
   coin: { ok: v => !!v && (v.p === undefined || (tNum(v.p) && v.p >= 0 && v.p <= 1)) && (v.heads === undefined || Array.isArray(v.heads)) && (v.tails === undefined || Array.isArray(v.tails)),
           want: '{ p, heads: [effects], tails: [effects] }', when: ['beforeAction'], ai: true, optional: true },
-  burn: { ok: v => v === true, want: 'true', when: ['beforeAction'] },
+  burn: { ok: v => v === true, want: 'true', when: ['beforeAction'], ai: true },         // a coin's tails that burns is priced as nothing done (v2TraitValue)
 };
 const tList = o => Object.keys(o).join(', ');
 /* what is wrong with these traits, in words (an empty list: nothing). ext is the creature's ext; actions (optional) are checked for ext.req */
