@@ -425,7 +425,8 @@ function makeUnit(tpl, team, idx, count, isPC) {
     sneak: ex.sneakAttack && ex.sneakAttack.dice ? ex.sneakAttack : null,   // { dice: '2d6', assassinate: 4 }
     assassinate: !!ex.assassinate,                                          // advantage vs anyone who hasn't acted yet, round 1
     luckMax: typeof ex.luck === 'number' ? ex.luck : 0,
-    legResMax: typeof ex.legendaryResistance === 'number' ? ex.legendaryResistance : 0,   // Legendary Resistance uses per day                     // Lucky feat points per long rest
+    legResMax: typeof ex.legendaryResistance === 'number' ? ex.legendaryResistance : 0,
+    legResName: typeof ex.legResName === 'string' && ex.legResName ? ex.legResName : '',   // the same rule under another name (Lucky Seam), for the log   // Legendary Resistance uses per day                     // Lucky feat points per long rest
     steadyAim: !!ex.steadyAim,
     packTactics: !!ex.packTactics,                                          // advantage when an ally is next to the target
     speed: Math.max(typeof ex.speed === 'number' ? ex.speed : 30, typeof ex.fly === 'number' ? ex.fly : 0),

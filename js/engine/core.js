@@ -426,7 +426,7 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
     t.uses.set('__legres', t.uses.get('__legres') - 1);
     t.legSeen = (t.legSeen || 0) + 1;
     if (this.learning(otherTeam(t.team))) { const k = this.kind(otherTeam(t.team), t); k.legRes = Math.max(k.legRes || 0, t.legSeen); k.seen++; }
-    this.ev('react', `${t.name} uses Legendary Resistance (${t.uses.get('__legres')} left)`, { uid: t.uid });
+    this.ev('react', `${t.name} uses ${t.legResName ? t.legResName + ' (Legendary Resistance, ' : 'Legendary Resistance ('}${t.uses.get('__legres')} left)`, { uid: t.uid });
     return { success: true, roll: r, total: Math.round(total * 10) / 10, legendary: true };
   }
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };

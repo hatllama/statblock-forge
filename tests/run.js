@@ -3064,6 +3064,68 @@ section('Elia Dantes: Chain Bolts (speed halved), Push Your Luck, the burst rout
   }
 }
 
+section('Pattern library (custom mechanics: wording, not names) and Fiorenzo Minuzzi as the parser reads him');
+{
+  const fio = Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', 'fiorenzo.txt'), 'utf8')).monsters[0];
+  const fa = n => fio.actions.find(a => a.name === n), ft = n => (fio.ext.traits || []).filter(t => t.name === n);
+  check(fio.AC === 22 && fio.hp === 78 && String(fio.cr) === '14' && fio.ext.size === 'Small', `Fiorenzo: AC ${fio.AC}, ${fio.hp} HP, CR ${fio.cr}, ${fio.ext.size}`);
+  const lp = fa('La Pazienza'), as = fa('Aimed Shot');
+  check(lp && lp.actionSlot === 0 && lp.toHit === 12 && lp.dpr === '4d12 + 7' && lp.ext.range === 200 && lp.ext.damageType === 'piercing' && !lp.ext.wtOnly, 'La Pazienza: +12, 4d12 + 7 piercing, 200 ft, a plain action the export keeps');
+  check(as && as.actionSlot === 0 && as.toHit === 12 && as.dpr === '4d12 + 7' && as.ext.weapon === 'La Pazienza' && as.ext.wtOnly && JSON.stringify(as.ext.req) === '[{"notMoved":true}]', 'Aimed Shot: La Pazienza\'s numbers, only if he has not moved (ext.req), War Table only');
+  const at = ft('Aimed Shot')[0];
+  check(at && at.when === 'beforeAction' && at.optional && JSON.stringify(at.do) === JSON.stringify([{ extraAttacks: { pay: 'Patience' } }, { ignoreCover: true }, { noLongRangeDisadvantage: true }, { ignoreLoading: true }]), 'Aimed Shot\'s trait: one more swing per Patience (the AI picks), cover ignored, long range and loading recorded');
+  const cs = ft('Call the Shot')[0];
+  check(cs && cs.optional && cs.if[0].action === 'Aimed Shot' && JSON.stringify(cs.do[0].coin) === JSON.stringify({ p: 0.5, heads: [{ autoHit: 'first' }, { autoCrit: 'first' }, { ignoreResistance: 'first' }], tails: [{ burn: true }] }), 'Call the Shot: a coin before Aimed Shot; heads the first attack auto-hits, crits and ignores resistance; tails burns the action');
+  const pa = fio.ext.resources && fio.ext.resources.Patience, pt = ft('Patience');
+  check(pa && pa.uses === 5 && pa.start === 0 && pa.reset === 'fight', 'Patience: a pool of 5, 0 at the start of each fight');
+  check(pt.length === 2 && JSON.stringify(pt[0].do[0].gain.perUnused) === '["move","bonus","action"]' && pt[0].when === 'turnEnd' && pt[1].when === 'onDamaged' && pt[1].do[0].lose.frac === 0.5 && pt[1].do[0].lose.round === 'up', 'Patience: +1 per unused part of the turn, half lost (rounded up) on damage');
+  const se = ft("Sniper's Eye")[0];
+  check(se && se.when === 'onHit' && se.once === 'turn' && se.if.some(c => c.weapon === 'La Pazienza') && se.if.some(c => c.ownTurn) && se.do[0].extraDamage.dice === '3d6' && se.do[0].extraDamage.type === 'piercing', "Sniper's Eye: +3d6 piercing on a La Pazienza hit, once on each of his turns");
+  check(ft('Halfling Luck')[0] && JSON.stringify(ft('Halfling Luck')[0].if) === JSON.stringify([{ natural: 1 }, { rollIs: ['attack', 'save', 'check'] }]), 'Halfling Luck: reroll a natural 1 on attacks, saves and checks');
+  check(fio.ext.legendaryResistance === 3 && fio.ext.legResName === 'Lucky Seam', 'Lucky Seam: Legendary Resistance, 3/day, under its own name');
+  check(ft('Magically Tailored Suit')[0] && ft('Magically Tailored Suit')[0].if[0].vs === 'magic' && (fio._notes || []).some(n => /already counted in its Armor Class/.test(n)), 'the Suit: its AC note stays, and its advantage on saves against spells is read now');
+  const st = fa('Stitch Step');
+  check(st && st.actionSlot === 1 && st.ext.teleport === 30 && st.freq.uses === 3 && st.freq.reset === 'lr' && st.ext.wtOnly, 'Stitch Step: a bonus-action teleport, 30 ft, 3/day (Misty Step\'s shape)');
+  const fc = fa('Fitted Cut');
+  check(fc && fc.actionSlot === 4 && fc.buff.ac === 3 && fc.buff.duration === 'until next attack taken', 'Fitted Cut: +3 AC against the hit (the reaction layer\'s "ac" kind)');
+  check(Tac.validateTraits(fio.ext, fio.actions).length === 0, 'everything the parser wrote validates: ' + Tac.validateTraits(fio.ext, fio.actions).join(' | '));
+  const bad = (fio._notes || []).filter(n => /isn't modelled|nothing the simulator can model|movement only/.test(n));
+  check(!bad.length, 'no "isn\'t modelled" note is left for his traits and actions: ' + bad.join(' | '));
+  check((fio._notes || []).some(n => /Suit:.*losing it .* is not modelled/.test(n)), 'what is still not modelled says so: losing the Suit');
+  check((fio._notes || []).some(n => /First Stake.*flavour/.test(n)), 'First Stake stays a flavour note (the coin cannot be taken on the War Table)');
+
+  // each pattern, written differently and under other names
+  const mini = (traits, acts, bonus) => `TEST GNOME\nSmall humanoid, neutral\n\nArmor Class 15\nHit Points 50 (10d8 + 5)\nSpeed 30 ft.\n\nSTR 10 (+0)  DEX 14 (+2)  CON 12 (+1)  INT 10 (+0)  WIS 10 (+0)  CHA 10 (+0)\n\nSenses passive Perception 10\nLanguages Common\nChallenge 3 (700 XP)\n\n${traits}\n\nACTIONS\n\nCrossbow. Ranged Weapon Attack: +5 to hit, range 80/320 ft., one target. Hit: 7 (1d8 + 3) piercing damage.\n${acts || ''}${bonus ? '\n\nBONUS ACTIONS\n\n' + bonus : ''}\n`;
+  const P1 = (t, a, b) => Parser.parse(mini(t, a, b)).monsters[0];
+  const g1 = P1('Lucky Little Feet. When the gnome rolls a 1 on an attack roll or saving throw, it can reroll the die and must use the new roll.');
+  check(g1.ext.traits && JSON.stringify(g1.ext.traits[0].if[1].rollIs) === '["attack","save"]', 'reroll-ones: another name, attack rolls and saves only');
+  const g2 = P1('Stubborn (2/Day). If the gnome fails a saving throw, it can choose to succeed instead.');
+  check(g2.ext.legendaryResistance === 2 && g2.ext.legResName === 'Stubborn', 'choose-to-succeed: Legendary Resistance under the name Stubborn, 2/day');
+  const g2b = P1('Stubborn. If the gnome fails a saving throw, it can choose to succeed instead.');
+  check(!g2b.ext.legendaryResistance, 'choose-to-succeed with no uses per day is not read as unlimited Legendary Resistance');
+  const g3 = P1('Warded Hide. The gnome has advantage on saving throws against spells.');
+  check(g3.ext.traits && g3.ext.traits[0].when === 'onSave' && g3.ext.traits[0].if[0].vs === 'magic', 'save-adv-magic: "against spells" alone');
+  const g4 = P1('Focus. The gnome gains 1 Ki at the start of each of its turns. It can hold up to 3 Ki. Each time it takes damage, it loses 1 Ki.');
+  check(g4.ext.resources && g4.ext.resources.Ki && g4.ext.resources.Ki.uses === 3 && g4.ext.traits[0].when === 'turnStart' && g4.ext.traits[1].do[0].lose.n === 1 && Tac.validateTraits(g4.ext).length === 0, 'accrue-unused: a plain gain at the start of each turn, a cap of 3, one lost on damage');
+  const g5 = P1('Brutal. Once per turn, when the gnome hits a creature with a melee attack, the target takes an extra 7 (2d6) slashing damage.');
+  check(g5.ext.traits && g5.ext.traits[0].if.some(c => c.melee === true) && g5.ext.traits[0].do[0].extraDamage.dice === '2d6' && !g5.ext.traits[0].if.some(c => c.ownTurn), 'weapon-rider-once: any melee attack, once per turn (any turn)');
+  const g6 = P1('', 'Steady Shot. The gnome can take this action only if it has its crossbow and has not moved this turn. It makes one ranged attack with Crossbow, and the attack ignores half and three-quarters cover.');
+  const g6a = g6.actions.find(a => a.name === 'Steady Shot');
+  check(g6a && g6a.ext.weapon === 'Crossbow' && g6a.ext.req && g6.ext.traits[0].do.some(e => e.ignoreCover) && !g6.ext.traits[0].optional, 'aimed-action: a precondition and a cover-ignoring shot, no resource (so nothing to decide)');
+  const g7 = P1('', 'Steady Shot. The gnome makes one ranged attack with Crossbow.\nGamble. When the gnome takes the Steady Shot action, it can first flip its coin. On heads, the attack hits automatically. On tails, the action is wasted.');
+  check(g7.ext.traits && g7.ext.traits.some(t => t.do[0].coin && JSON.stringify(t.do[0].coin.heads) === '[{"autoHit":"all"}]' && t.do[0].coin.tails[0].burn), 'coin-before-action: "the attack hits automatically" (every swing), tails wasted');
+  const g8 = P1('', '', 'Blink (2/Day). The gnome teleports up to 15 feet to an unoccupied space it can see.');
+  const g8b = P1('', '', 'Blink. The gnome teleports up to 15 feet to an unoccupied space it can see.');
+  check(g8.actions.some(a => a.name === 'Blink' && a.ext.teleport === 15 && a.actionSlot === 1) && !g8b.actions.some(a => a.ext && a.ext.teleport), 'bonus-teleport: a limited bonus teleport is Misty Step\'s shape; an at-will one stays movement only, as before');
+  const g9 = P1('Grim Tally. The gnome can hold up to 5 Tally.');
+  const hint = (g9._notes || []).find(n => /Grim Tally/.test(n)) || '';
+  check(/isn't modelled\. It looks like a resource; a stub to edit under Custom mechanics: \{/.test(hint), 'an unread trait says what kind of thing it looks like and offers a stub: ' + hint);
+  const stub = JSON.parse(hint.slice(hint.indexOf('{')));
+  check(Tac.validateTraits({ resources: { Tally: { uses: 5 } }, traits: [stub] }).length === 0, 'the stub validates once its pool exists');
+  const g10 = P1('Odd Gait. When the gnome is bloodied, its speed doubles and it teleports up to 10 feet.');
+  check(/It looks like a movement; the custom-mechanics vocabulary has no word for it yet/.test((g10._notes || []).join(' ')), 'a kind with no word yet is named without a stub');
+}
+
 section('Trait vocabulary (custom mechanics, ext.traits v1: docs/custom-mechanics.md): one check or more per word');
 {
   const cp = x => JSON.parse(JSON.stringify(x));

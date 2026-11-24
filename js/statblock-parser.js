@@ -793,6 +793,178 @@ function readTrait(entry, h, notes, out) {
   if (!/\d|\bDC\b|advantage|disadvantage|resist|immun|saving throw|hit points|damage|attack|condition|speed|reaction|bonus action|regain/i.test(t)) { notes.push(`"${nm.name}" is flavour text; nothing to model.`); return true; }
   return false;
 }
+/* ---------- the pattern library (docs/custom-mechanics.md) ----------
+   Mechanics recognised by what an entry SAYS, wherever it appears and whatever it is called. Each pattern: an id, the kind of thing it is, where it
+   is looked for ('trait' | 'action' | 'bonus' | 'reaction'), a regex on the wording, and apply(m, P), which writes ext data through P and returns the
+   note (or false: not this one after all, the next pattern tries). P: P.h the creature, P.nm the entry's name and usage, P.text, P.trait(t) (adds to
+   ext.traits), P.pool(name, pool), P.action(a), P.later(fn) (fn(parsedBySection) runs once every action is read: for an entry naming an action
+   listed after it). The table runs where the older readers said no, so a pattern can only add what was not read before; one that matched an
+   existing test or SRD statblock would change it, which the job that adds it must check. To add one: a new entry here and a test in tests/run.js
+   ("Pattern library"). */
+const PWHO = "(?:it|he|she|they|[A-Z][\\w'’-]+(?: [A-Z][\\w'’-]+)?)";
+const PPOSS = '(?:its|his|her|their)';
+const pre = (s, f) => new RegExp(s.replace(/WHO/g, PWHO).replace(/POSS/g, PPOSS), f || 'i');
+const ROLL_WORDS = [['attack roll', 'attack'], ['saving throw', 'save'], ['ability check', 'check']];
+const TRAIT_PATTERNS = [
+  { id: 'reroll-ones', kind: 'reroll', where: ['trait'],
+    re: pre('\\bWHO rolls? a 1 on (?:an? |the d20 for an? )?((?:attack roll|ability check|saving throw)(?:(?:,|,? or|,? and) (?:an? )?(?:attack roll|ability check|saving throw))*),? WHO can reroll the die and must use the new roll'),
+    apply(m, P) {
+      const kinds = ROLL_WORDS.filter(([w]) => m[1].toLowerCase().indexOf(w) >= 0).map(([, k]) => k);
+      P.trait({ name: P.nm.name, when: 'roll', if: [{ natural: 1 }, { rollIs: kinds }], do: [{ reroll: 'must' }] });
+      return `rerolls a natural 1 on ${kinds.map(k => k === 'attack' ? 'attack rolls' : k === 'save' ? 'saving throws' : 'ability checks').join(', ')} and uses the new roll (War Table; the checks it rolls are initiative, escaping a grapple and climbing).`;
+    } },
+  { id: 'choose-to-succeed', kind: 'save rescue', where: ['trait'],
+    re: pre('\\b(?:if|when) WHO fails? a saving throw,? WHO can choose to succeed instead'),
+    apply(m, P) {
+      const f = P.nm.freq, uses = f && typeof f === 'object' && f.uses ? f.uses : f === '1/day' ? 1 : 0;
+      if (!uses) return false;
+      P.h.ext.legendaryResistance = uses; P.h.ext.legResName = P.nm.name;
+      return `Legendary Resistance by another name: on the War Table it turns failed saves against dangerous effects into successes, ${uses}/day (the AI weighs it as Legendary Resistance; a creature with it plays on the boss tier unless its Smartness says otherwise).`;
+    } },
+  { id: 'save-adv-magic', kind: 'save advantage', where: ['trait'],
+    re: /\badvantage on saving throws against spells(?: and (?:other )?magical effects)?/i,
+    apply(m, P) {
+      P.trait({ name: P.nm.name, when: 'onSave', if: [{ vs: 'magic' }], do: [{ advantage: true }] });
+      const rest = /\bif (?:the|its|his|her|their) [\w ]+ is removed|\bwithout (?:it|the)\b/i.test(P.text) ? '; losing it (no disarm on the War Table) is not modelled' : '';
+      return `advantage on saves against spells and other magical effects (spells, innate spells, actions marked magical; War Table)${rest}.`;
+    } },
+  { id: 'accrue-unused', kind: 'resource', where: ['trait'],
+    re: pre("\\bWHO gains? (\\d+|one|an?) ([A-Z][\\w'-]*(?: [A-Z][\\w'-]*)*) at the (end|start) of each of POSS turns(?: for each of the following WHO did not use on that turn: ([^.]+))?\\."),
+    apply(m, P) {
+      const res = m[2], n = num(m[1]) || 1, when = m[3].toLowerCase() === 'end' ? 'turnEnd' : 'turnStart', list = (m[4] || '').toLowerCase();
+      const capM = P.text.match(pre('\\bcan (?:hold|have|store|keep) (?:up to|at most|a maximum of) (\\d+) ' + res.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+      const lossM = P.text.match(pre('\\b(?:whenever|each time|when) WHO takes? damage,? WHO loses? (half|all|a third|one|\\d+) (?:of )?(?:POSS )?' + res.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '(?:,? rounded (up|down))?'));
+      const cap = capM ? +capM[1] : 10;
+      const g = { res, n, cap };
+      if (m[4]) {
+        if (when !== 'turnEnd') return false;
+        const parts = [];
+        if (/movement|\bmove\b/.test(list)) parts.push('move');
+        if (/bonus action/.test(list)) parts.push('bonus');
+        if (/\baction\b/.test(list.replace(/bonus action/g, ''))) parts.push('action');
+        if (!parts.length) return false;
+        g.perUnused = parts;
+      }
+      P.pool(res, { uses: cap, start: 0, reset: 'fight' });
+      P.trait({ name: P.nm.name, when, do: [{ gain: g }] });
+      let lossTxt = '';
+      if (lossM) {
+        const w = lossM[1].toLowerCase(), frac = w === 'half' ? 0.5 : w === 'all' ? 1 : w === 'a third' ? 1 / 3 : 0, cnt = frac ? 0 : num(w) || 1;
+        P.trait({ name: P.nm.name, when: 'onDamaged', do: [{ lose: frac ? { res, frac, round: (lossM[2] || 'up').toLowerCase() } : { res, n: cnt } }] });
+        lossTxt = `; loses ${frac ? w + ' of it (rounded ' + (lossM[2] || 'up').toLowerCase() + ')' : cnt} whenever it takes damage (its own turn too)`;
+      }
+      const burnt = /burnt action counts as used/i.test(P.text) ? ' (a burnt action counts as used)' : '';
+      return `a pool of ${res}, 0 at the start of each fight, at most ${cap}${capM ? '' : ' (the statblock gives no cap)'}; +${n} at the ${m[3].toLowerCase()} of each of its turns${g.perUnused ? ' for each of ' + g.perUnused.join(', ') + ' it did not use' + burnt : ''}${lossTxt} (War Table).`;
+    } },
+  { id: 'weapon-rider-once', kind: 'rider', where: ['trait'],
+    re: pre("\\bonce (on each of POSS turns|per turn|each turn),? when WHO hits (?:a creature|a target|an enemy) with (?:an? (melee|ranged|weapon) attack|([A-Z][\\w'’ -]+?)),\\s*the target takes an extra \\d+ \\(([\\dd+\\-\\s]+)\\)\\s*([a-z]+)?\\s*damage"),
+    apply(m, P) {
+      const cond = [];
+      if (/each of/i.test(m[1])) cond.push({ ownTurn: true });
+      if (m[2] === 'melee') cond.push({ melee: true }); else if (m[2] === 'ranged') cond.push({ ranged: true });
+      if (m[3]) cond.unshift({ weapon: m[3].trim() });
+      const dice = cleanDice(m[4]), type = (m[5] || '').toLowerCase();
+      P.trait({ name: P.nm.name, when: 'onHit', if: cond, once: 'turn', do: [{ extraDamage: type ? { dice, type } : { dice } }] });
+      if (m[3]) P.later(acts => { const w = m[3].trim().toLowerCase(); if (!acts.actions.concat(acts['bonus actions']).some(a => a.name.toLowerCase() === w)) P.notes.push(`${P.nm.name}: no action called ${m[3].trim()} was found, so it never fires.`); });
+      return `+${dice}${type ? ' ' + type : ''} on a hit with ${m[3] ? m[3].trim() : 'a' + (m[2] === 'ranged' ? ' ranged' : m[2] === 'melee' ? ' melee' : '') + ' attack'}, once ${cond.some(c => c.ownTurn) ? 'on each of its turns' : 'a turn'} (War Table; v2's damage estimate counts it).`;
+    } },
+  { id: 'aimed-action', kind: 'variable attacks', where: ['action'],
+    re: pre("\\bWHO makes? one (?:ranged |melee )?(?:weapon )?attack with ([A-Z][\\w'’ -]+?)[,.]"),
+    apply(m, P) {
+      const t = P.text, weapon = m[1].trim();
+      const still = pre('\\bcan take this action only if WHO (?:has|have|is holding|wields) [^.]*?\\bha(?:s|ve) not moved this turn|\\bonly if WHO ha(?:s|ve)n\'t moved this turn').test(t);
+      const pay = t.match(pre("\\bspend any number of POSS ([A-Z][\\w'-]*(?: [A-Z][\\w'-]*)*) to make one additional attack with it for each\\b"));
+      const fx = [];
+      if (/ignores? half(?: cover)? and three-quarters cover/i.test(t)) fx.push({ ignoreCover: true });
+      if (/no disadvantage (?:from|at|for) long range|(?:doesn't|does not) have disadvantage (?:from|at) long range/i.test(t)) fx.push({ noLongRangeDisadvantage: true });
+      if (/ignores? the (?:weapon's )?loading (?:property|quality)/i.test(t)) fx.push({ ignoreLoading: true });
+      if (!still && !pay && !fx.length) return false;
+      P.later(acts => {
+        const w = acts.actions.find(a => a.type === 'atk' && !a.useSaves && a.name.toLowerCase() === weapon.toLowerCase());
+        if (!w) { P.notes.push(`Action "${P.nm.name}": no attack called ${weapon} was found; left out.`); return; }
+        const a = JSON.parse(JSON.stringify(stripPriv(w)));
+        Object.assign(a, { name: P.nm.name, freq: P.nm.freq, condition: 'default', _avg: w._avg, _ranged: w._ranged, _melee: w._melee });
+        a.ext = Object.assign({}, a.ext, { weapon: w.name, wtOnly: true });
+        if (still) a.ext.req = [{ notMoved: true }];
+        acts.actions.push(a);
+      });
+      const doFx = (pay ? [{ extraAttacks: { pay: pay[1] } }] : []).concat(fx);
+      if (doFx.length) P.trait(Object.assign({ name: P.nm.name, when: 'beforeAction', if: [{ action: P.nm.name }] }, pay ? { optional: true } : {}, { do: doFx }));
+      if (pay && !(P.h.ext.resources && P.h.ext.resources[pay[1]])) P.later(() => { if (!(P.h.ext.resources && P.h.ext.resources[pay[1]])) P.notes.push(`${P.nm.name}: it spends ${pay[1]}, which no trait gives it.`); });
+      const bits = [`one attack with ${weapon}`];
+      if (still) bits.push('only if it has not moved this turn (a teleport is not a move)');
+      if (pay) bits.push(`one more for each ${pay[1]} spent (the AI picks how many)`);
+      if (fx.some(x => x.ignoreCover)) bits.push('ignores half and three-quarters cover');
+      if (fx.some(x => x.noLongRangeDisadvantage || x.ignoreLoading)) bits.push('long range and loading need nothing (the War Table never shoots at long range and never models loading)');
+      return bits.join('; ') + ' (War Table only: the export leaves it out).';
+    } },
+  { id: 'coin-before-action', kind: 'coin', where: ['action', 'bonus', 'trait'],
+    re: pre("\\bwhen WHO takes the ([A-Z][\\w'’ -]+?) action,? WHO can first flip (?:POSS|a|the) coin\\.\\s*On heads,?\\s*([^.]+)\\.\\s*On tails,?\\s*([^.]+)\\."),
+    apply(m, P) {
+      const act = m[1].trim(), H = m[2].toLowerCase(), Tl = m[3].toLowerCase(), scope = /\bfirst attack\b/.test(H) ? 'first' : 'all';
+      const heads = [], tails = [], left = [];
+      if (/hits? automatically|automatically hits?/.test(H)) heads.push({ autoHit: scope });
+      if (/critical hit/.test(H)) heads.push({ autoCrit: scope });
+      if (/ignores? (?:any |all )?resistance/.test(H)) heads.push({ ignoreResistance: scope });
+      if (/advantage/.test(H) && !heads.length) heads.push({ advantage: true });
+      if (/\bburnt\b|\bis lost\b|\bwasted\b|makes no attacks?/.test(Tl)) tails.push({ burn: true });
+      if (/\bloses?\b/.test(Tl)) left.push('what tails takes away');
+      if (!heads.length && !tails.length) return false;
+      P.trait({ name: P.nm.name, when: 'beforeAction', if: [{ action: act }], optional: true, do: [{ coin: { p: 0.5, heads, tails } }] });
+      P.later(acts => { if (!acts.actions.concat(acts['bonus actions']).some(a => a.name.toLowerCase() === act.toLowerCase())) P.notes.push(`${P.nm.name}: no action called ${act} was found, so the coin is never flipped.`); });
+      return `before ${act} it may flip a coin (the AI decides): heads, ${heads.map(e => Object.keys(e)[0] + (scope === 'first' ? ' on the first attack' : '')).join(', ') || 'nothing'}; tails, ${tails.length ? 'the action is burnt (no attack, nothing spent on it)' : 'nothing'}${left.length ? '; not modelled: ' + left.join(', ') : ''} (War Table).`;
+    } },
+  { id: 'bonus-teleport', kind: 'movement', where: ['bonus'],
+    re: pre('^WHO teleports? up to (\\d+) (?:feet|ft\\.?) to an unoccupied space (?:WHO|it) can see\\.?$'),
+    apply(m, P) {
+      if (P.nm.freq === 'at will') return false;            // an at-will hop stays "movement only", as before
+      P.action({ name: P.nm.name, actionSlot: 1, freq: P.nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: '1 round' }, ext: { range: 0, teleport: +m[1], wtOnly: true } });
+      return `a bonus-action teleport of ${m[1]} ft (Misty Step's shape: the AI uses it to get clear or to reposition; War Table only).`;
+    } },
+];
+function patternKit(h, nm, text, notes, out, later) {
+  return { h, nm, text, notes,
+    trait(t) { h.ext.traits = h.ext.traits || []; h.ext.traitsV = 1; h.ext.traits.push(t); },
+    pool(name, p) { h.ext.resources = h.ext.resources || {}; if (!h.ext.resources[name]) h.ext.resources[name] = p; },
+    action(a) { out.push(a); },
+    later(fn) { later.push(fn); } };
+}
+/* the first pattern that recognises this entry writes it; returns its id, or null */
+function runPatterns(where, entry, h, notes, out, later) {
+  const nm = nameAndUsage(entry.raw), t = entry.text;
+  for (const p of TRAIT_PATTERNS) {
+    if (p.where.indexOf(where) < 0) continue;
+    const m = t.match(p.re);
+    if (!m) continue;
+    const note = p.apply(m, patternKit(h, nm, t, notes, out, later));
+    if (note === false) continue;
+    if (note) notes.push(`${nm.name}: ${note}`);
+    return p.id;
+  }
+  return null;
+}
+/* a trait nothing reads: what kind of thing it looks like, and a stub to start from in Custom mechanics (an empty string: no guess) */
+const TRAIT_HINTS = [
+  { kind: 'resource', re: /\bcan (?:hold|have|store) up to \d+ ([A-Z][\w'-]+)|\b(?:gains?|regains?) (?:\d+|one|an?) ([A-Z][\w'-]+)\b/,
+    stub: m => /^(?:Hit|Temporary|Heads?)$/.test(m[1] || m[2]) ? undefined : ({ when: 'turnEnd', do: [{ gain: { res: m[1] || m[2], n: 1 } }] }) },     // hit points are not a pool
+  { kind: 'reroll', re: /\breroll/i, stub: () => ({ when: 'roll', if: [{ natural: 1 }], do: [{ reroll: 'must' }] }) },
+  { kind: 'rider', re: /\bextra \d+ \(([\dd+\-\s]+)\)\s*([a-z]+)?\s*damage/i, stub: m => ({ when: 'onHit', once: 'turn', do: [{ extraDamage: m[2] ? { dice: cleanDice(m[1]), type: m[2].toLowerCase() } : { dice: cleanDice(m[1]) } }] }) },
+  { kind: 'save advantage', re: /\badvantage on (?:\w+ )?saving throws/i, stub: () => ({ when: 'onSave', do: [{ advantage: true }] }) },
+  { kind: 'reaction', re: /\bwhen (?:it|he|she|they|[A-Z][\w'-]+) is (?:hit|targeted|attacked)\b/i, stub: null },
+  { kind: 'aura', re: /\bwithin \d+ (?:feet|ft)\b/i, stub: null },
+  { kind: 'defence', re: /\bresistan|\bArmor Class\b|\bAC\b/, stub: null },
+  { kind: 'movement', re: /\bteleports?\b|\bmoves? up to\b/i, stub: null },
+];
+function traitHint(text) {
+  for (const k of TRAIT_HINTS) {
+    const m = text.match(k.re);
+    if (!m) continue;
+    const s = k.stub ? k.stub(m) : null;
+    if (s === undefined) continue;                      // matched the words but not the thing (hit points): the next kind may fit
+    return s ? ` It looks like a ${k.kind}; a stub to edit under Custom mechanics: ${JSON.stringify(s)}` : ` It looks like a${/^[aeiou]/.test(k.kind) ? 'n' : ''} ${k.kind}; the custom-mechanics vocabulary has no word for it yet.`;
+  }
+  return '';
+}
 function poolOf(h, nm) {
   if (!h._pools || !nm.tags) return null;
   for (const tag of nm.tags) {
@@ -956,19 +1128,21 @@ function parseOne(block) {
   const selfName = (h.name.split(/[\s,]+/)[0] || '').length > 2 ? h.name.split(/[\s,]+/)[0] : '';
   for (const k in body) if (Array.isArray(body[k])) body[k].forEach(e => { if (e && typeof e === 'object') e._selfName = selfName; });
   const acNote = (flat.match(/\b(?:Armor Class|AC)\b\s*:?\s*\d+\s*\(([^)]*)\)/i) || [])[1] || '';
-  const riders = [], slowBolts = [];
+  const riders = [], slowBolts = [], later = [];      // later: the pattern library's work that needs every action read (Aimed Shot copies La Pazienza)
   for (const e of body.traits) {
     const nm0 = nameAndUsage(e.raw);
     // "Can't make opportunity attacks" (War Table)
     const noOA = /(?:can't|cannot|can not|doesn't|does not|never) (?:make|take) opportunity attacks/i.test(e.text);
     if (noOA) h.ext.noOpportunityAttacks = true;
     // the trait that explains its AC ("Armor Class 18 (Calculated Defense)") is already in the number
-    if (acNote && acNote.toLowerCase().indexOf(nm0.name.toLowerCase()) >= 0) { notes.push(`"${nm0.name}" is already counted in its Armor Class.`); continue; }
+    // (one that also says something the pattern library reads, like the Suit's advantage against spells, keeps that too)
+    if (acNote && acNote.toLowerCase().indexOf(nm0.name.toLowerCase()) >= 0) { notes.push(`"${nm0.name}" is already counted in its Armor Class.`); runPatterns('trait', e, h, notes, actions, later); continue; }
     if (noOA && !/\d|\bDC\b|advantage|resist|immun|saving throw|hit points|damage/i.test(e.text.replace(/opportunity attacks?/gi, ''))) { notes.push(`"${nm0.name}": can't make opportunity attacks (War Table).`); continue; }
     const r = readTrait(e, h, notes, actions);
     if (r === 'spell') { const so = parseSpellcasting(e, h, notes); if (so.spellbook) spellbook = so.spellbook; spellOut.push(...so.actions); }
     else if (!r) {
       const nm = nameAndUsage(e.raw);
+      if (runPatterns('trait', e, h, notes, actions, later)) continue;
       // "Elia carries twelve chain bolts. A creature hit by a chain bolt has its speed halved until the end of its next turn.": a pool of bolts whose hit slows the target
       const cbm = e.text.match(/\bcarr(?:y|ies)\s+(\w+)\s+([a-z' -]+?)\s*\.\s*(?:A|Any|The) (?:creature|target)[^.]{0,30}?\bhit by an? ([a-z' -]+?)\s+has its speed (halved|reduced by half)\b/i);
       if (cbm && !isNaN(num(cbm[1]))) {
@@ -995,7 +1169,7 @@ function parseOne(block) {
       const a = readAttack(e, nm, notes) || readSaveEffect(e, nm, notes, h);
       if (a) { a.actionSlot = 5; actions.push(a); }
       else if (!/^(Amphibious|Keen|Standing Leap|Spider Climb|Water Breathing|Hold Breath|False Appearance|Sunlight Sensitivity|Devil's Sight|Shapechanger|Echolocation|Flyby|Aggressive|Charge|Pounce|Trampling Charge|Siege Monster|Dark Devotion|Brave|Mimicry|Illumination|Web Sense|Web Walker|Limited Amphibiousness|Beast of Burden|Labyrinthine Recall|Fey Ancestry|Avoidance|Turn Immunity|Turn Resistance|Undead Fortitude|Immutable Form|Magic Weapons|Rejuvenation|Incorporeal Movement|Ethereal Sight)/i.test(nm.name))
-        notes.push(noOA ? `Trait "${nm.name}": can't make opportunity attacks (War Table); the rest isn't modelled.` : `Trait "${nm.name}" isn't modelled.`);
+        notes.push(noOA ? `Trait "${nm.name}": can't make opportunity attacks (War Table); the rest isn't modelled.` : `Trait "${nm.name}" isn't modelled.${traitHint(e.text)}`);
       else notes.push(`Trait "${nm.name}" has no combat number; left out.`);
     }
   }
@@ -1130,6 +1304,7 @@ function parseOne(block) {
           notes.push(`${nm.name}: one ${vb.name} swing with ${a.dpr}${ammo ? `; the ${ammo[1]} pieces of ammunition aren't counted (ammunition is treated as unlimited, the statblock gives no number)` : ''}.`);
         }
       }
+      if (!a && runPatterns(sec === 'actions' ? 'action' : sec === 'bonus actions' ? 'bonus' : sec === 'reactions' ? 'reaction' : '-', e, h, notes, parsedBySection[sec], later)) continue;
       if (!a) {
         if (/swallow/i.test(low)) a = readSwallow(e, nm, parsedBySection.actions, notes);
         else if (/\barrive|\bsummons?\b|\bappear(?:s)? in|\bcalls? (?:forth|in)|reinforcements/i.test(e.text)) { notes.push(`"${nm.name}" brings in other creatures — add them to the encounter yourself.`); continue; }
@@ -1187,6 +1362,8 @@ function parseOne(block) {
     }
     notes.push(`${r.name}: +${dice} on every hit with ${hit.map(a => a.name).join(', ')}${also.length ? ' and ' + also.join(', ') : ''}, counted in their damage${r.pool ? `; each hit takes one ${r.thing} from a pool of ${h.ext.resources[r.pool].uses} (${r.pool}), and with none left the attack still works without it (War Table)` : ''}; an export counts it on every hit.`);
   }
+
+  later.forEach(fn => fn(parsedBySection));
 
   // multiattack: replace its component attacks with one routine
   let slot0 = parsedBySection.actions;

@@ -1654,7 +1654,7 @@ function statblockHtml(c, pc){
     return `<h4>${title}</h4>${intro ? `<p class="sb-intro">${intro}</p>` : ''}${list.map(a=>`<p><b><i>${escapeHtml(a.name || 'Unnamed')}${escapeHtml(freqTag(a))}.</i></b> ${escapeHtml(statblockLine(a))}</p>`).join('')}`;
   };
   const traits = [];
-  if(ex.legendaryResistance) traits.push(['Legendary Resistance (' + ex.legendaryResistance + '/Day)', 'If it fails a saving throw, it can choose to succeed instead.']);
+  if(ex.legendaryResistance) traits.push([(ex.legResName || 'Legendary Resistance') + ' (' + ex.legendaryResistance + '/Day)', 'If it fails a saving throw, it can choose to succeed instead.' + (ex.legResName ? ' (Legendary Resistance.)' : '')]);
   if(ex.packTactics) traits.push(['Pack Tactics', 'Advantage on an attack roll against a creature if at least one of its allies is within 5 ft of it and isn\'t incapacitated.']);
   if(ex.sneakAttack && ex.sneakAttack.dice) traits.push(['Sneak Attack (1/Turn)', `Extra ${ex.sneakAttack.dice} damage on a hit with advantage, or with an ally next to the target.`]);
   if(ex.elvenAccuracy) traits.push(['Elven Accuracy', 'Rolls three d20s when it has advantage.']);
