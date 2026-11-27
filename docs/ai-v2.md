@@ -2593,3 +2593,27 @@ The sheet reader reads the War Caster feat (text "Feats:" lines and feature list
 `ext.warCaster`; the concentration save already took `sopt.adv`, which a War Caster now passes. v2's estimates of a concentration break read it
 through `concFail` (the caster's own, and a foe's when the side reads its sheet: open). Its other benefits (somatic components, a spell as an
 opportunity attack) are not modelled.
+
+### Results (rules pass 2)
+
+**Hash sets** (default, open, learn, blind, `PREFIGHT=0`: 48 lines each; the 12-run BOSS + TIER table: 181 lines). Items 1, 3 and 6 moved
+nothing. Item 2: BOSS + TIER 18 lines (the two Ember Tyrant scenarios). Item 4: BOSS + TIER 54 lines. Item 5: 10 / 10 / 15 / 8 / 7 of 48 and
+112 BOSS + TIER lines; `hashes-learn.txt` regenerated (15 lines).
+
+**Every family, 200 runs, same seeds, open / learn / blind** (696 rows; each item against the one before). Rows that moved more than 5 points:
+
+| item | rows | where | cause |
+|---|---|---|---|
+| 1 Parry | 2 | PASQ long, blind: 81 → 87.5 | Pasquale's Parry no longer answers the party's ranged hits |
+| 2 Magic Resistance | 2 | Ember Tyrant, blind, cunning: 30 → 24.5 (one fight, listed in TIER and BOSS) | its only non-magical save is its own Cinder Storm, which catches it; one d20 fewer re-deals the dice (1.3 SE) |
+| 3 push | 0 | | |
+| 4 empty areas | 13 | the half Lich, every mode: +8 to +15.5 | on the old code 1074 of its 2490 Disrupt Life casts had an empty area and still hurt a creature outside the emanation |
+| 4 | 1 | Ember Tyrant, learn, mindless: 29 → 22.5 | does not hold: 1000 runs 26.3 → 24.1 (1.1 SE). Both sides lost free hits (Ember Burst 238 of 477 casts empty, the party's Spirit Guardians 26) |
+| 5 darts | 16 | dragon B3 / B5 / K3 / K5 and Ember Tyrant rows, both directions | do not hold: at 1000 runs none moves more than 3.3 points (1.6 SE). A cast no longer rolls a d20 and 3d4 at once, so the dice re-deal |
+| 6 War Caster | (no table) | | no harness creature has it and every hash set is identical |
+
+**Zaki's party** (600 runs, both sides reading the mode, open / learn / blind), before → after the whole pass: hard day 98.0 / 95.8 / 95.7 →
+98.2 / 95.8 / 95.3; boss day 93.8 / 82.8 / 79.2 → 95.5 / 83.7 / 79.8.
+
+**Tests and run time.** `npm test` 993 → 1055 checks. `main` against the branch, alternating on an idle machine: `node tests/run.js` 105.5 / 105.2 s
+against 104.4 / 103.6 s; the 12-run BOSS + TIER table 209 s against 208 s; ms per day (hard-day, 100 days) 162–164 against 162–163.
