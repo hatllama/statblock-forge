@@ -387,6 +387,8 @@ Sim.prototype.saveAdvantage = function (t, source) {
 Sim.prototype.kAdv = function (u, t, source, p) {
   return !this.kOf(u, t) && this.saveAdvantage(t, source) ? 1 - (1 - p) * (1 - p) : p;
 };
+/* an estimate's chance pf that t fails a concentration save, with War Caster's advantage when u reads t's sheet (its own, or open mode) */
+Sim.prototype.concFail = function (u, t, pf) { return t.warCaster && (u === t || !this.kOf(u, t)) ? pf * pf : pf; };
 Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   if (dc >= 99) return { success: false, roll: 1, total: -99 };
   const c = this.conds(t);
@@ -610,7 +612,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
     // stakes, and a lost spell is not a danger condition, so neither is spent here.
     const keep = [this._saveDmg, this._saveStakes, this._saveCond, this._saveA, this._saveHalf];
     this._saveDmg = 0; this._saveStakes = 0; this._saveCond = null; this._saveA = null; this._saveHalf = 0;
-    const s = this.saveRoll(tgt, dc, null, 'con', { bonus: this.concBonusOf(tgt), conc: true });
+    const s = this.saveRoll(tgt, dc, null, 'con', { bonus: this.concBonusOf(tgt), conc: true, adv: tgt.warCaster });
     [this._saveDmg, this._saveStakes, this._saveCond, this._saveA, this._saveHalf] = keep;
     if (!s.success) this.endConcentration(tgt, `Con save ${Math.round(s.total)} vs DC ${dc}`);
   }

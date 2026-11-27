@@ -421,6 +421,7 @@ function makeUnit(tpl, team, idx, count, isPC) {
     alt: 0,                                                                 // height above the ground under it, in 5-ft steps (flyers only)
     noOA: !!ex.noOpportunityAttacks,
     closeShot: !!ex.closeShot,                                              // Trained Shooter: ranged attacks within 5 ft of a foe have no disadvantage
+    warCaster: !!ex.warCaster,                                              // advantage on concentration saves
     meleeHitNoOA: !!ex.meleeHitNoOA,                                        // Trained Fighter: no opportunity attack from a creature it hit with a melee attack this turn
     followThrough: ex.followThrough && ex.followThrough.dice ? ex.followThrough : null,   // once a turn, the second hit on one target: { dice, type }
     pushLuck: ex.pushLuck && ex.pushLuck.dice ? ex.pushLuck : null,        // Push Your Luck: reroll its own missed attack roll for { dice } damage to itself

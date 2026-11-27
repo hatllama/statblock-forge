@@ -1,0 +1,12 @@
+Maren Holt
+Level 5 Human Cleric (Life Domain)
+Armor Class 18   Hit Points 38   Speed 30 ft.
+STR 14 (+2)  DEX 10 (+0)  CON 14 (+2)  INT 8 (-1)  WIS 18 (+4)  CHA 12 (+1)
+Saving Throws: Wis +7, Cha +4
+Feats: War Caster
+Attacks
+Mace | +5 | 1d6+2 bludgeoning
+Spells
+Cantrips: Sacred Flame
+1st level: Bless, Healing Word
+3rd level: Spirit Guardians

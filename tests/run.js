@@ -802,6 +802,15 @@ section('Character sheets');
   const got = {};
   for (const f of fs.readdirSync(dir)) { try { got[f] = SR.read(fs.readFileSync(path.join(dir, f), 'utf8')).player; } catch (e) { console.log('  ', f, e.message); } }
   const p = got, sp = c => ((c && c.ext.spellbook && c.ext.spellbook.spells) || []).map(s => s.name);
+  const wc = p['war-caster.txt'];
+  check(wc && wc.ext.warCaster === true && sp(wc).includes('Spirit Guardians'), 'a "Feats: War Caster" line: ext.warCaster');
+  check(Object.keys(p).filter(f => f !== 'war-caster.txt').every(f => !p[f].ext.warCaster), 'no other sample sheet has War Caster');
+  {
+    const SR2 = SR, fromDdb = JSON.parse(fs.readFileSync(path.join(dir, 'ddb.json'), 'utf8'));
+    const d = fromDdb.data || fromDdb;
+    d.feats = (d.feats || []).concat([{ definition: { name: 'War Caster' } }]);
+    check(SR2.read(JSON.stringify(fromDdb)).player.ext.warCaster === true, 'a D&D Beyond feat named War Caster is read');
+  }
   check(p['typed.txt'] && p['typed.txt'].AC === 18 && p['typed.txt'].hp === 58 && p['typed.txt'].class.level === 6 && p['typed.txt'].actions.some(a => /Longsword ×2/.test(a.name) && a.toHit === 7) && p['typed.txt'].actions.some(a => /Action Surge/.test(a.name)), 'a typed fighter sheet: AC, HP, level, Extra Attack, Action Surge');
   // the hybrids (step 3a): subclass in brackets, third-caster slots, always-prepared smite and mark, the Artillerist's cannon
   const ek = p['eldritch-knight.txt'], at = p['arcane-trickster.txt'], af = p['artificer.txt'], pdd = p['ddb.json'], rf = p['foundry.json'];
@@ -3661,6 +3670,21 @@ section('Rules pass 2: Magic Missile as separate darts');
   check(learn.darts.length === 3 && learn.darts[0].target !== learn.darts[1].target, 'a downed target\'s remaining darts re-pick');
   const a = mm(one.u);
   check(one.s.hitChance(one.u, one.f[0], a) === 1, 'v2 reads a dart as certain to hit');
+}
+
+section('Rules pass 2: War Caster holds concentration with advantage');
+{
+  const rate = warCaster => {
+    const w = R2.pc('Wizard'); if (warCaster) w.ext.warCaster = true;
+    const b = R2.board([[w, 3, 5]], [[R2.srd('Bandit'), 9, 5]], { seed: 11, record: false }), s = b.s, u = b.p[0];
+    u.saves = Object.assign({}, u.saves, { con: 0 }); u.saveBonus = 0; u.maxHp = 100000;
+    let held = 0; const N = 4000;
+    for (let i = 0; i < N; i++) { u.buffs = []; u.concentrating = 'spell'; u.hp = u.maxHp; s.damage(u, u, 20, {}); if (u.concentrating) held++; }
+    return { rate: held / N, u, s, foe: b.f[0] };
+  };
+  const plain = rate(false), war = rate(true);
+  check(Math.abs(plain.rate - 0.55) < 0.04 && Math.abs(war.rate - 0.7975) < 0.04, `DC 10, +0: held ${plain.rate.toFixed(3)} plain, ${war.rate.toFixed(3)} with War Caster (expect 0.55 / 0.80)`);
+  check(war.u.warCaster === true && Math.abs(war.s.concFail(war.u, war.u, 0.4) - 0.16) < 1e-9 && plain.s.concFail(plain.u, plain.u, 0.4) === 0.4, 'v2\'s own estimate reads it');
 }
 
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,

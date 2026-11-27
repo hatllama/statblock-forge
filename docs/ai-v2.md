@@ -2510,7 +2510,7 @@ Duplicated arms that kept their checks: Spirit Guardians and Moonbeam (8 fights 
 
 The default tier for Int ≥ 16 is cunning; `AI_TIERS.tiers` is mindless, animal, cunning, boss; `geniusInt` and `profiles.genius` are gone (the boss profile keeps its own copy of the careful weights); a saved `ext.aiTier: 'genius'` reads as cunning. The phase 6 step 1 report ("Genius and cunning") found the genius tier measurably equal to cunning except for morale (a genius never flees) and the squishy-and-healer weights. SRD monsters that moved: **Mage, Assassin, Young Green Dragon** (the only non-boss creatures with Int ≥ 16; the Lich and the Adult Red Dragon are bosses) and the test statblock `mage-2014.txt`. Rows that moved in `tests/play-hash.js` (3 / 7 / 4 / 4 of 48 in open / learn / blind / `PREFIGHT=0`): only days with one of them: default party vs hard-day (a Mage), default party and casters vs medium-day (a Mage), casters vs goblins / ogres / mage, casters vs priests + young dragon. `hashes-learn.txt` was regenerated in that commit (7 lines). The harness `genius` arms went with the tier (the BOSS family's `genius` arm is `cunning` now).
 
-### Open issue found on the way (not fixed: a fix moves hashes, so not in a kind A job)
+### Open issue found on the way (fixed later: "Rules accuracy pass 2", item 4)
 
 A Spirit Guardians cast whose area comes out empty: with the Cleric in a doorway of the test map, `areaCatch` falls back to `{ cells: [] }` ("walls in the way: just the target"), the cast goes ahead, the zone has no squares, and the one "target" still takes the damage and a save, one square outside where the spell reaches. Seen in the hybrid walls scenario (Artificer seed 300 + 4 × 7919, Arcane Trickster 300 + 2 × 7919, fight 2); the same log on the tag with `foes: 'tiers'`, so it predates this job (it is the roadmap's "a Spirit Guardians hit one square outside its zone"). The hybrid test uses other seeds. A fix is an AI change: no cast when the area catches nobody (a term in `v2AimValue`, not a veto), with a harness row and a learn fixture update.
 
@@ -2586,3 +2586,10 @@ the knowledge mode (nothing reads the true HP). v2's estimate: `hitChance` is 1 
 already values the darts left over. Data saved before this (the one `3d4 + 3` attack: day files, saved parties, the converter's output) is read
 as darts by `magicMissile` (`base.js`), by name and shape. Plain exports now say three targets of `1d4 + 1`. Not done: Shield's "no damage from
 Magic Missile" (backlog).
+
+### 6. War Caster from sheets
+
+The sheet reader reads the War Caster feat (text "Feats:" lines and feature lists, D&D Beyond feats, Foundry feat items, the PDF/AI facts) into
+`ext.warCaster`; the concentration save already took `sopt.adv`, which a War Caster now passes. v2's estimates of a concentration break read it
+through `concFail` (the caster's own, and a foe's when the side reads its sheet: open). Its other benefits (somatic components, a spell as an
+opportunity attack) are not modelled.

@@ -520,7 +520,7 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
         const con = this.kOf(u, t) ? this.kSave(u, t, 'con') : (t.conSave || 0);
         const hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
         const perHit = exp / Math.max(0.05, hits * p);
-        const pf = Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20));
+        const pf = this.concFail(u, t, Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20)));
         val += held * (1 - Math.pow(1 - p * pf, hits));
         why = why || 'concentration';
       }
