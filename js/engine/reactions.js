@@ -162,7 +162,7 @@ Sim.prototype.reactBarbsDo = function (S, h, x) {
   const att = S.att;
   this.reactTake(h, x, 0);
   const xdc = Number(avgDice(x.saveDC));
-  const resisted = xdc < 99 && this.saveRoll(att, xdc, h, x.ext && x.ext.saveAbility).success;
+  const resisted = xdc < 99 && this.saveRoll(att, xdc, h, x.ext && x.ext.saveAbility, { magic: !!x._spell }).success;
   const was = Math.round(S.total);
   if (resisted) { this.ev('react', `${h.name} uses ${x.name}, but ${att.name} resists`, { uid: h.uid, target: att.uid }); return; }
   this.reactApplyDie(S, Math.min(S.d, this.R.d(20)));
@@ -273,7 +273,7 @@ Sim.prototype.counterCheck = function (u, a, plan) {
       for (const op of this.counterOptions2014(o, SL, this.counterBonus(o), true)) { const n = op.p * val - this.reactPrice(o, x, val, op.L); if (n > net) { net = n; L = op.L; } }
     } else {
       // P(its save fails) x what the spell is worth, against the slot and the reaction (paid whether or not it works)
-      const pFail = Math.min(1, Math.max(0, 1 - (21 + this.kSave(o, u, 'con') - dc) / 20));
+      const pFail = 1 - this.kAdv(o, u, true, Math.min(1, Math.max(0, (21 + this.kSave(o, u, 'con') - dc) / 20)));
       const val = this.counterValue(o, u, a, plan);
       net = pFail * val - this.reactPrice(o, x, val, 0);
     }
@@ -293,7 +293,7 @@ Sim.prototype.counterCheck = function (u, a, plan) {
     this.ev('react', `${o.name} casts ${x.name}${used > 3 ? ' at level ' + used : ''}: ${u.name}'s ${a.name} fizzles${how}`, { uid: o.uid, target: u.uid });
     return true;
   }
-  const sv = this.saveRoll(u, dc, o, 'con');
+  const sv = this.saveRoll(u, dc, o, 'con', { magic: true });       // against Counterspell, a spell
   if (sv.success) { this.ev('react', `${o.name} casts ${x.name} on ${u.name}'s ${a.name}, but it goes off (Con save ${sv.total} vs DC ${dc})`, { uid: o.uid, target: u.uid }); return false; }
   const lvl = a._spell && a._spell.level ? u.castLevel : 0;
   if (lvl > 0 && u.slots && u.slots[lvl - 1] !== undefined) u.slots[lvl - 1]++;        // a countered spell's slot isn't spent (2024)

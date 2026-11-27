@@ -429,7 +429,7 @@ Sim.prototype.hitChance = function (u, t, a) {
 };
 Sim.prototype.expected = function (u, a, t) {
   const sab = a.ext && a.ext.saveAbility;
-  const saveP = dc => Math.min(1, Math.max(0, (21 + this.kSave(u, t, sab) - dc) / 20));
+  const saveP = dc => this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, sab) - dc) / 20)));
   if (a.type === 'atk') {
     const sneakAvg = u.sneak && a.ext && a.ext.sneak && u.saSeq !== this.turnSeq ? avgDice(u.sneak.dice) * (this.featureAdv(u, t) || this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && this.dist(o, t) <= 5) ? 0.95 : 0.35) : 0;
     const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + (a.ext && a.ext.nearBonus && this.dist(u, t) <= a.ext.nearBonus.within ? avgDice(a.ext.nearBonus.dice) : 0) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * this.kMult(u, a, t));

@@ -12,7 +12,7 @@
   add it to `tests/statblocks/`, check it with `node tests/parse-dump.js <name>`, and add an expectation in `tests/run.js`.
 - Everything in `js/engine/` must stay DOM-free: it also runs under Node in `tests/run.js`.
 - AI knowledge modes (`opts.know = { party, foes }`: open / blind / learn): the AI reads other-side facts only through
-  the `k*` accessors (`kHp`, `kMax`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kAreasNext`, `kReach`, `kCaster`, `kLegRes`, `kImmune`, `kBossHp`, `leftFor`). New AI
+  the `k*` accessors (`kHp`, `kMax`, `kDpr`, `kAc`, `kSave`, `kMult`, `kHeals`, `kAreas`, `kAreasNext`, `kReach`, `kCaster`, `kLegRes`, `kImmune`, `kBossHp`, `leftFor`; `kAdv` adds a save's Advantage (Magic Resistance) to an estimate, open mode only). New AI
   code that looks at an enemy's hp, AC, saves, resistances, actions or the day's length should go through them too;
   dice and rules keep using the real numbers. `leftFor` (fights still to come): open and learn read the real count,
   blind assumes `BLIND_FIGHTS`; `opts.expectFights` (War Table "Fights the party expects today") overrides learn and blind.

@@ -3498,6 +3498,57 @@ section('Rules pass 2: an AC reaction against melee attacks only');
   check(!fioShot.hit && !fioShot.reaction, 'Fitted Cut answers a ranged attack too');
 }
 
+section('Rules pass 2: Magic Resistance only against spells and other magical effects');
+{
+  const golem = () => R2.srd('Stone Golem');
+  const mr = golem().actions.find(a => /Magic Resistance/.test(a.name));
+  check(mr && mr.buff.condition === 'Saves with Advantage' && mr.ext.vsMagic === true, 'the Stone Golem\'s Magic Resistance: the same buff as before, marked vsMagic');
+  check(['malenia.txt', 'long-homebrew-boss.txt'].every(f => R2.file(f).actions.some(a => /Magic Resistance/.test(a.name) && a.ext.vsMagic)), 'merged passives (Malenia, the Ember Tyrant) keep the mark');
+  const made = text => Parser.parse('Tester\nMedium fiend, neutral\nArmor Class 15\nHit Points 30 (4d8 + 12)\nSpeed 30 ft.\nSTR 14 (+2) DEX 14 (+2) CON 16 (+3) INT 10 (+0) WIS 10 (+0) CHA 10 (+0)\nChallenge 1 (200 XP)\nActions\n' + text).monsters[0].actions[0];
+  const magicOf = text => !!(made(text).ext || {}).magicEffect;
+  check(magicOf('Mind Blast. The tester emits a wave of magical force. Each creature in a 30-foot cone must make a DC 13 Wisdom saving throw, taking 10 (3d6) psychic damage on a failed save, or half as much damage on a successful one.'), 'an entry that says it is magical: magicEffect');
+  check(!magicOf('Fire Breath. The tester exhales fire in a 30-foot cone. Each creature in that area must make a DC 13 Dexterity saving throw, taking 10 (3d6) fire damage on a failed save, or half as much damage on a successful one.'), 'a breath weapon is not magic');
+  check(!magicOf('Venom Spray. Each creature in a 15-foot cone must make a DC 13 Constitution saving throw or be poisoned for 1 minute. The poison can be removed only by magic.'), '"removed only by magic" does not make the effect magic');
+  check(!magicOf('Crush. The tester hurls nonmagical rubble. Each creature in a 15-foot cone must make a DC 13 Strength saving throw, taking 10 (3d6) bludgeoning damage on a failed save.'), '"nonmagical" is not magic');
+
+  // the rolls: how many d20s a save of the golem rolls with advantage
+  const advOn = (target, a, opts) => {
+    const b = R2.board([[R2.pc('Wizard'), 3, 5]], [[target, 8, 5]]), s = b.s, t = b.f[0];
+    for (const x of t.actions) if ((x.actionSlot === 5 || x.actionSlot === 6) && x.type === 'buff') s.addBuff(t, t, x, x.buff);
+    const seen = []; const d0 = s.d20; s.d20 = function (adv, dis) { seen.push(!!adv && !dis); return d0.apply(this, arguments); };
+    s._saveA = a; s.saveRoll(t, 15, b.p[0], 'wis', opts); s._saveA = null;
+    return { adv: seen[0], s, t, u: b.p[0] };
+  };
+  const hold = { name: 'Hold Person', _spell: { level: 2 } }, breath = { name: 'Fire Breath', ext: {} };
+  check(advOn(golem(), hold).adv, 'Magic Resistance: advantage against Hold Person (a spell)');
+  check(advOn(golem(), { name: 'Slow', ext: { innateSpell: true } }).adv && advOn(golem(), { name: 'Mind Blast', ext: { magicEffect: true } }).adv, 'and against an innate spell or a magical effect');
+  check(!advOn(golem(), breath).adv && !advOn(golem(), null).adv, 'not against a breath weapon or a plain Strength save');
+  check(!advOn(golem(), null, { conc: true }).adv && advOn(golem(), null, { magic: true }).adv, 'not on a concentration save; a caller saying "magic" (Counterspell) gets it');
+  // a creature saved before ext.vsMagic: the name tells
+  const old = golem(); delete old.actions.find(a => /Magic Resistance/.test(a.name)).ext.vsMagic;
+  check(advOn(old, hold).adv && !advOn(old, breath).adv, 'a Magic Resistance saved before this reads the same');
+  const plain = golem(); const p = plain.actions.find(a => /Magic Resistance/.test(a.name)); delete p.ext.vsMagic; p.name = 'Unshakeable';
+  check(advOn(plain, breath).adv, 'another "advantage on saves" passive still counts on every save');
+  // a lingering condition from a spell keeps being a spell for its repeat saves
+  {
+    const x = advOn(golem(), hold), s = x.s, t = x.t;
+    s.addBuff(t, x.u, Object.assign({ id: 'hp' }, hold), { duration: 'repeat the save each round', condition: 'Restrained' }, { dc: 30, saveAbility: 'wis' });
+    const seen = []; const d0 = s.d20; s.d20 = function (adv, dis) { seen.push(!!adv && !dis); return d0.apply(this, arguments); };
+    s.endTurn(t);
+    check(seen[0] === true, 'the repeat save against a spell\'s hold has advantage too');
+  }
+  // estimates: open mode reads the sheet, learn does not
+  {
+    const x = advOn(golem(), hold);
+    check(Math.abs(x.s.kAdv(x.u, x.t, hold, 0.4) - 0.64) < 1e-9 && x.s.kAdv(x.u, x.t, breath, 0.4) === 0.4, 'open: the estimate of a save against a spell has the advantage, against a breath none');
+    const b = R2.board([[R2.pc('Wizard'), 3, 5]], [[golem(), 8, 5]], { know: { party: 'learn' } }), t = b.f[0];
+    for (const y of t.actions) if ((y.actionSlot === 5 || y.actionSlot === 6) && y.type === 'buff') b.s.addBuff(t, t, y, y.buff);
+    check(b.s.kAdv(b.p[0], t, hold, 0.4) === 0.4, 'learn: the estimate is not told');
+    const fio = R2.board([[R2.pc('Wizard'), 3, 5]], [[R2.file('fiorenzo.txt'), 8, 5]]);
+    check(fio.s.saveAdvantage(fio.f[0], hold) && !fio.s.saveAdvantage(fio.f[0], breath), 'Fiorenzo\'s Suit is read by the same test');
+  }
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {

@@ -114,7 +114,11 @@ Sim.prototype.bossEffect = function (t, cond, dur, dc, ab) {
   if (!cond) return 0;
   const sev = B.lrCond[cond] !== undefined ? B.lrCond[cond] : B.lrCond.other;
   let turns = 1;
-  if (dur === 'repeat the save each round') { const pass = Math.min(0.95, Math.max(0.05, (21 + this.saveBonusFor(t, ab) - dc) / 20)); turns = Math.min(B.lrTurns, 1 / pass); }
+  if (dur === 'repeat the save each round') {
+    let pass = Math.min(0.95, Math.max(0.05, (21 + this.saveBonusFor(t, ab) - dc) / 20));
+    if (this.saveAdvantage(t, this._saveMagic || this._saveA)) pass = 1 - (1 - pass) * (1 - pass);     // its own sheet: Magic Resistance on the repeat saves
+    turns = Math.min(B.lrTurns, 1 / pass);
+  }
   else if (dur && dur !== '1 round' && !/^until/.test(dur)) turns = B.lrTurns;
   return sev * turns * this.bossTurnWorth(t);
 };

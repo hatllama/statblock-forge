@@ -434,6 +434,16 @@ function attackScope(txt) {
   return seen.melee && !seen.ranged ? 'melee' : seen.ranged && !seen.melee ? 'ranged' : '';
 }
 
+/* does an entry that forces a save say its effect is magic? "nonmagical", "magic weapons", the Magic action and sentences about ending an effect
+   by magic don't make it one (ext.magicEffect: Magic Resistance applies; anything unsaid is not magical) */
+function magicText(txt) {
+  const t = String(txt || '');
+  if (!/saving throw|\bDC\s*\d/i.test(t)) return false;
+  return t.replace(/\bnon-?magical\b|\bmagic (?:resistance|weapons?|action)\b/gi, ' ').split(/\.\s+/)
+    .filter(s => !/\bby magic\b|\bmagical (?:means|healing)\b|\b(?:only|except) (?:by|with)\b[^.]*\bmagic/i.test(s))
+    .some(s => /\bmagic(?:al|ally)?\b/i.test(s));
+}
+
 function movementEffect(txt) {
   const ext = {};
   if (/speed (?:is |becomes )?(?:reduced to|becomes|is) 0|speed of 0|can't move|cannot move|spend(?:s)? (?:all )?its movement|uses? (?:all )?its movement/i.test(txt)) ext.speedBonus = -60;
@@ -707,7 +717,7 @@ function conditionFor(a, freq) {
 function readTrait(entry, h, notes, out) {
   const nm = nameAndUsage(entry.raw), t = entry.text, low = nm.name.toLowerCase();
   if (/^spellcasting|innate spellcasting/i.test(nm.name)) return 'spell';
-  if (/magic resistance/i.test(low)) { out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', condition: 'Saves with Advantage' }, ext: { range: 0 } }); return true; }
+  if (/magic resistance/i.test(low)) { out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter', condition: 'Saves with Advantage' }, ext: { range: 0, vsMagic: true } }); return true; }      // advantage against spells and magical effects only
   if (/pack tactics/i.test(low)) { h.ext.packTactics = true; return true; }
   // "ranged attacks he makes within 5 feet of a hostile creature don't have disadvantage" (Crossbow Expert style); loading is not modelled at all
   if (/ranged attacks?[^.]{0,60}within 5 (?:feet|ft)[^.]{0,40}(?:don't|do not|doesn't|does not) (?:have|impose) disadvantage|ranged attacks?[^.]{0,60}(?:aren't|are not) (?:made )?(?:at|with) disadvantage[^.]{0,40}within 5 (?:feet|ft)/i.test(t)) {
@@ -759,7 +769,7 @@ function readTrait(entry, h, notes, out) {
       const sv = saveInfo(t);
       const r = +t.match(/within (\d+) (?:feet|ft)/i)[1];
       const dc = sv ? sv.dc : (h._dc || 8 + h.pb + Math.max(h.mod('con'), h.mod('cha'), h.mod('wis')));
-      out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: r >= 15 ? 3 : r >= 10 ? 2 : 1, type: 'atk', dpr: cleanDice(parts[0].dice), toHit: dc, useSaves: true, target: 'enemy with most HP', ext: { range: r, ...(sv ? { saveAbility: sv.ab } : {}) }, _aura: true });
+      out.push({ name: nm.name, actionSlot: 5, freq: 'at will', condition: 'default', targets: r >= 15 ? 3 : r >= 10 ? 2 : 1, type: 'atk', dpr: cleanDice(parts[0].dice), toHit: dc, useSaves: true, target: 'enemy with most HP', ext: { range: r, ...(sv ? { saveAbility: sv.ab } : {}), ...(magicText(t) ? { magicEffect: true } : {}) }, _aura: true });
       if (!sv) notes.push(`${nm.name}: an aura with no save — modelled as a save against DC ${dc} so it doesn't always hit.`);
       return true;
     }
@@ -1085,6 +1095,7 @@ function comboAction(name, combo) {
   const lead = combo.slice().sort((p, q) => q.n - p.n)[0].a;
   if (lead.riderEffect) a.riderEffect = JSON.parse(JSON.stringify(lead.riderEffect));
   if (lead.ext.riderSave) a.ext.riderSave = lead.ext.riderSave;
+  if (lead.ext.magicEffect) a.ext.magicEffect = true;
   if (lead.ext.onHit) a.ext.onHit = JSON.parse(JSON.stringify(lead.ext.onHit));
   // a hit rider on a pool and an extra at close range belong to the one attack the routine repeats (a mixed routine averages its swings, so there is no single base)
   if (same && lead.ext.bolt) a.ext.bolt = JSON.parse(JSON.stringify(lead.ext.bolt));
@@ -1190,6 +1201,7 @@ function parseOne(block) {
   const noRepeatLair = /can't use the same (?:lair )?(?:action|effect) two rounds in a row|can't (?:use|take) the same one two rounds/i.test(body.intro || '') || /can't use the same lair action two rounds in a row/i.test(flat);
   const parsedBySection = {};
   const multis = [];
+  const entries = [];       // where each entry's actions start, for what its text says about all of them (magicText)
   for (const sec of ['actions', 'bonus actions', 'reactions', 'legendary actions', 'mythic actions', 'lair actions']) {
     parsedBySection[sec] = [];
     for (const e of body[sec]) {
@@ -1197,6 +1209,7 @@ function parseOne(block) {
       const nm = nameAndUsage(e.raw);
       const low = nm.name.toLowerCase();
       if (/^multiattack/.test(low)) { multis.push({ e, sec }); continue; }
+      entries.push({ sec, start: parsedBySection[sec].length, text: e.text });
       const pool = poolOf(h, nm);
       const resExt = pool ? { resource: pool } : {};
       // a coin flip ("Pasquale flips the coin. On heads, … On tails, …"): ext.coin, a bonus action or a reaction (docs/ai-v2.md "Pasquale Minuzzi")
@@ -1339,6 +1352,12 @@ function parseOne(block) {
       parsedBySection[sec].push(a);
     }
   }
+  // an entry that says it is magic: the saves it forces are saves against magic
+  entries.forEach((en, i) => {
+    if (!magicText(en.text)) return;
+    const next = entries.slice(i + 1).find(x => x.sec === en.sec);
+    parsedBySection[en.sec].slice(en.start, next ? next.start : undefined).forEach(a => { a.ext = Object.assign({}, a.ext, { magicEffect: true }); });
+  });
 
   // hit riders ("Whenever Pasquale hits with a … stock strike, he fires a bolt … He carries twelve hammer bolts"): the damage joins the named attack, a pool pays for it per hit
   // bolts with an effect and no damage (Chain Bolts): the statblock doesn't say which attacks fire one, so every ranged weapon attack takes one per hit while the pool lasts
@@ -1441,6 +1460,8 @@ function parseOne(block) {
   if (passBuffs.length > 1) {
     const merged = { name: passBuffs.map(a => a.name).join(' + '), actionSlot: 5, freq: 'at will', condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'entire encounter' }, ext: { range: 0 } };
     passBuffs.forEach(a => { if (a.ext && a.ext.avgResist) merged.ext.avgResist = round1((merged.ext.avgResist || 1) * a.ext.avgResist); });
+    const savers = passBuffs.filter(a => a.buff.condition === 'Saves with Advantage');
+    if (savers.length && savers.every(a => a.ext && a.ext.vsMagic)) merged.ext.vsMagic = true;
     for (const a of passBuffs) for (const [k, v] of Object.entries(a.buff)) {
       if (k === 'duration') continue;
       if (k === 'damageTakenMultiplier' || k === 'damageMultiplier') merged.buff[k] = round1((merged.buff[k] || 1) * v);

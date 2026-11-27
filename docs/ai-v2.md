@@ -2530,3 +2530,25 @@ attack"). The parser reads it from the trigger and response text ("by / against 
 10 ft), a "Melee or Ranged" attack with one long range (`ext.anyRange`) within 5 ft, else range 10 ft or less. Affected: SRD Bandit, Warrior,
 Knight and Gladiator Parry creatures, Bandit Captain, Pasquale's and Malenia's Parry (melee); Fiorenzo's Fitted Cut, Dorian's Molten Screen and
 Shield stay "any". A creature saved in a workspace or day file before this has no `ext.react.against` and keeps the old behaviour until re-imported.
+
+### 2. Magic Resistance only against spells and other magical effects
+
+Magic Resistance gave Advantage on every save: it is the passive buff condition `'Saves with Advantage'`, which `saveRoll` read whatever the
+save was against. Now the buff is marked (`ext.vsMagic` on the action, set by the parser; a passive named "Magic Resistance" counts too, so
+creatures saved before this are right) and counts only when the save is magical. The export is unchanged (the condition stays; `ext` is ignored).
+A trait "advantage against magic" (`ext.traits`, `vs: 'magic'`: Fiorenzo's Suit) was already limited, and now uses the same test.
+
+**Is a save magical?** One function, `magicSource(a)` (`core.js`), of the action that forces it: a spell (`a._spell`), an innate spell
+(`ext.innateSpell`), an action marked magical (`ext.magical`: magic weapons, the Eldritch Cannon), or an entry whose own text says it is magic
+or magical (`ext.magicEffect`, set by the parser on entries that force a saving throw; "nonmagical", "magic weapons" and sentences about ending
+an effect "by magic" do not count). **Anything else is not magical** (the safest reading: the advantage is given only when something says so):
+breath weapons, poisons, Frightful Presence, grapples, concentration saves, Deflect Attacks' redirect. A buff remembers it (`b.magic`) for its
+repeated saves; the saves a reaction forces (Counterspell, Silvery Barbs, a cancel) pass it in (`sopt.magic`).
+
+**The AI's estimates.** `kAdv(u, t, source, p)` takes the pass chance an estimate computed from `kSave` and applies the Advantage `t` really
+has against that source (`saveAdvantage`, the function `saveRoll` uses) **when `u` reads `t`'s sheet (open mode)**; a learning or blind side is
+not told and only sees the results. Used by `expected`, `v2Control`, riders, the burn plan, the held-spell value, Counterspell's price, the
+boss's Legendary Resistance weighing and the cancel chance. Before this the estimates ignored Magic Resistance altogether. No weight changed.
+
+Affected: the Stone Golem (the only SRD 5.2 monster here with it: the SRD Lich has none), the homebrew Ember Tyrant
+(`long-homebrew-boss.txt`), Malenia, and Fiorenzo's Suit (only through the estimates).
