@@ -2617,3 +2617,34 @@ nothing. Item 2: BOSS + TIER 18 lines (the two Ember Tyrant scenarios). Item 4: 
 
 **Tests and run time.** `npm test` 993 → 1055 checks. `main` against the branch, alternating on an idle machine: `node tests/run.js` 105.5 / 105.2 s
 against 104.4 / 103.6 s; the 12-run BOSS + TIER table 209 s against 208 s; ms per day (hard-day, 100 days) 162–164 against 162–163.
+
+## Boss tuning (November 2026)
+
+Branch `boss-tune`. Harness scripts in `runs/boss/` (not committed): `table.js` (every family, open / learn / blind, 200 runs, same seeds),
+`hashes.sh` (the `play-hash` sets and the 12-run BOSS + TIER table), `zaki.sh` (Zaki's hard and boss days, 600 runs), `sweep.js` / `pool.js` /
+`mkjobs.js` (the self-care sweep), `lronly.js` (creatures whose only boss trait is Legendary Resistance). Two rows were added to the BOSS family
+first (new rows only): Malenia (`malenia.txt`, scaled to 150 HP and 0.35 damage: as written she wins every fight against Zaki's level-5 party)
+and Fiorenzo (`fiorenzo.txt` at 234 HP, 3×: as written he loses every one), both against Zaki's party.
+
+### 1. Legendary actions after any other creature's turn (rules)
+
+SRD 5.2: "Immediately after another creature's turn, the dragon can expend a use to take one of the following actions. It regains all expended
+uses at the start of each of its turns." The engine offered a window only after an enemy's turn (`legendary`: `u.team === after.team` skipped
+allies), so a boss with an escort had fewer windows than the rule gives. Now every other creature's turn is a window, an ally's included, never
+its own; one legendary action per window; the uses come back at the start of its own turn (unchanged). The boss tier's choice (`bossLegendary`)
+prices waiting by the windows left before its own turn: `K` = 1 + `bossWindows(u, after)`, every creature that still takes a turn before it (the
+round loop's own test: not dead, a monster on the board), allies included. `bossBefore` (the foes a one-round effect still holds back) is
+unchanged, so a legendary Command after an ally's turn is still worth only the foes who act before the boss. `keep(L, K)` = min(L, K) ×
+`u.legPer` × `legKeep`, as before: more windows ahead make waiting worth more only while there are fewer points than windows, so the boss does
+not spend its points after the first ally's turn when enemies still act before its own.
+
+*Results.* Tests: windows after an ally's turn (Osric + 4 Bandits: 6 of 60 legendary actions on the boss tier, 1 of 30 forced cunning), none
+after its own, one per window, never more points than it has, points regained (12 of 12 fights with more uses than points). Hashes: the
+`play-hash` sets (default, open, learn, blind, `PREFIGHT=0`) identical (no creature with legendary actions plays those days); the 12-run
+BOSS + TIER table 27 of 199 lines. Every family (708 rows, 200 runs, same seeds): 183 rows changed, all in scenarios with a legendary
+creature (BOSS, the TIER Lich and Tyrant, B, K, T1, S3); 5 moved more than 3 points, none beyond 1.4 SE. A lone boss's forced-cunning arm is
+byte-identical (the old picker already spent after a dying PC's turn); its boss arm moved because a dying PC's turn now also counts in the
+price of waiting (`bossBefore` left the downed out). Boss rows that moved (party win, boss arm, open / learn / blind): escort 42.0 / 90.5 /
+90.0 → 37.5 / 88.5 / 89.0 (the escort's turns are windows now); brute 59.5 / 75.5 / 73.0 → 63.0 / 78.5 / 75.0, dragon 25.0 / 23.5 / 33.0 →
+28.0 / 26.5 / 32.5, Malenia 79.0 / 73.0 / 77.5 → 81.5 / 79.0 / 78.5 (all within 1.4 SE; legendary uses a fight unchanged, 9.4 / 9.1 / 12.8;
+the timing moved and the dice re-dealt). Lich, Tyrant and Fiorenzo (no legendary actions) within 2 points.
