@@ -991,7 +991,8 @@ Sim.prototype.onHitEffects = function (u, t, a, dealt) {
   if (oh.slow && !t.dead) this.addBuff(t, u, { id: 'slow:' + u.uid, name: 'Slowed', ext: { speedBonus: -oh.slow } }, { duration: '1 round' });
   if (oh.noReactions && !t.dead) t.reaction = false;
   if (oh.drain && dealt > 0 && !u.dead) { this.heal(u, u, dealt, false); this.ev('heal', `${u.name} drains ${dealt} HP`, { uid: u.uid, target: u.uid }); }
-  if (oh.push && !t.dead && t.onBoard && sizeIdx(t.size, 2) <= sizeIdx(oh.pushMaxSize || 'Huge', 4)) this.push(u, t, oh.push);
+  // a push (pushSave: only if that save fails; pushOnRider: applyRider does it, with the save that gives the condition)
+  if (oh.push && !oh.pushOnRider && !t.dead && t.onBoard && !(oh.pushSave && this.saveRoll(t, oh.pushSave.dc, u, oh.pushSave.ab, { magic: magicSource(a) }).success)) this.pushOn(u, t, oh);
   if (oh.dot && !t.dead) {
     const k = a._spell && u.castLevel ? u.castLevel - a._spell.level : 0;
     const dice = [oh.dot.dice || oh.dot].concat(k > 0 && oh.dot.upcast ? Array(k).fill(oh.dot.upcast) : []).join(' + ');
@@ -1007,6 +1008,10 @@ Sim.prototype.onHitEffects = function (u, t, a, dealt) {
     }
   }
 };
+/* ext.onHit's push, within its size limit */
+Sim.prototype.pushOn = function (u, t, oh) {
+  if (!t.dead && t.onBoard && sizeIdx(t.size, 2) <= sizeIdx(oh.pushMaxSize || 'Huge', 4)) this.push(u, t, oh.push);
+};
 /* forced movement: straight away from the source, stopping at walls, creatures and the map edge.
    No opportunity attacks; a drop of 10 ft or more means falling damage (1d6 per 10 ft) and landing prone. */
 Sim.prototype.push = function (src, t, ft) {
@@ -1018,6 +1023,7 @@ Sim.prototype.push = function (src, t, ft) {
   for (let i = 0; i < Math.round(ft / 5); i++) {
     const nx = t.x + dx, ny = t.y + dy;
     if (!this.fits(t, nx, ny)) break;
+    if (dx && dy && this.T.any && this.T.wall[nx + t.y * this.W] && this.T.wall[t.x + ny * this.W]) break;      // no slipping between two walls
     if (!t.fly && this.T.anyH && this.hAt(nx, ny) > this.hAt(t.x, t.y)) break;     // can't be shoved up a ledge
     t.x = nx; t.y = ny; path.push({ x: nx, y: ny });
   }
@@ -1066,6 +1072,8 @@ Sim.prototype.applyRider = function (u, t, a) {
   }
   this.addBuff(t, u, a, re.buff, { dc: re.dc, saveAbility: rab });
   this.ev('effect', `${t.name} is affected by ${a.name}${re.buff.condition ? ': ' + re.buff.condition : ''}`, { uid: t.uid });
+  const oh = a.ext && a.ext.onHit;
+  if (oh && oh.pushOnRider) this.pushOn(u, t, oh);
 };
 /* a coin flip (ext.coin = { p: 0.5, heads: OUTCOME, tails: OUTCOME }, docs/ai-v2.md "Pasquale Minuzzi"): the seeded generator decides; the outcome's buff goes
    on the flipper (spent by its next attack roll, ended by `lasts`: 'turn' this turn, 'next' its next turn), with the extra damage carried on it.

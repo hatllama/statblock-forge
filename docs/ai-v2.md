@@ -2552,3 +2552,14 @@ boss's Legendary Resistance weighing and the cancel chance. Before this the esti
 
 Affected: the Stone Golem (the only SRD 5.2 monster here with it: the SRD Lich has none), the homebrew Ember Tyrant
 (`long-homebrew-boss.txt`), Malenia, and Fiorenzo's Suit (only through the estimates).
+
+### 3. Push effects read from statblocks
+
+The engine already had `ext.onHit.push` (spells, weapon masteries), but the parser never wrote it. Now "pushed (up to) N feet (straight) away
+[from X]" (and "pushes the target N feet away") on a hit or on a failed save gives `ext.onHit = { push: N, pushMaxSize }`; the size limit is the
+one the push sentence or the targeting clause gives ("one Medium or smaller creature"), else Gargantuan (any size: the engine's default of Huge
+is for entries that don't say). A push after an attack's own save clause is conditional on that save (`onHit.pushSave`, or `onHit.pushOnRider`
+when the same save already gives a condition). A save with no damage or condition, only a push, is now kept (War Table only). A follow-up move
+("… can then move up to 10 feet toward it") stays a note: the trait vocabulary has no movement word. Movement rules: a push goes straight away
+from the pusher's body, stops before a wall, another creature, a ledge or the map edge, and (new) does not slip diagonally between two walls.
+No AI term was added; v2 reads a push on an attack as it did before.

@@ -453,6 +453,21 @@ function movementEffect(txt) {
   return Object.keys(ext).length ? ext : null;
 }
 
+/* a push in an effect's text ("pushed up to 20 feet straight away from the elemental", "pushes the target 10 feet away"), as ext.onHit fields:
+   the size limit its sentence or the targeting clause gives ("one Medium or smaller creature"), else any size. `at` is where it says it */
+const PUSHED = '\\b(?:pushed|pushes (?:the target|the creature|that creature|it|them|him|her))\\s+';
+const PUSH_RES = [new RegExp(PUSHED + '(?:up to\\s+)?(\\d+)\\s*(?:feet|ft\\.?)\\s*(?:straight\\s+)?(?:away|back)', 'i'),
+  new RegExp(PUSHED + '(?:straight\\s+)?away\\b[^.]{0,40}?\\b(\\d+)\\s*(?:feet|ft)', 'i')];
+const SIZE_WORDS = '(Tiny|Small|Medium|Large|Huge|Gargantuan)';
+function pushIn(txt, whole) {
+  const t = String(txt || ''), m = t.match(PUSH_RES[0]) || t.match(PUSH_RES[1]);
+  if (!m) return null;
+  const from = t.lastIndexOf('. ', m.index) + 1, to = t.indexOf('. ', m.index + m[0].length);
+  const sz = t.slice(from, to < 0 ? t.length : to).match(new RegExp(SIZE_WORDS + '\\s+or\\s+smaller', 'i')) ||
+    String(whole || t).match(new RegExp('\\b(?:one|each|a|any)\\s+' + SIZE_WORDS + '\\s+or\\s+smaller\\s+creature', 'i'));
+  return { at: m.index, onHit: { push: +m[1], pushMaxSize: sz ? cap(sz[1].toLowerCase()) : 'Gargantuan' } };
+}
+
 /* one attack roll: Melee Weapon Attack: +4 to hit / Melee Attack Roll: +4 */
 function readAttack(entry, nm, notes) {
   const t = entry.text;
@@ -514,6 +529,13 @@ function readAttack(entry, nm, notes) {
     a.ext.onHit = Object.assign({}, a.ext.onHit, mvh.onHit || {}, mvh.speedBonus ? { slow: -mvh.speedBonus } : {});
     notes.push(`${nm.name}: ${mvh.speedBonus ? (mvh.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mvh.speedBonus && mvh.onHit ? ' and ' : ''}${mvh.onHit ? 'blocks its reactions' : ''} on a hit — War Table only.`);
   }
+  // a push on a hit; after a save clause of its own it waits for that save to fail
+  const missless = hitText.split(/\bMiss\s*:/i)[0], pu = pushIn(missless, t);
+  if (pu) {
+    const gated = sv && sv.ab && missless.slice(0, pu.at).search(/saving throw/i) >= 0;
+    a.ext.onHit = Object.assign({}, a.ext.onHit, pu.onHit, !gated ? {} : a.riderEffect && a.riderEffect.dc === sv.dc ? { pushOnRider: true } : { pushSave: { dc: sv.dc, ab: sv.ab } });
+    notes.push(`${nm.name}: pushes the target ${pu.onHit.push} ft away on ${gated ? 'a failed save' : 'a hit'} (War Table; walls and creatures stop it).`);
+  }
   return a;
 }
 
@@ -566,6 +588,7 @@ function readSaveEffect(entry, nm, notes, h) {
   if (area) a.ext.area = area.square ? { shape: area.shape, size: area.size, square: true } : { shape: area.shape, size: area.size };
   if (/difficult terrain/i.test(t) && area) a.ext.zone = { difficult: true };
   const mv = movementEffect(t);
+  const pu = pushIn(t.split(/\bSuccess(?:ful)?\s*:/i)[0], t);      // on a failed save
   if (parts.length) {
     Object.assign(a, { type: 'atk', dpr: cleanDice(parts.map(p => p.dice).join(' + ')), toHit: sv.dc, useSaves: true });
     setDamageType(a, parts);
@@ -589,9 +612,18 @@ function readSaveEffect(entry, nm, notes, h) {
     Object.assign(a.ext, mv, { wtOnly: true });
     a._avg = 2 * targets;
     notes.push(`${nm.name}: ${mv.speedBonus ? (mv.speedBonus <= -60 ? 'stops the target moving' : 'slows the target') : ''}${mv.speedBonus && mv.onHit ? ' and ' : ''}${mv.onHit ? 'blocks its reactions' : ''} — War Table only; the exported day has no ${mv.speedBonus ? 'movement' : 'reactions'}.`);
+  } else if (pu) {
+    Object.assign(a, { type: 'debuff', saveDC: sv.dc, buff: { duration: durationIn(t, null) } });
+    a.ext.wtOnly = true;
+    a._avg = 2 * targets;
   } else {
     notes.push(`${nm.name}: a save with no damage or condition the simulator can use; left out.`);
     return null;
+  }
+  if (pu) {
+    a.ext.onHit = Object.assign({}, a.ext.onHit, pu.onHit);
+    const follow = /\b(?:can then|then can|can)\s+move[sd]? up to \d+ (?:feet|ft\.?) toward/i.test(t);
+    notes.push(`${nm.name}: pushes ${pu.onHit.push} ft away on a failed save (War Table; walls and creatures stop it)${follow ? '; the move after it is left out' : ''}${a.ext.wtOnly ? '; the exported day has no push' : ''}.`);
   }
   return a;
 }

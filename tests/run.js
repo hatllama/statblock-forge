@@ -3549,6 +3549,51 @@ section('Rules pass 2: Magic Resistance only against spells and other magical ef
   }
 }
 
+section('Rules pass 2: push effects read from statblocks');
+{
+  const act = (m, re) => m.actions.find(a => re.test(a.name));
+  const oh = (m, re) => { const x = act(m, re); return x && x.ext.onHit; };
+  const air = R2.srd('Air Elemental'), pq = R2.file('pasquale.txt');
+  const w = oh(air, /Whirlwind/), bb = oh(pq, /Both Barrels/), sc = oh(pq, /Shoulder Check/);
+  check(w && w.push === 20 && w.pushMaxSize === 'Medium', 'Whirlwind: pushed up to 20 ft, Medium or smaller (its targeting clause)');
+  check(bb && bb.push === 10 && bb.pushMaxSize === 'Gargantuan' && sc && sc.push === 10, 'Both Barrels and Shoulder Check: 10 ft, any size');
+  const head = 'Tester\nLarge giant, neutral\nArmor Class 15\nHit Points 60 (8d10 + 16)\nSpeed 30 ft.\nSTR 18 (+4) DEX 10 (+0) CON 14 (+2) INT 8 (-1) WIS 10 (+0) CHA 8 (-1)\nChallenge 3 (700 XP)\nActions\n';
+  const one = text => Parser.parse(head + text).monsters[0].actions[0];
+  const club = one('Club. Melee Weapon Attack: +6 to hit, reach 10 ft., one target. Hit: 13 (2d8 + 4) bludgeoning damage, and if the target is a Large or smaller creature, it is pushed up to 15 feet straight away from the tester.');
+  check(club.ext.onHit && club.ext.onHit.push === 15 && club.ext.onHit.pushMaxSize === 'Large' && !club.ext.onHit.pushSave, 'a push on a hit, with the size the sentence gives');
+  const shove = one('Shield Bash. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 9 (1d10 + 4) bludgeoning damage, and the target must succeed on a DC 14 Strength saving throw or be pushed 10 feet away from the tester.');
+  check(shove.ext.onHit && shove.ext.onHit.pushSave && shove.ext.onHit.pushSave.dc === 14 && shove.ext.onHit.pushSave.ab === 'str', 'a push behind a save of the hit waits for that save');
+  const gust = one('Gust. Each creature in a 15-foot cone must succeed on a DC 13 Strength saving throw or be pushed 10 feet away from the tester.');
+  check(gust && gust.type === 'debuff' && gust.ext.onHit.push === 10 && gust.ext.wtOnly, 'a save that only pushes is kept, War Table only');
+  check(!one('Club. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 13 (2d8 + 4) bludgeoning damage, and the tester pushes on.').ext.onHit, 'no distance, no push');
+
+  // on the board: failed save pushes straight away; walls and bodies stop it; size limit
+  const blast = (ex, dc) => ({ id: 'blast', name: 'Blast', actionSlot: 0, type: 'atk', dpr: '1d4', toHit: dc, useSaves: true, targets: 1, _range: 60, ext: { range: 60, saveAbility: 'str', onHit: Object.assign({ push: 20, pushMaxSize: 'Medium' }, ex) } });
+  const go = (a, opts) => {
+    const o = opts || {};
+    const b = R2.board([[o.pc || R2.pc('Fighter'), 10, 5]].concat(o.more || []), [[o.foe || R2.srd('Bandit Captain'), 9, 5]], o.sim), s = b.s, t = b.p[0], u = b.f[0];
+    t.hp = t.maxHp = 500;
+    s.resolveAttackAction(u, a, [t]);
+    return { x: t.x, y: t.y, s, t, u };
+  };
+  check(go(blast({}, 60)).x === 14, 'a failed save: pushed 20 ft straight away');
+  check(go(blast({}, 0)).x === 10, 'a passed save: no push');
+  check(go(blast({}, 60), { sim: { cells: { '13,5': { t: 'wall' } } } }).x === 12, 'a wall stops the push short');
+  check(go(blast({}, 60), { more: [[R2.pc('Rogue'), 12, 5]] }).x === 11, 'a creature in the way stops it: no stacking');
+  check(go(blast({ pushMaxSize: 'Small' }, 60)).x === 10, 'a Medium target is too big for "Small or smaller"');
+  // a diagonal push does not slip between two walls
+  {
+    const b = R2.board([[R2.pc('Fighter'), 10, 6]], [[R2.srd('Bandit Captain'), 9, 5]], { cells: { '11,6': { t: 'wall' }, '10,7': { t: 'wall' } } });
+    b.s.push(b.f[0], b.p[0], 10);
+    check(b.p[0].x === 10 && b.p[0].y === 6, 'no push diagonally between two walls');
+  }
+  // an attack: on a hit; with a save of its own, only on a failed one
+  const swing = ex => ({ id: 'sw', name: 'Swing', actionSlot: 0, type: 'atk', dpr: '1d4', toHit: 40, targets: 1, _range: 5, ext: { range: 5, onHit: Object.assign({ push: 10, pushMaxSize: 'Large' }, ex) } });
+  check(go(swing({})).x === 12 && go(swing({ pushSave: { dc: 60, ab: 'str' } })).x === 12 && go(swing({ pushSave: { dc: 0, ab: 'str' } })).x === 10, 'on a hit; behind a save: only when it fails');
+  const prone = Object.assign(swing({ pushOnRider: true }), { riderEffect: { dc: 60, buff: { duration: '1 round', condition: 'Is attacked with Advantage' } } });
+  check(go(prone).x === 12 && go(Object.assign({}, prone, { riderEffect: { dc: 0, buff: prone.riderEffect.buff } })).x === 10, 'pushOnRider: the one save gives the condition and the push, or neither');
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {
