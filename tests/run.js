@@ -3437,6 +3437,67 @@ section('Fiorenzo Minuzzi on the War Table: his mechanics through the vocabulary
   }
 }
 
+/* rules pass 2 (docs/ai-v2.md "Rules accuracy pass 2"): its sections share these builders */
+const R2 = (() => {
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const ready = (m, id) => {
+    m.id = id; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = id + i; });
+    if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = id + 's' + i; });
+    return m;
+  };
+  const text = name => ctx.M.find(m => m.name === name).text;
+  const srd = name => ready(cp(Parser.parse(text(name)).monsters[0]), name);
+  const file = name => ready(cp(Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', name), 'utf8')).monsters[0]), name);
+  const pc = name => cp(ctx.CB.find(c => c.name === name));
+  // a hand-set board: party members and foes at given squares, v2 set up, nobody's turn run
+  const board = (party, foes, opts) => {
+    const s = new Tac.Sim(Object.assign({ width: 30, height: 16, seed: 5, record: true }, opts));
+    const pu = Tac.expandTeam(party.map(p => p[0]), 'party', true), fu = Tac.expandTeam(foes.map(f => f[0]), 'foes', false);
+    pu.forEach((u, i) => { u.x = party[i][1]; u.y = party[i][2]; });
+    fu.forEach((u, i) => { u.x = foes[i][1]; u.y = foes[i][2]; });
+    s.setTerrain({ cells: (opts && opts.cells) || {} });
+    s.units = pu.concat(fu); s.byId = {}; s.units.forEach(u => { s.byId[u.uid] = u; });
+    s._last = {}; s.turnSeq = 1; s.round = 1; s.encountersLeft = 0; s.order = s.units.slice(); s.boardChanged(); s.units.forEach(u => s.v2Setup(u));
+    return { s, p: pu, f: fu };
+  };
+  return { cp, ready, text, srd, file, pc, board };
+})();
+
+section('Rules pass 2: an AC reaction against melee attacks only');
+{
+  const act = (m, re) => m.actions.find(a => re.test(a.name));
+  const scope = (m, re) => { const x = act(m, re); return x && ((x.ext.react && x.ext.react.against) || 'any'); };
+  const srdScopes = ['Bandit Captain', 'Knight', 'Gladiator', 'Warrior Veteran'].map(n => scope(R2.srd(n), /Parry/));
+  check(srdScopes.every(x => x === 'melee'), 'SRD Parry (Bandit Captain, Knight, Gladiator, Warrior Veteran) is against melee: ' + srdScopes);
+  check(scope(R2.file('pasquale.txt'), /^Parry/) === 'melee' && scope(R2.file('malenia.txt'), /Parry/) === 'melee' && scope(R2.file('bandit-captain-2014.txt'), /Parry/) === 'melee', 'Pasquale, Malenia and the 2014 Bandit Captain parry melee attacks');
+  check(scope(R2.file('fiorenzo.txt'), /Fitted Cut/) === 'any' && scope(R2.file('dorian-homebrew.txt'), /Molten Screen/) === 'any', '"when he is hit by an attack" is any attack (Fitted Cut, Molten Screen)');
+  const made = text => scope(R2.ready(R2.cp(Parser.parse('Tester\nMedium humanoid, neutral\nArmor Class 15\nHit Points 30 (4d8 + 12)\nSpeed 30 ft.\nSTR 14 (+2) DEX 14 (+2) CON 16 (+3) INT 10 (+0) WIS 10 (+0) CHA 10 (+0)\nChallenge 1 (200 XP)\nActions\nSword. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 6 (1d8 + 2) slashing damage.\nReactions\n' + text).monsters[0]), 'tester'), /Deflect/);
+  check(made('Deflect. The tester adds 2 to its AC against one ranged attack that would hit it.') === 'ranged', 'a "ranged attack" wording is against ranged attacks');
+  check(made('Deflect. The tester adds 2 to its AC against one melee or ranged attack that would hit it.') === 'any', '"melee or ranged attack" is any');
+  const dragon = R2.srd('Adult Red Dragon'), kraken = R2.ready(R2.cp(Parser.parse('Long Arm\nHuge monstrosity, neutral\nArmor Class 15\nHit Points 100 (10d12 + 30)\nSpeed 30 ft.\nSTR 20 (+5) DEX 10 (+0) CON 16 (+3) INT 5 (-3) WIS 10 (+0) CHA 5 (-3)\nChallenge 8 (3,900 XP)\nActions\nTentacle. Melee Weapon Attack: +8 to hit, reach 20 ft., one target. Hit: 14 (2d8 + 5) bludgeoning damage.').monsters[0]), 'longarm');
+  check(dragon.actions.every(a => a.ext.melee === undefined) && act(kraken, /Tentacle/).ext.melee === true, 'ext.melee is written only for a melee reach over 10 ft');
+
+  const shot = (name, range, ext) => ({ id: 'shot', name, actionSlot: 0, type: 'atk', dpr: '6d12', toHit: 10, targets: 1, _range: range, ext: Object.assign({ range, damageType: 'piercing' }, ext) });
+  // a Knight (AC 18) hit by exactly 1: Parry would turn it
+  const hitIt = (who, a, ax) => {
+    const b = R2.board([[R2.pc('Fighter'), ax === undefined ? 5 : ax, 5]], [[who, 6, 5]]), s = b.s, att = b.p[0], tgt = b.f[0];
+    s.current = att; s.d20 = () => tgt.baseAC - 9;
+    const r = s.attackRoll(att, tgt, a, {});
+    return { hit: r.hit, reaction: tgt.reaction, ac: r.ac };
+  };
+  const knight = () => R2.srd('Knight');
+  const far = hitIt(knight(), shot('Bow', 120), 20), near = hitIt(knight(), shot('Sword', 5)), reach = hitIt(knight(), shot('Tentacle', 20, { melee: true }));
+  check(far.hit && far.reaction && far.ac === knight().AC, `a ranged attack: no Parry, the reaction is kept (AC ${far.ac})`);
+  check(!near.hit && !near.reaction && near.ac === knight().AC + 2, `a melee attack: Parry, +2 AC, the hit becomes a miss (AC ${near.ac})`);
+  check(!reach.hit && !reach.reaction, 'a 20-ft melee reach is still melee');
+  const bolt = hitIt(knight(), shot('Arcane Burst', 120, { anyRange: true }), 5), bolt2 = hitIt(knight(), shot('Arcane Burst', 120, { anyRange: true }), 20);
+  check(!bolt.hit && bolt2.hit, '"Melee or Ranged" with one range: a melee attack up close, ranged from afar');
+  const fioShot = hitIt(R2.file('fiorenzo.txt'), shot('Bow', 120), 20);
+  check(!fioShot.hit && !fioShot.reaction, 'Fitted Cut answers a ranged attack too');
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {

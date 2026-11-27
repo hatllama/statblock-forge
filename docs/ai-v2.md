@@ -2513,3 +2513,20 @@ The default tier for Int ≥ 16 is cunning; `AI_TIERS.tiers` is mindless, animal
 ### Open issue found on the way (not fixed: a fix moves hashes, so not in a kind A job)
 
 A Spirit Guardians cast whose area comes out empty: with the Cleric in a doorway of the test map, `areaCatch` falls back to `{ cells: [] }` ("walls in the way: just the target"), the cast goes ahead, the zone has no squares, and the one "target" still takes the damage and a save, one square outside where the spell reaches. Seen in the hybrid walls scenario (Artificer seed 300 + 4 × 7919, Arcane Trickster 300 + 2 × 7919, fight 2); the same log on the tag with `foes: 'tiers'`, so it predates this job (it is the roadmap's "a Spirit Guardians hit one square outside its zone"). The hybrid test uses other seeds. A fix is an AI change: no cast when the area catches nobody (a term in `v2AimValue`, not a veto), with a harness row and a learn fixture update.
+
+## Rules accuracy pass 2 (2024 / SRD 5.2; push, Parry, Magic Resistance, areas, Magic Missile, War Caster)
+
+Branch `rules2`. Behaviour changes to the rules and the parser, one commit each; no AI weight is retuned. Evidence per step is in the commit
+message and below. Harness scripts live in `runs/rules2/` (not committed): every `ai-compare` family in open / learn / blind (200 runs, same
+seeds), the `play-hash` sets (default, open, learn, blind, `PREFIGHT=0`), the 12-run BOSS + TIER table, and Zaki's hard and boss days (600 runs).
+
+### 1. An AC reaction against melee attacks only
+
+"Adds N to its AC against one melee attack" now works against melee attacks only; before, a ranged attack could be parried too. The scope is
+data on the reaction: `ext.react.against` = `'melee'` or `'ranged'`, absent = any attack (Shield, Fitted Cut, "against that attack" after "hit by an
+attack"). The parser reads it from the trigger and response text ("by / against a|one|the melee … attack"; both words, or neither, = any), and
+`reactFits` (`core.js`) checks it against the swing, so the reaction layer neither fires nor prices it. Whether a swing is melee is one rule,
+`Sim.prototype.meleeSwing(att, tgt, a)`: `ext.melee` when set (the parser sets it only where the reach test would be wrong: a melee reach over
+10 ft), a "Melee or Ranged" attack with one long range (`ext.anyRange`) within 5 ft, else range 10 ft or less. Affected: SRD Bandit, Warrior,
+Knight and Gladiator Parry creatures, Bandit Captain, Pasquale's and Malenia's Parry (melee); Fiorenzo's Fitted Cut, Dorian's Molten Screen and
+Shield stay "any". A creature saved in a workspace or day file before this has no `ext.react.against` and keeps the old behaviour until re-imported.

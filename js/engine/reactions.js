@@ -91,7 +91,7 @@ Sim.prototype.reactHitV2 = function (S, opt) {
     const tgt = S.tgt, att = S.att;
     // Shield on the target
     if (!S.crit) {
-      const sh = this.reactFind(tgt, 'ac', 'hit');
+      const sh = this.reactFind(tgt, 'ac', 'hit', { roll: true, melee: this.meleeSwing(att, tgt, S.a) });
       if (sh) { const val = this.reactShieldValue(S, tgt, sh), net = val - this.reactPrice(tgt, sh, val, 0); if (net > 0) cands.push({ who: tgt, x: sh, net, kind: 'ac' }); }
     }
     // a coin-flip reaction on the target (Call It in the Air): it shares the one reaction with Shield and the rest, the best net wins

@@ -424,6 +424,16 @@ function rangeOf(txt, fallback) {
   return fallback ? { ranged: fallback } : {};
 }
 
+/* which attacks a reaction answers, from its wording: "against one melee attack", "hit by a ranged attack roll"; '' (any) when it names neither or both */
+function attackScope(txt) {
+  if (/\bmelee or ranged\b|\branged or melee\b/i.test(txt)) return '';
+  const re = /\b(?:by|against)\s+(?:a|an|one|the|that)\s+(melee|ranged)\b[^.]{0,20}?\battack/gi;
+  const seen = {};
+  let m;
+  while ((m = re.exec(txt))) seen[m[1].toLowerCase()] = true;
+  return seen.melee && !seen.ranged ? 'melee' : seen.ranged && !seen.melee ? 'ranged' : '';
+}
+
 function movementEffect(txt) {
   const ext = {};
   if (/speed (?:is |becomes )?(?:reduced to|becomes|is) 0|speed of 0|can't move|cannot move|spend(?:s)? (?:all )?its movement|uses? (?:all )?its movement/i.test(txt)) ext.speedBonus = -60;
@@ -450,6 +460,7 @@ function readAttack(entry, nm, notes) {
   // "Melee or Ranged" with one range and no long range (Arcane Burst, Eldritch Burst: a spell, not a thrown weapon): usable at that range, and up close as a melee attack
   if (kind === 'melee or ranged' && rg.ranged && !/range\s*\d+\s*\/\s*\d+/i.test(t)) { a.ext.range = rg.ranged; a.ext.anyRange = true; a._either = true; }
   a._melee = kind !== 'ranged';
+  if (kind !== 'ranged' && !a.ext.anyRange && a.ext.range > 10) a.ext.melee = true;      // a 15-ft reach is still a melee attack (Parry)
   a._ranged = kind !== 'melee' ? (rg.ranged || 20) : 0;
   a._avg = parts.reduce((s, p) => s + p.avg, 0) || avgDice(dpr);
   setDamageType(a, parts);
@@ -1069,6 +1080,7 @@ function comboAction(name, combo) {
   const melee = !forceRanged && combo.every(c => c.a._melee);
   a.ext.range = melee ? Math.min(...combo.map(c => c.a.ext.range)) : Math.min(...combo.map(c => c.a._ranged || c.a.ext.range));
   if (combo.every(c => c.a._either)) a.ext.anyRange = true;
+  if (melee && !a.ext.anyRange && a.ext.range > 10) a.ext.melee = true;
   // riders and grapples from the attack that makes up most of the routine
   const lead = combo.slice().sort((p, q) => q.n - p.n)[0].a;
   if (lead.riderEffect) a.riderEffect = JSON.parse(JSON.stringify(lead.riderEffect));
@@ -1275,7 +1287,8 @@ function parseOne(block) {
       }
       if (sec === 'reactions' && /(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to (?:its|his|her|their) AC/i.test(e.text)) {
         const ac = +e.text.match(/(?:adds?|gains?)\s*(?:a\s*)?\+?(\d+)\s*(?:bonus\s*)?to (?:its|his|her|their) AC/i)[1];
-        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', ac }, ext: { range: 0 } });
+        const against = attackScope(e.text);
+        parsedBySection[sec].push({ name: nm.name, actionSlot: 4, freq: nm.freq, condition: 'default', targets: 1, type: 'buff', target: 'self', buff: { duration: 'until next attack taken', ac }, ext: against ? { range: 0, react: { against } } : { range: 0 } });
         continue;
       }
       // "When a creature ends its turn within 5 feet of it, it moves up to 10 feet away … without provoking"

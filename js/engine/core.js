@@ -432,6 +432,14 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };
 };
 
+/* is this swing a melee attack (docs/ai-v2.md "Rules accuracy pass 2")? ext.melee where the reach test would be wrong (a reach over 10 ft);
+   a "Melee or Ranged" attack with one long range is a melee attack up close; else a reach of 10 ft or less */
+Sim.prototype.meleeSwing = function (att, tgt, a) {
+  const ex = a.ext || {};
+  if (typeof ex.melee === 'boolean') return ex.melee;
+  if (ex.anyRange && this.dist(att, tgt) <= 5) return true;
+  return (a._range || 5) <= 10;
+};
 /* attack roll; returns {hit, crit, total, ac} */
 /* feature-based advantage: Assassinate (round 1, target hasn't acted) and Vex (weapon mastery) */
 Sim.prototype.featureAdv = function (att, tgt) {
@@ -499,6 +507,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
 function reactFits(x, info) {
   const rx = x.ext && x.ext.react;
   if (!rx) return true;
+  if (rx.against && info.melee !== undefined && (rx.against === 'melee') !== info.melee) return false;      // "against one melee attack" (Parry)
   if (rx.roll && !info.roll) return false;
   if (rx.types) {
     const type = String(info.type || (info.a && info.a.ext && info.a.ext.damageType) || '').toLowerCase();
