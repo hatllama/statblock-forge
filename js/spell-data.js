@@ -62,7 +62,7 @@ const S = {
   "hunter's mark":    { L: 1, k: 'buff', bonus: true, c: true, tg: 'self', b: { duration: 'entire encounter', damage: '1d6' } },
   'ice knife':        { L: 1, k: 'atk', d: '1d10 + 2d6', r: 60, u: '1d6' },
   'inflict wounds':   { L: 1, k: 'atk', d: '3d10', r: 5, u: '1d10' },
-  'magic missile':    { L: 1, k: 'atk', d: '3d4 + 3', r: 120, u: '1d4 + 1', auto: true },
+  'magic missile':    { L: 1, k: 'atk', d: '1d4 + 1', r: 120, hits: 3, ut: 1, auto: true, e: { darts: true } },
   'ray of sickness':  { L: 1, k: 'atk', d: '2d8', r: 60, u: '1d8', rider: { duration: '1 round', condition: 'Poisoned' } },
   'shield':           { L: 1, k: 'shield', react: true },
   'shield of faith':  { L: 1, k: 'buff', bonus: true, c: true, tg: 'ally', r: 60, b: { duration: 'entire encounter', ac: 2 } },

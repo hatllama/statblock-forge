@@ -700,6 +700,7 @@ function spellAction(n, sp, ctx, extra) {
     Object.assign(a, { type: 'atk', dpr: sp.beams ? sp.d : scaled, toHit: sp.auto ? 99 : ctx.atk, target: 'enemy with most HP' });
     if (sp.beams) a.targets = ctx.cantripDice;
     if (sp.hits) a.targets = sp.hits;
+    if (sp.hits && sp.ut && extra.atLevel > sp.L) a.targets += sp.ut * (extra.atLevel - sp.L);     // "Magic Missile (level 3 version)": more darts
   } else if (sp.k === 'save') {
     Object.assign(a, { type: 'atk', dpr: scaled, toHit: ctx.dc, useSaves: true, target: 'enemy with most HP' });
     if (sp.h) a.halfOnSave = true;

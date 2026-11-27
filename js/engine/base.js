@@ -105,8 +105,16 @@ const TEMPLATES = {
   'Shield': { actionSlot: 4, type: 'buff', targets: 1, target: 'self', buff: { duration: '1 round', ac: 5 } },
 };
 
+/* Magic Missile: darts, each its own target and damage, no attack roll (docs/ai-v2.md "Rules accuracy pass 2"). Data written before this (one
+   3d4 + 3 "attack" at +99, or a plain export of the darts) reads the same: n d4 + n is n darts a swing, one more per slot level above the first */
+function magicMissile(a) {
+  if (!a || a.type !== 'atk' || a.useSaves || (a.ext && a.ext.darts) || !/^magic missile\b/i.test(a.name || '') || !(avgDice(a.toHit) >= 99)) return a;
+  const p = parseDice(a.dpr), d = p.dice[0];
+  if (p.dice.length !== 1 || d.d !== 4 || p.flat !== d.n) return a;
+  return Object.assign({}, a, { dpr: '1d4 + 1', targets: d.n * (a.targets || 1), upcast: null, upcastTargets: 1, ext: Object.assign({}, a.ext, { darts: true }) });
+}
 function finalizeAction(a) {
-  if (a.type !== 'template') return a;
+  if (a.type !== 'template') return magicMissile(a);
   const o = a.templateOptions || {};
   const t = TEMPLATES[o.templateName];
   if (!t) return null;
@@ -237,7 +245,7 @@ const effectName = n => String(n || '').toLowerCase().replace(/\s*\(.*$/, '').tr
 // a pool of hit points (Lay on Hands: ext.pool with die 1): v2 picks how many to spend (docs/ai-v2.md "Hybrids")
 const isHpPool = a => !!(a && a.type === 'heal' && a.ext && a.ext.pool && a.ext.pool.die === 1);
 function spellActions(sb) {
-  return sb.spells.filter(sp => sp && sp.type).map(sp => {
+  return sb.spells.filter(sp => sp && sp.type).map(magicMissile).map(sp => {
     const lvl = Math.max(0, Math.min(9, parseInt(sp.level, 10) || 0));
     const base = Object.assign({}, sp, { id: 'sb:' + sp.id, freq: 'at will', condition: 'default',
       actionSlot: typeof sp.actionSlot === 'number' ? sp.actionSlot : 0, targets: sp.targets || 1 });

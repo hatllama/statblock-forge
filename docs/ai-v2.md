@@ -2574,3 +2574,15 @@ searches already skipped such a target; `choose` / `planInner` takes the next be
 `-Infinity`. This is a rules fix with no AI term: an area is only ever aimed where it catches someone. It covers every emanation, set-down
 burst and cube (cones and lines already refused). The hybrid walls test plays its original seeds again. The 10-ft emanation test for big
 creatures had passed on the empty area (its target was off the corner); it now aims inside the template.
+
+### 5. Magic Missile as separate darts
+
+Magic Missile was one "attack" at +99 for `3d4 + 3`: it could miss on a natural 1, crit, be parried, and put everything on one creature. Now it is
+three darts (`targets: 3`, `dpr: '1d4 + 1'`, `ext.darts`), one more per slot level above 1st (`upcastTargets: 1`). A dart is not an attack
+roll (`dartOnce` in `core.js`): it hits, rolls its own `1d4 + 1` force, ignores cover, takes no attack-roll buffs (Hex, Sneak Attack, a coin),
+and each is its own damage instance (a concentration save each, a death-save failure each). Targets are picked as for Eldritch Blast's beams and
+Scorching Ray: the pick takes darts until it drops (or leaves), then `v2Repick` chooses the next with the same `v2Value` scoring, so `kHp` and
+the knowledge mode (nothing reads the true HP). v2's estimate: `hitChance` is 1 for a dart and `expected` adds no damage buffs; the spill term
+already values the darts left over. Data saved before this (the one `3d4 + 3` attack: day files, saved parties, the converter's output) is read
+as darts by `magicMissile` (`base.js`), by name and shape. Plain exports now say three targets of `1d4 + 1`. Not done: Shield's "no damage from
+Magic Missile" (backlog).

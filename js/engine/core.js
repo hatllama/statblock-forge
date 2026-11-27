@@ -859,8 +859,19 @@ Sim.prototype.sneakOk = function (u, t, a, r) {
   if (r.adv) return true;
   return this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && !this.incap(o) && this.dist(o, t) <= 5);
 };
+/* one Magic Missile dart (ext.darts): no attack roll, so no reactions to a hit, no cover, no attack-roll buffs; its own damage, its own instance.
+   Casting still gives away a hidden caster */
+Sim.prototype.dartOnce = function (u, a, t) {
+  const at = this.mark();
+  this.dropBuffs(u, b => b.expiry === 'hide');
+  const raw = rollDice(a.dpr, this.R, false) * this.multBuff(u, 'damageMultiplier');
+  const dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, a });
+  this.ev('attack', `${u.name} → ${t.name}: ${a.name} dart, ${dealt} damage`, { uid: u.uid, target: t.uid, hit: true, dmg: dealt, ranged: true });
+  this.hoist(at);
+};
 Sim.prototype.attackOnce = function (u, a, t, opt) {
   opt = opt || {};
+  if (a.ext && a.ext.darts) return this.dartOnce(u, a, t);
   const r = this.attackRoll(u, t, a, opt);
   let dealt = 0, sa = false, smTag = '', boltFx = null;
   const at = this.mark();

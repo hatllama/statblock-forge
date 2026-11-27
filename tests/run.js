@@ -3455,7 +3455,7 @@ const R2 = (() => {
   // a hand-set board: party members and foes at given squares, v2 set up, nobody's turn run
   const board = (party, foes, opts) => {
     const s = new Tac.Sim(Object.assign({ width: 30, height: 16, seed: 5, record: true }, opts));
-    const pu = Tac.expandTeam(party.map(p => p[0]), 'party', true), fu = Tac.expandTeam(foes.map(f => f[0]), 'foes', false);
+    const pu = Tac.expandTeam(party.map(p => p[0]), 'party', true), fu = Tac.expandTeam(foes.map((f, i) => Object.assign(f[0], { id: f[0].id + '#' + i })), 'foes', false);     // two of one monster need their own ids
     pu.forEach((u, i) => { u.x = party[i][1]; u.y = party[i][2]; });
     fu.forEach((u, i) => { u.x = foes[i][1]; u.y = foes[i][2]; });
     s.setTerrain({ cells: (opts && opts.cells) || {} });
@@ -3624,6 +3624,43 @@ section('Rules pass 2: an area that cannot catch its target is no area');
     const ac = s.areaCatch(sg, t, u.x, u.y, [t], u);
     check(ac && ac.cells.length > 0, 'a foe it can reach is still caught');
   }
+}
+
+section('Rules pass 2: Magic Missile as separate darts');
+{
+  const mm = u => u.actions.find(a => /^Magic Missile/.test(a.name));
+  const wiz = R2.pc('Wizard').ext.spellbook.spells.find(a => /^Magic Missile/.test(a.name));
+  check(wiz.targets === 3 && wiz.dpr === '1d4 + 1' && wiz.upcastTargets === 1 && !wiz.upcast && wiz.ext.darts, 'the built Wizard: three darts of 1d4 + 1, one more per level above 1st');
+  const read = Parser.parse('Tester\nMedium humanoid, neutral\nArmor Class 12\nHit Points 40 (9d8)\nSpeed 30 ft.\nSTR 9 (-1) DEX 14 (+2) CON 11 (+0) INT 17 (+3) WIS 12 (+1) CHA 11 (+0)\nChallenge 6 (2,300 XP)\nTraits\nSpellcasting. The tester is a 9th-level spellcaster (spell save DC 14, +6 to hit with spell attacks). It has the following wizard spells prepared:\n1st level (4 slots): magic missile\nActions\nDagger. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 4 (1d4 + 2) piercing damage.').monsters[0].ext.spellbook.spells[0];
+  check(read.targets === 3 && read.dpr === '1d4 + 1' && read.ext.darts, 'a statblock caster\'s Magic Missile reads as darts');
+  // the old shape (a day file, a saved party, a plain export) plays as darts
+  const hardMage = fixture('hard-day.json').encounters[2].monsters.find(m => m.name === 'Mage');
+  const old = Tac.expandTeam([hardMage], 'foes', false)[0];
+  check(mm(old).targets === 3 && mm(old).dpr === '1d4 + 1' && mm(old).ext.darts && mm(old)._spell.upcastTargets === 1 && !mm(old)._spell.upcast, 'the old 3d4 + 3 attack at +99 is read as darts');
+
+  const goblin = hp => { const g = R2.srd('Goblin Warrior'); g.hp = hp; return g; };
+  const cast = (foes, L, opts) => {
+    const b = R2.board([[R2.pc('Wizard'), 3, 5]], foes, opts), s = b.s, u = b.p[0];
+    s.current = u; u.turnNo = 1; u.castAt = L || 0;
+    const a = mm(u); s.spend(u, a); u.castAt = L || 0;
+    s.doAction(u, a, { targets: [b.f[0]] });
+    return { s, u, f: b.f, darts: s.events.filter(e => /Magic Missile.* dart/.test(e.text)) };
+  };
+  const three = cast([[goblin(1), 8, 4], [goblin(1), 8, 6], [goblin(1), 9, 5]]);
+  check(three.darts.length === 3 && new Set(three.darts.map(e => e.target)).size === 3 && three.f.every(t => t.hp <= 0), `three darts go to three targets as each drops (${three.darts.map(e => e.target.split(':')[0])})`);
+  const one = cast([[goblin(200), 8, 5]]);
+  check(one.darts.length === 3 && one.darts.every(e => e.dmg >= 2 && e.dmg <= 5) && one.f[0].hp === 200 - one.darts.reduce((n, e) => n + e.dmg, 0), `each dart rolls its own 1d4 + 1 (${one.darts.map(e => e.dmg)})`);
+  check(one.s.events.every(e => !/vs AC|CRIT|miss/.test(e.text)), 'no attack roll: no miss, no critical hit');
+  const up = cast([[goblin(200), 8, 5]], 3);
+  check(up.darts.length === 5, `cast with a 3rd-level slot: five darts (${up.darts.length})`);
+  // armor, cover and Parry don't matter
+  const knight = cast([[Object.assign(R2.srd('Knight'), { hp: 200, AC: 40 }), 8, 5]], 0, { cells: { '7,5': { t: 'cover' } } });
+  check(knight.darts.length === 3 && knight.f[0].reaction, 'armor class and cover don\'t matter, and no Parry');
+  // knowledge: a learning party re-picks on what it sees (the target drops), never on the true hit points
+  const learn = cast([[goblin(1), 8, 4], [goblin(60), 8, 6]], 0, { know: { party: 'learn' } });
+  check(learn.darts.length === 3 && learn.darts[0].target !== learn.darts[1].target, 'a downed target\'s remaining darts re-pick');
+  const a = mm(one.u);
+  check(one.s.hitChance(one.u, one.f[0], a) === 1, 'v2 reads a dart as certain to hit');
 }
 
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
