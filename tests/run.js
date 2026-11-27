@@ -421,10 +421,11 @@ section('Creature sizes');
     const onEdge = ac && ac.ox >= dr.x && ac.ox < dr.x + n && ac.oy >= dr.y && ac.oy < dr.y + n && (ac.ox === dr.x || ac.oy === dr.y || ac.ox === dr.x + n - 1 || ac.oy === dr.y + n - 1);
     check(ac && own === 0 && onEdge && ac.extra.length === 1, `a ${z} creature's cone starts on its body's edge (${ac && ac.ox},${ac && ac.oy}), covers none of its own squares (${own}) and catches both foes beside its far corner (${ac ? ac.extra.length + 1 : 0})`);
     const em = { id: 'em', name: 'Spirit Spray', type: 'atk', useSaves: true, actionSlot: 0, targets: 9, dpr: '10', ext: { area: { shape: 'emanation', size: 10 } } };
-    const far = unit('f', 'party', dr.x + n + 1, dr.y + n + 1, 1), out = unit('o', 'party', dr.x + n + 2, dr.y + n - 1, 1);
+    // (2 squares past the far side and 1 down: inside the round 10-ft emanation; 2 and 2, the corner, is not)
+    const far = unit('f', 'party', dr.x + n + 1, dr.y + n, 1), out = unit('o', 'party', dr.x + n + 2, dr.y + n - 1, 1);
     const s2 = board(24, 18, {}, [dr, far, out]); s2._mn = n;
     const e2 = s2.areaCatch(em, far, dr.x, dr.y, [far, out], dr);
-    check(e2 && e2.cells.every(([x, y]) => !(x >= dr.x && x < dr.x + n && y >= dr.y && y < dr.y + n)) && !e2.extra.includes(out), `a ${z} creature's 10-ft emanation reaches 10 ft past the far side of its body and no further`);
+    check(e2 && e2.cells.length > 0 && e2.cells.every(([x, y]) => !(x >= dr.x && x < dr.x + n && y >= dr.y && y < dr.y + n)) && !e2.extra.includes(out), `a ${z} creature's 10-ft emanation reaches 10 ft past the far side of its body and no further`);
     // a resolved area catches a big body by any of its squares, not just the top-left one
     const burst = { useSaves: true, type: 'atk', actionSlot: 0, ext: { area: { shape: 'sphere', size: 5 } } };
     const tgt = unit('t', 'foes', 10, 10, n, z), s3 = board(24, 18, {}, [tgt]);
@@ -1767,7 +1768,7 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
   const on = {}, acted = {}, smite = { n: 0, kill: 0 }, hm = { turns: 0, noAtk: 0 };
   for (const cls of HYB) for (const layout of [null, walled]) for (let i = 0; i < 6; i++) {
     const res = Tac.runDay({ players: [build(cls), build('Fighter'), build('Cleric')], encounters: [{ monsters: [foe('Brute', 45, 2, 9), foe('Scrapper', 14, 3, 5)] }, { monsters: [foe('Brute', 45, 3, 9)] }] },
-      { seed: 310 + i * 7919, record: true, _keep: true, layouts: layout ? { 0: layout, 1: layout } : undefined });     // (seed 300 + i * 7919 hits an open issue: a Spirit Guardians cast with an empty area, docs/ai-v2.md "Phase 6 step 2")
+      { seed: 300 + i * 7919, record: true, _keep: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
     const me = res._sim.units.find(u => u.name === cls);
     on[cls] = (on[cls] === undefined ? true : on[cls]) && !!me.v2P;
     for (const r of res) {
@@ -3459,7 +3460,7 @@ const R2 = (() => {
     fu.forEach((u, i) => { u.x = foes[i][1]; u.y = foes[i][2]; });
     s.setTerrain({ cells: (opts && opts.cells) || {} });
     s.units = pu.concat(fu); s.byId = {}; s.units.forEach(u => { s.byId[u.uid] = u; });
-    s._last = {}; s.turnSeq = 1; s.round = 1; s.encountersLeft = 0; s.order = s.units.slice(); s.boardChanged(); s.units.forEach(u => s.v2Setup(u));
+    s._last = {}; s.turnSeq = 1; s.round = 1; s.encountersLeft = 0; s.order = s.units.slice(); s.zones = s.zones || []; s.boardChanged(); s.units.forEach(u => s.v2Setup(u));
     return { s, p: pu, f: fu };
   };
   return { cp, ready, text, srd, file, pc, board };
@@ -3592,6 +3593,37 @@ section('Rules pass 2: push effects read from statblocks');
   check(go(swing({})).x === 12 && go(swing({ pushSave: { dc: 60, ab: 'str' } })).x === 12 && go(swing({ pushSave: { dc: 0, ab: 'str' } })).x === 10, 'on a hit; behind a save: only when it fails');
   const prone = Object.assign(swing({ pushOnRider: true }), { riderEffect: { dc: 60, buff: { duration: '1 round', condition: 'Is attacked with Advantage' } } });
   check(go(prone).x === 12 && go(Object.assign({}, prone, { riderEffect: { dc: 0, buff: prone.riderEffect.buff } })).x === 10, 'pushOnRider: the one save gives the condition and the push, or neither');
+}
+
+section('Rules pass 2: an area that cannot catch its target is no area');
+{
+  // a Cleric standing in a one-square gap of a wall column at x = 6 (the gap at y = 6)
+  const gap = {}; for (let y = 0; y < 16; y++) if (y !== 6) gap['6,' + y] = { t: 'wall' };
+  const sgOf = u => u.actions.find(a => /^Spirit Guardians/.test(a.name));
+  const dummy = () => R2.srd('Bandit Captain');
+  const setup = (fx, fy, cells) => {
+    const b = R2.board([[R2.pc('Cleric'), 6, 6]], [[dummy(), fx, fy]], { cells });
+    return { s: b.s, u: b.p[0], t: b.f[0], sg: sgOf(b.p[0]) };
+  };
+  {
+    const { s, u, t, sg } = setup(7, 8, gap);       // within 15 ft, but round the corner behind the wall
+    check(!!sg && s.dist(u, t) <= 15 && !s.los(u.x, u.y, t.x, t.y, true), 'the foe is within reach but out of sight round the wall');
+    check(s.areaCatch(sg, t, u.x, u.y, [t], u) === null, 'no area catches it: areaCatch gives nothing, not an empty area');
+    check(s.plan(u, sg, 0) === null && s.v2Aim(u, sg, t) === null, 'so neither picker casts it');
+    s.current = u; u.turnNo = 1; s.turn(u);
+    // it may step out of the gap and cast from where the foe is in sight; a zone is never empty, and whoever it hurts stands in it
+    const hurt = s.events.some(e => e.kind === 'save' && /Spirit Guardians/.test(e.text));
+    check(!s.zones.some(z => !z.cells.size) && (!hurt || s.zones.some(z => s.coversIn(z.cells, t))), `its turn casts no empty Spirit Guardians (cast: ${hurt}, from ${u.x},${u.y})`);
+  }
+  {
+    const { s, u, t, sg } = setup(3, 9, {});         // open field: within 15 ft by squares, outside the round emanation
+    check(s.dist(u, t) <= 15 && s.areaCatch(sg, t, u.x, u.y, [t], u) === null, 'a foe off the corner of the emanation is not caught either');
+  }
+  {
+    const { s, u, t, sg } = setup(7, 6, gap);        // beside the gap, in sight: caught
+    const ac = s.areaCatch(sg, t, u.x, u.y, [t], u);
+    check(ac && ac.cells.length > 0, 'a foe it can reach is still caught');
+  }
 }
 
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,

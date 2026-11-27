@@ -1002,7 +1002,8 @@ Sim.prototype.v2FogValue = function (u, a, t, pool, x, y) {
   if (this.zones && this.zones.some(z => z.fog && z.src === u.uid)) return -Infinity;
   const W = u.v2P.w, live = pool.filter(o => o.hp > 0);
   const ac = this.areaCatch(a, t, x, y, live, u);
-  const caught = [t].concat(ac ? ac.extra : []);
+  if (!ac) return -Infinity;                     // no cloud there to catch t
+  const caught = [t].concat(ac.extra);
   const mine = this.alliesOf(u).filter(o => o.onBoard && this.alive(o));
   let stop = 0;
   for (const c of caught) {

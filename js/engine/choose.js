@@ -5,7 +5,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { sizeIdx, freqKind, Sim, isHideAction } = ENG;
+const { sizeIdx, freqKind, Sim, isHideAction, areaSpec } = ENG;
 
 /* What a spell slot costs: it grows with the slot's level, with how many fights are still ahead and how few slots are left,
    and shrinks when things are going badly (used to price a levelled reaction spell). */
@@ -108,6 +108,7 @@ Sim.prototype.planInner = function (u, a, budget) {
     const targets = [t];
     const n = a.targets || 1;
     const ac = offensive ? this.areaCatch(a, t, d.x, d.y, pool, u) : null;
+    if (!ac && offensive && areaSpec(a)) return null;      // an area that can't catch t from there
     if (ac) {
       targets.push(...ac.extra);
       return { friends: ac.friends, dest: { x: d.x, y: d.y }, path: this.pathTo(rm, d.x, d.y), targets, why: ac.extra.length ? (why === 'cluster' || !why ? 'cluster' : why) : why,
@@ -123,16 +124,18 @@ Sim.prototype.planInner = function (u, a, budget) {
   };
 
   /* score every target it could reach and pick the best */
-  let pick = null, bestVal = -Infinity;
+  const picks = [];
   for (const t of pool) {
     const d = bestDest(t);
     if (!d) continue;
     const tv = this.targetValue(u, a, t, pool, d.x, d.y);
     if (tv.friendly && tv.val <= 0) continue;                 // not worth catching our own people
-    const val = tv.val - d.cost / 10;
-    if (val > bestVal) { bestVal = val; pick = { t, d, why: tv.why }; }
+    picks.push({ t, d, why: tv.why, val: tv.val - d.cost / 10 });
   }
-  return pick ? finish(pick.t, pick.d, pick.why) : null;
+  // the best target whose plan holds up (an area may not reach it from the square: finish gives null)
+  picks.sort((p, q) => q.val - p.val);
+  for (const p of picks) { const plan = finish(p.t, p.d, p.why); if (plan) return plan; }
+  return null;
 };
 
 /* ----- choosing an action ----- */

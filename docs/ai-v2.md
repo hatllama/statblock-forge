@@ -2563,3 +2563,14 @@ when the same save already gives a condition). A save with no damage or conditio
 ("… can then move up to 10 feet toward it") stays a note: the trait vocabulary has no movement word. Movement rules: a push goes straight away
 from the pusher's body, stops before a wall, another creature, a ledge or the map edge, and (new) does not slip diagonally between two walls.
 No AI term was added; v2 reads a push on an attack as it did before.
+
+### 4. An area that cannot catch its target
+
+`areaCatch` (`grid.js`) answered "the target is not in this area" (a wall in the way, or the square is off the template) with a made-up area:
+no squares, "just the target". The cast went ahead: a Spirit Guardians from a doorway left an empty zone and still hurt one creature, and on an
+open field a foe off the corner of a round emanation (3 squares across and 3 up, inside the 15-ft "reach") was hit although no square of the
+template held it (the "Open issue" above, and phase 6 step 1's "a hit one square outside its zone"). Now it returns `null`: no area. v2's
+searches already skipped such a target; `choose` / `planInner` takes the next best target (`finish` gives `null`), and `v2FogValue` reads
+`-Infinity`. This is a rules fix with no AI term: an area is only ever aimed where it catches someone. It covers every emanation, set-down
+burst and cube (cones and lines already refused). The hybrid walls test plays its original seeds again. The 10-ft emanation test for big
+creatures had passed on the empty area (its target was off the corner); it now aims inside the template.
