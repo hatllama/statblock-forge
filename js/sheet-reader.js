@@ -211,7 +211,7 @@ function fromFoundry(a) {
     return s.level === 0 || p.prepared || (p.mode && p.mode !== 'prepared') || s.prepared === 1 || s.prepared === 2 || (s.method && s.method !== 'spell');
   }).map(i => i.name);
   const resist = ((sys.traits && sys.traits.dr && sys.traits.dr.value) || []);
-  return { name: a.name, classes, scores, hp, ac, unarmored: !armor, dexM, speed: mv.walk || 30, fly: mv.fly || 0, saveProf, attacks, spells, resist: Array.isArray(resist) ? resist : [], notes, src: 'Foundry VTT' };
+  return { name: a.name, classes, scores, hp, ac, unarmored: !armor, dexM, speed: mv.walk || 30, fly: mv.fly || 0, saveProf, attacks, spells, resist: Array.isArray(resist) ? resist : [], feats: items.filter(i => i.type === 'feat').map(i => i.name), notes, src: 'Foundry VTT' };
 }
 
 /* ---------- facts from text (pasted sheets, PDF form fields) ---------- */
@@ -407,7 +407,8 @@ function fromText(raw) {
   const sz = t.match(/^[ \t]*size[ \t]*[:=][ \t]*(tiny|small|large|huge|gargantuan)\b/im);
   const feats = featList.length && !ftText ? featList.map(x => x.name + ' ' + x.body).join(' ') : ftText;
   if (name && name === name.toUpperCase()) name = titleCase(name);
-  return { name: name.trim(), classes, scores: sc, hp, ac, speed, fly, init, saveVals, saveProf, attacks, spells, slots: slots.length ? slots : null, dc, spellAtk: satk, resist, notes, featList, inventory, coins, featuresText: feats, skills: skillsKnown ? skills : undefined, unarmored, dexM: mod(sc[1]), size: sz ? titleCase(sz[1]) : '', src: 'text' };
+  const featLines = (t.match(/^[ \t]*feats?\b[ \t]*[:=][^\n]+/gim) || []).map(l => l.replace(/^[^:=]*[:=]/, '').trim());     // "Feats: War Caster, Alert"
+  return { feats: featLines, name: name.trim(),classes, scores: sc, hp, ac, speed, fly, init, saveVals, saveProf, attacks, spells, slots: slots.length ? slots : null, dc, spellAtk: satk, resist, notes, featList, inventory, coins, featuresText: feats, skills: skillsKnown ? skills : undefined, unarmored, dexM: mod(sc[1]), size: sz ? titleCase(sz[1]) : '', src: 'text' };
 }
 
 /* ---------- page layout: PDF text items -> lines ---------- */
@@ -560,6 +561,9 @@ function classFeatures(f, pb, add, ext, used) {
   if (ent('celestial revelation')) { add({ name: 'Celestial Revelation (Heavenly Wings)', actionSlot: 1, freq: { reset: 'lr', uses: 1 }, condition: 'not used yet', type: 'buff', target: 'self', buff: { duration: 'entire encounter', damage: String(pb) }, ext: { grantFly: f.speed || 30, endsOnIncap: true } }); used.push('celestial revelation'); }
   if (ent('lucky')) { ext.luck = pb; used.push('lucky'); }
   if (ent('elven accuracy')) { ext.elvenAccuracy = true; used.push('elven accuracy'); }
+  // War Caster: advantage on concentration saves, wherever the sheet names it (feature list, D&D Beyond or Foundry feats, a "Feats:" line)
+  const named = [].concat((f.featList || []).map(x => x.name), f.traits || [], f.feats || [], f.features || [], f.featuresText || '');
+  if (named.some(n => /\bwar caster\b/i.test(String(n)))) { ext.warCaster = true; used.push('war caster'); }
   if (mo) {
     const die = mo >= 17 ? 'd12' : mo >= 11 ? 'd10' : mo >= 5 ? 'd8' : 'd6', dm = Math.max(M(0), M(1));
     if (mo >= 2) ext.resources = Object.assign(ext.resources || {}, { 'Focus Points': { uses: mo, reset: 'sr' } });

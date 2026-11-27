@@ -421,10 +421,11 @@ section('Creature sizes');
     const onEdge = ac && ac.ox >= dr.x && ac.ox < dr.x + n && ac.oy >= dr.y && ac.oy < dr.y + n && (ac.ox === dr.x || ac.oy === dr.y || ac.ox === dr.x + n - 1 || ac.oy === dr.y + n - 1);
     check(ac && own === 0 && onEdge && ac.extra.length === 1, `a ${z} creature's cone starts on its body's edge (${ac && ac.ox},${ac && ac.oy}), covers none of its own squares (${own}) and catches both foes beside its far corner (${ac ? ac.extra.length + 1 : 0})`);
     const em = { id: 'em', name: 'Spirit Spray', type: 'atk', useSaves: true, actionSlot: 0, targets: 9, dpr: '10', ext: { area: { shape: 'emanation', size: 10 } } };
-    const far = unit('f', 'party', dr.x + n + 1, dr.y + n + 1, 1), out = unit('o', 'party', dr.x + n + 2, dr.y + n - 1, 1);
+    // (2 squares past the far side and 1 down: inside the round 10-ft emanation; 2 and 2, the corner, is not)
+    const far = unit('f', 'party', dr.x + n + 1, dr.y + n, 1), out = unit('o', 'party', dr.x + n + 2, dr.y + n - 1, 1);
     const s2 = board(24, 18, {}, [dr, far, out]); s2._mn = n;
     const e2 = s2.areaCatch(em, far, dr.x, dr.y, [far, out], dr);
-    check(e2 && e2.cells.every(([x, y]) => !(x >= dr.x && x < dr.x + n && y >= dr.y && y < dr.y + n)) && !e2.extra.includes(out), `a ${z} creature's 10-ft emanation reaches 10 ft past the far side of its body and no further`);
+    check(e2 && e2.cells.length > 0 && e2.cells.every(([x, y]) => !(x >= dr.x && x < dr.x + n && y >= dr.y && y < dr.y + n)) && !e2.extra.includes(out), `a ${z} creature's 10-ft emanation reaches 10 ft past the far side of its body and no further`);
     // a resolved area catches a big body by any of its squares, not just the top-left one
     const burst = { useSaves: true, type: 'atk', actionSlot: 0, ext: { area: { shape: 'sphere', size: 5 } } };
     const tgt = unit('t', 'foes', 10, 10, n, z), s3 = board(24, 18, {}, [tgt]);
@@ -801,6 +802,15 @@ section('Character sheets');
   const got = {};
   for (const f of fs.readdirSync(dir)) { try { got[f] = SR.read(fs.readFileSync(path.join(dir, f), 'utf8')).player; } catch (e) { console.log('  ', f, e.message); } }
   const p = got, sp = c => ((c && c.ext.spellbook && c.ext.spellbook.spells) || []).map(s => s.name);
+  const wc = p['war-caster.txt'];
+  check(wc && wc.ext.warCaster === true && sp(wc).includes('Spirit Guardians'), 'a "Feats: War Caster" line: ext.warCaster');
+  check(Object.keys(p).filter(f => f !== 'war-caster.txt').every(f => !p[f].ext.warCaster), 'no other sample sheet has War Caster');
+  {
+    const SR2 = SR, fromDdb = JSON.parse(fs.readFileSync(path.join(dir, 'ddb.json'), 'utf8'));
+    const d = fromDdb.data || fromDdb;
+    d.feats = (d.feats || []).concat([{ definition: { name: 'War Caster' } }]);
+    check(SR2.read(JSON.stringify(fromDdb)).player.ext.warCaster === true, 'a D&D Beyond feat named War Caster is read');
+  }
   check(p['typed.txt'] && p['typed.txt'].AC === 18 && p['typed.txt'].hp === 58 && p['typed.txt'].class.level === 6 && p['typed.txt'].actions.some(a => /Longsword ×2/.test(a.name) && a.toHit === 7) && p['typed.txt'].actions.some(a => /Action Surge/.test(a.name)), 'a typed fighter sheet: AC, HP, level, Extra Attack, Action Surge');
   // the hybrids (step 3a): subclass in brackets, third-caster slots, always-prepared smite and mark, the Artillerist's cannon
   const ek = p['eldritch-knight.txt'], at = p['arcane-trickster.txt'], af = p['artificer.txt'], pdd = p['ddb.json'], rf = p['foundry.json'];
@@ -1767,7 +1777,7 @@ section('AI v2: hybrids (step 3a: paladin, ranger, artificer, Eldritch Knight, A
   const on = {}, acted = {}, smite = { n: 0, kill: 0 }, hm = { turns: 0, noAtk: 0 };
   for (const cls of HYB) for (const layout of [null, walled]) for (let i = 0; i < 6; i++) {
     const res = Tac.runDay({ players: [build(cls), build('Fighter'), build('Cleric')], encounters: [{ monsters: [foe('Brute', 45, 2, 9), foe('Scrapper', 14, 3, 5)] }, { monsters: [foe('Brute', 45, 3, 9)] }] },
-      { seed: 310 + i * 7919, record: true, _keep: true, layouts: layout ? { 0: layout, 1: layout } : undefined });     // (seed 300 + i * 7919 hits an open issue: a Spirit Guardians cast with an empty area, docs/ai-v2.md "Phase 6 step 2")
+      { seed: 300 + i * 7919, record: true, _keep: true, layouts: layout ? { 0: layout, 1: layout } : undefined });
     const me = res._sim.units.find(u => u.name === cls);
     on[cls] = (on[cls] === undefined ? true : on[cls]) && !!me.v2P;
     for (const r of res) {
@@ -3435,6 +3445,246 @@ section('Fiorenzo Minuzzi on the War Table: his mechanics through the vocabulary
     for (let i = 0; i < 6; i++) { const r = Tac.runDay(cp(day), { seed: 40 + i, record: true })[0]; aimed += r.events.filter(e => /spends \d+ Patience/.test(e.text)).length; gained += r.events.filter(e => /gains \d+ Patience/.test(e.text)).length; flips += r.events.filter(e => /flips the coin \(Call the Shot\)/.test(e.text)).length; }
     check(gained > 0 && aimed > 0, `six fights against two slow 400-HP targets: he builds Patience (${gained} gains) and spends it on Aimed Shot (${aimed} times), flips ${flips} coins`);
   }
+}
+
+/* rules pass 2 (docs/ai-v2.md "Rules accuracy pass 2"): its sections share these builders */
+const R2 = (() => {
+  const ctx = { console }; ctx.globalThis = ctx; vm.createContext(ctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'data/party.js'), 'utf8') + fs.readFileSync(path.join(ROOT, 'data/srd-monsters.js'), 'utf8') + ';globalThis.CB = CLASS_BUILDS; globalThis.M = SRD_MONSTERS;', ctx);
+  const cp = x => JSON.parse(JSON.stringify(x));
+  const ready = (m, id) => {
+    m.id = id; m.mode = 'custom'; m.count = 1; m.actions.forEach((a, i) => { a.id = id + i; });
+    if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = id + 's' + i; });
+    return m;
+  };
+  const text = name => ctx.M.find(m => m.name === name).text;
+  const srd = name => ready(cp(Parser.parse(text(name)).monsters[0]), name);
+  const file = name => ready(cp(Parser.parse(fs.readFileSync(path.join(__dirname, 'statblocks', name), 'utf8')).monsters[0]), name);
+  const pc = name => cp(ctx.CB.find(c => c.name === name));
+  // a hand-set board: party members and foes at given squares, v2 set up, nobody's turn run
+  const board = (party, foes, opts) => {
+    const s = new Tac.Sim(Object.assign({ width: 30, height: 16, seed: 5, record: true }, opts));
+    const pu = Tac.expandTeam(party.map(p => p[0]), 'party', true), fu = Tac.expandTeam(foes.map((f, i) => Object.assign(f[0], { id: f[0].id + '#' + i })), 'foes', false);     // two of one monster need their own ids
+    pu.forEach((u, i) => { u.x = party[i][1]; u.y = party[i][2]; });
+    fu.forEach((u, i) => { u.x = foes[i][1]; u.y = foes[i][2]; });
+    s.setTerrain({ cells: (opts && opts.cells) || {} });
+    s.units = pu.concat(fu); s.byId = {}; s.units.forEach(u => { s.byId[u.uid] = u; });
+    s._last = {}; s.turnSeq = 1; s.round = 1; s.encountersLeft = 0; s.order = s.units.slice(); s.zones = s.zones || []; s.boardChanged(); s.units.forEach(u => s.v2Setup(u));
+    return { s, p: pu, f: fu };
+  };
+  return { cp, ready, text, srd, file, pc, board };
+})();
+
+section('Rules pass 2: an AC reaction against melee attacks only');
+{
+  const act = (m, re) => m.actions.find(a => re.test(a.name));
+  const scope = (m, re) => { const x = act(m, re); return x && ((x.ext.react && x.ext.react.against) || 'any'); };
+  const srdScopes = ['Bandit Captain', 'Knight', 'Gladiator', 'Warrior Veteran'].map(n => scope(R2.srd(n), /Parry/));
+  check(srdScopes.every(x => x === 'melee'), 'SRD Parry (Bandit Captain, Knight, Gladiator, Warrior Veteran) is against melee: ' + srdScopes);
+  check(scope(R2.file('pasquale.txt'), /^Parry/) === 'melee' && scope(R2.file('malenia.txt'), /Parry/) === 'melee' && scope(R2.file('bandit-captain-2014.txt'), /Parry/) === 'melee', 'Pasquale, Malenia and the 2014 Bandit Captain parry melee attacks');
+  check(scope(R2.file('fiorenzo.txt'), /Fitted Cut/) === 'any' && scope(R2.file('dorian-homebrew.txt'), /Molten Screen/) === 'any', '"when he is hit by an attack" is any attack (Fitted Cut, Molten Screen)');
+  const made = text => scope(R2.ready(R2.cp(Parser.parse('Tester\nMedium humanoid, neutral\nArmor Class 15\nHit Points 30 (4d8 + 12)\nSpeed 30 ft.\nSTR 14 (+2) DEX 14 (+2) CON 16 (+3) INT 10 (+0) WIS 10 (+0) CHA 10 (+0)\nChallenge 1 (200 XP)\nActions\nSword. Melee Weapon Attack: +4 to hit, reach 5 ft., one target. Hit: 6 (1d8 + 2) slashing damage.\nReactions\n' + text).monsters[0]), 'tester'), /Deflect/);
+  check(made('Deflect. The tester adds 2 to its AC against one ranged attack that would hit it.') === 'ranged', 'a "ranged attack" wording is against ranged attacks');
+  check(made('Deflect. The tester adds 2 to its AC against one melee or ranged attack that would hit it.') === 'any', '"melee or ranged attack" is any');
+  const dragon = R2.srd('Adult Red Dragon'), kraken = R2.ready(R2.cp(Parser.parse('Long Arm\nHuge monstrosity, neutral\nArmor Class 15\nHit Points 100 (10d12 + 30)\nSpeed 30 ft.\nSTR 20 (+5) DEX 10 (+0) CON 16 (+3) INT 5 (-3) WIS 10 (+0) CHA 5 (-3)\nChallenge 8 (3,900 XP)\nActions\nTentacle. Melee Weapon Attack: +8 to hit, reach 20 ft., one target. Hit: 14 (2d8 + 5) bludgeoning damage.').monsters[0]), 'longarm');
+  check(dragon.actions.every(a => a.ext.melee === undefined) && act(kraken, /Tentacle/).ext.melee === true, 'ext.melee is written only for a melee reach over 10 ft');
+
+  const shot = (name, range, ext) => ({ id: 'shot', name, actionSlot: 0, type: 'atk', dpr: '6d12', toHit: 10, targets: 1, _range: range, ext: Object.assign({ range, damageType: 'piercing' }, ext) });
+  // a Knight (AC 18) hit by exactly 1: Parry would turn it
+  const hitIt = (who, a, ax) => {
+    const b = R2.board([[R2.pc('Fighter'), ax === undefined ? 5 : ax, 5]], [[who, 6, 5]]), s = b.s, att = b.p[0], tgt = b.f[0];
+    s.current = att; s.d20 = () => tgt.baseAC - 9;
+    const r = s.attackRoll(att, tgt, a, {});
+    return { hit: r.hit, reaction: tgt.reaction, ac: r.ac };
+  };
+  const knight = () => R2.srd('Knight');
+  const far = hitIt(knight(), shot('Bow', 120), 20), near = hitIt(knight(), shot('Sword', 5)), reach = hitIt(knight(), shot('Tentacle', 20, { melee: true }));
+  check(far.hit && far.reaction && far.ac === knight().AC, `a ranged attack: no Parry, the reaction is kept (AC ${far.ac})`);
+  check(!near.hit && !near.reaction && near.ac === knight().AC + 2, `a melee attack: Parry, +2 AC, the hit becomes a miss (AC ${near.ac})`);
+  check(!reach.hit && !reach.reaction, 'a 20-ft melee reach is still melee');
+  const bolt = hitIt(knight(), shot('Arcane Burst', 120, { anyRange: true }), 5), bolt2 = hitIt(knight(), shot('Arcane Burst', 120, { anyRange: true }), 20);
+  check(!bolt.hit && bolt2.hit, '"Melee or Ranged" with one range: a melee attack up close, ranged from afar');
+  const fioShot = hitIt(R2.file('fiorenzo.txt'), shot('Bow', 120), 20);
+  check(!fioShot.hit && !fioShot.reaction, 'Fitted Cut answers a ranged attack too');
+}
+
+section('Rules pass 2: Magic Resistance only against spells and other magical effects');
+{
+  const golem = () => R2.srd('Stone Golem');
+  const mr = golem().actions.find(a => /Magic Resistance/.test(a.name));
+  check(mr && mr.buff.condition === 'Saves with Advantage' && mr.ext.vsMagic === true, 'the Stone Golem\'s Magic Resistance: the same buff as before, marked vsMagic');
+  check(['malenia.txt', 'long-homebrew-boss.txt'].every(f => R2.file(f).actions.some(a => /Magic Resistance/.test(a.name) && a.ext.vsMagic)), 'merged passives (Malenia, the Ember Tyrant) keep the mark');
+  const made = text => Parser.parse('Tester\nMedium fiend, neutral\nArmor Class 15\nHit Points 30 (4d8 + 12)\nSpeed 30 ft.\nSTR 14 (+2) DEX 14 (+2) CON 16 (+3) INT 10 (+0) WIS 10 (+0) CHA 10 (+0)\nChallenge 1 (200 XP)\nActions\n' + text).monsters[0].actions[0];
+  const magicOf = text => !!(made(text).ext || {}).magicEffect;
+  check(magicOf('Mind Blast. The tester emits a wave of magical force. Each creature in a 30-foot cone must make a DC 13 Wisdom saving throw, taking 10 (3d6) psychic damage on a failed save, or half as much damage on a successful one.'), 'an entry that says it is magical: magicEffect');
+  check(!magicOf('Fire Breath. The tester exhales fire in a 30-foot cone. Each creature in that area must make a DC 13 Dexterity saving throw, taking 10 (3d6) fire damage on a failed save, or half as much damage on a successful one.'), 'a breath weapon is not magic');
+  check(!magicOf('Venom Spray. Each creature in a 15-foot cone must make a DC 13 Constitution saving throw or be poisoned for 1 minute. The poison can be removed only by magic.'), '"removed only by magic" does not make the effect magic');
+  check(!magicOf('Crush. The tester hurls nonmagical rubble. Each creature in a 15-foot cone must make a DC 13 Strength saving throw, taking 10 (3d6) bludgeoning damage on a failed save.'), '"nonmagical" is not magic');
+
+  // the rolls: how many d20s a save of the golem rolls with advantage
+  const advOn = (target, a, opts) => {
+    const b = R2.board([[R2.pc('Wizard'), 3, 5]], [[target, 8, 5]]), s = b.s, t = b.f[0];
+    for (const x of t.actions) if ((x.actionSlot === 5 || x.actionSlot === 6) && x.type === 'buff') s.addBuff(t, t, x, x.buff);
+    const seen = []; const d0 = s.d20; s.d20 = function (adv, dis) { seen.push(!!adv && !dis); return d0.apply(this, arguments); };
+    s._saveA = a; s.saveRoll(t, 15, b.p[0], 'wis', opts); s._saveA = null;
+    return { adv: seen[0], s, t, u: b.p[0] };
+  };
+  const hold = { name: 'Hold Person', _spell: { level: 2 } }, breath = { name: 'Fire Breath', ext: {} };
+  check(advOn(golem(), hold).adv, 'Magic Resistance: advantage against Hold Person (a spell)');
+  check(advOn(golem(), { name: 'Slow', ext: { innateSpell: true } }).adv && advOn(golem(), { name: 'Mind Blast', ext: { magicEffect: true } }).adv, 'and against an innate spell or a magical effect');
+  check(!advOn(golem(), breath).adv && !advOn(golem(), null).adv, 'not against a breath weapon or a plain Strength save');
+  check(!advOn(golem(), null, { conc: true }).adv && advOn(golem(), null, { magic: true }).adv, 'not on a concentration save; a caller saying "magic" (Counterspell) gets it');
+  // a creature saved before ext.vsMagic: the name tells
+  const old = golem(); delete old.actions.find(a => /Magic Resistance/.test(a.name)).ext.vsMagic;
+  check(advOn(old, hold).adv && !advOn(old, breath).adv, 'a Magic Resistance saved before this reads the same');
+  const plain = golem(); const p = plain.actions.find(a => /Magic Resistance/.test(a.name)); delete p.ext.vsMagic; p.name = 'Unshakeable';
+  check(advOn(plain, breath).adv, 'another "advantage on saves" passive still counts on every save');
+  // a lingering condition from a spell keeps being a spell for its repeat saves
+  {
+    const x = advOn(golem(), hold), s = x.s, t = x.t;
+    s.addBuff(t, x.u, Object.assign({ id: 'hp' }, hold), { duration: 'repeat the save each round', condition: 'Restrained' }, { dc: 30, saveAbility: 'wis' });
+    const seen = []; const d0 = s.d20; s.d20 = function (adv, dis) { seen.push(!!adv && !dis); return d0.apply(this, arguments); };
+    s.endTurn(t);
+    check(seen[0] === true, 'the repeat save against a spell\'s hold has advantage too');
+  }
+  // estimates: open mode reads the sheet, learn does not
+  {
+    const x = advOn(golem(), hold);
+    check(Math.abs(x.s.kAdv(x.u, x.t, hold, 0.4) - 0.64) < 1e-9 && x.s.kAdv(x.u, x.t, breath, 0.4) === 0.4, 'open: the estimate of a save against a spell has the advantage, against a breath none');
+    const b = R2.board([[R2.pc('Wizard'), 3, 5]], [[golem(), 8, 5]], { know: { party: 'learn' } }), t = b.f[0];
+    for (const y of t.actions) if ((y.actionSlot === 5 || y.actionSlot === 6) && y.type === 'buff') b.s.addBuff(t, t, y, y.buff);
+    check(b.s.kAdv(b.p[0], t, hold, 0.4) === 0.4, 'learn: the estimate is not told');
+    const fio = R2.board([[R2.pc('Wizard'), 3, 5]], [[R2.file('fiorenzo.txt'), 8, 5]]);
+    check(fio.s.saveAdvantage(fio.f[0], hold) && !fio.s.saveAdvantage(fio.f[0], breath), 'Fiorenzo\'s Suit is read by the same test');
+  }
+}
+
+section('Rules pass 2: push effects read from statblocks');
+{
+  const act = (m, re) => m.actions.find(a => re.test(a.name));
+  const oh = (m, re) => { const x = act(m, re); return x && x.ext.onHit; };
+  const air = R2.srd('Air Elemental'), pq = R2.file('pasquale.txt');
+  const w = oh(air, /Whirlwind/), bb = oh(pq, /Both Barrels/), sc = oh(pq, /Shoulder Check/);
+  check(w && w.push === 20 && w.pushMaxSize === 'Medium', 'Whirlwind: pushed up to 20 ft, Medium or smaller (its targeting clause)');
+  check(bb && bb.push === 10 && bb.pushMaxSize === 'Gargantuan' && sc && sc.push === 10, 'Both Barrels and Shoulder Check: 10 ft, any size');
+  const head = 'Tester\nLarge giant, neutral\nArmor Class 15\nHit Points 60 (8d10 + 16)\nSpeed 30 ft.\nSTR 18 (+4) DEX 10 (+0) CON 14 (+2) INT 8 (-1) WIS 10 (+0) CHA 8 (-1)\nChallenge 3 (700 XP)\nActions\n';
+  const one = text => Parser.parse(head + text).monsters[0].actions[0];
+  const club = one('Club. Melee Weapon Attack: +6 to hit, reach 10 ft., one target. Hit: 13 (2d8 + 4) bludgeoning damage, and if the target is a Large or smaller creature, it is pushed up to 15 feet straight away from the tester.');
+  check(club.ext.onHit && club.ext.onHit.push === 15 && club.ext.onHit.pushMaxSize === 'Large' && !club.ext.onHit.pushSave, 'a push on a hit, with the size the sentence gives');
+  const shove = one('Shield Bash. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 9 (1d10 + 4) bludgeoning damage, and the target must succeed on a DC 14 Strength saving throw or be pushed 10 feet away from the tester.');
+  check(shove.ext.onHit && shove.ext.onHit.pushSave && shove.ext.onHit.pushSave.dc === 14 && shove.ext.onHit.pushSave.ab === 'str', 'a push behind a save of the hit waits for that save');
+  const gust = one('Gust. Each creature in a 15-foot cone must succeed on a DC 13 Strength saving throw or be pushed 10 feet away from the tester.');
+  check(gust && gust.type === 'debuff' && gust.ext.onHit.push === 10 && gust.ext.wtOnly, 'a save that only pushes is kept, War Table only');
+  check(!one('Club. Melee Weapon Attack: +6 to hit, reach 5 ft., one target. Hit: 13 (2d8 + 4) bludgeoning damage, and the tester pushes on.').ext.onHit, 'no distance, no push');
+
+  // on the board: failed save pushes straight away; walls and bodies stop it; size limit
+  const blast = (ex, dc) => ({ id: 'blast', name: 'Blast', actionSlot: 0, type: 'atk', dpr: '1d4', toHit: dc, useSaves: true, targets: 1, _range: 60, ext: { range: 60, saveAbility: 'str', onHit: Object.assign({ push: 20, pushMaxSize: 'Medium' }, ex) } });
+  const go = (a, opts) => {
+    const o = opts || {};
+    const b = R2.board([[o.pc || R2.pc('Fighter'), 10, 5]].concat(o.more || []), [[o.foe || R2.srd('Bandit Captain'), 9, 5]], o.sim), s = b.s, t = b.p[0], u = b.f[0];
+    t.hp = t.maxHp = 500;
+    s.resolveAttackAction(u, a, [t]);
+    return { x: t.x, y: t.y, s, t, u };
+  };
+  check(go(blast({}, 60)).x === 14, 'a failed save: pushed 20 ft straight away');
+  check(go(blast({}, 0)).x === 10, 'a passed save: no push');
+  check(go(blast({}, 60), { sim: { cells: { '13,5': { t: 'wall' } } } }).x === 12, 'a wall stops the push short');
+  check(go(blast({}, 60), { more: [[R2.pc('Rogue'), 12, 5]] }).x === 11, 'a creature in the way stops it: no stacking');
+  check(go(blast({ pushMaxSize: 'Small' }, 60)).x === 10, 'a Medium target is too big for "Small or smaller"');
+  // a diagonal push does not slip between two walls
+  {
+    const b = R2.board([[R2.pc('Fighter'), 10, 6]], [[R2.srd('Bandit Captain'), 9, 5]], { cells: { '11,6': { t: 'wall' }, '10,7': { t: 'wall' } } });
+    b.s.push(b.f[0], b.p[0], 10);
+    check(b.p[0].x === 10 && b.p[0].y === 6, 'no push diagonally between two walls');
+  }
+  // an attack: on a hit; with a save of its own, only on a failed one
+  const swing = ex => ({ id: 'sw', name: 'Swing', actionSlot: 0, type: 'atk', dpr: '1d4', toHit: 40, targets: 1, _range: 5, ext: { range: 5, onHit: Object.assign({ push: 10, pushMaxSize: 'Large' }, ex) } });
+  check(go(swing({})).x === 12 && go(swing({ pushSave: { dc: 60, ab: 'str' } })).x === 12 && go(swing({ pushSave: { dc: 0, ab: 'str' } })).x === 10, 'on a hit; behind a save: only when it fails');
+  const prone = Object.assign(swing({ pushOnRider: true }), { riderEffect: { dc: 60, buff: { duration: '1 round', condition: 'Is attacked with Advantage' } } });
+  check(go(prone).x === 12 && go(Object.assign({}, prone, { riderEffect: { dc: 0, buff: prone.riderEffect.buff } })).x === 10, 'pushOnRider: the one save gives the condition and the push, or neither');
+}
+
+section('Rules pass 2: an area that cannot catch its target is no area');
+{
+  // a Cleric standing in a one-square gap of a wall column at x = 6 (the gap at y = 6)
+  const gap = {}; for (let y = 0; y < 16; y++) if (y !== 6) gap['6,' + y] = { t: 'wall' };
+  const sgOf = u => u.actions.find(a => /^Spirit Guardians/.test(a.name));
+  const dummy = () => R2.srd('Bandit Captain');
+  const setup = (fx, fy, cells) => {
+    const b = R2.board([[R2.pc('Cleric'), 6, 6]], [[dummy(), fx, fy]], { cells });
+    return { s: b.s, u: b.p[0], t: b.f[0], sg: sgOf(b.p[0]) };
+  };
+  {
+    const { s, u, t, sg } = setup(7, 8, gap);       // within 15 ft, but round the corner behind the wall
+    check(!!sg && s.dist(u, t) <= 15 && !s.los(u.x, u.y, t.x, t.y, true), 'the foe is within reach but out of sight round the wall');
+    check(s.areaCatch(sg, t, u.x, u.y, [t], u) === null, 'no area catches it: areaCatch gives nothing, not an empty area');
+    check(s.plan(u, sg, 0) === null && s.v2Aim(u, sg, t) === null, 'so neither picker casts it');
+    s.current = u; u.turnNo = 1; s.turn(u);
+    // it may step out of the gap and cast from where the foe is in sight; a zone is never empty, and whoever it hurts stands in it
+    const hurt = s.events.some(e => e.kind === 'save' && /Spirit Guardians/.test(e.text));
+    check(!s.zones.some(z => !z.cells.size) && (!hurt || s.zones.some(z => s.coversIn(z.cells, t))), `its turn casts no empty Spirit Guardians (cast: ${hurt}, from ${u.x},${u.y})`);
+  }
+  {
+    const { s, u, t, sg } = setup(3, 9, {});         // open field: within 15 ft by squares, outside the round emanation
+    check(s.dist(u, t) <= 15 && s.areaCatch(sg, t, u.x, u.y, [t], u) === null, 'a foe off the corner of the emanation is not caught either');
+  }
+  {
+    const { s, u, t, sg } = setup(7, 6, gap);        // beside the gap, in sight: caught
+    const ac = s.areaCatch(sg, t, u.x, u.y, [t], u);
+    check(ac && ac.cells.length > 0, 'a foe it can reach is still caught');
+  }
+}
+
+section('Rules pass 2: Magic Missile as separate darts');
+{
+  const mm = u => u.actions.find(a => /^Magic Missile/.test(a.name));
+  const wiz = R2.pc('Wizard').ext.spellbook.spells.find(a => /^Magic Missile/.test(a.name));
+  check(wiz.targets === 3 && wiz.dpr === '1d4 + 1' && wiz.upcastTargets === 1 && !wiz.upcast && wiz.ext.darts, 'the built Wizard: three darts of 1d4 + 1, one more per level above 1st');
+  const read = Parser.parse('Tester\nMedium humanoid, neutral\nArmor Class 12\nHit Points 40 (9d8)\nSpeed 30 ft.\nSTR 9 (-1) DEX 14 (+2) CON 11 (+0) INT 17 (+3) WIS 12 (+1) CHA 11 (+0)\nChallenge 6 (2,300 XP)\nTraits\nSpellcasting. The tester is a 9th-level spellcaster (spell save DC 14, +6 to hit with spell attacks). It has the following wizard spells prepared:\n1st level (4 slots): magic missile\nActions\nDagger. Melee Weapon Attack: +5 to hit, reach 5 ft., one target. Hit: 4 (1d4 + 2) piercing damage.').monsters[0].ext.spellbook.spells[0];
+  check(read.targets === 3 && read.dpr === '1d4 + 1' && read.ext.darts, 'a statblock caster\'s Magic Missile reads as darts');
+  // the old shape (a day file, a saved party, a plain export) plays as darts
+  const hardMage = fixture('hard-day.json').encounters[2].monsters.find(m => m.name === 'Mage');
+  const old = Tac.expandTeam([hardMage], 'foes', false)[0];
+  check(mm(old).targets === 3 && mm(old).dpr === '1d4 + 1' && mm(old).ext.darts && mm(old)._spell.upcastTargets === 1 && !mm(old)._spell.upcast, 'the old 3d4 + 3 attack at +99 is read as darts');
+
+  const goblin = hp => { const g = R2.srd('Goblin Warrior'); g.hp = hp; return g; };
+  const cast = (foes, L, opts) => {
+    const b = R2.board([[R2.pc('Wizard'), 3, 5]], foes, opts), s = b.s, u = b.p[0];
+    s.current = u; u.turnNo = 1; u.castAt = L || 0;
+    const a = mm(u); s.spend(u, a); u.castAt = L || 0;
+    s.doAction(u, a, { targets: [b.f[0]] });
+    return { s, u, f: b.f, darts: s.events.filter(e => /Magic Missile.* dart/.test(e.text)) };
+  };
+  const three = cast([[goblin(1), 8, 4], [goblin(1), 8, 6], [goblin(1), 9, 5]]);
+  check(three.darts.length === 3 && new Set(three.darts.map(e => e.target)).size === 3 && three.f.every(t => t.hp <= 0), `three darts go to three targets as each drops (${three.darts.map(e => e.target.split(':')[0])})`);
+  const one = cast([[goblin(200), 8, 5]]);
+  check(one.darts.length === 3 && one.darts.every(e => e.dmg >= 2 && e.dmg <= 5) && one.f[0].hp === 200 - one.darts.reduce((n, e) => n + e.dmg, 0), `each dart rolls its own 1d4 + 1 (${one.darts.map(e => e.dmg)})`);
+  check(one.s.events.every(e => !/vs AC|CRIT|miss/.test(e.text)), 'no attack roll: no miss, no critical hit');
+  const up = cast([[goblin(200), 8, 5]], 3);
+  check(up.darts.length === 5, `cast with a 3rd-level slot: five darts (${up.darts.length})`);
+  // armor, cover and Parry don't matter
+  const knight = cast([[Object.assign(R2.srd('Knight'), { hp: 200, AC: 40 }), 8, 5]], 0, { cells: { '7,5': { t: 'cover' } } });
+  check(knight.darts.length === 3 && knight.f[0].reaction, 'armor class and cover don\'t matter, and no Parry');
+  // knowledge: a learning party re-picks on what it sees (the target drops), never on the true hit points
+  const learn = cast([[goblin(1), 8, 4], [goblin(60), 8, 6]], 0, { know: { party: 'learn' } });
+  check(learn.darts.length === 3 && learn.darts[0].target !== learn.darts[1].target, 'a downed target\'s remaining darts re-pick');
+  const a = mm(one.u);
+  check(one.s.hitChance(one.u, one.f[0], a) === 1, 'v2 reads a dart as certain to hit');
+}
+
+section('Rules pass 2: War Caster holds concentration with advantage');
+{
+  const rate = warCaster => {
+    const w = R2.pc('Wizard'); if (warCaster) w.ext.warCaster = true;
+    const b = R2.board([[w, 3, 5]], [[R2.srd('Bandit'), 9, 5]], { seed: 11, record: false }), s = b.s, u = b.p[0];
+    u.saves = Object.assign({}, u.saves, { con: 0 }); u.saveBonus = 0; u.maxHp = 100000;
+    let held = 0; const N = 4000;
+    for (let i = 0; i < N; i++) { u.buffs = []; u.concentrating = 'spell'; u.hp = u.maxHp; s.damage(u, u, 20, {}); if (u.concentrating) held++; }
+    return { rate: held / N, u, s, foe: b.f[0] };
+  };
+  const plain = rate(false), war = rate(true);
+  check(Math.abs(plain.rate - 0.55) < 0.04 && Math.abs(war.rate - 0.7975) < 0.04, `DC 10, +0: held ${plain.rate.toFixed(3)} plain, ${war.rate.toFixed(3)} with War Caster (expect 0.55 / 0.80)`);
+  check(war.u.warCaster === true && Math.abs(war.s.concFail(war.u, war.u, 0.4) - 0.16) < 1e-9 && plain.s.concFail(plain.u, plain.u, 0.4) === 0.4, 'v2\'s own estimate reads it');
 }
 
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,

@@ -586,7 +586,7 @@ Sim.prototype.areaCatch = function (a, t, ox, oy, pool, caster) {
   if (bn > 1 && spec.shape === 'emanation') spec.bn = bn;                       // from the edge of a big creature's body
   if (bn > 1 && spec.shape === 'cube' && !spec.placed) { const c = this.aimCubeFrom(a, spec, t, ox, oy, pool, caster); if (c) return c; }
   let best = this.areaAt(a, spec, t, ox, oy, t.x, t.y, pool, caster);
-  if (!best) best = { spec, cells: [], extra: [], friends: [], ax: t.x, ay: t.y, ox, oy };   // walls in the way: just the target
+  if (!best) return null;       // t isn't in it from here (a wall, or outside the template): no area, so nothing to cast at it
   if (!caster || !spec.explicit || spec.shape === 'emanation' || (spec.shape === 'cube' && !spec.placed)) return best;
   // Where a burst can be set down to keep t inside, and who each spot would catch, doesn't depend on where the
   // caster stands (only range and line of sight do): worked out once per board position, then scored per caster.

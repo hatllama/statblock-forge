@@ -557,8 +557,8 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
     const re = a.riderEffect;
     if (re && re.buff && !t.buffs.some(b => b.id === a.id && b.src === u.uid)) {
       const rab = a.ext && (a.ext.riderSave || a.ext.saveAbility);
-      const pFail = re.dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, rab) - re.dc) / 20));
-      const pLand = a.useSaves ? 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - avgDice(a.toHit)) / 20))
+      const pFail = re.dc >= 99 ? 1 : 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, rab) - re.dc) / 20)));
+      const pLand = a.useSaves ? 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - avgDice(a.toHit)) / 20)))
                                : 1 - Math.pow(1 - this.hitChance(u, t, a) * pFail, a.targets || 1);
       val += pLand * (this.effectValue(re.buff, t, true, u) * W.ctlRound + this.v2Expose(u, t, re.buff.condition, ctx)) * (1 - pKill) * W.control;
     }
@@ -571,7 +571,7 @@ Sim.prototype.v2Value = function (u, a, t, ctx, bare) {
       if (held > 0) {
         const con = this.kSave(u, t, 'con'), hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
         const perHit = exp / Math.max(0.05, hits * p);
-        const pf = Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20));
+        const pf = this.concFail(u, t, Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20)));
         val += held * (1 - Math.pow(1 - p * pf, hits)) * W.conc;
         why = why || 'concentration';
       }
@@ -774,7 +774,7 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
   let per = this.expected(u, Object.assign({}, a, { buff: Object.assign({}, b, { duration: '1 round' }) }), t) * W.ctlRound;
   // and our side hits it harder while it lasts (advantage, crits up close), if it fails the save
   const ex = bare ? 0 : this.v2Expose(u, t, b.condition, ctx);
-  if (ex > 0) { const dc = avgDice(a.saveDC); per += ex * (areaSpec(a) ? 1 : this.throughChance(u, t)) * (dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - dc) / 20))); }
+  if (ex > 0) { const dc = avgDice(a.saveDC); per += ex * (areaSpec(a) ? 1 : this.throughChance(u, t)) * (dc >= 99 ? 1 : 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - dc) / 20)))); }
   // it already has that condition (another caster's Hold Person, a pattern): nothing new
   if (b.condition && (t.buffs.some(x => x.data && x.data.condition === b.condition) || (INCAP.includes(b.condition) && this.incap(t)))) per *= 0.1;
   // a disabling effect on something that buys off failed saves (Legendary Resistance) mostly burns a use: worth the
@@ -786,7 +786,7 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
       const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
       if (mine && mine.a.id === a.id) {
         const ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
-        const pFail = dc >= 99 ? 1 : 1 - Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20));
+        const pFail = dc >= 99 ? 1 : 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20)));
         return pFail * bp.perLR * u.v2P.burn.value;
       }
       per *= W.legRes / L;                                                // it lands nothing while uses remain: this cast strips one of the L
@@ -796,7 +796,7 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
   const R = ctx.rounds;
   let r = 1;
   if (b.duration === 'repeat the save each round') {
-    const dc = avgDice(a.saveDC), s = dc >= 99 ? 0 : Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - dc) / 20));
+    const dc = avgDice(a.saveDC), s = dc >= 99 ? 0 : this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext && a.ext.saveAbility) - dc) / 20)));
     r = s > 0.001 ? (1 - Math.pow(1 - s, R)) / s : R;
   } else if (b.duration === 'entire encounter') r = R * (a.ext && a.ext.endsOnDamage ? W.lull : 1);
   r = Math.min(r, this.kHp(u, t) / ctx.focusDpr + 0.5);                    // it may well drop before then
@@ -861,7 +861,7 @@ Sim.prototype.v2BurnPlan = function (u, ctx, doubt) {
       if (!this.v2PoolFor(o, act, ctx).includes(boss)) continue;                // Hold Person on a dragon: not a legal target
       // learn mode with no save of that ability seen yet: give the doubt to the cast (a probe), so the first one finds out
       const unseen = learnMode && !(this.kind(u.team, boss).saves[ab || 'any'] || []).length, guess = unseen && (doubt || !B.probeBias) ? B.probe : 0;
-      const pass = dc >= 99 ? 0 : Math.min(1, Math.max(0, (21 + this.kSave(u, boss, ab) - guess - dc) / 20));
+      const pass = dc >= 99 ? 0 : this.kAdv(u, boss, a, Math.min(1, Math.max(0, (21 + this.kSave(u, boss, ab) - guess - dc) / 20)));
       const alt = altOf(o), pFail = 1 - pass;
       const pace = this.v2Pace(o, a, lv[0]);
       cands.push({ o, a, ab: ab || 'any', unseen, pFail, pass, alt, price: pace.base + pace.tax * (alt + pFail * costRace / L0), L: lv[0], fv: this.v2Control(o, act, boss, ctx, true), conc: !!(a._spell && a._spell.conc) });
@@ -975,7 +975,7 @@ Sim.prototype.v2Holding = function (u, ctx) {
       if (o.team === u.team) { v += this.effectValue(one, o, false, u) * W.buff * R; continue; }
       let r = R;
       if (b.expiry === 'repeat the save each round' && typeof b.dc === 'number' && b.dc < 99) {
-        const s = Math.min(1, Math.max(0, (21 + this.kSave(u, o, b.saveAbility) - b.dc) / 20));
+        const s = this.kAdv(u, o, !!b.magic, Math.min(1, Math.max(0, (21 + this.kSave(u, o, b.saveAbility) - b.dc) / 20)));
         r = s > 0.001 ? (1 - Math.pow(1 - s, R)) / s : R;
       }
       if (b.endsOnDamage) r *= W.lull;
@@ -1002,7 +1002,8 @@ Sim.prototype.v2FogValue = function (u, a, t, pool, x, y) {
   if (this.zones && this.zones.some(z => z.fog && z.src === u.uid)) return -Infinity;
   const W = u.v2P.w, live = pool.filter(o => o.hp > 0);
   const ac = this.areaCatch(a, t, x, y, live, u);
-  const caught = [t].concat(ac ? ac.extra : []);
+  if (!ac) return -Infinity;                     // no cloud there to catch t
+  const caught = [t].concat(ac.extra);
   const mine = this.alliesOf(u).filter(o => o.onBoard && this.alive(o));
   let stop = 0;
   for (const c of caught) {

@@ -417,6 +417,7 @@ Sim.prototype.leftFor = function (u) {
 };
 
 Sim.prototype.hitChance = function (u, t, a) {
+  if (a.ext && a.ext.darts) return 1;       // Magic Missile's darts don't roll to hit
   const tc = this.conds(t), atc = this.conds(u);
   if (u.blindsight) { atc.delete('Blinded'); tc.delete('Invisible'); }
   const close = this.dist(u, t) <= 5;
@@ -429,10 +430,10 @@ Sim.prototype.hitChance = function (u, t, a) {
 };
 Sim.prototype.expected = function (u, a, t) {
   const sab = a.ext && a.ext.saveAbility;
-  const saveP = dc => Math.min(1, Math.max(0, (21 + this.kSave(u, t, sab) - dc) / 20));
+  const saveP = dc => this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, sab) - dc) / 20)));
   if (a.type === 'atk') {
     const sneakAvg = u.sneak && a.ext && a.ext.sneak && u.saSeq !== this.turnSeq ? avgDice(u.sneak.dice) * (this.featureAdv(u, t) || this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && this.dist(o, t) <= 5) ? 0.95 : 0.35) : 0;
-    const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + (a.ext && a.ext.nearBonus && this.dist(u, t) <= a.ext.nearBonus.within ? avgDice(a.ext.nearBonus.dice) : 0) + this.sumBuff(u, 'damage', false)) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * this.kMult(u, a, t));
+    const dmg = Math.max(0, (avgDice((a.ext && a.ext.dprIfHurt && t.hp < t.maxHp) ? a.ext.dprIfHurt : (a.ext && a.ext.wtDpr) || a.dpr) + sneakAvg / Math.max(1, a.targets || 1) + (a.ext && a.ext.nearBonus && this.dist(u, t) <= a.ext.nearBonus.within ? avgDice(a.ext.nearBonus.dice) : 0) + (a.ext && a.ext.darts ? 0 : this.sumBuff(u, 'damage', false))) * this.multBuff(u, 'damageMultiplier') * this.multBuff(t, 'damageTakenMultiplier') * this.kMult(u, a, t));
     const thru = areaSpec(a) ? 1 : this.throughChance(u, t);
     if (a.useSaves) { const ps = saveP(avgDice(a.toHit)); return thru * dmg * ((1 - ps) + (a.halfOnSave ? ps / 2 : 0)); }
     const hp = this.hitChance(u, t, a), nSw = a.targets || 1;
@@ -519,7 +520,7 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
         const con = this.kOf(u, t) ? this.kSave(u, t, 'con') : (t.conSave || 0);
         const hits = a.useSaves ? 1 : (a.targets || 1), p = a.useSaves ? 1 : this.hitChance(u, t, a);
         const perHit = exp / Math.max(0.05, hits * p);
-        const pf = Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20));
+        const pf = this.concFail(u, t, Math.min(0.95, Math.max(0.05, (Math.max(10, Math.floor(perHit / 2)) - con - 1) / 20)));
         val += held * (1 - Math.pow(1 - p * pf, hits));
         why = why || 'concentration';
       }

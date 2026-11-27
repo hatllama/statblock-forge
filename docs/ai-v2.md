@@ -2510,6 +2510,110 @@ Duplicated arms that kept their checks: Spirit Guardians and Moonbeam (8 fights 
 
 The default tier for Int ≥ 16 is cunning; `AI_TIERS.tiers` is mindless, animal, cunning, boss; `geniusInt` and `profiles.genius` are gone (the boss profile keeps its own copy of the careful weights); a saved `ext.aiTier: 'genius'` reads as cunning. The phase 6 step 1 report ("Genius and cunning") found the genius tier measurably equal to cunning except for morale (a genius never flees) and the squishy-and-healer weights. SRD monsters that moved: **Mage, Assassin, Young Green Dragon** (the only non-boss creatures with Int ≥ 16; the Lich and the Adult Red Dragon are bosses) and the test statblock `mage-2014.txt`. Rows that moved in `tests/play-hash.js` (3 / 7 / 4 / 4 of 48 in open / learn / blind / `PREFIGHT=0`): only days with one of them: default party vs hard-day (a Mage), default party and casters vs medium-day (a Mage), casters vs goblins / ogres / mage, casters vs priests + young dragon. `hashes-learn.txt` was regenerated in that commit (7 lines). The harness `genius` arms went with the tier (the BOSS family's `genius` arm is `cunning` now).
 
-### Open issue found on the way (not fixed: a fix moves hashes, so not in a kind A job)
+### Open issue found on the way (fixed later: "Rules accuracy pass 2", item 4)
 
 A Spirit Guardians cast whose area comes out empty: with the Cleric in a doorway of the test map, `areaCatch` falls back to `{ cells: [] }` ("walls in the way: just the target"), the cast goes ahead, the zone has no squares, and the one "target" still takes the damage and a save, one square outside where the spell reaches. Seen in the hybrid walls scenario (Artificer seed 300 + 4 × 7919, Arcane Trickster 300 + 2 × 7919, fight 2); the same log on the tag with `foes: 'tiers'`, so it predates this job (it is the roadmap's "a Spirit Guardians hit one square outside its zone"). The hybrid test uses other seeds. A fix is an AI change: no cast when the area catches nobody (a term in `v2AimValue`, not a veto), with a harness row and a learn fixture update.
+
+## Rules accuracy pass 2 (2024 / SRD 5.2; push, Parry, Magic Resistance, areas, Magic Missile, War Caster)
+
+Branch `rules2`. Behaviour changes to the rules and the parser, one commit each; no AI weight is retuned. Evidence per step is in the commit
+message and below. Harness scripts live in `runs/rules2/` (not committed): every `ai-compare` family in open / learn / blind (200 runs, same
+seeds), the `play-hash` sets (default, open, learn, blind, `PREFIGHT=0`), the 12-run BOSS + TIER table, and Zaki's hard and boss days (600 runs).
+
+### 1. An AC reaction against melee attacks only
+
+"Adds N to its AC against one melee attack" now works against melee attacks only; before, a ranged attack could be parried too. The scope is
+data on the reaction: `ext.react.against` = `'melee'` or `'ranged'`, absent = any attack (Shield, Fitted Cut, "against that attack" after "hit by an
+attack"). The parser reads it from the trigger and response text ("by / against a|one|the melee … attack"; both words, or neither, = any), and
+`reactFits` (`core.js`) checks it against the swing, so the reaction layer neither fires nor prices it. Whether a swing is melee is one rule,
+`Sim.prototype.meleeSwing(att, tgt, a)`: `ext.melee` when set (the parser sets it only where the reach test would be wrong: a melee reach over
+10 ft), a "Melee or Ranged" attack with one long range (`ext.anyRange`) within 5 ft, else range 10 ft or less. Affected: SRD Bandit, Warrior,
+Knight and Gladiator Parry creatures, Bandit Captain, Pasquale's and Malenia's Parry (melee); Fiorenzo's Fitted Cut, Dorian's Molten Screen and
+Shield stay "any". A creature saved in a workspace or day file before this has no `ext.react.against` and keeps the old behaviour until re-imported.
+
+### 2. Magic Resistance only against spells and other magical effects
+
+Magic Resistance gave Advantage on every save: it is the passive buff condition `'Saves with Advantage'`, which `saveRoll` read whatever the
+save was against. Now the buff is marked (`ext.vsMagic` on the action, set by the parser; a passive named "Magic Resistance" counts too, so
+creatures saved before this are right) and counts only when the save is magical. The export is unchanged (the condition stays; `ext` is ignored).
+A trait "advantage against magic" (`ext.traits`, `vs: 'magic'`: Fiorenzo's Suit) was already limited, and now uses the same test.
+
+**Is a save magical?** One function, `magicSource(a)` (`core.js`), of the action that forces it: a spell (`a._spell`), an innate spell
+(`ext.innateSpell`), an action marked magical (`ext.magical`: magic weapons, the Eldritch Cannon), or an entry whose own text says it is magic
+or magical (`ext.magicEffect`, set by the parser on entries that force a saving throw; "nonmagical", "magic weapons" and sentences about ending
+an effect "by magic" do not count). **Anything else is not magical** (the safest reading: the advantage is given only when something says so):
+breath weapons, poisons, Frightful Presence, grapples, concentration saves, Deflect Attacks' redirect. A buff remembers it (`b.magic`) for its
+repeated saves; the saves a reaction forces (Counterspell, Silvery Barbs, a cancel) pass it in (`sopt.magic`).
+
+**The AI's estimates.** `kAdv(u, t, source, p)` takes the pass chance an estimate computed from `kSave` and applies the Advantage `t` really
+has against that source (`saveAdvantage`, the function `saveRoll` uses) **when `u` reads `t`'s sheet (open mode)**; a learning or blind side is
+not told and only sees the results. Used by `expected`, `v2Control`, riders, the burn plan, the held-spell value, Counterspell's price, the
+boss's Legendary Resistance weighing and the cancel chance. Before this the estimates ignored Magic Resistance altogether. No weight changed.
+
+Affected: the Stone Golem (the only SRD 5.2 monster here with it: the SRD Lich has none), the homebrew Ember Tyrant
+(`long-homebrew-boss.txt`), Malenia, and Fiorenzo's Suit (only through the estimates).
+
+### 3. Push effects read from statblocks
+
+The engine already had `ext.onHit.push` (spells, weapon masteries), but the parser never wrote it. Now "pushed (up to) N feet (straight) away
+[from X]" (and "pushes the target N feet away") on a hit or on a failed save gives `ext.onHit = { push: N, pushMaxSize }`; the size limit is the
+one the push sentence or the targeting clause gives ("one Medium or smaller creature"), else Gargantuan (any size: the engine's default of Huge
+is for entries that don't say). A push after an attack's own save clause is conditional on that save (`onHit.pushSave`, or `onHit.pushOnRider`
+when the same save already gives a condition). A save with no damage or condition, only a push, is now kept (War Table only). A follow-up move
+("… can then move up to 10 feet toward it") stays a note: the trait vocabulary has no movement word. Movement rules: a push goes straight away
+from the pusher's body, stops before a wall, another creature, a ledge or the map edge, and (new) does not slip diagonally between two walls.
+No AI term was added; v2 reads a push on an attack as it did before.
+
+### 4. An area that cannot catch its target
+
+`areaCatch` (`grid.js`) answered "the target is not in this area" (a wall in the way, or the square is off the template) with a made-up area:
+no squares, "just the target". The cast went ahead: a Spirit Guardians from a doorway left an empty zone and still hurt one creature, and on an
+open field a foe off the corner of a round emanation (3 squares across and 3 up, inside the 15-ft "reach") was hit although no square of the
+template held it (the "Open issue" above, and phase 6 step 1's "a hit one square outside its zone"). Now it returns `null`: no area. v2's
+searches already skipped such a target; `choose` / `planInner` takes the next best target (`finish` gives `null`), and `v2FogValue` reads
+`-Infinity`. This is a rules fix with no AI term: an area is only ever aimed where it catches someone. It covers every emanation, set-down
+burst and cube (cones and lines already refused). The hybrid walls test plays its original seeds again. The 10-ft emanation test for big
+creatures had passed on the empty area (its target was off the corner); it now aims inside the template.
+
+### 5. Magic Missile as separate darts
+
+Magic Missile was one "attack" at +99 for `3d4 + 3`: it could miss on a natural 1, crit, be parried, and put everything on one creature. Now it is
+three darts (`targets: 3`, `dpr: '1d4 + 1'`, `ext.darts`), one more per slot level above 1st (`upcastTargets: 1`). A dart is not an attack
+roll (`dartOnce` in `core.js`): it hits, rolls its own `1d4 + 1` force, ignores cover, takes no attack-roll buffs (Hex, Sneak Attack, a coin),
+and each is its own damage instance (a concentration save each, a death-save failure each). Targets are picked as for Eldritch Blast's beams and
+Scorching Ray: the pick takes darts until it drops (or leaves), then `v2Repick` chooses the next with the same `v2Value` scoring, so `kHp` and
+the knowledge mode (nothing reads the true HP). v2's estimate: `hitChance` is 1 for a dart and `expected` adds no damage buffs; the spill term
+already values the darts left over. Data saved before this (the one `3d4 + 3` attack: day files, saved parties, the converter's output) is read
+as darts by `magicMissile` (`base.js`), by name and shape. Plain exports now say three targets of `1d4 + 1`. Not done: Shield's "no damage from
+Magic Missile" (backlog).
+
+### 6. War Caster from sheets
+
+The sheet reader reads the War Caster feat (text "Feats:" lines and feature lists, D&D Beyond feats, Foundry feat items, the PDF/AI facts) into
+`ext.warCaster`; the concentration save already took `sopt.adv`, which a War Caster now passes. v2's estimates of a concentration break read it
+through `concFail` (the caster's own, and a foe's when the side reads its sheet: open). Its other benefits (somatic components, a spell as an
+opportunity attack) are not modelled.
+
+### Results (rules pass 2)
+
+**Hash sets** (default, open, learn, blind, `PREFIGHT=0`: 48 lines each; the 12-run BOSS + TIER table: 181 lines). Items 1, 3 and 6 moved
+nothing. Item 2: BOSS + TIER 18 lines (the two Ember Tyrant scenarios). Item 4: BOSS + TIER 54 lines. Item 5: 10 / 10 / 15 / 8 / 7 of 48 and
+112 BOSS + TIER lines; `hashes-learn.txt` regenerated (15 lines).
+
+**Every family, 200 runs, same seeds, open / learn / blind** (696 rows; each item against the one before). Rows that moved more than 5 points:
+
+| item | rows | where | cause |
+|---|---|---|---|
+| 1 Parry | 2 | PASQ long, blind: 81 → 87.5 | Pasquale's Parry no longer answers the party's ranged hits |
+| 2 Magic Resistance | 2 | Ember Tyrant, blind, cunning: 30 → 24.5 (one fight, listed in TIER and BOSS) | its only non-magical save is its own Cinder Storm, which catches it; one d20 fewer re-deals the dice (1.3 SE) |
+| 3 push | 0 | | |
+| 4 empty areas | 13 | the half Lich, every mode: +8 to +15.5 | on the old code 1074 of its 2490 Disrupt Life casts had an empty area and still hurt a creature outside the emanation |
+| 4 | 1 | Ember Tyrant, learn, mindless: 29 → 22.5 | does not hold: 1000 runs 26.3 → 24.1 (1.1 SE). Both sides lost free hits (Ember Burst 238 of 477 casts empty, the party's Spirit Guardians 26) |
+| 5 darts | 16 | dragon B3 / B5 / K3 / K5 and Ember Tyrant rows, both directions | do not hold: at 1000 runs none moves more than 3.3 points (1.6 SE). A cast no longer rolls a d20 and 3d4 at once, so the dice re-deal |
+| 6 War Caster | (no table) | | no harness creature has it and every hash set is identical |
+
+**Zaki's party** (600 runs, both sides reading the mode, open / learn / blind), before → after the whole pass: hard day 98.0 / 95.8 / 95.7 →
+98.2 / 95.8 / 95.3; boss day 93.8 / 82.8 / 79.2 → 95.5 / 83.7 / 79.8.
+
+**Tests and run time.** `npm test` 993 → 1055 checks. `main` against the branch, alternating on an idle machine: `node tests/run.js` 105.5 / 105.2 s
+against 104.4 / 103.6 s; the 12-run BOSS + TIER table 209 s against 208 s; ms per day (hard-day, 100 days) 162–164 against 162–163.

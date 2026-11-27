@@ -130,7 +130,9 @@ Sim.prototype.addBuff = function (holder, src, action, data, extra) {
   if (ax.loseAction && holder !== src) { delete b.data.condition; b.loseAction = true; }
   if (ax.saveOnDamage && holder !== src) b.saveOnDamage = ax.saveOnDamage;
   if (ax.damageType) { b.dtype = ax.damageType; b.dmagic = !!(action._spell || ax.magical); }
-  if (holder.traits) b.magic = tMagic(action);                                // its repeat saves are against magic (custom mechanics: vs 'magic')
+  if (magicSource(action)) b.magic = true;                                    // its repeat saves are against magic
+  // Magic Resistance's "advantage on saves" is against magic only (by name too: creatures saved before ext.vsMagic)
+  if (data && data.condition === 'Saves with Advantage' && (ax.vsMagic || /magic resistance/i.test(action.name || ''))) b.vsMagic = true;
   // the export's averaged resistance gives way to the real damage types when the creature lists them
   if (ax.avgResist && holder.dmgMods && typeof b.data.damageTakenMultiplier === 'number') b.data.damageTakenMultiplier = Math.round(b.data.damageTakenMultiplier / ax.avgResist * 100) / 100;   // real duplicates here, an average in the export
   if (extra) Object.assign(b, extra);
@@ -368,14 +370,35 @@ Sim.prototype.concBonusOf = function (t) {
 Sim.prototype.concMod = function (t) {
   return this.saveBonusFor(t, 'con') + this.sumBuff(t, 'save', false) + this.concBonusOf(t);
 };
+/* an action whose saving throws are saves against magic: a spell, an innate spell, an action marked magical, or an entry whose own text says so (ext.magicEffect) */
+function magicSource(a) { return !!(a && (a._spell || (a.ext && (a.ext.innateSpell || a.ext.magical || a.ext.magicEffect)))); }
+/* Advantage on a save from a 'Saves with Advantage' buff t carries (Magic Resistance's, b.vsMagic, only against magic) */
+Sim.prototype.saveBuffAdv = function (t, magic) {
+  return t.buffs.some(b => b.data.condition === 'Saves with Advantage' && (magic || !b.vsMagic));
+};
+/* the same, and a trait's "advantage against magic": what t really has against `source` (the action forcing the save, or true for "magic") */
+Sim.prototype.saveAdvantage = function (t, source) {
+  const magic = source === true || magicSource(source);
+  if (this.saveBuffAdv(t, magic)) return true;
+  return !!(magic && t.traits && t.traits.onSave && t.traits.onSave.some(r => r.if.some(c => c.vs === 'magic') && r.do.some(e => e.advantage)));
+};
+/* an estimate's chance p that t passes a save against `source` (an action, or true for "magic"), with t's Advantage when u reads t's sheet (open mode);
+   a learning or blind side is not told and only sees the results */
+Sim.prototype.kAdv = function (u, t, source, p) {
+  return !this.kOf(u, t) && this.saveAdvantage(t, source) ? 1 - (1 - p) * (1 - p) : p;
+};
+/* an estimate's chance pf that t fails a concentration save, with War Caster's advantage when u reads t's sheet (its own, or open mode) */
+Sim.prototype.concFail = function (u, t, pf) { return t.warCaster && (u === t || !this.kOf(u, t)) ? pf * pf : pf; };
 Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   if (dc >= 99) return { success: false, roll: 1, total: -99 };
   const c = this.conds(t);
   const physical = ab === 'str' || ab === 'dex' || ab === 'strdex';
   // paralysed, stunned, unconscious or petrified creatures automatically fail Strength and Dexterity saves
   if (physical && ['Paralyzed', 'Stunned', 'Unconscious', 'Petrified'].some(x => c.has(x))) return { success: false, roll: 0, total: 0, autoFail: true };
-  const tS = t.traits && t.traits.onSave ? this.traitRun(t, 'onSave', { a: this._saveA || this._actA, src, magic: !!this._saveMagic }) : null;    // the Suit: advantage against magic
-  const adv = c.has('Saves with Advantage') || !!(sopt && sopt.adv) || !!(tS && tS.advantage) || (t.dexAdv && ab === 'dex' && !this.incap(t) && !c.has('Blinded') && !c.has('Deafened')) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
+  // is this a save against a spell or other magical effect (docs/ai-v2.md "Rules accuracy pass 2")? The action forcing it, a lingering buff's flag, or the caller's word
+  const magic = !!this._saveMagic || magicSource(this._saveA) || !!(sopt && sopt.magic);
+  const tS = t.traits && t.traits.onSave ? this.traitRun(t, 'onSave', { a: this._saveA || this._actA, src, magic }) : null;    // the Suit: advantage against magic
+  const adv = this.saveBuffAdv(t, magic) || !!(sopt && sopt.adv) || !!(tS && tS.advantage) || (t.dexAdv && ab === 'dex' && !this.incap(t) && !c.has('Blinded') && !c.has('Deafened')) || (!!this._saveCond && t.saveAdvVs.length > 0 && t.saveAdvVs.includes(String(this._saveCond).toLowerCase()));
   const dis = c.has('Save with Disadvantage') || c.has('Attacks and saves with Disadvantage') || ((ab === 'dex') && c.has('Restrained'));
   let r = this.d20(adv, dis, false, t, 'save');
   const flat = (sopt && sopt.bonus) || 0;            // a flat extra the caller owns (Bladesong on a concentration save)
@@ -432,6 +455,14 @@ Sim.prototype.saveRoll = function (t, dc, src, ab, sopt) {
   return { success: total >= dc, roll: r, total: Math.round(total * 10) / 10 };
 };
 
+/* is this swing a melee attack (docs/ai-v2.md "Rules accuracy pass 2")? ext.melee where the reach test would be wrong (a reach over 10 ft);
+   a "Melee or Ranged" attack with one long range is a melee attack up close; else a reach of 10 ft or less */
+Sim.prototype.meleeSwing = function (att, tgt, a) {
+  const ex = a.ext || {};
+  if (typeof ex.melee === 'boolean') return ex.melee;
+  if (ex.anyRange && this.dist(att, tgt) <= 5) return true;
+  return (a._range || 5) <= 10;
+};
 /* attack roll; returns {hit, crit, total, ac} */
 /* feature-based advantage: Assassinate (round 1, target hasn't acted) and Vex (weapon mastery) */
 Sim.prototype.featureAdv = function (att, tgt) {
@@ -499,6 +530,7 @@ Sim.prototype.attackRoll = function (att, tgt, a, opt) {
 function reactFits(x, info) {
   const rx = x.ext && x.ext.react;
   if (!rx) return true;
+  if (rx.against && info.melee !== undefined && (rx.against === 'melee') !== info.melee) return false;      // "against one melee attack" (Parry)
   if (rx.roll && !info.roll) return false;
   if (rx.types) {
     const type = String(info.type || (info.a && info.a.ext && info.a.ext.damageType) || '').toLowerCase();
@@ -580,7 +612,7 @@ Sim.prototype.damage = function (src, tgt, raw, info) {
     // stakes, and a lost spell is not a danger condition, so neither is spent here.
     const keep = [this._saveDmg, this._saveStakes, this._saveCond, this._saveA, this._saveHalf];
     this._saveDmg = 0; this._saveStakes = 0; this._saveCond = null; this._saveA = null; this._saveHalf = 0;
-    const s = this.saveRoll(tgt, dc, null, 'con', { bonus: this.concBonusOf(tgt), conc: true });
+    const s = this.saveRoll(tgt, dc, null, 'con', { bonus: this.concBonusOf(tgt), conc: true, adv: tgt.warCaster });
     [this._saveDmg, this._saveStakes, this._saveCond, this._saveA, this._saveHalf] = keep;
     if (!s.success) this.endConcentration(tgt, `Con save ${Math.round(s.total)} vs DC ${dc}`);
   }
@@ -829,8 +861,19 @@ Sim.prototype.sneakOk = function (u, t, a, r) {
   if (r.adv) return true;
   return this.alliesOf(u).some(o => o !== u && o.onBoard && this.alive(o) && !this.incap(o) && this.dist(o, t) <= 5);
 };
+/* one Magic Missile dart (ext.darts): no attack roll, so no reactions to a hit, no cover, no attack-roll buffs; its own damage, its own instance.
+   Casting still gives away a hidden caster */
+Sim.prototype.dartOnce = function (u, a, t) {
+  const at = this.mark();
+  this.dropBuffs(u, b => b.expiry === 'hide');
+  const raw = rollDice(a.dpr, this.R, false) * this.multBuff(u, 'damageMultiplier');
+  const dealt = this.damage(u, t, Math.max(0, Math.floor(raw)), { attack: true, a });
+  this.ev('attack', `${u.name} → ${t.name}: ${a.name} dart, ${dealt} damage`, { uid: u.uid, target: t.uid, hit: true, dmg: dealt, ranged: true });
+  this.hoist(at);
+};
 Sim.prototype.attackOnce = function (u, a, t, opt) {
   opt = opt || {};
+  if (a.ext && a.ext.darts) return this.dartOnce(u, a, t);
   const r = this.attackRoll(u, t, a, opt);
   let dealt = 0, sa = false, smTag = '', boltFx = null;
   const at = this.mark();
@@ -961,7 +1004,8 @@ Sim.prototype.onHitEffects = function (u, t, a, dealt) {
   if (oh.slow && !t.dead) this.addBuff(t, u, { id: 'slow:' + u.uid, name: 'Slowed', ext: { speedBonus: -oh.slow } }, { duration: '1 round' });
   if (oh.noReactions && !t.dead) t.reaction = false;
   if (oh.drain && dealt > 0 && !u.dead) { this.heal(u, u, dealt, false); this.ev('heal', `${u.name} drains ${dealt} HP`, { uid: u.uid, target: u.uid }); }
-  if (oh.push && !t.dead && t.onBoard && sizeIdx(t.size, 2) <= sizeIdx(oh.pushMaxSize || 'Huge', 4)) this.push(u, t, oh.push);
+  // a push (pushSave: only if that save fails; pushOnRider: applyRider does it, with the save that gives the condition)
+  if (oh.push && !oh.pushOnRider && !t.dead && t.onBoard && !(oh.pushSave && this.saveRoll(t, oh.pushSave.dc, u, oh.pushSave.ab, { magic: magicSource(a) }).success)) this.pushOn(u, t, oh);
   if (oh.dot && !t.dead) {
     const k = a._spell && u.castLevel ? u.castLevel - a._spell.level : 0;
     const dice = [oh.dot.dice || oh.dot].concat(k > 0 && oh.dot.upcast ? Array(k).fill(oh.dot.upcast) : []).join(' + ');
@@ -977,6 +1021,10 @@ Sim.prototype.onHitEffects = function (u, t, a, dealt) {
     }
   }
 };
+/* ext.onHit's push, within its size limit */
+Sim.prototype.pushOn = function (u, t, oh) {
+  if (!t.dead && t.onBoard && sizeIdx(t.size, 2) <= sizeIdx(oh.pushMaxSize || 'Huge', 4)) this.push(u, t, oh.push);
+};
 /* forced movement: straight away from the source, stopping at walls, creatures and the map edge.
    No opportunity attacks; a drop of 10 ft or more means falling damage (1d6 per 10 ft) and landing prone. */
 Sim.prototype.push = function (src, t, ft) {
@@ -988,6 +1036,7 @@ Sim.prototype.push = function (src, t, ft) {
   for (let i = 0; i < Math.round(ft / 5); i++) {
     const nx = t.x + dx, ny = t.y + dy;
     if (!this.fits(t, nx, ny)) break;
+    if (dx && dy && this.T.any && this.T.wall[nx + t.y * this.W] && this.T.wall[t.x + ny * this.W]) break;      // no slipping between two walls
     if (!t.fly && this.T.anyH && this.hAt(nx, ny) > this.hAt(t.x, t.y)) break;     // can't be shoved up a ledge
     t.x = nx; t.y = ny; path.push({ x: nx, y: ny });
   }
@@ -1036,6 +1085,8 @@ Sim.prototype.applyRider = function (u, t, a) {
   }
   this.addBuff(t, u, a, re.buff, { dc: re.dc, saveAbility: rab });
   this.ev('effect', `${t.name} is affected by ${a.name}${re.buff.condition ? ': ' + re.buff.condition : ''}`, { uid: t.uid });
+  const oh = a.ext && a.ext.onHit;
+  if (oh && oh.pushOnRider) this.pushOn(u, t, oh);
 };
 /* a coin flip (ext.coin = { p: 0.5, heads: OUTCOME, tails: OUTCOME }, docs/ai-v2.md "Pasquale Minuzzi"): the seeded generator decides; the outcome's buff goes
    on the flipper (spent by its next attack roll, ended by `lasts`: 'turn' this turn, 'next' its next turn), with the extra damage carried on it.
@@ -1058,7 +1109,6 @@ Sim.prototype.coinFlip = function (u, a) {
    which the caller reads: { first, all, dmg, extra, burn, advantage, reroll }. sc is the scope: { a, tgt, natural, kind, nth, unused, src, targets }.
    beforeAction runs the coins first (a burn stops everything after it, nothing is paid), then the rest. Returns null when nothing fired. */
 const tLow = s => String(s || '').replace(/ \(L\d\)$/, '').trim().toLowerCase();
-const tMagic = a => !!(a && (a._spell || (a.ext && (a.ext.innateSpell || a.ext.magical))));
 Sim.prototype.tCond = function (u, list, sc) {
   for (const c of list || []) for (const k in c) {
     const v = c[k], a = sc.a;
@@ -1070,7 +1120,7 @@ Sim.prototype.tCond = function (u, list, sc) {
     else if (k === 'melee') { if (!a || ((a._range || 5) <= 10) !== v) return false; }
     else if (k === 'natural') { if (sc.natural !== v) return false; }
     else if (k === 'rollIs') { if (v.indexOf(sc.kind) < 0) return false; }
-    else if (k === 'vs') { if (!tMagic(a) && !sc.magic) return false; }
+    else if (k === 'vs') { if (!(typeof sc.magic === 'boolean' ? sc.magic : magicSource(a))) return false; }
     else if (k === 'nthHit') { if (sc.nth !== v) return false; }
     else if (k === 'ownTurn') { if ((this.current === u) !== v) return false; }
     else return false;                                   // a word this engine does not know: the trait never fires
@@ -1163,7 +1213,7 @@ Sim.prototype.afterHitExt = function (u, t, a, hit) {
   if (!hit || t.dead) return;   // a creature knocked to 0 can still be grabbed or swallowed
   if (ex.grapple && !t.grappledBy && !t.swallowedBy && sizeIdx(t.size, 2) <= sizeIdx(ex.grapple.maxSize, 2)) {
     let ok = true;
-    if (typeof ex.grapple.dc === 'number') ok = !this.saveRoll(t, ex.grapple.dc, u, 'strdex').success;
+    if (typeof ex.grapple.dc === 'number') ok = !this.saveRoll(t, ex.grapple.dc, u, 'strdex', { magic: magicSource(a) }).success;
     if (ok) {
       t.grappledBy = u.uid;
       t.grappleInfo = { escapeDC: ex.grapple.escapeDC || 10, restrains: ex.grapple.restrains !== false, name: a.name };
@@ -1281,7 +1331,7 @@ Sim.prototype.cancelled = function (u, a, targets) {
     t.seenCancel = true;
     if (this.learning(otherTeam(t.team))) this.kind(otherTeam(t.team), t).cancel = true;
     const dc = Number(avgDice(x.saveDC));
-    const s = dc < 99 ? this.saveRoll(u, dc, t, x.ext.saveAbility) : { success: false, total: 0 };
+    const s = dc < 99 ? this.saveRoll(u, dc, t, x.ext.saveAbility, { magic: magicSource(x) }) : { success: false, total: 0 };
     if (s.success) { this.ev('react', `${t.name} uses ${x.name}, but ${u.name} pushes through (${s.total} vs DC ${dc})`, { uid: t.uid, target: u.uid }); return false; }
     this.ev('react', `${t.name} uses ${x.name}: ${u.name}'s ${a.name} is cancelled${dc < 99 ? ` (${s.total} vs DC ${dc})` : ''}`, { uid: t.uid, target: u.uid });
     return true;
@@ -1321,7 +1371,8 @@ Sim.prototype.throughChance = function (u, t) {
   if (!x) return 1;
   const dc = Number(avgDice(x.saveDC));
   if (dc >= 99) return 0.05;
-  return Math.min(1, Math.max(0.05, (21 + this.saveBonusFor(u, x.ext.saveAbility) - dc) / 20));
+  const pass = Math.min(1, Math.max(0.05, (21 + this.saveBonusFor(u, x.ext.saveAbility) - dc) / 20));
+  return this.saveAdvantage(u, x) ? 1 - (1 - pass) * (1 - pass) : pass;      // u knows its own sheet
 };
 Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
   if (a.type === 'atk') {
