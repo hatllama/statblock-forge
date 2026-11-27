@@ -649,6 +649,9 @@ const BOSS_SCENARIOS = [
   { name: 'BOSS brute: Grukk, legendary actions and no spells (260 HP, full damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [withHp(statblock('brute-legendary-homebrew.txt'), 260)] }] },
   { name: 'BOSS tyrant: the Ember Tyrant (140 HP, 0.4 damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [scaled(withHp(statblock('long-homebrew-boss.txt'), 140), 0.4)] }] },
   { name: 'BOSS escort: Osric with a lair and 4 Bandits (120 HP, 0.4 damage)', party: BOSS_PARTY, encounters: () => [{ monsters: [scaled(withHp(statblock('osric-homebrew.txt'), 120), 0.4), mon('Bandit', 4)] }] },
+  // as written, Malenia (287 HP, AC 22) wins every fight against Zaki's level-5 party and Fiorenzo (78 HP) loses every one: scaled so the tier can show
+  { name: "BOSS malenia: Malenia against Zaki's party (150 HP, 0.35 damage)", players: zaki, encounters: () => [{ monsters: [scaled(withHp(statblock('malenia.txt'), 150), 0.35)] }] },
+  { name: "BOSS fiorenzo: Fiorenzo Minuzzi against Zaki's party (234 HP, 3x)", players: zaki, encounters: () => [{ monsters: [withHp(statblock('fiorenzo.txt'), 234)] }] },
 ];
 const BOSS_METRICS = {
   'leg/fight': r => r.events.filter(e => e.kind === 'legendary').length,
