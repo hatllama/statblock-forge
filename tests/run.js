@@ -2444,37 +2444,46 @@ section('AI v2: the boss tier (phase 4b)');
   const party = () => ['Fighter', 'Barbarian', 'Cleric', 'Wizard'].map(pc);
   let err = 0;
   const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
-  // legendary actions: only after another side's turn, never more points than it has between its own turns; it waits as well as spends
-  const legCheck = (mk, N, opts) => {
-    const out = { uses: 0, holds: 0, badTiming: 0, overspent: 0, lairs: 0, lairNames: new Set(), lairOff: 0 };
+  // legendary actions (2024: "immediately after another creature's turn"): after any other creature's turn, allies' included, never after its own,
+  // one per window, never more points than it has between its own turns (they come back at the start of its turn); it waits as well as spends
+  const legCheck = (mk, N, opts, escort) => {
+    const out = { uses: 0, holds: 0, badTiming: 0, overspent: 0, lairs: 0, lairNames: new Set(), lairOff: 0, afterAlly: 0, twice: 0, regained: 0 };
     for (let i = 0; i < N; i++) {
       const boss = mk(), cost = {}, max = boss.ext.legendaryActions || 3;
       for (const a of boss.actions) if (a.actionSlot === 2) cost[a.name] = (a.ext && a.ext.legendaryCost) || 1;
-      for (const r of run({ players: party(), encounters: [{ monsters: [boss] }] }, Object.assign({ seed: 70 + i * 31, record: true }, opts))) {
+      for (const r of run({ players: party(), encounters: [{ monsters: [boss].concat(escort ? [escort()] : []) }] }, Object.assign({ seed: 70 + i * 31, record: true }, opts))) {
         const team = {}; for (const u of r.units) team[u.uid] = u.team;
-        let lastTurn = null, spent = 0, prevKind = null;
+        let lastTurn = null, spent = 0, prevKind = null, inWindow = 0, fightUses = 0, bossUid = null;
         for (const e of r.events) {
-          if (e.kind === 'turn') { lastTurn = e.uid; if (team[e.uid] === 'foes') spent = 0; }
+          if (e.kind === 'turn') { lastTurn = e.uid; inWindow = 0; if (e.uid === bossUid) spent = 0; }
           if (e.kind === 'legendary') {
-            out.uses++;
+            out.uses++; fightUses++; inWindow++; bossUid = e.uid;
             const nm = (/legendary action: (.*)$/.exec(e.text) || [])[1];
             spent += cost[nm] || 1;
             if (spent > max) out.overspent++;
-            if (!lastTurn || team[lastTurn] === team[e.uid]) out.badTiming++;
+            if (!lastTurn || lastTurn === e.uid) out.badTiming++;
+            else if (team[lastTurn] === team[e.uid]) out.afterAlly++;
+            if (inWindow > 1) out.twice++;
           }
           if (e.kind === 'intent' && /holds its legendary actions/.test(e.text)) out.holds++;
           if (e.kind === 'lair') { out.lairs++; out.lairNames.add((/: (.*)$/.exec(e.text) || [])[1]); if (prevKind !== 'round' && prevKind !== 'lair' && prevKind !== 'save' && prevKind !== 'aoe' && prevKind !== 'effect' && prevKind !== 'attack' && prevKind !== 'react' && prevKind !== 'down') out.lairOff++; }
           prevKind = e.kind;
         }
+        if (fightUses > max) out.regained++;
       }
     }
     return out;
   };
   const tyr = legCheck(() => { const m = file('long-homebrew-boss.txt', null, 140); for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.4)); return m; }, 6);
   const gru = legCheck(() => file('brute-legendary-homebrew.txt', null, 260), 6);
-  check(tyr.uses > 0 && gru.uses > 0 && tyr.badTiming === 0 && gru.badTiming === 0, `legendary actions come only after an enemy's turn (Tyrant ${tyr.uses} uses, Grukk ${gru.uses}; ${tyr.badTiming + gru.badTiming} at a wrong moment)`);
-  check(tyr.overspent === 0 && gru.overspent === 0, `legendary actions never spend more points than it has between its own turns (${tyr.overspent + gru.overspent} over)`);
+  check(tyr.uses > 0 && gru.uses > 0 && tyr.badTiming === 0 && gru.badTiming === 0 && tyr.twice + gru.twice === 0, `legendary actions come only after another creature's turn, one per window (Tyrant ${tyr.uses} uses, Grukk ${gru.uses}; ${tyr.badTiming + gru.badTiming} after its own turn, ${tyr.twice + gru.twice} doubled)`);
+  check(tyr.overspent === 0 && gru.overspent === 0 && tyr.regained + gru.regained > 0, `legendary actions never spend more points than it has between its own turns (${tyr.overspent + gru.overspent} over), and the points come back at its turn (${tyr.regained + gru.regained} fights with more uses than points)`);
   check(tyr.holds + gru.holds > 0, `a boss sometimes holds its legendary actions for a better moment (${tyr.holds + gru.holds} holds)`);
+  // with an escort, the allies' turns are windows too (the rule says another creature, not an enemy); the old picker (forced cunning) as well
+  for (const tier of [null, 'cunning']) {
+    const esc = legCheck(() => { const m = file('osric-homebrew.txt', tier, 120); for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.4)); return m; }, 5, null, () => srd('Bandit', 4));
+    check(esc.afterAlly > 0 && esc.badTiming === 0 && esc.twice === 0 && esc.overspent === 0, `Osric with 4 Bandits (${tier || 'boss'}): legendary actions after an ally's turn too (${esc.afterAlly} of ${esc.uses}), none after its own (${esc.badTiming}), one per window (${esc.twice} doubled), never overspent (${esc.overspent})`);
+  }
   // lair actions: used at the top of the round, chosen by value
   const drg = legCheck(() => lairDragon(160), 5);
   check(drg.lairs > 0 && drg.lairOff === 0, `a boss with a lair uses its lair actions at the start of a round (${drg.lairs} uses: ${[...drg.lairNames].join(', ')})`);

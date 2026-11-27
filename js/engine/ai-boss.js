@@ -67,6 +67,14 @@ Sim.prototype.bossBefore = function (u, after) {
   for (let k = 1; k <= ord.length; k++) { const o = ord[(i + k + ord.length) % ord.length]; if (o === u) break; if (o.team !== u.team && this.alive(o) && o.onBoard) out.add(o); }
   return out;
 };
+/* the legendary windows still to come before u's next turn after `after`'s: every other creature that takes a turn (allies too: the rule is
+   "after another creature's turn"), as the round loop skips them (the dead, foes off the board) */
+Sim.prototype.bossWindows = function (u, after) {
+  const ord = this.order || [], i = ord.indexOf(after);
+  let n = 0;
+  for (let k = 1; k <= ord.length; k++) { const o = ord[(i + k + ord.length) % ord.length]; if (o === u) break; if (!o.dead && (o.team !== 'foes' || o.onBoard)) n++; }
+  return n;
+};
 /* the uses of one slot's actions (2 legendary, 3 lair) from where it stands: v2 aims and values each one; maxCost limits legendary costs.
    Off its own turn a one-round effect from it ends when its next turn starts, so it only holds back the foes that act before then (before) */
 Sim.prototype.bossOptions = function (u, slot, maxCost, before) {
@@ -91,9 +99,9 @@ Sim.prototype.bossLair = function (u) {
   return best;
 };
 /* legendary actions, which and when: each one it can pay for = its value + what the points left are worth later; waiting = the points kept.
-   keep(L, K) = min(L, K) × its running value per point × legKeep, K = enemy turns before its own (this one included) */
+   keep(L, K) = min(L, K) × its running value per point × legKeep, K = the windows before its own turn (this one included: any other creature's turn) */
 Sim.prototype.bossLegendary = function (u, after) {
-  const B = u.v2P.boss, L = u.legendaryLeft, before = this.bossBefore(u, after), K = 1 + before.size;
+  const B = u.v2P.boss, L = u.legendaryLeft, before = this.bossBefore(u, after), K = 1 + this.bossWindows(u, after);
   const opts = this.bossOptions(u, 2, L, before);
   const top = opts.reduce((m, o) => Math.max(m, o.v / o.c), 0);
   if (top > 0) u.legPer = u.legPer ? u.legPer + (top - u.legPer) * B.legRate : top;

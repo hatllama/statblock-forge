@@ -342,9 +342,11 @@ Sim.prototype.settleAltitude = function (u, a, p) {
 };
 
 /* ----- legendary & lair ----- */
+/* 2024 / SRD 5.2: "immediately after another creature's turn" (an ally's too, never its own), one legendary action per window;
+   the uses come back at the start of its own turn (turn) */
 Sim.prototype.legendary = function (after) {
   for (const u of this.units) {
-    if (u === after || u.team === after.team || !this.alive(u) || !u.onBoard || u.legendaryLeft <= 0 || this.incap(u)) continue;
+    if (u === after || !this.alive(u) || !u.onBoard || u.legendaryLeft <= 0 || this.incap(u)) continue;
     // actions that cost more than the uses left are hidden for this pick
     const hidden = u.actions.filter(a => a.actionSlot === 2 && ((a.ext && a.ext.legendaryCost) || 1) > u.legendaryLeft);
     hidden.forEach(a => { a.actionSlot = -99; });
