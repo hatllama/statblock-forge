@@ -2959,3 +2959,43 @@ new concentration spell bring it back to its space or the nearest free one; the 
 back; Maze escape on a Study check; 2014 Plane Shift gone for good, 2024 never cast; the waiting rule (a win against a banished fiend, a
 fight against a returned giant, no infinite loop, the cap); an innate Banishment; a plain export with and without the spells.
 Harness: `node tests/ai-compare.js 200 '^BAN'` (scenarios and results below).
+
+### Results (removed from the fight)
+
+**Nothing else moved.** Every play-hash set (default, open, learn, blind, `PREFIGHT=0`, the learn fixture) and the 12-run BOSS + TIER
+table are identical to `main`, and so is every one of the 708 rows of the full `ai-compare` table (all families, open / learn / blind,
+200 runs, same seeds). The Lich's Plane Shift is inert under the default rule, so the Lich rows did not move either.
+
+**BAN rows** (200 seeded days; party = Fighter, Barbarian, Wizard, Cleric with one extra slot; `none` = the slot without the spell,
+`with` = the spell in the book; "before" = the same scenarios on `main`'s engine, where Banishment was an Incapacitated debuff).
+Win % ± SE, then casts / removals / gone for good / waits a day:
+
+| scenario | mode | none | before (with) | after (with) | after: casts, removed, gone, waits |
+|---|---|---|---|---|---|
+| BAN2 2 Air Elementals + 2 Ogres | open | 91.0±2.0 | 90.5±2.1 | 88.5±2.3 | 0.47, 0.38, 0.17, 0.17 |
+| | learn | 87.5±2.3 | 87.0±2.4 | 87.0±2.4 | 0.12, 0.10, 0.06, 0.06 |
+| | blind | 80.0±2.8 | 80.0±2.8 | 80.0±2.8 | 0.05, 0.04, 0.03, 0.03 |
+| BAN3 a lone Air Elemental | open | 100 (34 taken) | 100 (34 taken) | 100 (20 taken, 9.2 rounds) | 0.95, 0.78, 0.78, 0.78 |
+| | learn / blind | 100 | 100 | 100 | 0.04 / 0 casts |
+| BAN4 the lone elemental, 3 LR | all | 100 | 100 | 100 | 0 casts (learn 0.02) |
+| BAN5 a lone Hill Giant | all | 100 | 100 (0.01-0.06 casts) | 100 | 0 casts |
+| BAN10 a day, elemental + giant last | open | 94.0±1.7 | 94.0±1.7 | 94.0±1.7 | 0.17, 0.11, 0.09, 0.09 |
+
+BAN1 (2 giants + goblins), BAN6 (3 giants), BAN7 (Maze), BAN8 (2014 Plane Shift) and BAN9 (a Mage that can banish) stay at their `none`
+rows: the level-5 party wins them in 3-4 rounds, and a 4th-level Spirit Guardians or Fireball is worth more than taking one giant away for two
+rounds. No row is worse than `none` by more than 1 SE (BAN2 open −2.5, 0.8 SE).
+
+**What this says.** The term does what the design asks: a lone giant is never banished (it would come back unchanged), a lone elemental is
+banished almost every time in open mode (gone after the waited minute: the same win with 14 less damage taken), and the same elemental with 3
+Legendary Resistance is left alone (worth 10 instead of 78 points). Learn and blind rarely banish: until it is seen, the Charisma save and the
+hit points are priors (learn's value for the same cast is 35 against open's 75, a 4th-level slot costs about 31). No scenario became
+implausibly easy: the only one turned into a wait (BAN3) was won every time before.
+
+**Tests and run time.** `npm test` 1060 → 1114 checks (+1 in the smoke test). `main` against the branch, alternating on one machine:
+`npm test` 166 / 139 s against 170 / 116 s (noise; the new sections add about 4 s); `tests/play-hash.js` 10.7 s both; the 12-run
+BOSS + TIER table 233 s against 232 s; a day without a replay 171 / 173 and 139 / 140 ms against 173 / 172 and 142 / 140 ms (+1% at most).
+
+**Watchlist.** A Cleric who banishes gives up Spirit Guardians (one concentration); v2 has no term for the concentration spell a cast will
+block later, so in BAN2 open a few early Banishments were lost to a javelin on the Cleric (a broken concentration brings the elemental
+back at full HP). Monster casters rarely banish (BAN9: 0.01 a day). The 2014 Plane Shift is never cast in BAN8: a touch spell costs a
+7th-level slot and a walk into the giants' reach.
