@@ -33,6 +33,7 @@ const AI_BASE = {
     ctlRound: 0.5, lull: 0.6, legRes: 0.4, concKeep: 0.75, shakeOff: 0.55, expose: 1, critDmg: 1.6,
     // control: one round's worth × rounds; damage ends it; a save bought off (legRes / the uses it has left: docs/ai-v2.md); holding it that long; a hold that damage can save it out of (Laughter);
     // our side's extra damage on a foe easier to hit (advantage, crits up close: v2Expose); a crit's damage over a plain hit
+    removeAway: 1, removeGone: 1,                                // a removal (Banishment, Maze: v2Remove): its turns lost while the rest of the fight goes on; gone for good: every turn it had left
     heal: 1, healLow: 1.4, healDanger: 0.8,                     // HP back (more under half), a heal that keeps it standing
     // a downed ally back up (v2BackUp, docs/ai-v2.md): its value per round; the turn it may get even if it drops again; foes beside it turning on it; the blow it soaks for someone else; what a healer's round is worth;
     // a life in points, more per fight still to come; the chance a round an adjacent foe finishes it, first time down and after a second drop

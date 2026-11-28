@@ -3850,15 +3850,85 @@ const BAN = (() => {
   check(T.f.stable, 'the waiting party stabilises its downed');
   T = setup(); BAN.cast(T.s, T.c, T.ba, T.g);
   check(!T.s.waitOut(), 'no wait while a foe is still on the board');
-  // a whole fight with a foe that only ever banishes: it ends, inside the cap
+  // a whole fight with a foe that only ever banishes (DC 40, at will) and two who hit: it ends, inside the cap
   {
     const banisher = R2.srd('Ogre'); banisher.name = 'Ogre Banisher';
     const inn = BAN.mk('banishment', BAN.SD.banishment, { dc: 40, atk: 32, mod: 3, lvl: 9, cantripDice: 2 }, { freq: 'at will' });
     inn.id = 'ob-banish'; inn.ext.innateSpell = true; banisher.actions = [inn];
-    const t0 = Date.now(), res = Tac.runDay({ players: [R2.pc('Fighter')], encounters: [{ monsters: [Object.assign(banisher, { id: 'ob', mode: 'custom', count: 1 })] }] }, { seed: 4, record: true, maxRounds: 30 });
+    const t0 = Date.now(), res = Tac.runDay({ players: [R2.pc('Fighter'), R2.pc('Barbarian')], encounters: [{ monsters: [Object.assign(banisher, { id: 'ob', mode: 'custom', count: 1 }), Object.assign(R2.srd('Ogre'), { id: 'o2', count: 2 })] }] }, { seed: 4, record: true, maxRounds: 30 });
     const r = res[0], waits = r.events.filter(e => e.kind === 'wait').length;
-    check(r.rounds <= 30 + 10 * Math.max(1, waits) && Date.now() - t0 < 20000 && r.events.some(e => /banished/.test(e.text)), `a foe that banishes every turn: the fight ends (${r.won ? 'won' : 'not won'}, ${r.rounds} rounds, ${waits} waits)`);
+    check(r.rounds <= 30 + 10 * Math.max(1, waits) && Date.now() - t0 < 20000 && r.events.some(e => /is banished/.test(e.text)), `a foe that banishes at will: the fight ends (${r.won ? 'won' : 'not won'}, ${r.rounds} rounds, ${waits} waits, ${r.events.filter(e => /is banished/.test(e.text)).length} banished)`);
   }
+}
+
+section('Removed from the fight: v2\'s value for a removal (v2Remove)');
+const withLRb = (m, n) => { m.ext.legendaryResistance = n; return m; };
+{
+  const setup = (foes, know, spell) => {
+    const b = R2.board([[BAN.give(R2.pc('Cleric'), spell || 'banishment'), 3, 5], [R2.pc('Fighter'), 4, 7], [R2.pc('Barbarian'), 4, 3]], foes.map((f, i) => [f, 12 + 3 * i, 5]), { know: { party: know || 'open' } });
+    const c = b.p[0]; return { s: b.s, c, f: b.f, a: BAN.act(c, /^(Banishment|Maze|Plane Shift)/) };
+  };
+  const val = (T, t) => T.s.v2Remove(T.c, T.a, t, T.s.v2Ctx(T.c, 30), false);
+  let T = setup([R2.srd('Hill Giant')]);
+  check(val(T, T.f[0]) === 0, `a lone giant comes back unchanged after the wait: worth nothing (${val(T, T.f[0])})`);
+  T = setup([R2.srd('Hill Giant'), R2.srd('Ogre'), R2.srd('Ogre')]);
+  const giantV = val(T, T.f[0]);
+  check(giantV > 10, `a giant among ogres: worth its turns while the ogres fall (${giantV.toFixed(1)})`);
+  T = setup([R2.srd('Air Elemental')]);
+  const elemV = val(T, T.f[0]);
+  check(elemV > 20, `a lone elemental: gone for good once the minute is up, so worth something where a lone giant is worth nothing (${elemV.toFixed(1)})`);
+  T = setup([withLRb(R2.srd('Air Elemental'), 3)]);
+  const lrV = val(T, T.f[0]);
+  check(lrV > 0 && Math.abs(lrV - elemV * 0.4 / 3) < 0.5, `with 3 Legendary Resistance (open): legRes / 3 of it, a poor target (${lrV.toFixed(1)} against ${elemV.toFixed(1)})`);
+  T = setup([withLRb(R2.srd('Air Elemental'), 3)], 'blind');
+  check(Math.abs(val(T, T.f[0]) - elemV) < elemV * 0.6 + 1, 'blind: no LR seen yet, the first cast is priced as an ordinary one (it shows the LR)');
+  // its save matters
+  T = setup([R2.srd('Air Elemental')]); T.f[0].saves = Object.assign({}, T.f[0].saves, { cha: 30 });
+  check(val(T, T.f[0]) < 0.5, 'a save it cannot fail: worth nothing');
+  // Maze: no save, the escape chance from its Int
+  const M = setup([R2.srd('Hill Giant'), R2.srd('Ogre'), R2.srd('Ogre')], 'open', 'maze');
+  const dull = M.s.v2Remove(M.c, M.a, M.f[0], M.s.v2Ctx(M.c, 30), false);
+  M.f[0].saves = Object.assign({}, M.f[0].saves, { int: 19 });
+  const bright = M.s.v2Remove(M.c, M.a, M.f[0], M.s.v2Ctx(M.c, 30), false);
+  check(dull > bright && bright > 0, `Maze on a dull giant (Int save -3) is worth more than on one that finds its way out (${dull.toFixed(1)} > ${bright.toFixed(1)})`);
+  // holding it: v2Holding counts the foe it holds away, so another concentration spell has to beat it
+  T = setup([R2.srd('Hill Giant'), R2.srd('Ogre'), R2.srd('Ogre')]); T.f[0].saves = Object.assign({}, T.f[0].saves, { cha: -40 });
+  T.c.concentrating = null; BAN.cast(T.s, T.c, T.a, T.f[0]);
+  const held = T.s.v2Holding(T.c, T.s.v2Ctx(T.c, 30));
+  check(T.f[0].removed && held > 5, `a running Banishment is held at ${held.toFixed(1)} (concSwap prices dropping it)`);
+  const conc = T.s.concValue(T.s.units.find(u => u.team === 'foes' && u.onBoard), T.c);
+  check(conc > 3 + 5, `the foes see what the Cleric's concentration holds (${conc.toFixed(1)}): worth breaking`);
+  // the burn plan leaves Maze out (no save, nothing to burn); the follow-up Banishment on a non-extraplanar boss only delays it
+  const MB = setup([withLRb(R2.srd('Hill Giant'), 3)], 'open', 'maze');
+  const bp = MB.s.v2BurnPlan(MB.c, MB.s.v2Ctx(MB.c, 30), false);
+  check(!bp || !(bp.cands || []).some(c => /^Maze/.test(c.a.name)), 'Maze is never a burn-plan candidate');
+}
+section('Removed from the fight: AI-played fights (nothing reaches a removed creature, every fight ends)');
+{
+  const day = (foes, opts) => ({ players: [R2.pc('Fighter'), R2.pc('Barbarian'), R2.pc('Wizard'), BAN.give(R2.pc('Cleric'), 'banishment')], encounters: [{ monsters: foes }] });
+  let removals = 0, bad = 0, badAoe = 0, fights = 0, gone = 0, back = 0, waits = 0, capped = 0;
+  for (let i = 0; i < 24; i++) {
+    const foes = i % 3 === 0 ? [R2.srd('Air Elemental')] : i % 3 === 1 ? [R2.srd('Air Elemental'), R2.srd('Air Elemental'), R2.srd('Ogre'), R2.srd('Ogre')] : [R2.srd('Hill Giant'), R2.srd('Hill Giant'), R2.srd('Goblin Warrior')];
+    foes.forEach((f, k) => { f.id = f.id + '#' + k; });
+    const res = Tac.runDay(day(foes), { seed: 700 + i * 31, record: true, know: { party: i % 4 === 3 ? 'learn' : 'open' } });
+    for (const r of res) {
+      fights++;
+      const away = new Set();
+      for (const e of r.events) {
+        if (e.kind === 'effect' && /is banished to|vanishes into/.test(e.text)) { removals++; }
+        if (e.target && away.has(e.target) && !(e.kind === 'effect' && / reappears/.test(e.text))) bad++;
+        if (e.kind === 'aoe' && (e.hits || []).some(h => away.has(h))) badAoe++;
+        for (const k in e.state || {}) { if (e.state[k].away) away.add(k); else away.delete(k); }     // each state is the unit's whole state
+        if (e.kind === 'flee' && /for good/.test(e.text)) gone++;
+        if (/ reappears/.test(e.text || '')) back++;
+        if (e.kind === 'wait') waits++;
+      }
+      if (r.rounds > 40 + 10 * waits) capped++;
+    }
+  }
+  check(removals >= 3, `the AI casts Banishment in these fights (${removals} removals in ${fights} fights; ${gone} gone for good, ${back} back, ${waits} waits)`);
+  check(!bad && !badAoe, `no event aims at a removed creature (${bad}) and no area catches one (${badAoe})`);
+  check(!capped, 'every fight ends inside the round cap and its waits');
 }
 
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
