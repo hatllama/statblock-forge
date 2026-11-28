@@ -179,12 +179,15 @@ const AI_TIERS = {
       w: { caster: 0, healer: 0, wounded: 6, pick: 2, guard: 0, focus: 1.5, oa: 0.7, dodge: 0.2, hide: 0, areaRisk: 0.4, ffValue: 0.3, casterRisk: 0.5 },
     },
     cunning: {},
-    // the careful weights of the old genius tier, plus the boss block: little self-care when alone, legendary and lair actions and Legendary Resistance weighed, recharge priced
+    // the careful weights of the old genius tier, plus the boss block: little self-care when alone, legendary and lair actions and Legendary Resistance weighed.
+    // Boss tuning (docs/ai-v2.md "Boss tuning"): recharge 0 (the price made every boss with a recharge action weaker or level, and lone young dragons and
+    // Legendary-Resistance carriers 8-17 points weaker), lrSpare 0.3 (a second and third use held back cheaper), legKeep 0.6 (a kept legendary point worth less);
+    // BOSS rows on fresh seeds (400 runs, three modes): 1.9 points stronger on average, no boss weaker in every mode
     boss: {
       morale: { bloodied: false, half: false, leader: false },
       posture: { retreatHp: 0.35, retreatDanger: 0.4 },
       w: { caster: 6, healer: 6, wounded: 5, pick: 6, guard: 5, areaRisk: 1.4, ffValue: 1.3, casterRisk: 1.5, oa: 1.2, dprSeen: 1, dprSeenGap: 1, dprSeenDealt: 1 },
-      boss: { solo: 0.25, soloOa: 0.5, legendary: 'weigh', lair: 'weigh', legRes: 'weigh', recharge: 1 },
+      boss: { solo: 0.25, soloOa: 0.5, legendary: 'weigh', lair: 'weigh', legRes: 'weigh', recharge: 0, lrSpare: 0.3, legKeep: 0.6 },
     },
   },
 };

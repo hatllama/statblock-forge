@@ -2440,6 +2440,11 @@ section('AI v2: the boss tier (phase 4b)');
   check(T(srd('Lich', 1, 'cunning')) === 'cunning' && T(srd('Wolf', 1, 'boss')) === 'boss', 'ext.aiTier overrides the boss rule both ways');
   check(Tac.TIER_PROFILES.boss.boss.legendary === 'weigh' && Tac.AI_BASE.boss.legendary === 'rule' && Tac.AI_BASE.boss.solo === 1 && Tac.AI_BASE.boss.recharge === 0 && ['mindless', 'animal', 'cunning'].every(k => Tac.TIER_PROFILES[k].boss.solo === 1 && Tac.TIER_PROFILES[k].boss.legRes === 'rule'),
     'the boss block is neutral in AI_BASE and every other tier (factors 1, weight 0, old pickers); only the boss profile changes it');
+  // boss tuning (docs/ai-v2.md "Boss tuning", step 4): the recharge price is off, a second Legendary Resistance and a kept legendary point are cheaper
+  { const Bp = Tac.TIER_PROFILES.boss.boss, S0 = new Tac.Sim({ seed: 1 });
+    const breath = { id: 'b', actionSlot: 0, freq: { reset: 'recharge', cooldownRounds: 3 } };
+    check(Bp.recharge === 0 && Bp.lrSpare === 0.3 && Bp.legKeep === 0.6 && Bp.solo === 0.25 && Bp.soloOa === 0.5 && S0.bossRecharge({ v2P: { boss: Bp } }, breath, {}) === 0,
+      'boss profile: recharge 0 (a recharge ability is not priced), lrSpare 0.3, legKeep 0.6; self-care solo 0.25 / soloOa 0.5 unchanged'); }
 
   const party = () => ['Fighter', 'Barbarian', 'Cleric', 'Wizard'].map(pc);
   let err = 0;
@@ -2488,7 +2493,7 @@ section('AI v2: the boss tier (phase 4b)');
   const drg = legCheck(() => lairDragon(160), 5);
   check(drg.lairs > 0 && drg.lairOff === 0, `a boss with a lair uses its lair actions at the start of a round (${drg.lairs} uses: ${[...drg.lairNames].join(', ')})`);
   // Legendary Resistance: spent on control, not on a save for half damage (unless failing would drop it); the old rule spends on both
-  const lrLog = (legRes, N, fireballs) => {
+  const lrLog = (legRes, N, fireballs, spare) => {
     const got = { ctl: 0, half: 0, halfLate: 0, drop: 0 }, proto = Tac.Sim.prototype, sr = proto.saveRoll;
     proto.saveRoll = function (t, dc, src, ab, sopt) {
       const s = sr.call(this, t, dc, src, ab, sopt);
@@ -2502,7 +2507,7 @@ section('AI v2: the boss tier (phase 4b)');
     };
     for (let i = 0; i < N; i++) {
       // Grukk (Wisdom +0) draws Hold Monster; Osric (Wisdom +8) draws Fireballs from the full spell lists
-      const os = fireballs ? file('osric-homebrew.txt', null, 157) : file('brute-legendary-homebrew.txt', null, 260); os.ext.aiProfile = { boss: { legRes } };
+      const os = fireballs ? file('osric-homebrew.txt', null, 157) : file('brute-legendary-homebrew.txt', null, 260); os.ext.aiProfile = { boss: spare ? { legRes, lrSpare: spare } : { legRes } };
       for (const a of os.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * (fireballs ? 0.3 : 0.4)));
       // the Wizard and the Sorcerer keep Hold Monster (Hold Person for any creature) and their cantrips; the Cleric's Spirit Guardians brings the half-damage saves
       const pl = ['Fighter', 'Wizard', 'Cleric', 'Sorcerer'].map(pc);
@@ -2515,9 +2520,12 @@ section('AI v2: the boss tier (phase 4b)');
     proto.saveRoll = sr;
     return got;
   };
-  const lw = lrLog('weigh', 12), fw = lrLog('weigh', 12, true), fo = lrLog('rule', 12, true);
+  // the price's mechanism at the phase 4b discount (lrSpare 0.6): a use is kept for what is worse than half a Fireball. The tuned profile (lrSpare 0.3,
+  // docs/ai-v2.md "Boss tuning") makes the spare uses cheap, so it spends them on big half-damage saves too: bosses measured stronger that way
+  const lw = lrLog('weigh', 12), fw = lrLog('weigh', 12, true, 0.6), fo = lrLog('rule', 12, true), ft = lrLog('weigh', 12, true);
   check(lw.ctl > 0 && lw.half === 0, `the boss spends Legendary Resistance on control (Hold Monster: ${lw.ctl}) and not on a save for half damage while above half HP (${lw.half}; ${lw.halfLate} later, ${lw.drop} when failing would drop it)`);
-  check(fw.half === 0 && fo.half > 0, `against Fireballs the boss keeps it while above half HP (${fw.half}; ${fw.halfLate} near its end); the old rule spends it there at any HP (${fo.half} above half, ${fo.halfLate} below)`);
+  check(fw.half === 0 && fo.half > 0, `against Fireballs, at lrSpare 0.6 the boss keeps it while above half HP (${fw.half}; ${fw.halfLate} near its end); the old rule spends it there at any HP (${fo.half} above half, ${fo.halfLate} below)`);
+  check(ft.half > fw.half, `at the tuned lrSpare 0.3 it spends its spare uses on Fireballs too (${ft.half} above half HP, ${ft.halfLate} below)`);
   // knowledge: in blind and learn a boss reads the party through k* (a guess, not the sheet)
   const mk = {}, proto = Tac.Sim.prototype, turn = proto.turn;
   proto.turn = function (u) {
