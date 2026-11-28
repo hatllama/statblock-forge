@@ -102,7 +102,8 @@ const S = {
   'stinking cloud':   { L: 3, k: 'debuff', sv: 'con', c: true, a: ['sphere', 20], r: 90, t: 3, b: { duration: 'repeat the save each round', condition: 'Incapacitated' } },
   'vampiric touch':   { L: 3, k: 'atk', d: '3d6', c: true, r: 5, u: '1d6', e: { onHit: { drain: true } } },
   // ---- 4th level ----
-  'banishment':       { L: 4, k: 'debuff', sv: 'cha', c: true, r: 60, t: 1, ut: 1, b: { duration: 'entire encounter', condition: 'Incapacitated' } },
+  // removals (docs/ai-v2.md "Removed from the fight"): the target leaves the board; e.remove says how it comes back. The buff is the plain export's stand-in
+  'banishment':       { L: 4, k: 'debuff', sv: 'cha', c: true, r: 30, t: 1, ut: 1, b: { duration: 'entire encounter', condition: 'Incapacitated' }, e: { remove: { kind: 'banishment', conc: true }, hold: 10 } },
   'blight':           { L: 4, k: 'save', d: '8d8', sv: 'con', h: true, r: 30, t: 1, u: '1d8' },
   'confusion':        { L: 4, k: 'debuff', sv: 'wis', c: true, a: ['sphere', 10], r: 90, t: 3, b: { duration: 'repeat the save each round', condition: 'Incapacitated' } },
   "evard's black tentacles": { L: 4, k: 'save', d: '3d6', sv: 'dex', c: true, a: ['cube', 20], r: 90, t: 3, rider: { duration: 'repeat the save each round', condition: 'Restrained' }, e: { zone: { dmg: true, difficult: true }, hold: 10 } },
@@ -136,8 +137,11 @@ const S = {
   'finger of death':  { L: 7, k: 'save', d: '7d8 + 30', sv: 'con', h: true, r: 60, t: 1 },
   'fire storm':       { L: 7, k: 'save', d: '7d10', sv: 'dex', h: true, a: ['cube', 30], r: 150, t: 4 },
   'prismatic spray':  { L: 7, k: 'save', d: '10d6', sv: 'dex', h: true, a: ['cone', 60], r: 60, t: 4 },
+  // the 2014 text's hostile use (touch: melee spell attack, then a Charisma save, gone for good); SRD 5.2 has none, so only under opts.rules.planeShift '2014'
+  'plane shift':      { L: 7, k: 'debuff', sv: 'cha', r: 5, t: 1, b: { duration: 'entire encounter', condition: 'Incapacitated' }, e: { remove: { kind: 'planeShift', attack: true, forGood: true, rule: '2014' }, wtOnly: true } },
   'dominate monster': { L: 8, k: 'debuff', sv: 'wis', c: true, r: 60, t: 1, b: { duration: 'repeat the save each round', condition: 'Incapacitated' } },
-  'incendiary cloud': { L: 8, k: 'save', d: '10d8', sv: 'dex', h: true, c: true, a: ['sphere', 20], r: 150, t: 4, e: { zone: { dmg: true }, hold: 10 } },
+  'maze':             { L: 8, k: 'debuff', c: true, r: 60, t: 1, b: { duration: 'entire encounter', condition: 'Incapacitated' }, e: { remove: { kind: 'maze', conc: true, dc: 20 }, hold: 100 } },
+  'incendiary cloud':{ L: 8, k: 'save', d: '10d8', sv: 'dex', h: true, c: true, a: ['sphere', 20], r: 150, t: 4, e: { zone: { dmg: true }, hold: 10 } },
   'power word stun':  { L: 8, k: 'debuff', sv: 'con', r: 60, t: 1, b: { duration: 'repeat the save each round', condition: 'Stunned' } },
   'sunburst':         { L: 8, k: 'save', d: '12d6', sv: 'con', h: true, a: ['sphere', 60], r: 150, t: 4, rider: { duration: 'repeat the save each round', condition: 'Blinded' } },
   'meteor swarm':     { L: 9, k: 'save', d: '40d6', sv: 'dex', h: true, a: ['sphere', 40], r: 1000, t: 4 },

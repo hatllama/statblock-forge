@@ -119,6 +119,10 @@ report win ±SE, rounds, deaths, slots spent.**
 
 Aid, Mage Armor and Death Ward are cast in the morning from a table (`PREFIGHT_SPELLS`) under one toggle and one slot share (`morningShare`); see "Pre-fight buffs" in `docs/ai-v2.md`. Not built: concentration buffs (they would block the caster in the fight), spells under 8 hours, Heroes' Feast, and monsters casting pre-fight.
 
+## Done outside the phases: removed from the fight (November 2026)
+
+Banishment (2024), Maze and Plane Shift (its 2014 hostile use, behind `opts.rules.planeShift`) take a creature off the board; the caster's concentration brings it back, Banishment's full minute keeps one of the five types away for good, and a side with nobody left on the board is waited out (`waitOut`). v2 prices a removal by what the rest of the fight gets done while it is gone (`v2Remove`). See "Removed from the fight" in `docs/ai-v2.md`.
+
 ## Done outside the phases: downed and dead allies (step 2.12)
 
 A "back in the fight" term for healing a downed ally, Healing Light on v2, Revivify (a death keeps a slot, cast as the fight ends). Audits of Entangle on one foe and Caustic Brew over Chromatic Orb; the Brew's scoring is fixed, Entangle's proposal is below, not built. See `docs/ai-v2.md`.
@@ -150,7 +154,8 @@ One line each: what, why, which phase takes it. Phase 7 (summons and companions)
 - **Rising out of reach**: `settleAltitude` at the end of a turn can draw an opportunity attack the search does not price (`altOa` covers touch options only): next AI job on flyers.
 - **Lingering-zone gaps**: Flaming Sphere's bonus-action move and ram, Wall of Fire's side damage, Cloudkill drift, foes avoiding a damage zone; the cast-time hit counts as a round's zone hit (a small over-credit): next engine job, foe avoidance with phase 4.
 - **Spell data gaps, zones**: Cloud of Daggers, Hunger of Hadar, Create Bonfire, Spike Growth, Sleet Storm: next spell-data job (phase 2 for the casters that use them).
-- **Spell data gaps, utility**: Invisibility, Fly, Dimension Door, Dispel Magic, Animate Dead, Plane Shift, Power Word Kill, Scrying, Detect Thoughts, Detect Magic, Light, Mage Hand, Prestidigitation, Thaumaturgy: phase 2 (those with a combat effect), the rest are out of scope.
+- **Removals, next** (docs/ai-v2.md "Removed from the fight"): Imprisonment (no concentration, no way back in a fight: `forGood` with a Wisdom save), Gate (a summon: phase 7), Etherealness and Blink (self-removal: the creature leaves and returns on its own, `ext.remove` on a self buff with a return roll; v2 would price it as damage avoided), Dimension Door and other teleports out of a fight. Also left: an Incapacitated caster does not lose concentration anywhere in the engine (2024 rule; only Banishment's target does), so a held or stunned Banisher keeps its target away; the waiting party does not heal or cast while it waits (only the downed are stabilised); monsters rarely cast Banishment (the 2014 Mage in BAN9 spends its 4th-level slots elsewhere); Maze's Study uses the Int modifier from `ext.scores` (Investigation proficiency is not read); learn and blind cast it less than open (the Charisma save and the hit points are priors until seen).
+- **Spell data gaps, utility**: Invisibility, Fly, Dimension Door, Dispel Magic, Animate Dead, Power Word Kill, Scrying, Detect Thoughts, Detect Magic, Light, Mage Hand, Prestidigitation, Thaumaturgy: phase 2 (those with a combat effect), the rest are out of scope.
 - **Sheet reader gaps**: Elementalism and other cantrips, Uncanny Metabolism, Fury of the Small: next sheet-reader job.
 - **Reactions inside `attackRoll`** (Shield, Silvery Barbs, Lucky): phase 3.
 - **Dormant probing code** (learn mode burn was dropped): decide at phase 6 whether to delete it.

@@ -3707,6 +3707,230 @@ section('Rules pass 2: War Caster holds concentration with advantage');
   check(war.u.warCaster === true && Math.abs(war.s.concFail(war.u, war.u, 0.4) - 0.16) < 1e-9 && plain.s.concFail(plain.u, plain.u, 0.4) === 0.4, 'v2\'s own estimate reads it');
 }
 
+section('Removed from the fight: Banishment, Maze, Plane Shift (rules)');
+const BAN = (() => {
+  const sctx = { console }; sctx.globalThis = sctx; vm.createContext(sctx);
+  vm.runInContext(fs.readFileSync(path.join(ROOT, 'js/spell-data.js'), 'utf8'), sctx);
+  const SD = sctx.SpellData, mk = Parser._internals.spellAction;
+  // a caster's spellbook gets the spell and one slot of its level (a level-5 build holds a scroll's worth, as the harness does)
+  const give = (c, name, dc) => {
+    const sp = mk(name, SD[name], { dc: dc || 15, atk: (dc || 15) - 8, mod: 3, lvl: 9, cantripDice: 2 }, { level: SD[name].L });
+    sp.id = c.id + '-' + name.replace(/\W/g, ''); c.ext.spellbook.spells.push(sp); c.ext.spellbook.slots[SD[name].L - 1] += 1;
+    return c;
+  };
+  const act = (u, re) => u.actions.find(a => re.test(a.name));
+  const cast = (s, u, a, t) => { s.current = u; u.slotTurn = -1; s.spend(u, a); const r = s.doAction(u, a, { targets: [t] }); s.current = null; return r; };
+  const retype = (u, type, ext) => { u.tpl = Object.assign({}, u.tpl, { type, ext: Object.assign({}, u.tpl.ext, ext || {}) }); return u; };
+  return { SD, mk, give, act, cast, retype };
+})();
+{
+  const setup = (opts, foeName) => {
+    const b = R2.board([[BAN.give(R2.pc('Cleric'), 'banishment'), 3, 5], [R2.pc('Fighter'), 4, 7]], [[R2.srd(foeName || 'Hill Giant'), 10, 5], [R2.srd('Ogre'), 14, 9]], opts);
+    const c = b.p[0], g = b.f[0];
+    g.saves = Object.assign({}, g.saves, { cha: -40 });          // fails every Charisma save
+    return { s: b.s, c, f: b.p[1], g, o: b.f[1], ba: BAN.act(c, /^Banishment/) };
+  };
+  let T = setup();
+  check(T.ba && T.ba.ext.remove && T.ba.ext.remove.kind === 'banishment' && T.ba._range === 30 && T.ba._spell.conc && T.ba._spell.level === 4 && T.ba.buff.condition === 'Incapacitated',
+    'Banishment is a level-4 concentration removal at 30 ft (2024), its plain-export stand-in Incapacitated');
+  const home = { x: T.g.x, y: T.g.y };
+  BAN.cast(T.s, T.c, T.ba, T.g);
+  check(T.g.removed && T.g.removed.kind === 'banishment' && !T.g.onBoard && T.s.awayN === 1 && T.c.concentrating === T.ba.id && T.g.removed.until === T.c.concUntil && T.c.concUntil === T.s.round + 9,
+    'a failed Charisma save takes it off the board, held by the caster\'s concentration for the minute (10 rounds)');
+  check(!T.s.occupant(home.x, home.y, 2, null) && T.s.fits(T.o, home.x, home.y), 'its squares are free: anyone can stand there');
+  const ctxF = T.s.v2Ctx(T.f, 30);
+  check(!ctxF.foes.includes(T.g) && ctxF.foes.includes(T.o) && !T.s.enemiesOf(T.f).some(e => e === T.g && e.onBoard), 'the other side does not see it as a foe to fight');
+  check(T.s.unitState(T.g).away === 'banishment' && !T.s.unitState(T.g).onBoard, 'the replay state says it is away');
+  // nothing reaches it: a damage zone on its old squares, the reach maps
+  T.s.zones = [{ zid: 9, src: T.f.uid, id: 'zz', dmg: true, cells: new Set([home.x + home.y * T.s.W]), hit: {}, act: BAN.act(T.f, /./) }];
+  const hpG = T.g.hp; T.s.zoneTick(T.g); T.s.zoneEnter(T.g); T.s.zones = [];
+  check(T.g.hp === hpG && !T.s.takenFor(T.o)[home.x + home.y * T.s.W], 'a damage zone on its old squares does not touch it, and its squares are not taken');
+  // the caster's concentration breaks: it comes back to the space it left
+  T.s.endConcentration(T.c, 'a test');
+  check(!T.g.removed && T.g.onBoard && T.g.x === home.x && T.g.y === home.y && T.s.awayN === 0 && T.s.events.some(e => /Hill Giant reappears: Banishment/.test(e.text)), 'a broken concentration brings it back where it stood');
+  // its space is taken: the nearest free one its (Large) body fits
+  BAN.cast(T.s, T.c, T.ba, T.g);
+  T.o.x = home.x; T.o.y = home.y; T.s.boardChanged();
+  T.s.endConcentration(T.c, 'a test');
+  check(T.g.onBoard && !(T.g.x === home.x && T.g.y === home.y) && Math.max(Math.abs(T.g.x - home.x), Math.abs(T.g.y - home.y)) <= 3 && !T.s.occupant(T.g.x, T.g.y, 2, T.g),
+    `its space taken by the Ogre, it reappears in the nearest one it fits (${T.g.x},${T.g.y} for ${home.x},${home.y})`);
+  // the caster drops / casts another concentration spell: it comes back
+  T = setup(); BAN.cast(T.s, T.c, T.ba, T.g); T.s.downPC(T.c);
+  check(T.g.onBoard && !T.g.removed, 'the caster dropping to 0 HP brings it back');
+  T = setup(); BAN.cast(T.s, T.c, T.ba, T.g);
+  const bless = BAN.act(T.c, /^Bless/); T.c.slotTurn = -1; T.s.spend(T.c, bless);
+  check(T.g.onBoard && !T.g.removed && T.c.concentrating === bless.id, 'casting another concentration spell (Bless) brings it back');
+  T = setup(); BAN.cast(T.s, T.c, T.ba, T.g); T.s.kill(T.c, T.g, 'test');
+  check(T.g.onBoard && !T.g.removed, 'the caster dying brings it back');
+  // a made save: nothing happens
+  T = setup(); T.g.saves.cha = 40; BAN.cast(T.s, T.c, T.ba, T.g);
+  check(T.g.onBoard && !T.g.removed && T.s.events.some(e => e.kind === 'save' && /Banishment.*saved/.test(e.text)), 'a made save leaves it on the board');
+  // the minute is up: a giant comes back, a fiend (or elemental, fey, celestial, aberration) does not
+  T = setup(); BAN.cast(T.s, T.c, T.ba, T.g); T.s.round = T.g.removed.until + 1; T.s.removalTick();
+  check(T.g.onBoard && !T.g.dead && !T.c.concentrating, 'the full minute: a giant (not one of the five types) comes back and the spell ends');
+  T = setup(); BAN.retype(T.g, 'Fiend (Demon)'); BAN.cast(T.s, T.c, T.ba, T.g); T.s.round = T.g.removed.until; T.s.removalTick();
+  check(T.g.removed && !T.g.dead, 'a fiend is still away in the minute\'s last round');
+  T.s.round++; T.s.removalTick();
+  check(T.g.dead && T.g.fled === 'banished' && !T.g.onBoard && !T.g.removed && !T.c.concentrating && T.s.awayN === 0 && !T.s.foesStanding() === false,
+    'a fiend held the full minute is gone for good (dead, fled: banished); the caster\'s concentration ends');
+  const stays = type => { const X = setup(); BAN.retype(X.g, type); BAN.cast(X.s, X.c, X.ba, X.g); X.s.round = X.g.removed.until + 1; X.s.removalTick(); return X.g.dead; };
+  check(['Aberration', 'Celestial', 'Elemental', 'Fey', 'Fiend (Devil)'].every(stays) && !['Undead', 'Dragon', 'Giant', 'Humanoid', 'Monstrosity'].some(stays), 'the five types stay away after the minute; undead, dragons, giants… come back');
+  // Banishment ends the target's own concentration (2024: Incapacitated); the caster can be upcast for two
+  T = setup(); T.g.concentrating = 'g-spell'; BAN.cast(T.s, T.c, T.ba, T.g);
+  check(!T.g.concentrating, 'a banished creature loses its own concentration');
+  T = setup(); T.o.saves = Object.assign({}, T.o.saves, { cha: -40 }); T.c.slots[4] = 1; T.c.castAt = 5; T.s.current = T.c; T.c.slotTurn = -1; T.s.spend(T.c, T.ba);
+  T.s.doAction(T.c, T.ba, { targets: [T.g, T.o] }); T.s.current = null;
+  check(T.g.removed && T.o.removed && T.s.awayN === 2, 'upcast at level 5 it takes two');
+  T.s.endConcentration(T.c, 'test');
+  check(T.g.onBoard && T.o.onBoard && T.s.awayN === 0, 'and both come back when it ends');
+  // a removed creature's turn: nothing but its "until its next turn" effects ending
+  T = setup(); BAN.cast(T.s, T.c, T.ba, T.g);
+  T.f.buffs.push({ id: 'touch', name: 'Touch', src: T.g.uid, data: { condition: 'Paralyzed' }, expiry: '1 round' });
+  const hp0 = T.f.hp, n0 = T.s.events.length; T.s.awayTurn(T.g);
+  check(!T.f.buffs.some(b => b.id === 'touch') && T.f.hp === hp0 && T.s.events.slice(n0).every(e => e.kind === 'skip'), 'its turn: its 1-round effects end, it does nothing else');
+  // innate: a statblock's "1/Day: Banishment" brings its own concentration
+  {
+    const b = R2.board([[R2.pc('Fighter'), 3, 5]], [[R2.srd('Ogre'), 10, 5]]);
+    const ogre = b.f[0], ftr = b.p[0];
+    const inn = BAN.mk('banishment', BAN.SD.banishment, { dc: 30, atk: 22, mod: 3, lvl: 9, cantripDice: 2 }, { freq: '1/day' });
+    inn.id = 'ogre-banish'; inn.ext.innateSpell = true; const ia = Object.assign({}, Tac.finalizeAction ? Tac.finalizeAction(inn) : inn);
+    ia._range = 30; ogre.actions.push(ia); ogre.uses.set(ia.id, 1); ftr.saves = { cha: -40 };
+    b.s.current = ogre; b.s.spend(ogre, ia); b.s.doAction(ogre, ia, { targets: [ftr] }); b.s.current = null;
+    check(ftr.removed && ogre.concentrating === ia.id && ogre.concUntil === b.s.round + 9, 'an innate Banishment (1/day) removes and holds it by concentration');
+    b.s.kill(ogre, ftr, 'test');
+    check(ftr.onBoard && !ftr.removed, 'and the caster\'s death brings the party member back');
+  }
+  // Maze: no save; a Study check (DC 20) each turn; escapes end the spell
+  const mazeSet = intScore => {
+    const b = R2.board([[BAN.give(R2.pc('Wizard'), 'maze'), 3, 5]], [[R2.srd('Hill Giant'), 10, 5]]);
+    const w = b.p[0], g = b.f[0];
+    if (intScore !== undefined) BAN.retype(g, g.tpl.type, { scores: Object.assign({}, g.tpl.ext.scores, { int: intScore }) });
+    g.saves = Object.assign({}, g.saves, { cha: 40, int: 40 });
+    return { s: b.s, w, g, ma: BAN.act(w, /^Maze/) };
+  };
+  let M = mazeSet(3);
+  check(M.ma && M.ma._spell.level === 8 && M.ma.saveDC === 99 && M.ma.ext.remove.dc === 20 && M.ma._range === 60, 'Maze: level 8, 60 ft, no save, DC 20 to escape');
+  BAN.cast(M.s, M.w, M.ma, M.g);
+  check(M.g.removed && M.g.removed.kind === 'maze' && M.w.concUntil === M.s.round + 99, 'no save: it is in the maze, held for ten minutes (100 rounds)');
+  for (let i = 0; i < 20; i++) M.s.awayTurn(M.g);
+  check(M.g.removed && M.s.intCheck(M.g) === -4, 'Int 3 (-4): it never escapes (20 turns)');
+  M = mazeSet(50); BAN.cast(M.s, M.w, M.ma, M.g); M.s.awayTurn(M.g);
+  check(!M.g.removed && M.g.onBoard && !M.w.concentrating && M.s.events.some(e => /finds one/.test(e.text)), 'Int 50 (+20): its first Study finds the way out, and the spell ends');
+  M = mazeSet(3); M.w.concentrating = null; BAN.cast(M.s, M.w, M.ma, M.g);
+  const z = { zid: 1, src: M.g.uid, id: 'gz', follow: true, dmg: true, spec: { shape: 'emanation', size: 15 }, cells: new Set([0]), hit: {} };
+  check(M.s.zoneCells(z).size === 0, 'a zone that follows a mazed creature (Spirit Guardians) catches nobody on the board');
+  // Plane Shift: the 2024 spell has no hostile use; under the 2014 rule a touch, a Charisma save, gone for good
+  const psSet = (rule, ac) => {
+    const b = R2.board([[BAN.give(R2.pc('Cleric'), 'plane shift'), 3, 5]], [[R2.srd('Ogre'), 4, 5]], rule ? { rules: { planeShift: rule } } : {});
+    const c = b.p[0], o = b.f[0];
+    o.saves = Object.assign({}, o.saves, { cha: -40 }); if (ac) o.baseAC = ac;
+    return { s: b.s, c, o, pa: BAN.act(c, /^Plane Shift/) };
+  };
+  let PS = psSet();
+  check(PS.pa && PS.pa.ext.wtOnly && PS.pa.ext.remove.rule === '2014' && !PS.s.usable(PS.c, PS.pa), 'Plane Shift by default (2024): no hostile use, never usable; War Table only');
+  PS = psSet('2014');
+  check(PS.s.usable(PS.c, PS.pa) && PS.pa.ext.remove.toHit === 7, 'under the 2014 rule it is usable, with the caster\'s spell attack');
+  BAN.cast(PS.s, PS.c, PS.pa, PS.o);
+  check(PS.o.dead && PS.o.fled === 'banished' && !PS.o.onBoard && !PS.c.concentrating && !PS.s.foesStanding(), 'a hit and a failed save: gone for good, no concentration, the fight is won');
+  PS = psSet('2014', 99); BAN.cast(PS.s, PS.c, PS.pa, PS.o);
+  check(!PS.o.dead && PS.o.onBoard && PS.s.events.some(e => /melee spell attack .* misses/.test(e.text)), 'a miss: nothing happens');
+  const lich = Parser.parse(R2.text('Lich')).monsters[0], lps = lich.actions.find(a => /^Plane Shift/.test(a.name));
+  check(lps && lps.ext.remove && lps.ext.wtOnly && lps.freq && lps.freq.uses === 2, 'the Lich reads Plane Shift (2/day) as the War-Table-only removal');
+  // the end of a fight: the party waits out a banishment (no turns), a fiend is gone, a giant comes back and the fight goes on
+  T = setup(undefined, 'Hill Giant'); T.o.hp = 0; T.s.kill(T.o, T.f, 'test'); BAN.retype(T.g, 'Fiend'); BAN.cast(T.s, T.c, T.ba, T.g);
+  const r0 = T.s.round; T.s.waitRounds = 0;
+  check(!T.s.over() && T.s.waitOut() && T.s.round === r0 + 9 && T.s.waitRounds === 9 && T.s.events.some(e => e.kind === 'wait'), 'every foe gone or away: the party waits (9 rounds skipped, not counted against the cap)');
+  T.s.round++; T.s.removalTick();
+  check(T.g.dead && T.s.over() && !T.s.foesStanding(), 'the minute up, the fiend is gone: the party has won');
+  T = setup(); T.o.hp = 0; T.s.kill(T.o, T.f, 'test'); BAN.cast(T.s, T.c, T.ba, T.g); T.s.waitRounds = 0;
+  T.s.waitOut(); T.s.round++; T.s.removalTick();
+  check(T.g.onBoard && !T.g.dead && !T.s.over(), 'a giant comes back after the wait: the fight goes on');
+  T = setup(); T.o.hp = 0; T.s.kill(T.o, T.f, 'test'); T.f.hp = 0; T.s.downPC(T.f); BAN.cast(T.s, T.c, T.ba, T.g);
+  T.s.waitOut();
+  check(T.f.stable, 'the waiting party stabilises its downed');
+  T = setup(); BAN.cast(T.s, T.c, T.ba, T.g);
+  check(!T.s.waitOut(), 'no wait while a foe is still on the board');
+  // a whole fight with a foe that only ever banishes (DC 40, at will) and two who hit: it ends, inside the cap
+  {
+    const banisher = R2.srd('Ogre'); banisher.name = 'Ogre Banisher';
+    const inn = BAN.mk('banishment', BAN.SD.banishment, { dc: 40, atk: 32, mod: 3, lvl: 9, cantripDice: 2 }, { freq: 'at will' });
+    inn.id = 'ob-banish'; inn.ext.innateSpell = true; banisher.actions = [inn];
+    const t0 = Date.now(), res = Tac.runDay({ players: [R2.pc('Fighter'), R2.pc('Barbarian')], encounters: [{ monsters: [Object.assign(banisher, { id: 'ob', mode: 'custom', count: 1 }), Object.assign(R2.srd('Ogre'), { id: 'o2', count: 2 })] }] }, { seed: 4, record: true, maxRounds: 30 });
+    const r = res[0], waits = r.events.filter(e => e.kind === 'wait').length;
+    check(r.rounds <= 30 + 10 * Math.max(1, waits) && Date.now() - t0 < 20000 && r.events.some(e => /is banished/.test(e.text)), `a foe that banishes at will: the fight ends (${r.won ? 'won' : 'not won'}, ${r.rounds} rounds, ${waits} waits, ${r.events.filter(e => /is banished/.test(e.text)).length} banished)`);
+  }
+}
+
+section('Removed from the fight: v2\'s value for a removal (v2Remove)');
+const withLRb = (m, n) => { m.ext.legendaryResistance = n; return m; };
+{
+  const setup = (foes, know, spell) => {
+    const b = R2.board([[BAN.give(R2.pc('Cleric'), spell || 'banishment'), 3, 5], [R2.pc('Fighter'), 4, 7], [R2.pc('Barbarian'), 4, 3]], foes.map((f, i) => [f, 12 + 3 * i, 5]), { know: { party: know || 'open' } });
+    const c = b.p[0]; return { s: b.s, c, f: b.f, a: BAN.act(c, /^(Banishment|Maze|Plane Shift)/) };
+  };
+  const val = (T, t) => T.s.v2Remove(T.c, T.a, t, T.s.v2Ctx(T.c, 30), false);
+  let T = setup([R2.srd('Hill Giant')]);
+  check(val(T, T.f[0]) === 0, `a lone giant comes back unchanged after the wait: worth nothing (${val(T, T.f[0])})`);
+  T = setup([R2.srd('Hill Giant'), R2.srd('Ogre'), R2.srd('Ogre')]);
+  const giantV = val(T, T.f[0]);
+  check(giantV > 10, `a giant among ogres: worth its turns while the ogres fall (${giantV.toFixed(1)})`);
+  T = setup([R2.srd('Air Elemental')]);
+  const elemV = val(T, T.f[0]);
+  check(elemV > 20, `a lone elemental: gone for good once the minute is up, so worth something where a lone giant is worth nothing (${elemV.toFixed(1)})`);
+  T = setup([withLRb(R2.srd('Air Elemental'), 3)]);
+  const lrV = val(T, T.f[0]);
+  check(lrV > 0 && Math.abs(lrV - elemV * 0.4 / 3) < 0.5, `with 3 Legendary Resistance (open): legRes / 3 of it, a poor target (${lrV.toFixed(1)} against ${elemV.toFixed(1)})`);
+  T = setup([withLRb(R2.srd('Air Elemental'), 3)], 'blind');
+  check(Math.abs(val(T, T.f[0]) - elemV) < elemV * 0.6 + 1, 'blind: no LR seen yet, the first cast is priced as an ordinary one (it shows the LR)');
+  // its save matters
+  T = setup([R2.srd('Air Elemental')]); T.f[0].saves = Object.assign({}, T.f[0].saves, { cha: 30 });
+  check(val(T, T.f[0]) < 0.5, 'a save it cannot fail: worth nothing');
+  // Maze: no save, the escape chance from its Int
+  const M = setup([R2.srd('Hill Giant'), R2.srd('Ogre'), R2.srd('Ogre')], 'open', 'maze');
+  const dull = M.s.v2Remove(M.c, M.a, M.f[0], M.s.v2Ctx(M.c, 30), false);
+  M.f[0].saves = Object.assign({}, M.f[0].saves, { int: 19 });
+  const bright = M.s.v2Remove(M.c, M.a, M.f[0], M.s.v2Ctx(M.c, 30), false);
+  check(dull > bright && bright > 0, `Maze on a dull giant (Int save -3) is worth more than on one that finds its way out (${dull.toFixed(1)} > ${bright.toFixed(1)})`);
+  // holding it: v2Holding counts the foe it holds away, so another concentration spell has to beat it
+  T = setup([R2.srd('Hill Giant'), R2.srd('Ogre'), R2.srd('Ogre')]); T.f[0].saves = Object.assign({}, T.f[0].saves, { cha: -40 });
+  T.c.concentrating = null; BAN.cast(T.s, T.c, T.a, T.f[0]);
+  const held = T.s.v2Holding(T.c, T.s.v2Ctx(T.c, 30));
+  check(T.f[0].removed && held > 5, `a running Banishment is held at ${held.toFixed(1)} (concSwap prices dropping it)`);
+  const conc = T.s.concValue(T.s.units.find(u => u.team === 'foes' && u.onBoard), T.c);
+  check(conc > 3 + 5, `the foes see what the Cleric's concentration holds (${conc.toFixed(1)}): worth breaking`);
+  // the burn plan leaves Maze out (no save, nothing to burn); the follow-up Banishment on a non-extraplanar boss only delays it
+  const MB = setup([withLRb(R2.srd('Hill Giant'), 3)], 'open', 'maze');
+  const bp = MB.s.v2BurnPlan(MB.c, MB.s.v2Ctx(MB.c, 30), false);
+  check(!bp || !(bp.cands || []).some(c => /^Maze/.test(c.a.name)), 'Maze is never a burn-plan candidate');
+}
+section('Removed from the fight: AI-played fights (nothing reaches a removed creature, every fight ends)');
+{
+  const day = (foes, opts) => ({ players: [R2.pc('Fighter'), R2.pc('Barbarian'), R2.pc('Wizard'), BAN.give(R2.pc('Cleric'), 'banishment')], encounters: [{ monsters: foes }] });
+  let removals = 0, bad = 0, badAoe = 0, fights = 0, gone = 0, back = 0, waits = 0, capped = 0;
+  for (let i = 0; i < 24; i++) {
+    const foes = i % 3 === 0 ? [R2.srd('Air Elemental')] : i % 3 === 1 ? [R2.srd('Air Elemental'), R2.srd('Air Elemental'), R2.srd('Ogre'), R2.srd('Ogre')] : [R2.srd('Hill Giant'), R2.srd('Hill Giant'), R2.srd('Goblin Warrior')];
+    foes.forEach((f, k) => { f.id = f.id + '#' + k; });
+    const res = Tac.runDay(day(foes), { seed: 700 + i * 31, record: true, know: { party: i % 4 === 3 ? 'learn' : 'open' } });
+    for (const r of res) {
+      fights++;
+      const away = new Set();
+      for (const e of r.events) {
+        if (e.kind === 'effect' && /is banished to|vanishes into/.test(e.text)) { removals++; }
+        if (e.target && away.has(e.target) && !(e.kind === 'effect' && / reappears/.test(e.text))) bad++;
+        if (e.kind === 'aoe' && (e.hits || []).some(h => away.has(h))) badAoe++;
+        for (const k in e.state || {}) { if (e.state[k].away) away.add(k); else away.delete(k); }     // each state is the unit's whole state
+        if (e.kind === 'flee' && /for good/.test(e.text)) gone++;
+        if (/ reappears/.test(e.text || '')) back++;
+        if (e.kind === 'wait') waits++;
+      }
+      if (r.rounds > 40 + 10 * waits) capped++;
+    }
+  }
+  check(removals >= 3, `the AI casts Banishment in these fights (${removals} removals in ${fights} fights; ${gone} gone for good, ${back} back, ${waits} waits)`);
+  check(!bad && !badAoe, `no event aims at a removed creature (${bad}) and no area catches one (${badAoe})`);
+  check(!capped, 'every fight ends inside the round cap and its waits');
+}
+
 /* forge.js and war-table.js need a page: tests/smoke.js runs every shipped script in a stand-in one and drives the start-up render,
    the importer, the day export, a War Table fight and odds run, the settings selects and a workspace reload (it is async, so it runs last) */
 require('./smoke.js').smoke().then(results => {

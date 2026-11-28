@@ -204,6 +204,11 @@ async function smoke() {
   check(page.run('WarTable.simOpts(0).rules.rest') === 'full', 'the Short rest select reaches the sim options (full)');
   await set('wt-rulesRest', 'hitdice');
   check(page.run('WarTable.simOpts(0).rules.rest') === 'hitdice', 'and back to Hit Dice');
+  check(page.run('WarTable.simOpts(0).rules.planeShift') === '2024' && page.el('wt-rulesPlaneShift').value === '2024', 'the Plane Shift rule starts as 2024 (no hostile use)');
+  await set('wt-rulesPlaneShift', '2014');
+  check(page.run('WarTable.simOpts(0).rules.planeShift') === '2014', 'the Plane Shift select reaches the sim options (2014)');
+  await set('wt-rulesPlaneShift', '2024');
+  check(page.run('WarTable.simOpts(0).rules.planeShift') === '2024', 'and back to 2024');
   // handlers that wait on timers (animation, chunked odds) are started, then the timers are drained
   const go = async (el, type, max) => { let ended = false; el.fire(type || 'click').then(() => { ended = true; }, e => { ended = true; page.errors.push('a handler threw: ' + ((e && e.stack) || e)); }); await page.settle(max); await page.settle(max); return ended; };
   await go(page.el('wt-btnOne'));
@@ -304,6 +309,14 @@ async function smoke() {
   // the export: valid, his War Table-only actions left out, the plain actions kept
   const fexp = page.run('(() => { const d = buildDayObject(); const r = checkRealSchema(d); const f = d.encounters[activeIdx].monsters.find(m => /Fiorenzo/.test(m.name)); return { ok: r.ok, errs: r.errors, acts: f.actions.map(a => a.name), traits: !!(f.ext && f.ext.traits) }; })()');
   check(fexp.ok && fexp.acts.indexOf('La Pazienza') >= 0 && fexp.acts.indexOf('Aimed Shot') < 0 && fexp.acts.indexOf('Stitch Step') < 0, 'the day export with Fiorenzo passes checkRealSchema; Aimed Shot and Stitch Step (War Table only) are left out: ' + JSON.stringify(fexp).slice(0, 160));
+  // removals (Banishment, Maze, Plane Shift): the export keeps Banishment and Maze as plain debuffs, leaves the Lich's Plane Shift out, and passes the schema
+  const banText = fs.readFileSync(path.join(__dirname, 'statblocks', 'mage-2014.txt'), 'utf8').replace('greater invisibility, ice storm', 'banishment, ice storm').replace('5th level (1 slot): cone of cold', '5th level (1 slot): cone of cold\n8th level (1 slot): maze');
+  const bx = page.run('(() => { const ready = (m, id) => { m.id = id; m.mode = "custom"; m.count = 1; m.actions.forEach((a, i) => { a.id = id + i; }); if (m.ext.spellbook) m.ext.spellbook.spells.forEach((x, i) => { x.id = id + "s" + i; }); return m; };' +
+    ' const B = ready(StatblockParser.parse(' + JSON.stringify(banText) + ').monsters[0], "banisher"), L = ready(StatblockParser.parse(SRD_MONSTERS.find(m => m.name === "Lich").text).monsters[0], "lich");' +
+    ' const eb = exportCreature(B), el = exportCreature(L), r = checkRealSchema({ players: [], encounters: [{ monsters: [eb, el] }] });' +
+    ' const ban = eb.actions.find(a => /^Banishment/.test(a.name)), mz = eb.actions.find(a => /^Maze/.test(a.name));' +
+    ' return { ok: r.ok, errs: r.errors, ban: ban && ban.type + " " + ban.buff.condition + " " + ban.buff.duration, maze: mz && mz.type + " " + mz.saveDC, lichPS: el.actions.some(a => /Plane Shift/.test(a.name)), inBook: L.actions.some(a => /Plane Shift/.test(a.name)) }; })()');
+  check(bx.ok && bx.ban === 'debuff Incapacitated entire encounter' && bx.maze === 'debuff 99' && !bx.lichPS && bx.inBook, 'the export keeps Banishment and Maze as plain debuffs (Incapacitated, whole fight), leaves the Lich\'s War-Table-only Plane Shift out, and passes checkRealSchema: ' + JSON.stringify(bx).slice(0, 220));
   // a workspace with ext.traits comes back with them
   const snap2 = page.run('snapshot()');
   const again2 = loadSite({ 'forge-workspace-v1': snap2 });

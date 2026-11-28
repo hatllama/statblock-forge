@@ -87,6 +87,9 @@ const ADV_TARGET = ['Blinded', 'Paralyzed', 'Restrained', 'Stunned', 'Unconsciou
 const ADV_SELF = ['Invisible', 'Attacks with Advantage', 'Attacks and is attacked with Advantage'];
 const DIS_TARGET = ['Invisible', 'Is attacked with Disadvantage'];
 const DIS_SELF = ['Blinded', 'Frightened', 'Poisoned', 'Prone', 'Restrained', 'Attacks with Disadvantage', 'Attacks and saves with Disadvantage'];
+// Banishment (2024): a creature of these types does not come back if the spell lasts the full minute (docs/ai-v2.md "Removed from the fight")
+const REMOVE_HOME = ['aberration', 'celestial', 'elemental', 'fey', 'fiend'];
+const homeElsewhere = u => { const t = String(u.isPC ? 'humanoid' : (u.tpl && u.tpl.type) || '').toLowerCase().trim(); return REMOVE_HOME.some(k => t.indexOf(k) === 0); };
 const SIZES = ['Tiny', 'Small', 'Medium', 'Large', 'Huge', 'Gargantuan'];
 /* squares a creature covers along each side (5e grid: Large 2x2, Huge 3x3, Gargantuan 4x4). A unit's x,y is the top-left
    square of its footprint; u.n holds the side. */
@@ -503,7 +506,7 @@ function resetFightState(u) {
   u.fightTurns = 0; u.visLost = 0; u.startFull = u.hp >= u.maxHp;           // what the other side can see happen this fight
   u.netLost = 0; u.bloodied = u.hp > 0 && u.hp * 2 <= u.maxHp;              // the damage that got through less the healing seen; at half HP or less, and the table is told
   u.seenHeal = false; u.seenRange = 0; u.seenAreas = null; u.areaUsed = null; u.seenCaster = false; u.seenCancel = false; u.legSeen = 0;
-  u.onBoard = true;
+  u.onBoard = true; u.removed = null;        // removed: away from the fight (Banishment, Maze), core.js removeFrom
   // Relentless & co.: rolling initiative with an empty pool gives one back
   if (u.resMax) for (const k in u.resMax) if (u.resMax[k].regainOnInit && !(u.uses.get('res:' + k) > 0)) u.uses.set('res:' + k, +u.resMax[k].regainOnInit);
   if (u.resMax) for (const k in u.resMax) if (u.resMax[k].reset === 'fight') u.uses.set('res:' + k, poolStart(u.resMax[k]));   // a pool that starts every fight afresh (Patience)
@@ -526,7 +529,8 @@ function Sim(opts) {
   this.tpkKills = !!opts.tpkKills;     // the whole party down with foes still standing: nobody is left to save them
   this.maxRounds = opts.maxRounds || 40;
   // rule variants (docs/ai-v2.md, "Counterspell rules option", "Rules accuracy pass"): rest 'hitdice' (default) spends Hit Dice on a short rest, 'full' heals everyone fully
-  this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024', rest: opts.rules && opts.rules.rest === 'full' ? 'full' : 'hitdice' };
+  this.rules = { counterspell: opts.rules && opts.rules.counterspell === '2014' ? '2014' : '2024', rest: opts.rules && opts.rules.rest === 'full' ? 'full' : 'hitdice',
+    planeShift: opts.rules && opts.rules.planeShift === '2014' ? '2014' : '2024' };      // 2024: Plane Shift has no hostile use; 2014: touch, Cha save, gone
   this.morale = opts.morale === 'on' || opts.morale === true;      // monsters may flee or surrender
   const kn = opts.know || {};
   this.know = { party: KNOW_MODES.includes(kn.party) ? kn.party : 'open', foes: KNOW_MODES.includes(kn.foes) ? kn.foes : 'open' };
@@ -536,6 +540,6 @@ function Sim(opts) {
   this.setTerrain(null);
 }
 
-Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim,
+Object.assign(ENG, { makeRng, parseDice, rollDice, avgDice, INCAP, DANGER_CONDS, REMOVE_HOME, homeElsewhere, ADV_TARGET, ADV_SELF, DIS_TARGET, DIS_SELF, sizeIdx, finalizeAction, inferRange, listOf, damageMultFor, bestTypeFor, casterKind, smiteOf, smiteDice, effectName, isHpPool, recoverSlots, makeUnit, freqKind, resetFightState, Sim,
   TRAITS_VERSION, TRAIT_WHEN, TRAIT_IF, TRAIT_DO, validateTraits, compileTraits, traitAiWords });
 })(typeof window !== 'undefined' ? window : globalThis);

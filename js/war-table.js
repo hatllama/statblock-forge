@@ -54,7 +54,7 @@ const H = () => +S.settings.map.split('x')[1];
 const realEncounters = () => (S.day.encounters || []).map((e,i)=>({e,i})).filter(x=>x.e.monsters && x.e.monsters.length);
 const layoutFor = i => (S.layouts[i] = S.layouts[i] || { gapFt: 30, positions: {} });
 const simOpts = () => ({ width: W(), height: H(), surpriseRules: S.settings.surprise, escapePolicy: S.settings.escape, tpkKills: !!S.settings.tpkKills, prefightBuffs: S.settings.prefightBuffs !== false,
-  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, expectFights: +S.settings.expectFights > 0 ? +S.settings.expectFights : undefined, morale: S.settings.morale || 'off', rules: { counterspell: S.settings.rulesCounter === '2014' ? '2014' : '2024', rest: S.settings.rulesRest === 'full' ? 'full' : 'hitdice' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
+  know: { party: S.settings.knowParty || 'learn', foes: S.settings.knowFoes || 'open' }, expectFights: +S.settings.expectFights > 0 ? +S.settings.expectFights : undefined, morale: S.settings.morale || 'off', rules: { counterspell: S.settings.rulesCounter === '2014' ? '2014' : '2024', rest: S.settings.rulesRest === 'full' ? 'full' : 'hitdice', planeShift: S.settings.rulesPlaneShift === '2014' ? '2014' : '2024' }, climbDC: S.settings.climbDC === undefined ? 10 : +S.settings.climbDC,
   layouts: Object.fromEntries(Object.entries(S.layouts).map(([k,v])=>[k, v])) });
 const esc = s => String(s).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
 
@@ -223,7 +223,7 @@ function renderInspect(){
   else if(st.dead) chips.push('<span class="chip bad">dead</span>');
   else if(st.down) chips.push(`<span class="chip bad">${st.stable ? 'down, stable' : `down · death saves ${st.ds}✓ ${st.df}✗`}</span>`);
   else if(st.hp < maxHp / 2) chips.push('<span class="chip bad">bloodied</span>');
-  if(!st.onBoard && !st.dead) chips.push(`<span class="chip bad">${st.swallowedBy ? 'swallowed' : 'off the field'}</span>`);
+  if(!st.onBoard && !st.dead) chips.push(`<span class="chip bad">${st.swallowedBy ? 'swallowed' : st.away === 'maze' ? 'in a maze' : st.away ? 'banished' : 'off the field'}</span>`);
   if(st.grappledBy) chips.push(`<span class="chip bad">grappled${S.replay && S.replay.units[st.grappledBy] ? ' by ' + esc(S.replay.units[st.grappledBy].name) : ''}</span>`);
   (st.conds || []).forEach(c=>chips.push(`<span class="chip ${/Advantage/.test(c) && !/is attacked/i.test(c) ? 'good' : 'bad'}">${esc(c)}</span>`));
   if(st.conc) chips.push(`<span class="chip cool">◈ concentrating: ${esc(st.conc)}</span>`);
@@ -784,6 +784,7 @@ document.getElementById('wt-prefight').onchange = ev=>{ S.settings.prefightBuffs
 document.getElementById('wt-expectFights').onchange = ev=>{ S.settings.expectFights = ev.target.value === 'exact' ? undefined : +ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-rulesCounter').onchange = ev=>{ S.settings.rulesCounter = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-rulesRest').onchange = ev=>{ S.settings.rulesRest = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
+document.getElementById('wt-rulesPlaneShift').onchange = ev=>{ S.settings.rulesPlaneShift = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 document.getElementById('wt-morale').onchange = ev=>{ S.settings.morale = ev.target.value; S.odds = {}; renderOdds(); scheduleSave(); };
 const knowNote = ()=>{ document.getElementById('wt-learnWarn').style.display = (S.settings.knowParty === 'learn' || S.settings.knowFoes === 'learn') ? '' : 'none'; };
 document.getElementById('wt-knowParty').onchange = ev=>{ S.settings.knowParty = ev.target.value; knowNote(); S.odds = {}; renderOdds(); scheduleSave(); };
@@ -797,6 +798,7 @@ function renderAll(){
   document.getElementById('wt-rulesRest').value = S.settings.rulesRest === 'full' ? 'full' : 'hitdice';
   document.getElementById('wt-morale').value = S.settings.morale || 'off';
   document.getElementById('wt-rulesCounter').value = S.settings.rulesCounter === '2014' ? '2014' : '2024';
+  document.getElementById('wt-rulesPlaneShift').value = S.settings.rulesPlaneShift === '2014' ? '2014' : '2024';
   document.getElementById('wt-expectFights').value = +S.settings.expectFights > 0 ? String(S.settings.expectFights) : 'exact';
   document.getElementById('wt-knowParty').value = S.settings.knowParty || 'learn';
   document.getElementById('wt-knowFoes').value = S.settings.knowFoes || 'open';

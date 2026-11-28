@@ -573,6 +573,7 @@ Sim.prototype.targetValue = function (u, a, t, pool, x, y, noArea) {
   if (a.type === 'heal') return { val: (t.hp <= 0 ? 50 : 0) + (1 - t.hp / t.maxHp) * 20, why: t.hp <= 0 ? 'revive' : '' };
   return { val: this.effectValue(a.buff, t, false, u) + (t === u ? 0.3 : 0), why: '' };
 };
+const AWAY_HELD = { condition: 'Incapacitated', duration: 'entire encounter' };   // a creature held away by a removal, as concValue prices it
 /* what t's concentration spell is worth to t's side, as u sees it: the effects it holds on u's side and on its own,
    the zone it keeps up, the weapon it conjured */
 Sim.prototype.concValue = function (u, t) {
@@ -584,6 +585,7 @@ Sim.prototype.concValue = function (u, t) {
     for (const b of o.buffs) if (b.src === t.uid && b.id === id) v += o.team === u.team ? this.effectValue(b.data, o, true) : this.effectValue(b.data, o, false, u) * 0.6;
   }
   if (t.buffs.some(b => b.id === id && b.src === t.uid)) v += 5;
+  if (this.awayN) for (const o of this.units) if (o.removed && o.removed.by === t.uid && o.removed.id === id && o.team === u.team) v += this.effectValue(AWAY_HELD, o, true);   // one of ours it holds away (Banishment)
   for (const z of this.zones || []) if (z.src === t.uid && z.conc) for (const o of this.alliesOf(u)) if (o.onBoard && this.alive(o) && this.coversIn(this.zoneCells(z), o)) v += 3;
   return v;
 };

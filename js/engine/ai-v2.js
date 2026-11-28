@@ -5,7 +5,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { rollDice, avgDice, INCAP, DANGER_CONDS, ADV_TARGET, ADV_SELF, sizeIdx, smiteOf, smiteDice, effectName, isHpPool, freqKind, Sim, areaSpec, isHideAction, bodyEdge, offBody, areaOnBody, AI_BASE, aiProfile, tierOf, tierProfile, DUR_WEIGHT } = ENG;
+const { rollDice, avgDice, INCAP, DANGER_CONDS, homeElsewhere, ADV_TARGET, ADV_SELF, sizeIdx, smiteOf, smiteDice, effectName, isHpPool, freqKind, Sim, areaSpec, isHideAction, bodyEdge, offBody, areaOnBody, AI_BASE, aiProfile, tierOf, tierProfile, DUR_WEIGHT } = ENG;
 
 const isReckless = a => (a.actionSlot === 5 || a.actionSlot === 6) && a.type === 'buff' && a.target === 'self' && a.buff && a.buff.condition === 'Attacks and is attacked with Advantage';
 
@@ -770,6 +770,7 @@ Sim.prototype.v2Expose = function (u, t, c, ctx) {
 /* a debuff or control spell on foe t: one round's worth × the chance it lands × the rounds it should last. bare: t is one
    of several it catches, so our side's extra damage (v2Expose, one target per attack) is already counted on the first */
 Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
+  if (a.ext && a.ext.remove) return this.v2Remove(u, a, t, ctx, noLR);     // Banishment, Maze, Plane Shift: priced by what happens while it is gone
   const W = u.v2P.w, b = a.buff || {};
   let per = this.expected(u, Object.assign({}, a, { buff: Object.assign({}, b, { duration: '1 round' }) }), t) * W.ctlRound;
   // and our side hits it harder while it lasts (advantage, crits up close), if it fails the save
@@ -781,16 +782,8 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
   // progress toward emptying it when the plan says burn and this is the cheap effect it picked for u, else a little
   if (b.condition && this.kImmune(u, t, b.condition)) return 0;           // it can't be given that condition at all
   if (!noLR && DANGER_CONDS.includes(b.condition)) {
-    const L = this.kLegRes(u, t);
-    if (L > 0) {
-      const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
-      if (mine && mine.a.id === a.id) {
-        const ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
-        const pFail = dc >= 99 ? 1 : 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20)));
-        return pFail * bp.perLR * u.v2P.burn.value;
-      }
-      per *= W.legRes / L;                                                // it lands nothing while uses remain: this cast strips one of the L
-    }
+    const c = this.v2LegResCut(u, a, t, ctx);
+    if (c) { if (c.burn !== undefined) return c.burn; per *= c.mult; }
   }
   if (a.ext && a.ext.saveOnDamage) per *= W.shakeOff;
   const R = ctx.rounds;
@@ -802,6 +795,51 @@ Sim.prototype.v2Control = function (u, a, t, ctx, noLR, bare) {
   r = Math.min(r, this.kHp(u, t) / ctx.focusDpr + 0.5);                    // it may well drop before then
   if (a._spell && a._spell.conc) r *= W.concKeep;
   return per * Math.max(0.5, r) * W.control;
+};
+/* a save-or-lose effect on something with Legendary Resistance left (kLegRes): for the burner the plan picked, its share of the burn
+   ({ burn }); for anyone else it lands nothing while uses remain, so it is worth legRes / the uses left ({ mult }); null with none left */
+Sim.prototype.v2LegResCut = function (u, a, t, ctx) {
+  const L = this.kLegRes(u, t);
+  if (!(L > 0)) return null;
+  const bp = this.v2Burn(u, ctx), mine = bp && bp.on && bp.t === t ? bp.burners.get(u.uid) : null;
+  if (mine && mine.a.id === a.id) {
+    const ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
+    const pFail = dc >= 99 ? 1 : 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, ab) - dc) / 20)));
+    return { burn: pFail * bp.perLR * u.v2P.burn.value };
+  }
+  return { mult: u.v2P.w.legRes / L };
+};
+/* ---- removals: Banishment, Maze, 2014 Plane Shift (docs/ai-v2.md "Removed from the fight") ----
+   v2Remove: the chance it lands (the save through kSave/kAdv, Plane Shift's touch through hitChance; Maze has none) × what having it away is
+   worth (v2RemoveWorth), × 0.1 on a foe already out, Legendary Resistance as for any control (v2LegResCut), × control */
+const AWAY_TURN = { condition: 'Incapacitated', duration: '1 round' };      // one turn of it lost
+Sim.prototype.v2Remove = function (u, a, t, ctx, noLR) {
+  const W = u.v2P.w, X = a.ext.remove, dc = avgDice(a.saveDC), save = dc < 99;
+  const pFail = save ? 1 - this.kAdv(u, t, a, Math.min(1, Math.max(0, (21 + this.kSave(u, t, a.ext.saveAbility) - dc) / 20))) : 1;
+  const pHit = X.attack ? this.hitChance(u, t, Object.assign({}, a, { type: 'atk', toHit: X.toHit !== undefined ? X.toHit : dc - 8, _range: 5, useSaves: false })) : 1;
+  let v = pHit * pFail * this.v2RemoveWorth(u, t, X, ctx);
+  if (this.incap(t)) v *= 0.1;                                                // it is out of the fight already (a pattern, a hold)
+  if (save && !noLR) { const c = this.v2LegResCut(u, a, t, ctx); if (c) { if (c.burn !== undefined) return c.burn; v *= c.mult; } }
+  return v * W.control;
+};
+/* the chance a removal that lands keeps t away for good: Plane Shift always; Banishment on one of the five types if the caster holds it the
+   minute (concKeep: once the rest is down, the side waits it out); otherwise it comes back */
+Sim.prototype.v2GoneChance = function (u, t, X) {
+  return X.forGood ? 1 : X.kind === 'banishment' && homeElsewhere(t) ? u.v2P.w.concKeep : 0;
+};
+/* t away, in control points: its turns lost for the rounds the rest of the fight gets done meanwhile (the other foes' kHp over our damage a
+   round, at most 8; a lone foe 0: it comes back to a side that waited), capped by how long it stays (Banishment's minute, `left` rounds of
+   a running one; Maze's escape chance a round from kSave(int)) and by its life; gone for good, every turn it had left and the kill bonus */
+Sim.prototype.v2RemoveWorth = function (u, t, X, ctx, left) {
+  const W = u.v2P.w, turn = this.effectValue(AWAY_TURN, t, true, u) * W.ctlRound, life = this.kHp(u, t) / ctx.focusDpr + 0.5;
+  const myDpr = ctx.myTeam.reduce((s, o) => s + (o.dpr || 0), 0) * 0.6;
+  const rest = Math.min(8, ctx.foes.reduce((s, e) => s + (e === t ? 0 : this.kHp(u, e)), 0) / Math.max(1, myDpr));
+  let away = Math.min(rest, left || 10);
+  if (X.kind === 'maze') { const p = Math.min(1, Math.max(0, (21 + this.kSave(u, t, 'int') - (X.dc || 20)) / 20)); away = Math.min(away, p > 0.001 ? (1 - Math.pow(1 - p, rest)) / p : rest); }
+  if (X.conc) away *= W.concKeep;
+  away = Math.min(away, life);
+  const g = this.v2GoneChance(u, t, X);
+  return (1 - g) * turn * away * W.removeAway + g * (turn * life * W.removeGone + (this.kDpr(u, t) * W.killRounds + 5) * W.kill);
 };
 /* ---- Legendary Resistance: burn it or race the boss's HP (docs/ai-v2.md) ---- */
 // how a condition changes the fight while the boss has it: the share of its damage that still comes, our damage × boost
@@ -855,6 +893,7 @@ Sim.prototype.v2BurnPlan = function (u, ctx, doubt) {
     if (this.incap(o) || !o.hasSpells) continue;
     for (const a of o.actions) {
       if (a.actionSlot !== 0 || a.type !== 'debuff' || !a.buff || !DANGER_CONDS.includes(a.buff.condition) || (a.ext && a.ext.teleport) || !this.usable(o, a) || !this.condOk(o, a)) continue;
+      if (a.ext && a.ext.remove && avgDice(a.saveDC) >= 99) continue;           // Maze: no save, so nothing to burn and nothing LR stops
       const lv = this.v2CastLevels(o, a);
       if (!lv.length) continue;
       const act = castCopy(a, lv[0]), ab = a.ext && a.ext.saveAbility, dc = avgDice(a.saveDC);
@@ -906,6 +945,7 @@ Sim.prototype.v2BurnPlan = function (u, ctx, doubt) {
       const d = Math.min(dur, rem2 / Math.max(1, total * cond[1])), rem3 = Math.max(0, rem2 - d * total * cond[1]);
       land = d * D * cond[0] + rem3 / Math.max(1, total) * D;
       miss = rem2 / Math.max(1, total) * D;
+      if (fu.a.ext && fu.a.ext.remove) land = (1 - this.v2GoneChance(fu.o, boss, fu.a.ext.remove)) * miss;   // banished: gone for good, or back as it was (the race goes on)
     }
     taken = sat(D * Rb + D + fu.pFail * land + (1 - fu.pFail) * miss);
     plan.rounds = Rb + 1;
@@ -983,6 +1023,11 @@ Sim.prototype.v2Holding = function (u, ctx) {
       v += this.effectValue(one, o, true, u) * W.ctlRound * rr;
       exp = Math.max(exp, this.v2Expose(u, o, b.data && b.data.condition, ctx) * rr);
     }
+  }
+  // a foe it holds away (Banishment, Maze): what the rest of its time away is worth
+  if (this.awayN) for (const o of this.units) if (o.removed && o.removed.by === u.uid && o.removed.id === id && o.team !== u.team && !o.dead) {
+    const sp = u.actions.find(x => x.id === id), X = sp && sp.ext && sp.ext.remove;
+    if (X) v += this.v2RemoveWorth(u, o, X, ctx, Math.max(1, o.removed.until - this.round + 1)) * W.control;
   }
   for (const z of this.zones || []) {
     if (z.src !== u.uid || z.id !== id) continue;

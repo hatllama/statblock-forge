@@ -445,6 +445,51 @@ function playReact(sc, N) {
   for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind']) console.log(row(mode, play(Object.assign({}, sc, { record: true, metrics: REACT_METRICS, know: { party: mode } }), N)));
 }
 
+/* ---- removed from the fight (docs/ai-v2.md "Removed from the fight"): Banishment, Maze, 2014 Plane Shift; node tests/ai-compare.js 200 "^BAN".
+   Arms on the same seeds: the caster without the spell (its slot kept: 'none') and with it ('with'); Plane Shift also under the default 2024
+   rule ('2024': in the book, never usable). Run with ENGINE=<an older engine> for the "before" (Banishment as an Incapacitated debuff). */
+const SD_ = load(['js/spell-data.js']).SpellData;
+const giveSpell = (c, name) => {
+  const sb = c.ext.spellbook, dc = Number((sb.spells.find(s => s.type === 'debuff' && s.saveDC) || sb.spells.find(s => s.useSaves) || {}).saveDC || (sb.spells.find(s => s.useSaves) || {}).toHit || 13);
+  const a = Parser._internals.spellAction(name, SD_[name], { dc, atk: dc - 8, mod: 3, lvl: 9, cantripDice: 2 }, { level: SD_[name].L });
+  a.id = c.id + '-' + name.replace(/\W/g, ''); sb.spells.push(a); sb.slots[SD_[name].L - 1] = (sb.slots[SD_[name].L - 1] || 0) + 1;
+  return c;
+};
+const slotOnly = (c, L) => { c.ext.spellbook.slots[L - 1] = (c.ext.spellbook.slots[L - 1] || 0) + 1; return c; };   // the same slot, no removal spell
+const awayEv = (r, re) => r.events.filter(e => e.kind === 'effect' && re.test(e.text || '')).length;
+const BAN_METRICS = {
+  'casts': r => r.events.filter(e => e.kind === 'save' && /: (Banishment|Maze|Plane Shift)( \(L\d\))?, /.test(e.text || '') && teamOf(r, e.uid) === 'party').length + r.events.filter(e => e.kind === 'attack' && /: Plane Shift, melee spell attack/.test(e.text || '') && teamOf(r, e.uid) === 'party').length,
+  'removed': r => awayEv(r, /is banished to a harmless demiplane|vanishes into a labyrinthine demiplane/),
+  'gone': r => r.events.filter(e => e.kind === 'flee' && /for good/.test(e.text || '')).length,
+  'back': r => awayEv(r, / reappears/),
+  'waits': r => r.events.filter(e => e.kind === 'wait').length,
+  'LR burned': lrBurned,
+  'pc away': r => r.events.filter(e => e.kind === 'effect' && /is banished to|vanishes into a labyrinthine/.test(e.text || '') && teamOf(r, e.target) === 'party').length,
+};
+const banCleric = spell => () => [pc('Fighter'), pc('Barbarian'), pc('Wizard'), spell ? giveSpell(pc('Cleric'), spell) : slotOnly(pc('Cleric'), 4)];
+const mazeWizard = maze => () => [pc('Fighter'), pc('Barbarian'), maze ? giveSpell(pc('Wizard'), 'maze') : slotOnly(pc('Wizard'), 8), pc('Cleric')];
+const psCleric = ps => () => [pc('Fighter'), pc('Barbarian'), pc('Wizard'), ps ? giveSpell(pc('Cleric'), 'plane shift') : slotOnly(pc('Cleric'), 7)];
+// a 2014-style Mage that acts early and lasts (150 HP, initiative +10), with one Banishment (a 4th-level slot)
+const banisherMage = () => { const m = statblock('mage-2014.txt'); m.name = 'Banisher Mage'; m.id = 'banisher-mage'; m.hp = 150; m.ext.initBonus = 10; giveSpell(m, 'banishment'); m.ext.spellbook.spells.forEach((x, i) => { x.id = 'bm-s' + i; }); return m; };
+const BAN_SCENARIOS = [
+  { name: 'BAN1 Banishment: 2 Hill Giants + 4 Goblin Warriors (a big hitter away while the rest fall)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => fights('Hill Giant*2,Goblin Warrior*4') },
+  { name: 'BAN2 Banishment: 2 Air Elementals + 2 Ogres (an elemental: gone for good once the rest are down)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => fights('Air Elemental*2,Ogre*2') },
+  { name: 'BAN3 Banishment: a lone Air Elemental, no LR (the party waits the minute out)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => fights('Air Elemental') },
+  { name: 'BAN4 Banishment: the lone Air Elemental with 3 LR (a poor target)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => [{ monsters: [withLR(mon('Air Elemental'), 3)] }] },
+  { name: 'BAN5 Banishment: a lone Hill Giant (it comes back unchanged: not worth a slot)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => fights('Hill Giant') },
+  { name: 'BAN6 Banishment: 3 Hill Giants (one away while the others fall)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => fights('Hill Giant*3') },
+  { name: 'BAN7 Maze: the Wizard (an 8th-level slot) vs 3 Hill Giants (Int 5: no way out)', arms: [['none', mazeWizard()], ['with', mazeWizard(true)]], encounters: () => fights('Hill Giant*3') },
+  { name: 'BAN8 Plane Shift (2014 rule): the Cleric (a 7th-level slot) vs 3 Hill Giants', arms: [['none', psCleric()], ['2024', psCleric(true)], ['2014', psCleric(true), { planeShift: '2014' }]], encounters: () => fights('Hill Giant*3') },
+  { name: 'BAN9 foes banish: a 2014 Mage with Banishment + 2 Ogres vs the default party', arms: [['with', () => clone(D.PP)]], encounters: () => [{ monsters: [banisherMage(), mon('Ogre', 2)] }] },
+  { name: 'BAN10 a day: goblins / ogres / Air Elemental + Hill Giant (Banishment kept for the last fight?)', arms: [['none', banCleric()], ['with', banCleric('banishment')]], encounters: () => fights('Goblin Warrior*6/Ogre*2/Air Elemental,Hill Giant') },
+];
+function playBan(sc, N) {
+  console.log('\n' + sc.name);
+  console.log('  ' + [pad('arm', 11), lpad('win', 12), lpad('rounds', 7), lpad('deaths', 7), lpad('dealt', 7), lpad('taken', 7), lpad('ms', 6)].concat(Object.keys(BAN_METRICS).map(k => lpad(k, Math.max(8, k.length + 2)))).join(' '));
+  for (const mode of KNOW ? [KNOW.party] : ['open', 'learn', 'blind'])
+    for (const [label, players, rules] of sc.arms) console.log(row(pad(mode + ' ' + label, 11), play(Object.assign({}, sc, { players, rules, record: true, metrics: BAN_METRICS, know: { party: mode } }), N)));
+}
+
 /* ---- downed allies (step 2.12) ---- */
 // a limited-use healing potion as the sheet reader builds it
 const withPotions = (p, n) => {
@@ -783,7 +828,7 @@ function play(sc, n, tweak) {
     if (tweak) tweak(players);
     if (AI_OVER) for (const p of players) p.ext = Object.assign({}, p.ext, { aiProfile: aiOver(p.ext && p.ext.aiProfile) });
     const layouts = sc.layoutFn ? sc.layoutFn(encounters) : sc.layout ? Object.fromEntries(encounters.map((e, k) => [k, sc.layout])) : undefined;
-    let res = Tac.runDay({ players, encounters }, { seed, record: !!sc.record, layouts, know: sc.know || KNOW, rules: process.env.CS ? { counterspell: process.env.CS } : undefined, prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, morale: process.env.MORALE === 'on' ? 'on' : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
+    let res = Tac.runDay({ players, encounters }, { seed, record: !!sc.record, layouts, know: sc.know || KNOW, rules: sc.rules || (process.env.CS ? { counterspell: process.env.CS } : undefined), prefightBuffs: process.env.PREFIGHT === '0' ? false : undefined, morale: process.env.MORALE === 'on' ? 'on' : undefined, threat: process.env.THREAT === 'off' ? false : process.env.THREAT });
     // A scenarios: a fight still to come today (for pacing), but only the first one is scored
     const nf = sc.only0 ? 1 : encounters.length;
     if (sc.only0) res = res.slice(0, 1);
@@ -879,6 +924,7 @@ if (only && only.test('ELIA')) playElia(N);
 if (only && only.test('FIO')) playFio(N);
 for (const sc of BURN_SCENARIOS) if (!only || only.test(sc.name)) playBurn(sc, N);
 for (const sc of CTL_SCENARIOS) if (only && only.test(sc.name)) playCtl(sc, N);
+for (const sc of BAN_SCENARIOS) if (only && only.test(sc.name)) playBan(sc, N);
 for (const sc of DOWN_SCENARIOS) if (only && only.test(sc.name)) playDown(sc, N);
 for (const sc of REACT_SCENARIOS) if (only && only.test(sc.name)) playReact(sc, N);
 for (const sc of REVIVE_SCENARIOS) if (only && only.test(sc.name)) playRevive(sc, N);

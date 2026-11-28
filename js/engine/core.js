@@ -35,7 +35,7 @@ Sim.prototype.unitState = function (u) {
            leg: u.hasLegendary ? u.legendaryLeft + '/' + u.legendaryMax : undefined,
            legRes: u.legResMax ? u.uses.get('__legres') + '/' + u.legResMax : undefined,
            luck: u.luckMax ? u.uses.get('__luck') + '/' + u.luckMax : undefined,
-           fled: u.fled || undefined };
+           fled: u.fled || undefined, away: u.removed ? u.removed.kind : undefined };
 };
 /* one line per effect on a creature: [name, what it does, how long, who put it there] */
 const EXPIRY_TEXT = { 'entire encounter': 'the whole fight', '1 round': 'until its maker\'s next turn', 'until next attack made': 'until its next attack', 'next attack roll': 'until its next attack roll', 'until next attack taken': 'until it is next attacked',
@@ -160,6 +160,7 @@ Sim.prototype.slotFor = function (u, level) {
 Sim.prototype.usable = function (u, a) {
   if (a.ext && (a.ext.prefight || a.ext.revivify)) return false;     // pre-fight buffs are cast in the morning only (morningCasts), Revivify when the fight ends (endFightRevives)
   if (a.ext && a.ext.req && !this.tCond(u, a.ext.req, { a })) return false;   // a precondition in the trait words (Aimed Shot: has not moved this turn)
+  if (a.ext && a.ext.remove && a.ext.remove.rule === '2014' && this.rules.planeShift !== '2014') return false;   // Plane Shift on a foe: the 2014 text only
   if (a._spell) {
     if (!a._spell.level) return true;
     if (a.actionSlot === 4 && u.reviver && this.v2Eats(u, this.slotFor(u, a._spell.level))) return false;   // no scorer for reactions yet (roadmap phase 3): they leave a kept slot alone
@@ -217,7 +218,7 @@ Sim.prototype.stillRunning = function (u, a) {
 Sim.prototype.losing = function (u) {
   const frac = team => {
     let hp = 0, max = 0;
-    for (const o of this.units) if (o.team === team && (o.onBoard || o.isPC) && !(o.dead && !o.isPC)) { hp += Math.max(0, o.dead ? 0 : this.kHp(u, o)); max += this.kMax(u, o); }
+    for (const o of this.units) if (o.team === team && (o.onBoard || o.isPC) && !(o.dead && !o.isPC) && !o.removed) { hp += Math.max(0, o.dead ? 0 : this.kHp(u, o)); max += this.kMax(u, o); }
     return max ? hp / max : 1;
   };
   const mine = frac(u.team), theirs = frac(u.team === 'party' ? 'foes' : 'party');
@@ -646,10 +647,12 @@ Sim.prototype.zoneCells = function (z) {
   if (!z.follow) return z.cells;
   const s = this.byId[z.src];
   if (!s || s.x === undefined) return z.cells;
+  if (s.removed) return NO_CELLS;                       // it went with its caster (Maze): nothing here is in it
   const key = s.x + ',' + s.y;
   if (z._at !== key) { z._at = key; z._cells = new Set(this.cellsFor(z.spec, s.x, s.y, s.x, s.y, s.x, s.y).map(c => c[0] + c[1] * this.W)); }   // walls and sight lines cut it, as for an instant burst
   return z._cells;
 };
+const NO_CELLS = new Set();
 Sim.prototype.zoneHit = function (z, t) {
   const s = this.byId[z.src];
   if (!s || t.dead || !t.onBoard || z.hit[t.uid] === this.round) return;
@@ -702,6 +705,7 @@ Sim.prototype.endConcentration = function (u, why) {
     this.zones = this.zones.filter(z => !(z.src === u.uid && z.id === id)); this.applyZones();
   }
   u.concentrating = null;
+  if (this.awayN) for (const o of this.units) if (o.removed && o.removed.by === u.uid && o.removed.id === id) this.comeBack(o, why);   // the spell ends: Banishment's, Maze's target returns
   let any = false;
   this._flyMapVer = -1;
   for (const o of this.units) { const n = o.buffs.length; o.buffs = o.buffs.filter(b => !(b.src === u.uid && b.id === id)); if (o.buffs.length !== n) any = true; }
@@ -731,6 +735,79 @@ Sim.prototype.kill = function (u, src, why) {
   if (u.swallowedBy) { const w = this.byId[u.swallowedBy]; if (w) w.inside = w.inside.filter(x => x !== u.uid); }
   if (!u.isPC) u.onBoard = false;
   this.ev('death', u.isPC ? `${u.name} dies${why ? ' (' + why + ')' : ''}` : `${u.name} is slain`, { uid: u.uid });
+};
+/* ----- removed from the fight: Banishment, Maze, Plane Shift (docs/ai-v2.md "Removed from the fight") -----
+   A removed creature is off the board (onBoard false, as a swallowed one), so nothing targets, catches or meets it; t.removed says what
+   holds it there: { kind, by (caster uid), id (the spell's action id: the caster's concentration), name, home, until (last round), dc } */
+Sim.prototype.removeFrom = function (t, u, a) {
+  const X = a.ext.remove;
+  this.boardChanged();
+  if (X.forGood) { this.goneForGood(t, `${u.name}'s ${a.name}`); return; }
+  t.removed = { kind: X.kind, by: u.uid, id: a.id, name: String(a.name).replace(/ \(L\d\)$/, ''), home: { x: t.x, y: t.y }, until: X.conc ? u.concUntil : this.round, dc: X.dc || 0 };
+  this.awayN = (this.awayN || 0) + 1;
+  t.onBoard = false; this._flyMapVer = -1;
+  this.releaseGrappleOf(t);
+  if (t.grappledBy) { t.grappledBy = null; t.grappleInfo = null; }
+  for (const vid of t.inside.slice()) this.expel(t, this.byId[vid], 'freed');
+  this.ev('effect', X.kind === 'maze' ? `${t.name} vanishes into a labyrinthine demiplane (${t.removed.name})` : `${t.name} is banished to a harmless demiplane (${t.removed.name})`, { uid: u.uid, target: t.uid });
+  if (X.kind === 'banishment') this.endConcentration(t, 'banished');     // Incapacitated there: its own concentration ends (2024)
+};
+/* out for the rest of the day: Banishment's full minute on an Aberration, Celestial, Elemental, Fey or Fiend; 2014 Plane Shift */
+Sim.prototype.goneForGood = function (t, why) {
+  this.boardChanged();
+  if (t.removed) { t.removed = null; this.awayN = Math.max(0, (this.awayN || 0) - 1); }
+  t.alt = 0;
+  this.endConcentration(t, 'gone');
+  t.dead = true; t.fled = 'banished'; t.onBoard = false;
+  this.releaseGrappleOf(t);
+  if (t.grappledBy) { t.grappledBy = null; t.grappleInfo = null; }
+  for (const vid of t.inside.slice()) this.expel(t, this.byId[vid], 'freed');
+  this.ev('flee', `${t.name} is sent to another plane for good (${why})`, { uid: t.uid });
+};
+/* the spell that holds it ends: back in the space it left, or the nearest one its body fits */
+Sim.prototype.comeBack = function (o, why) {
+  const R = o.removed;
+  if (!R) return;
+  o.removed = null; this.awayN = Math.max(0, (this.awayN || 0) - 1);
+  if (o.dead) return;
+  let at = this.fits(o, R.home.x, R.home.y) ? R.home : null;
+  for (let r = 1; !at && r < Math.max(this.W, this.H); r++) for (let dy = -r; dy <= r && !at; dy++) for (let dx = -r; dx <= r && !at; dx++)
+    if (Math.max(Math.abs(dx), Math.abs(dy)) === r && this.fits(o, R.home.x + dx, R.home.y + dy)) at = { x: R.home.x + dx, y: R.home.y + dy };
+  if (!at) at = R.home;
+  o.x = at.x; o.y = at.y; o.onBoard = true;
+  this.boardChanged(); this._flyMapVer = -1;
+  this.ev('effect', `${o.name} reappears${at === R.home ? '' : ' nearby'}: ${R.name} ends (${why || 'the spell ends'})`, { uid: o.uid });
+  if (o.alt > 0) this.fallCheck(o);
+};
+/* an Intelligence check (Maze's Study): the Int modifier from the statblock's scores, else its Int save */
+Sim.prototype.intCheck = function (u) {
+  const sc = u.tpl && u.tpl.ext && u.tpl.ext.scores;
+  return sc && typeof sc.int === 'number' ? Math.floor((sc.int - 10) / 2) : this.saveBonusFor(u, 'int');
+};
+/* casting a removal (a debuff with ext.remove): Plane Shift's touch first, then the save (Maze: none), then away it goes */
+Sim.prototype.removeCast = function (u, a, targets) {
+  const X = a.ext.remove;
+  // an innate copy (a statblock's "1/day: Banishment") has no spellbook concentration: the spell brings its own
+  if (X.conc && u.concentrating !== a.id) { this.endConcentration(u, 'casts ' + a.name); u.concentrating = a.id; u.concLevel = u.castLevel || 0; u.concUntil = this.round + ((a.ext && a.ext.hold) || 10) - 1; }
+  for (const t of targets) {
+    if (t.team === u.team || t.dead || !t.onBoard) continue;
+    if (X.attack) {
+      const atk = Object.assign({}, a, { type: 'atk', toHit: X.toHit !== undefined ? X.toHit : Number(avgDice(a.saveDC)) - 8, _range: 5 });
+      const r = this.attackRoll(u, t, atk);
+      if (!r.hit) { this.ev('attack', `${u.name} → ${t.name}: ${a.name}, melee spell attack ${r.total} vs AC ${r.ac} — misses`, { uid: u.uid, target: t.uid, hit: false, dmg: 0 }); continue; }
+    }
+    const dc = Number(avgDice(a.saveDC)), sab = a.ext.saveAbility;
+    let s = { success: false };
+    if (dc < 99) {
+      this._saveStakes = 1; this._saveA = a; this._saveCond = a.buff && a.buff.condition; this._saveDmg = X.forGood ? t.hp : 0;   // for good: as bad as dropping
+      s = this.saveRoll(t, dc, u, sab);
+      this._saveStakes = 0; this._saveCond = null; this._saveA = null; this._saveDmg = 0;
+    }
+    this.ev('save', `${u.name} → ${t.name}: ${a.name}, DC ${dc >= 99 ? '—' : dc}${sab && dc < 99 ? ' ' + sab.toUpperCase() : ''} — ${s.success ? 'saved' : 'affected (' + (X.forGood ? 'sent away' : 'removed') + ')'}`,
+      { uid: u.uid, target: t.uid, hit: !s.success, dmg: 0, ranged: this.dist(u, t) > 5 });
+    if (!s.success) this.removeFrom(t, u, a);
+  }
+  return true;
 };
 Sim.prototype.heal = function (src, tgt, amt, temp) {
   if (tgt.dead) return;
@@ -1423,6 +1500,7 @@ Sim.prototype.doActionInner = function (u, a, plan, opt, targets) {
     this.ev('buff', `${u.name}: ${a.name}${targets.length === 1 && targets[0] === u ? '' : ' → ' + targets.map(t => t.name).join(', ')}`, { uid: u.uid, target: targets[0] && targets[0].uid });
     return true;
   }
+  if (a.type === 'debuff' && a.ext && a.ext.remove) return this.removeCast(u, a, targets);
   if (a.type === 'debuff') {
     for (const t of targets) {
       const dc = Number(avgDice(a.saveDC));
