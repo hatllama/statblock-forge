@@ -164,7 +164,8 @@ function aiProfile(spec) {
    There was a genius tier (Int 16 and up) until phase 6 step 2; it is cunning now (a saved ext.aiTier 'genius' reads as cunning). */
 const AI_TIERS = {
   tiers: ['mindless', 'animal', 'cunning', 'boss'],
-  // boss: what makes a creature a boss (legendary actions, lair actions, Legendary Resistance, a reaction that acts on a foe)
+  // boss: what makes a creature a boss (legendary actions, lair actions, Legendary Resistance, a reaction that acts on a foe). Legendary Resistance alone
+  // stays a rule (boss tuning step 3: nine such creatures, boss tier against their own tier, 10.2 points stronger in open, level in learn and blind)
   rules: { mindlessInt: 6, mindlessTypes: ['ooze', 'plant', 'construct', 'undead'], mindlessAny: 0, animalInt: 7, wisRetreat: 0.03,
            boss: { legendary: true, lair: true, legRes: true, react: true } },
   profiles: {

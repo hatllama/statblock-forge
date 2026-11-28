@@ -2434,6 +2434,9 @@ section('AI v2: the boss tier (phase 4b)');
   check(T(file('long-homebrew-boss.txt')) === 'boss' && T(file('osric-homebrew.txt')) === 'boss' && T(file('brute-legendary-homebrew.txt')) === 'boss' && T(file('dragon-legendary-2024.txt')) === 'boss', 'the Ember Tyrant, Osric (lair), Grukk (legendary, Int 7) and an Adult Blue Dragon are bosses');
   check(T(file('elparin-homebrew.txt')) === 'boss', 'a creature whose only boss trait is a reaction that acts on a foe (Elparin\'s Procedural Nullification) is a boss');
   check(T({ name: 'Lair keeper', type: 'humanoid', ext: { scores: { int: 10 } }, actions: [{ actionSlot: 3, type: 'atk', name: 'Falling Rocks' }] }) === 'boss' && T({ name: 'Warded', type: 'humanoid', ext: { scores: { int: 10 }, legendaryResistance: 1 }, actions: [] }) === 'boss', 'lair actions alone, or Legendary Resistance alone, make a boss');
+  // boss tuning step 3 (docs/ai-v2.md): Legendary Resistance alone stays a boss rule; Fiorenzo (Lucky Seam, no legendary or lair actions) is the test statblock with it
+  { const fio = file('fiorenzo.txt'); check(T(fio) === 'boss' && fio.ext.legendaryResistance > 0 && !fio.actions.some(a => a.actionSlot === 2 || a.actionSlot === 3) && T(file('fiorenzo.txt', 'cunning')) === 'cunning',
+    'Fiorenzo (Legendary Resistance as Lucky Seam, no legendary or lair actions) is a boss by the rule; Smartness overrides it'); }
   check(['Bandit Captain', 'Knight', 'Gladiator', 'Warrior Veteran', 'Mage', 'Hill Giant', 'Owlbear', 'Young Red Dragon', 'Goblin Boss'].every(n => T(srd(n)) !== 'boss'), 'ordinary monsters are not bosses (Parry is a self buff, not a boss reaction; young dragons have no legendary actions)');
   const nonBoss = ctx.M.filter(s => T(srd(s.name)) === 'boss').map(s => s.name);
   check(nonBoss.join() === 'Adult Red Dragon,Lich', `of the SRD monsters only the Adult Red Dragon and the Lich are bosses (${nonBoss.join(', ')})`);

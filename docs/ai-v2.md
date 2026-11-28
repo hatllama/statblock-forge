@@ -2762,3 +2762,49 @@ reason: `solo`/`soloOa` (step 2), `lrKeep`, `lrFloor`, `lrHorizon`, `lrDmg`, `lr
 `rechargeCatch` (unused at `recharge` 0), `planOpen`/`planSave`/`planTarget` (`ext.aiPlan`: no harness boss carries a plan, so no table can
 price it; the test of the hint stays), the boss's posture and targeting weights (the genius values: a check on the LR carriers, below, found
 them helping, not hurting).
+
+### 3. Who is a boss: Legendary Resistance alone stays a rule
+
+**Who it concerns.** Among the test statblocks and the SRD monsters only Fiorenzo (`fiorenzo.txt`, Lucky Seam) is a boss by Legendary Resistance
+alone (`runs/boss/lrscan.js`; the Stagnation Blight is one by a foe-acting reaction alone, the rest have legendary actions). So the evidence
+uses Fiorenzo plus nine SRD monsters given Legendary Resistance 3 and made strong enough for a level-5 party (`runs/boss/lronly.js`: Gladiator
+with 2 Bandits, the C-Boss row harder; Gladiator, Knight, Mage, Hill Giant, Young Green Dragon alone against the BOSS party; a Warrior Veteran
+with 3 Bandits; a Young Red Dragon against Zaki's party; HP and damage scaled per creature). Each plays the boss tier (its tier by the rule)
+against its own tier without that rule (cunning; the Hill Giant animal), same seeds, 200 runs, the party learning, the monster reading the mode.
+
+**Step 1 code** (before step 4), mean change in party win over the ten creatures (negative = the boss tier stronger): open **−7.5**, learn
+**+2.2**, blind **+2.4**. Split by arm (nine SRD creatures and Fiorenzo at 3×, means of party win):
+
+| arm | open | learn | blind |
+|---|---|---|---|
+| its own tier | 79.8 | 75.4 | 76.9 |
+| boss tier | 71.5 | 77.9 | 79.6 |
+| boss tier, full self-care (`solo` 1) | 71.3 | 76.6 | 78.7 |
+| its own tier + weighed Legendary Resistance | 80.6 | 76.2 | 77.4 |
+| its own tier + the boss's open reading of the party's damage (`dprSeen`) | 69.8 | 75.4 | 76.9 |
+
+Weighed Legendary Resistance alone earns nothing on these creatures; the open-mode gain is the boss's reading of the party's damage; the
+learn / blind cost was not self-care but the **recharge price** (the Young Red Dragon: 79.5 / 83.0 on the boss tier, 69.5 / 75.5 without the
+price, 68.5 / 70.0 on cunning). Step 4 removed that price for every boss.
+
+**After step 4** (the tuned boss profile; party win, own tier → boss tier, open / learn / blind):
+
+| creature | open | learn | blind |
+|---|---|---|---|
+| Fiorenzo (234 HP) | 83.5 → 70.5 | 75.0 → 78.0 | 80.5 → 82.5 |
+| Gladiator + 2 Bandits | 94.0 → 74.0 | 86.0 → 83.5 | 86.5 → 81.0 |
+| Gladiator alone | 82.0 → 76.0 | 83.5 → 83.0 | 83.5 → 87.0 |
+| Knight | 55.5 → 52.0 | 63.0 → 68.5 | 67.0 → 74.0 |
+| Mage | 63.0 → 45.0 | 47.0 → 50.0 | 47.5 → 49.5 |
+| Hill Giant (animal) | 93.5 → 86.0 | 90.5 → 89.0 | 93.5 → 93.0 |
+| Warrior Veteran + 3 Bandits | 92.0 → 88.5 | 91.5 → 93.5 | 91.0 → 92.0 |
+| Young Green Dragon | 73.5 → 63.5 | 74.0 → 69.5 | 72.5 → 68.5 |
+| Young Red Dragon (Zaki's party) | 81.5 → 71.5 | 68.5 → 68.5 | 70.0 → 73.0 |
+| **mean change** | **−10.2** | **+0.5** | **+0.9** |
+
+**Decision: Legendary Resistance alone still makes a boss** (`AI_TIERS.rules.boss.legRes` stays true; legendary actions, lair actions and a
+foe-acting reaction too). On the default War Table setting (monsters read open) the boss tier makes these creatures 10 points stronger (6 of 9
+beyond 1.5 SE), and in learn and blind it is level (+0.5 and +0.9 over nine creatures, about 1 SE; the largest cell, the Knight in blind, +7.0 at
+1.5 SE). It is also the option that changes nothing for a saved creature. `ext.aiTier` (the Smartness select) still overrides it both ways.
+The Forge and War Table help texts and the War Table AI-tab help now say "Legendary Resistance (even alone)"; the AI-tab help no longer lists the
+genius tier (merged into cunning in phase 6 step 2). Test: Fiorenzo is a boss by the rule and Smartness overrides it.
