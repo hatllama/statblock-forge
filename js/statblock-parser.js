@@ -722,6 +722,7 @@ function spellAction(n, sp, ctx, extra) {
   if (sp.selective && a.ext.area) a.ext.area.selective = true;
   if (sp.types) a.ext.targetTypes = sp.types.slice();
   if (sp.e) Object.assign(a.ext, JSON.parse(JSON.stringify(sp.e)));
+  if (a.ext.remove && a.ext.remove.attack) a.ext.remove.toHit = ctx.atk;     // Plane Shift's touch: a melee spell attack
   if (extra.level !== undefined) {
     a.level = extra.level;
     if (sp.c) a.concentration = true;

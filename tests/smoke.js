@@ -204,6 +204,11 @@ async function smoke() {
   check(page.run('WarTable.simOpts(0).rules.rest') === 'full', 'the Short rest select reaches the sim options (full)');
   await set('wt-rulesRest', 'hitdice');
   check(page.run('WarTable.simOpts(0).rules.rest') === 'hitdice', 'and back to Hit Dice');
+  check(page.run('WarTable.simOpts(0).rules.planeShift') === '2024' && page.el('wt-rulesPlaneShift').value === '2024', 'the Plane Shift rule starts as 2024 (no hostile use)');
+  await set('wt-rulesPlaneShift', '2014');
+  check(page.run('WarTable.simOpts(0).rules.planeShift') === '2014', 'the Plane Shift select reaches the sim options (2014)');
+  await set('wt-rulesPlaneShift', '2024');
+  check(page.run('WarTable.simOpts(0).rules.planeShift') === '2024', 'and back to 2024');
   // handlers that wait on timers (animation, chunked odds) are started, then the timers are drained
   const go = async (el, type, max) => { let ended = false; el.fire(type || 'click').then(() => { ended = true; }, e => { ended = true; page.errors.push('a handler threw: ' + ((e && e.stack) || e)); }); await page.settle(max); await page.settle(max); return ended; };
   await go(page.el('wt-btnOne'));

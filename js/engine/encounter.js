@@ -4,7 +4,7 @@
 (function (root) {
 'use strict';
 const ENG = root.TacEngine._;
-const { rollDice, ADV_TARGET, ADV_SELF, freqKind, Sim, MAX_ALT, isReckless } = ENG;
+const { rollDice, ADV_TARGET, ADV_SELF, freqKind, Sim, MAX_ALT, isReckless, homeElsewhere } = ENG;
 
 /* ----- a creature's turn ----- */
 Sim.prototype.turn = function (u) {
@@ -389,12 +389,12 @@ Sim.prototype.moraleBreaks = function (u) {
   const M = u.v2P && u.v2P.morale;      // its profile says which triggers count (a tier's nerve)
   if (M && M.fearless) return false;
   const side = this.units.filter(o => o.team === u.team);
-  const fallen = side.filter(o => o.dead || o.hp <= 0).length;
+  const fallen = side.filter(o => o.dead || o.hp <= 0 || o.removed).length;     // a banished ally is gone as far as its side can see
   const leader = side.reduce((m, o) => (!m || o.maxHp > m.maxHp ? o : m), null);
   const triggers = [];
   if (u.hp < u.maxHp / 2 && (!M || M.bloodied)) triggers.push('bloodied');
   if (side.length > 1 && fallen * 2 >= side.length && (!M || M.half)) triggers.push('half');
-  if (leader && leader !== u && (leader.dead || leader.hp <= 0) && leader.maxHp > u.maxHp && (!M || M.leader)) triggers.push('leader');
+  if (leader && leader !== u && (leader.dead || leader.hp <= 0 || leader.removed) && leader.maxHp > u.maxHp && (!M || M.leader)) triggers.push('leader');
   u.moraleSeen = u.moraleSeen || {};
   const fresh = triggers.filter(k => !u.moraleSeen[k]);
   if (!fresh.length || !this.losing(u)) return false;
@@ -413,6 +413,61 @@ Sim.prototype.leave = function (u) {
   for (const vid of u.inside.slice()) this.expel(u, this.byId[vid], 'freed');
   u.onBoard = false;
   this.ev('flee', caught ? `${u.name} throws down its weapons and surrenders` : `${u.name} loses its nerve and flees the fight`, { uid: u.uid });
+};
+/* ----- away from the fight (docs/ai-v2.md "Removed from the fight") ----- */
+/* a removed creature's turn: what it made that lasts "until its next turn" ends; in a maze it studies a way out; nothing else */
+Sim.prototype.awayTurn = function (u) {
+  u.turnNo = (u.turnNo || 0) + 1; u.fightTurns = (u.fightTurns || 0) + 1;
+  this.turnSeq = (this.turnSeq || 0) + 1;
+  for (const x of this.units) this.dropBuffs(x, b => b.src === u.uid && b.expiry === '1 round');
+  const R = u.removed;
+  if (R.kind !== 'maze') { this.ev('skip', `${u.name} is away (${R.name})`, { uid: u.uid }); return; }
+  const dc = R.dc || 20, tot = this.d20(false, false, false, u, 'check') + this.intCheck(u);
+  this.ev('escape', `${u.name} studies the maze for a way out (${tot} vs DC ${dc})${tot >= dc ? ': it finds one' : ''}`, { uid: u.uid });
+  if (tot >= dc) this.endAway(u, `${u.name} escapes the maze`);
+};
+/* the spell holding u ends now: through its caster's concentration when it still holds it */
+Sim.prototype.endAway = function (u, why) {
+  const R = u.removed, src = R && this.byId[R.by];
+  if (src && src.concentrating === R.id) this.endConcentration(src, why); else this.comeBack(u, why);
+};
+/* start of a round: a removal that has run its whole duration ends (a Banishment's minute: one of the five types stays gone), a maze
+   escape found while the other side waited (waitOut) comes through */
+Sim.prototype.removalTick = function () {
+  if (!this.awayN) return;
+  for (const o of this.units) if (o.removed && o.removed.escapeAt && this.round >= o.removed.escapeAt) this.endAway(o, `${o.name} escapes the maze`);
+  const due = this.units.filter(o => o.removed && this.round > o.removed.until), spent = [];
+  // those that stay away go first, so the spell ending does not bring them back with the rest
+  for (const o of due) if (o.removed.kind === 'banishment' && homeElsewhere(o)) { spent.push(o.removed); this.goneForGood(o, `${o.removed.name} lasted the full minute`); }
+  for (const o of due) if (o.removed) this.endAway(o, 'the spell runs out');
+  for (const R of spent) { const src = this.byId[R.by]; if (src && src.concentrating === R.id) this.endConcentration(src, 'the spell runs out'); }
+};
+/* one side has nobody on the board who is not dead, and someone of its side is away: the other side waits it out. No turns are played;
+   time moves on to the first removal that ends (a Banishment's minute, a maze's first good Study check, up to its ten minutes); the
+   waiting side's downed are stabilised. Those rounds count in the fight, not against the round cap. Returns true when it waited. */
+Sim.prototype.waitOut = function () {
+  const onField = team => this.units.some(o => o.team === team && !o.dead && !o.removed && (o.onBoard || o.swallowedBy));
+  let side = null;
+  for (const team of ['foes', 'party']) if (!onField(team) && this.units.some(o => o.team === team && o.removed && !o.dead)) side = team;
+  if (!side) return false;
+  const other = side === 'foes' ? 'party' : 'foes';
+  if (!this.units.some(o => o.team === other && this.alive(o) && !o.removed)) return false;      // nobody to wait: the cap decides
+  let first = null;
+  for (const o of this.units) {
+    const R = o.removed;
+    if (!R || o.dead) continue;
+    let at = R.until + 1, esc = false;
+    if (R.kind === 'maze') for (let rd = this.round + 1; rd <= R.until; rd++) if (this.d20(false, false, false, o, 'check') + this.intCheck(o) >= (R.dc || 20)) { at = rd; esc = true; break; }
+    if (!first || at < first.at) first = { o, at, esc };
+  }
+  if (!first) return false;
+  for (const o of this.units) if (o.team === other && o.isPC && !o.dead && o.hp <= 0 && !o.stable) { o.stable = true; this.ev('deathsave', `${o.name} is stabilised while the fight waits`, { uid: o.uid }); }
+  const k = Math.max(0, first.at - this.round - 1);
+  this.ev('wait', `${other === 'party' ? 'The party waits' : 'The foes wait'} for ${first.o.name} (${first.o.removed.name}): ${k + 1} round${k ? 's' : ''} pass with nobody to fight`, { uid: first.o.uid });
+  if (first.esc) first.o.removed.escapeAt = first.at;
+  this.waitRounds = (this.waitRounds || 0) + k;
+  this.round = first.at - 1;       // the round loop's ++ starts round first.at
+  return true;
 };
 Sim.prototype.partyStanding = function () { return this.units.some(u => u.team === 'party' && this.alive(u)); };
 Sim.prototype.foesStanding = function () { return this.units.some(u => u.team === 'foes' && this.alive(u)); };
@@ -444,15 +499,19 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   this.round = 1;
   if (this.morningNotes && this.morningNotes.length) { this.morningNotes.forEach(n => this.ev('heal', n.text, { uid: n.uid })); this.morningNotes = null; }
   for (const u of this.order) if (this.alive(u)) this.trigger(u, -3, null);
-  while (this.round <= this.maxRounds && !this.over()) {
+  this.awayN = 0; this.waitRounds = 0;      // removed creatures (Banishment, Maze) and the rounds waited for them (not counted against the cap)
+  while (this.round - this.waitRounds <= this.maxRounds && !this.over()) {
     this.ev('round', `Round ${this.round}`, {});
     this.expireZones();
+    this.removalTick();
     this.lair();
     for (const u of this.order) {
       if (this.over()) break;
+      if (this.awayN && this.waitOut()) break;
       if (u.dead) continue;
-      if (u.team === 'foes' && !u.onBoard) continue;
+      if (u.team === 'foes' && !u.onBoard && !u.removed) continue;
       this.ev('turn', `${u.name}'s turn`, { uid: u.uid });
+      if (u.removed) { this.current = u; this.awayTurn(u); this.current = null; if (this.over()) break; this.legendary(u); continue; }
       if (u.hp > 0 && !this.incap(u) && this.moraleBreaks(u)) { this.leave(u); if (this.over()) break; continue; }
       this.current = u; this.turn(u); this.current = null;
       if (this.over()) break;
@@ -464,7 +523,7 @@ Sim.prototype.runEncounter = function (party, foes, enc, layout) {
   if (won) this.endFightRevives();
   if (this.tpkKills && !this.partyStanding() && this.foesStanding()) for (const u of this.units) if (u.team === 'party' && !u.dead) this.kill(u, null, 'the whole party is down');
   this.ev('end', won ? 'The party wins' : this.partyStanding() ? 'The fight drags on — stopped' : 'The party falls', { won });
-  return { won, rounds: Math.min(this.round - 1, this.maxRounds) };
+  return { won, rounds: Math.min(this.round - 1, this.maxRounds + this.waitRounds) };
 };
 
 Sim.prototype.place = function (party, foes, layout) {
