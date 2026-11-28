@@ -2864,3 +2864,98 @@ Resistance: 1). `main` against the branch, alternating on one machine: `npm test
    on a big save when it has spare uses, and its legendary actions spread over the party's turns.
 6. **Malenia** (`malenia.txt`, scaled down for a level-5 party, or as written for a higher party): Scarlet Aeonia costs all three points, so
    watch whether she saves them for it or spends them one at a time (the old greedy picker did better with her: backlog).
+
+## Removed from the fight: Banishment, Maze, Plane Shift (rules + v2; November 2026)
+
+Before this job Banishment was a plain debuff (Incapacitated for the whole fight, 60 ft), Maze was not in the spell data, and Plane Shift
+was skipped (the Lich's 2/day copy did nothing). This adds one engine state, *removed from the fight*, the three spells on it, and one v2
+term for using them. The rules text is SRD 5.2 (the 5e-database 2024 spell list).
+
+### The rules (engine, not AI)
+
+**What the 2024 text says.**
+- *Banishment* (level 4, 30 ft, concentration up to 1 minute): a Charisma save; on a failure the target goes to a harmless demiplane and
+  has the Incapacitated condition there. When the spell ends it reappears in the space it left, or the nearest unoccupied one. If it is an
+  Aberration, Celestial, Elemental, Fey or Fiend and the spell lasts the full minute, it does not come back. One more target per slot level
+  above 4. (The old data had 60 ft; the brief's "native to another plane" is the 2014 wording; 2024 names the five types.)
+- *Maze* (level 8, 60 ft, concentration up to 10 minutes): no save. The target can take an action to make a DC 20 Intelligence
+  (Investigation) check; on a success it escapes and the spell ends. It reappears as for Banishment.
+- *Plane Shift* (level 7): **SRD 5.2 has no hostile use.** The 2024 spell carries you and up to eight willing creatures; the 2014 text
+  (SRD 5.1) also let the caster touch an unwilling creature with a melee spell attack, and on a hit it makes a Charisma save or is sent to
+  another plane for good. The brief asks for the unwilling form, so it is built behind a rules option like Counterspell's:
+  `opts.rules.planeShift` = `'2024'` (default: the action exists, never used) or `'2014'` (melee spell attack, then the save; no
+  concentration). War Table setting "Rules: Plane Shift". The Lich's Plane Shift stays inert by default, so its play does not move.
+
+**The state.** `removeFrom(t, u, a)` (core.js) sets `t.removed = { kind, by, id, name, home: {x, y}, until, dc }`, takes it off the board
+(`onBoard = false`, as a swallowed creature is), frees whoever it grapples or holds and whoever grapples it, and ends its own
+concentration when it is Banishment (2024: Incapacitated breaks concentration; Maze gives no condition, so a mazed caster keeps its
+spell, but a zone that follows it, Spirit Guardians, is with it and catches nobody here). Because everything that picks targets, catches
+creatures in areas, finds who stands in a square, triggers reactions, auras, zones and opportunity attacks already reads `onBoard`, a
+removed creature is not targeted, seen, caught or in the way, and blocks no square. Morale counts it as fallen (its side saw it vanish;
+a vanished leader is a lost leader) and `losing` leaves it out. Effects already on it stay as they are, frozen: nothing reaches it to
+end or roll them. Its turn (`awayTurn`) keeps its place in the initiative: effects it made that last "until its next turn" end, a mazed
+creature makes its Study check (d20 + its Int modifier from `ext.scores`, else its Int save, against 20), and nothing else happens.
+Legendary and lair actions need the creature on the board.
+
+**Coming back.** The removal is tied to the caster's concentration on that spell: `endConcentration` returns every creature it holds
+(`comeBack`: its own space, or the nearest free space its body fits). So a caster who drops, dies, flees, loses a concentration save or
+casts another concentration spell brings the target back, and so does a mazed creature's escape (the spell ends). `removalTick`, at the
+start of each round, ends a Banishment whose minute is up: one of the five types is **gone for good**, anything else returns.
+Gone for good (that minute, or a failed save against 2014 Plane Shift) is out for the rest of the day: `dead`, `fled: 'banished'`, so
+it is not revived (`revivable` skips `fled`) and the day's tally counts it as lost. Innate copies (a statblock's "1/day: Banishment") get
+their concentration from the removal itself (`ext.remove.conc`), as the spellbook copies do in `spend`.
+
+**The end of a fight.** A removed creature is still alive, so `over()` is unchanged: a fight is not won while a foe can come back.
+- When one side has nobody left on the board who is not dead, and someone of its side is away, **the other side waits it out**
+  (`waitOut`): no turns are played. Each removal's end is worked out in turn: Banishment's minute (the caster holds it: nothing on the board
+  threatens it), Maze's escape, one Study check a round up to the ten minutes. Time moves on to the first one (zones and concentration
+  run out on the clock as they would), the waiting side's downed party members are stabilised (a minute with no foe in sight), and the
+  creature returns or is gone for good. Then play goes on: a fight with the returned creature, a win, or another wait.
+- Waited rounds count in the fight's rounds but not against the round cap (`maxRounds`, `waitRounds`), so a Maze never ends a fight as
+  "stopped" by itself, and every wait ends: Banishment within 10 rounds, Maze within 100. The cap still stops a fight that drags on.
+- So one Banishment on a lone boss does nothing when it returns (the wait brings it back with every hit point it had), and is a win when
+  it is a fiend that fails the save and the caster holds it. A temporary removal is worth what the rest of the fight gets done meanwhile.
+- A party member away while the rest of the party is down but not dead is not waited for: the foes play on (they can finish the downed),
+  the round cap applies.
+
+**Legendary Resistance.** The save is an ordinary `saveRoll` with the effect's condition (Incapacitated) as its stakes, so the monster's
+side decides LR as it does for Hold Monster (`DANGER_CONDS`, the boss tier's `bossLR`); against 2014 Plane Shift the stakes are the
+creature's hit points (failing drops it out of the fight, `_saveDmg`). Maze has no save, so nothing can spend LR on it.
+
+**Exports.** Plane Shift is `ext.wtOnly` (the day format has no such action). Banishment and Maze export as before / as a plain debuff:
+Incapacitated for the whole encounter (Maze: no save, `saveDC` 99); `ext.remove` is War Table data that plain exports ignore. Creatures
+without these spells export byte for byte as before.
+
+### The AI term (`v2Remove`, `ai-v2.js`)
+
+A removal is a control effect whose value is **what the rest of the fight gets done while it is gone**, plus, when it can be for good,
+what a kill is worth. It reaches the same currency as `v2Control` (`effectValue` of Incapacitated × `ctlRound` a round, × `control`):
+
+- *Lands:* Banishment `pFail` (the target's Charisma save through `kSave`, Magic Resistance through `kAdv`); 2014 Plane Shift the melee
+  spell attack's `hitChance` (`kAc`) × `pFail`; Maze 1.
+- *Rounds away:* `away = min(rest, stay, life)`. `rest` is the rounds our side needs for the other foes on the board (their `kHp` over our
+  damage a round, as `v2Ctx` reckons it, at most 8); a lone foe has `rest` 0. `stay` is how long it stays gone: Banishment 10 rounds ×
+  `concKeep`, Maze the escape chance `p` a round (`p` from `kSave(int)`, a stand-in for its Intelligence check: `(1 − (1 − p)^rest) / p`),
+  for good forever. `life` is its expected time left anyway (`kHp / focusDpr + 0.5`, as in `v2Control`).
+- *Gone for good:* `pGone` = 1 for Plane Shift, `concKeep` for Banishment on one of the five types (the wait makes the minute pass once the
+  rest is down), 0 otherwise; it adds `effectValue × ctlRound × life × w.removeGone` (every turn it had left) + the kill bonus
+  `(kDpr × killRounds + 5) × w.kill`.
+- `value = pLand × [ (1 − pGone) × denial(away) × w.removeAway + pGone × gone ] × control`; × 0.1 when it is already incapacitated.
+- *Legendary Resistance:* the same rule as `v2Control`: a burner's cast is worth its share of the burn; otherwise × `legRes` / the uses left
+  (`kLegRes`). In the burn plan a removal can be a burner or the follow-up; the follow-up lands as "gone" with `pGone` and as nothing
+  otherwise (a temporary removal on the boss only delays it: the plan's race goes on afterwards). Maze, with no save, is left out of the plan.
+- *Holding it:* `v2Holding` adds a running removal's value for the rounds it still has, so a caster pays `concSwap` to drop it and guards its
+  concentration (`concRisk`) as it would for Hold Monster.
+- Weights: `AI_BASE.w.removeAway` (1) and `w.removeGone` (1), plain data; nothing else is new.
+
+So a lone non-extraplanar boss is not banished (value 0: it comes back unchanged), a fiend with no LR is a strong target, an LR carrier is a
+poor one (× 0.4 / L, as Hold Monster), and a big hitter among minions is banished while the minions fall.
+
+### Tests and scenarios
+
+`tests/run.js` section "Removed from the fight": a failed save removes, a made save does not; the removed creature is never a target, never
+in an area, takes no damage from zones, does not block a square, takes no initiative actions; a concentration break, the caster's drop and a
+new concentration spell bring it back to its space or the nearest free one; the minute up sends a fiend away for good and brings a giant
+back; Maze escape on a Study check; 2014 Plane Shift gone for good, 2024 never cast; the waiting rule (a win against a banished fiend, a
+fight against a returned giant, no infinite loop, the cap); an innate Banishment; a plain export with and without the spells.
+Harness: `node tests/ai-compare.js 200 '^BAN'` (scenarios and results below).
