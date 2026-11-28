@@ -1630,17 +1630,17 @@ weight, `'rule'` for a picker), so no other tier or the party changes.
 | `solo` | 1 | 0.25 | self-care (`risk`, dodge, spacing, hiding: the `safety` factor) × `solo + (1 − solo) × share`, `share` = the DPR of its standing allies ÷ its side's DPR (its own side: real numbers). A lone boss keeps a quarter of its self-care; with an escort that does most of the damage, nearly all of it |
 | `soloOa` | 1 | 0.5 | the same for opportunity attacks along its path |
 | `legendary` | `'rule'` | `'weigh'` | `'rule'`: `choose` as before. `'weigh'`: each legendary action it can pay for is aimed and valued by v2 (`v2Aim` / `v2AimValue`, from where it stands now, at whoever is best now), against waiting |
-| `legKeep` | 0.8 | 0.8 | a point kept for a later turn is worth this share of the best value per point seen this fight (its own running estimate, `u.legPer`) |
+| `legKeep` | 0.8 | 0.8 (0.6 since "Boss tuning") | a point kept for a later turn is worth this share of the best value per point seen this fight (its own running estimate, `u.legPer`) |
 | `lair` | `'rule'` | `'weigh'` | the same for lair actions (`lair`, start of each round) |
 | `legRes` | `'rule'` | `'weigh'` | `'rule'`: the old "dangerous" test in `saveRoll`. `'weigh'`: spend when what failing costs beats what one more use is worth later (below) |
 | `lrKeep` | 1 | 1 | the price of a use: the worst effect the party has shown it (learn and blind: saves forced on it this day; open: also the party's actions) × `lrKeep` × `lrSpare`^(uses left − 1) |
-| `lrSpare` | 0.6 | 0.6 | the second, third use held back are each worth less |
+| `lrSpare` | 0.6 | 0.6 (0.3 since "Boss tuning") | the second, third use held back are each worth less |
 | `lrFloor` | 1.5 | 1.5 | until something worse has been shown, the price is at least `lrFloor` of its own turns (discounted by `lrSpare` like the rest: undiscounted, the boss kept uses for control that never came) |
 | `lrHorizon` | 3 | 3 | *(found while building)* a use kept is worth something only if the fight lasts: the price × min(1, its rounds left ÷ `lrHorizon`), rounds left = its HP ÷ the party's DPR (`kDpr`) |
 | `lrDmg` | 1 | 1 | damage a use avoids (full instead of half, or all of it), in its own HP × its DPR ÷ the party's DPR (HP buys rounds, a round is worth its DPR) |
 | `lrDrop` | 3 | 3 | failing would drop it: its HP's worth × this |
 | `lrCond` | table | table | a turn lost to the condition, per round it lasts: Incapacitated, Stunned, Paralyzed, Unconscious, Petrified 1 (+0.5 for auto-crits); Restrained, Blinded 0.4; Attacks and saves with Disadvantage 0.35; Frightened 0.25; anything else 0.1 |
-| `recharge` | 0 | 1 | a recharge ability used now gives up using it next turn with chance 1 − p (p = its recharge chance): price `recharge × (1 − p) × max(0, typical − alternative)`; typical = its value on the best `max(1, round(rechargeCatch × foes))` targets, alternative = the best at-will option. So a breath that catches one waits, one that catches three goes |
+| `recharge` | 0 | 1 (0 since "Boss tuning": the price made no boss stronger) | a recharge ability used now gives up using it next turn with chance 1 − p (p = its recharge chance): price `recharge × (1 − p) × max(0, typical − alternative)`; typical = its value on the best `max(1, round(rechargeCatch × foes))` targets, alternative = the best at-will option. So a breath that catches one waits, one that catches three goes |
 | `rechargeCatch` | 0.5 | 0.5 | the share of the foes a typical use catches |
 | `planOpen` / `planSave` | 0.5 / 0.8 | same | `ext.aiPlan` (below): a share of the option's value, added to its pacing tax (so a hint scales with what it is weighed against) |
 | `planTarget` | 6 | 6 | `ext.aiPlan.target`, in points |
@@ -1650,7 +1650,8 @@ weight, `'rule'` for a picker), so no other tier or the party changes.
 A boss's turn, legendary and lair actions all run through v2 scoring, so an unusual toolkit plays by what its parsed actions do (damage,
 areas, control, debuffs, heals, buffs): nothing is scripted by name.
 
-**Legendary actions, which and when (`bossLegendary`).** After each enemy turn: `L` points left, `K` enemy turns left before its own (this
+**Legendary actions, which and when (`bossLegendary`).** (Since "Boss tuning": after any other creature's turn, allies' too, and `K` counts
+those windows.) After each enemy turn: `L` points left, `K` enemy turns left before its own (this
 one included). keep(L, K) = min(L, K) × `u.legPer` × `legKeep`. Each action it can pay for scores value + keep(L − cost, K − 1); waiting scores
 keep(L, K − 1). Best wins. With more turns ahead than points it waits for a turn where a sweep catches several or a foe stands in reach; with as
 many points as turns left it spends. `u.legPer` starts at the first value per point it sees, then follows the best value per point it sees (a
@@ -2274,8 +2275,8 @@ About ten replays, each with what to look for (load `parties/zaki-party-level-5.
    bloodied wolves run.
 6. **A swallower** (bandit-day.json, the Sand-Pit Worms): the worm grapples, then swallows the grappled creature (it is on v2 now); the
    swallowed one attacks from inside.
-7. **A legendary escort fight** (Osric with 4 Bandits, `tests/statblocks/osric-homebrew.txt` pasted into the Forge): legendary actions only after
-   your side's turns (not after a bandit's), lair actions at initiative 20, the bandits keeping out of Osric's areas.
+7. **A legendary escort fight** (Osric with 4 Bandits, `tests/statblocks/osric-homebrew.txt` pasted into the Forge): legendary actions after
+   any other creature's turn, a bandit's too (since "Boss tuning"; before, only after your side's), lair actions at initiative 20, the bandits keeping out of Osric's areas.
 8. **A multiattack that drops its first target** (Ogres or a Troll against the roster with a hurt member, or Kraax's Flurry): after the first
    swing drops someone, the next swings go to another creature in reach, never into the body (step 3).
 9. **Undead** (5 Mummies, 3 Wights, 8 Zombies): mindless zombies walk straight in; the Wights (cunning) go for the Cleric and Wizard.
@@ -2617,3 +2618,249 @@ nothing. Item 2: BOSS + TIER 18 lines (the two Ember Tyrant scenarios). Item 4: 
 
 **Tests and run time.** `npm test` 993 → 1055 checks. `main` against the branch, alternating on an idle machine: `node tests/run.js` 105.5 / 105.2 s
 against 104.4 / 103.6 s; the 12-run BOSS + TIER table 209 s against 208 s; ms per day (hard-day, 100 days) 162–164 against 162–163.
+
+## Boss tuning (November 2026)
+
+Branch `boss-tune`. Harness scripts in `runs/boss/` (not committed): `table.js` (every family, open / learn / blind, 200 runs, same seeds),
+`hashes.sh` (the `play-hash` sets and the 12-run BOSS + TIER table), `zaki.sh` (Zaki's hard and boss days, 600 runs), `sweep.js` / `pool.js` /
+`mkjobs.js` (the self-care sweep), `lronly.js` (creatures whose only boss trait is Legendary Resistance). Two rows were added to the BOSS family
+first (new rows only): Malenia (`malenia.txt`, scaled to 150 HP and 0.35 damage: as written she wins every fight against Zaki's level-5 party)
+and Fiorenzo (`fiorenzo.txt` at 234 HP, 3×: as written he loses every one), both against Zaki's party.
+
+### 1. Legendary actions after any other creature's turn (rules)
+
+SRD 5.2: "Immediately after another creature's turn, the dragon can expend a use to take one of the following actions. It regains all expended
+uses at the start of each of its turns." The engine offered a window only after an enemy's turn (`legendary`: `u.team === after.team` skipped
+allies), so a boss with an escort had fewer windows than the rule gives. Now every other creature's turn is a window, an ally's included, never
+its own; one legendary action per window; the uses come back at the start of its own turn (unchanged). The boss tier's choice (`bossLegendary`)
+prices waiting by the windows left before its own turn: `K` = 1 + `bossWindows(u, after)`, every creature that still takes a turn before it (the
+round loop's own test: not dead, a monster on the board), allies included. `bossBefore` (the foes a one-round effect still holds back) is
+unchanged, so a legendary Command after an ally's turn is still worth only the foes who act before the boss. `keep(L, K)` = min(L, K) ×
+`u.legPer` × `legKeep`, as before: more windows ahead make waiting worth more only while there are fewer points than windows, so the boss does
+not spend its points after the first ally's turn when enemies still act before its own.
+
+*Results.* Tests: windows after an ally's turn (Osric + 4 Bandits: 6 of 60 legendary actions on the boss tier, 1 of 30 forced cunning), none
+after its own, one per window, never more points than it has, points regained (12 of 12 fights with more uses than points). Hashes: the
+`play-hash` sets (default, open, learn, blind, `PREFIGHT=0`) identical (no creature with legendary actions plays those days); the 12-run
+BOSS + TIER table 27 of 199 lines. Every family (708 rows, 200 runs, same seeds): 183 rows changed, all in scenarios with a legendary
+creature (BOSS, the TIER Lich and Tyrant, B, K, T1, S3); 5 moved more than 3 points, none beyond 1.4 SE. A lone boss's forced-cunning arm is
+byte-identical (the old picker already spent after a dying PC's turn); its boss arm moved because a dying PC's turn now also counts in the
+price of waiting (`bossBefore` left the downed out). Boss rows that moved (party win, boss arm, open / learn / blind): escort 42.0 / 90.5 /
+90.0 → 37.5 / 88.5 / 89.0 (the escort's turns are windows now); brute 59.5 / 75.5 / 73.0 → 63.0 / 78.5 / 75.0, dragon 25.0 / 23.5 / 33.0 →
+28.0 / 26.5 / 32.5, Malenia 79.0 / 73.0 / 77.5 → 81.5 / 79.0 / 78.5 (all within 1.4 SE; legendary uses a fight unchanged, 9.4 / 9.1 / 12.8;
+the timing moved and the dice re-dealt). Lich, Tyrant and Fiorenzo (no legendary actions) within 2 points.
+
+### 2. Self-care against the threat: measured, no term added
+
+**The question.** The boss's self-care is `safety × (solo + (1 − solo) × share)` and opportunity attacks `oa × (soloOa + (1 − soloOa) × share)`
+(`share`: its allies' part of its side's DPR; `solo` 0.25, `soloOa` 0.5). Phase 6 step 1 guessed that a lone boss facing six attackers (Zaki's
+boss day) wants more self-care than one facing four, and that a hard-hitting party wants more than a soft one. Plan: measure where the boss is
+strongest per boss and party, show that the best value follows the attackers and the incoming damage per round over its HP, fit one term on
+four bosses and validate on the two held out.
+
+**The sweep** (`runs/boss/sweep.js`, 294 jobs, 882,000 fights, 166 min on 19 processes). Seven bosses (dragon, Lich, brute, Tyrant, Osric's
+escort, Malenia, Fiorenzo) × seven level-5 parties from `CLASS_BUILDS` (3: Fighter, Cleric, Wizard; 4: + Barbarian; 5: + Rogue; 6: + Druid; 7:
++ Paladin; and two of four: all martial, Fighter / Barbarian / Paladin / Ranger, and all caster, Cleric / Druid / Bard / Wizard) × open / learn /
+blind × two boss HPs × `solo` 0 / 0.25 / 0.5 / 0.75 / 1 × `soloOa` 0 / 0.5 / 1, 200 runs per point, same seeds. The boss's HP was first
+calibrated per boss and party so the party wins about half its days in open (60 runs at six HPs, log-interpolated: the multiplier on the BOSS
+row's HP runs from 0.57 against three PCs to 1.5-2.8 against seven: a boss's damage spreads over more bodies), then also played at 0.6 of
+that (the party deals more of the boss's HP a round: more pressure). Per cell the 15 points are smoothed by a quadratic in (`solo`, `soloOa`)
+and its minimum is the best setting; pressure = the party's damage a round ÷ the boss's HP, as played.
+
+**Result: the best self-care does not move with the attackers or the incoming damage.** Over the 252 lone-boss cells the best `solo`
+correlates −0.03 with the number of attackers and −0.17 with log pressure (the wrong sign for the hypothesis). Mean best `solo` by party: 3 PCs
+0.43, 4 0.47, 5 0.43, 6 0.33, 7 0.42; martial four 0.42, caster four 0.25; by pressure tercile 0.44 / 0.33 / 0.41. What moves it is **the
+boss**: Lich 0.03, brute 0.11, Tyrant 0.32, Malenia 0.39, dragon 0.57, Fiorenzo 0.64. The Lich is far stronger with no self-care in every
+party (e.g. four PCs, open, party win 44 % at the current setting against 20 % at `solo` 0; seven PCs 43 % against 13 %), Fiorenzo far stronger
+with full self-care (three PCs, open, 42 % against 20 %); the dragon's and Malenia's surfaces are nearly flat.
+
+**The fit, validated on held-out bosses** (`runs/boss/fit.js`; six lone bosses, 15 folds of two held out; each candidate fitted on four
+bosses on the smoothed surfaces, scored on the two held out against the current constant; lower = stronger bosses):
+
+| term | fitted on all six | held out, mean change | worst fold |
+|---|---|---|---|
+| current (0.25, 0.5) | | 0 | 0 |
+| one constant (`solo`, `soloOa`) | (0, 1): −2.5 points | −0.6 | +3.7 |
+| `solo` = a + b (attackers − 4) | b = 0 | −0.6 | +1.9 |
+| `solo` = a + b ln(pressure ÷ 0.25) | b = 0 | −0.1 | +3.6 |
+| `solo` = a + b (melee attackers − 2) | b = 0 | −0.6 | +3.7 |
+| `solo` = a + b (melee share − 0.5) | b = 0 | −0.6 | +2.9 |
+
+Every party-dependent slope fits to zero; what is left is a constant, and the best constant is (0, 1) only because the Lich's surface outweighs
+the others: held out it helps one pair of bosses and costs another up to 3.7 points (fitted on the other five, it makes the dragon 1.3,
+Malenia 2.4 and Fiorenzo 1.0 points weaker). **Nothing was changed**: `solo` 0.25 and `soloOa` 0.5 stay. A term that scales with the party
+would be fitted to noise; the real variation is in the boss's kit (a caster that loses nothing by standing in reach against a sniper that
+loses its Patience by moving), which needs a term about what moving costs its own damage, not the party; backlog.
+
+**Zaki's boss day and the young dragons** (the two places named for this term; step 1 code, party win, open / learn / blind):
+
+| | as now (0.25, 0.5) | `solo` 0, `soloOa` 0 | `solo` 0.5, `soloOa` 1 | `solo` 1, `soloOa` 1 | Tyrant forced cunning |
+|---|---|---|---|---|---|
+| Zaki's boss day (600 runs) | 95.2 / 83.5 / 80.2 | 90.5 / 81.8 / 78.3 | 95.0 / 82.5 / 79.7 | 94.7 / 81.8 / 76.5 | 96.8 / 81.7 / 78.7 |
+
+Against six attackers, both less and more self-care read stronger than the current value in some modes (by 0.2-4.7 points, up to 2.7 SE for
+`solo` 0 in open), and neither in all: the surface is flat within noise, not tilted toward caution. The boss Tyrant is level with the cunning
+one (open 1.6 stronger, learn and blind 1.8 and 1.5 weaker, about 1 SE). The old-AI gap of phase 6 step 1 is not a self-care gap any more.
+
+| young dragon rows (200 runs) | as derived (cunning) | the boss tier's lone self-care on its cunning tier | forced boss |
+|---|---|---|---|
+| RC5 (Young Green, three PCs) | 77.5 / 81.5 / 77.0 | 79.0 / 85.5 / 81.0 | 83.0 / 83.5 / 78.0 |
+| F2 (hard day, then 2 Young Green) | 38.0 / 25.5 / 14.0 | 37.5 / 26.0 / 13.5 | 55.5 / 29.0 / 18.0 |
+| E6 (Zaki's day ending in a Young Red) | 91.5 / 78.0 / 83.0 | 91.0 / 79.0 / 82.5 | 92.0 / 80.0 / 82.5 |
+
+Low self-care does not make a lone young dragon stronger (RC5 is 3-4 points weaker with it), and the boss tier makes them weaker (F2 open
++17.5: the recharge price, below). The phase 6 step 1 note "same cause on lone young dragons" does not hold; those rows are left as they are.
+
+### 4. The rest of the boss tier, re-checked (done before step 3: its result decides step 3)
+
+**Ablation** (`runs/boss/mkablate.js`; step 1 code; the BOSS rows with their own party and HP, open / learn / blind, 200 runs, the BOSS
+family's seeds; each knob moved alone; change in party win, negative = the boss stronger; mean over the 21 cells; cells beyond 2 SE better /
+worse):
+
+| arm | dragon | Lich | brute | Tyrant | escort | Malenia | Fiorenzo | mean | 2 SE |
+|---|---|---|---|---|---|---|---|---|---|
+| base (party win) | 28 / 27 / 33 | 47 / 33 / 34 | 63 / 79 / 75 | 21 / 26 / 23 | 38 / 89 / 89 | 82 / 79 / 79 | 69 / 77 / 83 | | |
+| `legendary` 'rule' (the old picker) | +3 / +9 / +7 | +5 / +9 / +6 | +25 / +15 / +17 | −2 / −9 / +3 | +19 / +7 / +7 | −6 / −10 / −6 | 0 | +4.6 | 1 / 6 |
+| `legKeep` 1 | 0 / +3 / +5 | +2 / +7 / +5 | +2 / +2 / +8 | +3 / −7 / +3 | +8 / +1 / +1 | −1 / +3 / +2 | 0 | +2.1 | 0 / 0 |
+| `legKeep` 0.6 | −3 / −2 / +3 | 0 / +1 / 0 | −3 / 0 / 0 | 0 / −2 / −1 | +5 / +1 / −2 | −5 / −6 / −7 | 0 | −0.9 | 0 / 0 |
+| `lair` 'rule' | −5 / −4 / +6 | | | | +32 / −2 / −2 | | | +1.2 | 0 / 1 |
+| `legRes` 'rule' | −4 / −1 / −1 | −1 / 0 / 0 | −2 / −2 / −1 | −1 / −1 / +3 | −1 / 0 / +1 | 0 | −1 / +2 / +1 | −0.3 | 0 / 0 |
+| `lrHorizon` 0 | +1 / +1 / 0 | +2 / +1 / +1 | 0 / 0 / +1 | 0 / +1 / 0 | +1 / 0 / +1 | 0 | +2 / +2 / −1 | +0.5 | 0 / 0 |
+| `lrSpare` 1 | +1 / +3 / +2 | +3 / +2 / +4 | 0 / 0 / +1 | 0 / +2 / +4 | +1 / 0 / +1 | +1 / 0 / 0 | +8 / +6 / +4 | +1.8 | 0 / 0 |
+| `lrSpare` 0.3 | −6 / −4 / −4 | −3 / −1 / 0 | 0 / −1 / −4 | −1 / −2 / −1 | +1 / +1 / +2 | 0 / 0 / +1 | +2 / +2 / −1 | −0.9 | 0 / 0 |
+| `lrFloor` 0.75 | 0 / −4 / −4 | 0 / −1 / +1 | 0 / −1 / −4 | 0 / −2 / −2 | 0 / 0 / +1 | 0 | 0 / 0 / +2 | −0.6 | 0 / 0 |
+| `lrFloor` 3 | 0 / +2 / +2 | +1 / +1 / 0 | 0 / 0 / +1 | 0 / +2 / +4 | 0 | 0 | 0 / +3 / +3 | +0.8 | 0 / 0 |
+| `recharge` 0 | −2 / −2 / −1 | | | +1 / 0 / +1 | −1 / −1 / −2 | −3 / −7 / +2 | | −0.6 | 0 / 0 |
+| `recharge` 0.5 | −3 / −2 / −1 | | | 0 / −1 / −1 | −1 / −1 / −1 | −1 / −3 / +1 | | −0.5 | 0 / 0 |
+| `rechargeCatch` 0.3 | −2 / 0 / −1 | | | +1 / 0 / +1 | −1 / −1 / −2 | −2 / −4 / +1 | | −0.5 | 0 / 0 |
+
+(Blank: the boss has nothing the knob reads; the cell is identical.) What earns its weight: **weighed legendary actions** (the old picker
+is 4.6 points weaker, 6 cells beyond 2 SE; Malenia is the exception, 6-10 points stronger on the old picker, whose greedy spending suits her
+3-point Scarlet Aeonia) and **weighed lair actions** (the escort's open row +32 on the old picker). `lrHorizon` and `lrFloor` sit within a point:
+left as they are. Weighed Legendary Resistance barely beats the old rule (+0.3) and gets better the more freely it spends (`lrSpare` 0.3 −0.9,
+1 +1.8). The **recharge price** makes no boss stronger and costs the lone young dragons and the Legendary-Resistance carriers below 8-17 points
+(F2 forced boss, open: 55.5 with it, 38.0 without; the Young Red Dragon with LR against Zaki's party, learn / blind: 79.5 / 83.0 with it,
+69.5 / 75.5 without): a breath held for a better moment against a party that spreads out is a breath lost. `legKeep` 0.6 helps Malenia and
+offsets step 1's extra windows.
+
+**Validation on fresh seeds** (days 200-599 of the same generator, 400 runs, never used to choose; the candidates are the three knobs that
+helped; change in party win against the profile as it was):
+
+| candidate | dragon | Lich | brute | Tyrant | escort | Malenia | Fiorenzo | mean |
+|---|---|---|---|---|---|---|---|---|
+| base (party win) | 18.3 / 24.5 / 29.8 | 50.7 / 38.5 / 36.0 | 62.5 / 79.8 / 78.3 | 21.3 / 20.5 / 21.0 | 41.8 / 87.3 / 90.0 | 78.8 / 71.3 / 73.5 | 72.8 / 80.0 / 84.5 | |
+| `recharge` 0 | −0.5 / −2.8 / −3.0 | 0 | 0 | 0 / +0.3 / +1.5 | −0.5 / 0 / −0.5 | −2.0 / −0.5 / +0.3 | 0 | −0.37 |
+| + `lrSpare` 0.3 | −3.5 / −6.8 / −6.8 | −2.5 / −0.8 / +0.3 | 0 / −2.0 / −4.8 | −0.5 / −2.5 / +0.3 | −1.3 / +0.8 / +0.8 | −2.0 / −0.5 / +0.3 | −2.0 / +0.3 / +2.0 | −1.49 |
+| + `legKeep` 0.6 (no `lrSpare`) | −1.3 / −3.5 / −1.5 | −1.2 / −1.3 / −0.5 | +1.2 / +1.0 / +1.5 | −0.5 / +0.3 / +1.8 | −1.5 / −0.5 / −3.3 | −3.3 / −3.3 / −1.3 | 0 | −0.81 |
+| **all three** | −3.0 / −6.8 / −7.8 | −4.5 / −2.0 / 0 | +1.2 / −1.5 / −2.8 | −0.8 / −3.3 / +0.8 | −2.5 / +0.3 / −1.8 | −3.3 / −3.0 / −0.3 | −2.0 / +0.3 / +2.0 | **−1.93** |
+
+**Changed** (boss profile, `AI_TIERS.profiles.boss.boss`): `recharge` 1 → **0** (the term stays in `bossRecharge`, neutral at 0), `lrSpare`
+0.6 → **0.3**, `legKeep` 0.8 → **0.6**. On the fresh seeds every boss is stronger or level on average and none is weaker in every mode; the
+worst cell is +2.0 (Fiorenzo blind, about 1 SE). Behaviour that changed on purpose: the boss spends a spare Legendary Resistance on a big
+half-damage save at full HP (Osric against Fireballs: 9 uses above half HP in 12 fights, none at `lrSpare` 0.6; the test checks the
+mechanism at 0.6 and records the tuned behaviour), and it breathes whenever the breath is its best option now. Left as they are, with the
+reason: `solo`/`soloOa` (step 2), `lrKeep`, `lrFloor`, `lrHorizon`, `lrDmg`, `lrDrop`, `lrCond` (within a point, or not reached by any row),
+`rechargeCatch` (unused at `recharge` 0), `planOpen`/`planSave`/`planTarget` (`ext.aiPlan`: no harness boss carries a plan, so no table can
+price it; the test of the hint stays), the boss's posture and targeting weights (the genius values: a check on the LR carriers, below, found
+them helping, not hurting).
+
+### 3. Who is a boss: Legendary Resistance alone stays a rule
+
+**Who it concerns.** Among the test statblocks and the SRD monsters only Fiorenzo (`fiorenzo.txt`, Lucky Seam) is a boss by Legendary Resistance
+alone (`runs/boss/lrscan.js`; the Stagnation Blight is one by a foe-acting reaction alone, the rest have legendary actions). So the evidence
+uses Fiorenzo plus nine SRD monsters given Legendary Resistance 3 and made strong enough for a level-5 party (`runs/boss/lronly.js`: Gladiator
+with 2 Bandits, the C-Boss row harder; Gladiator, Knight, Mage, Hill Giant, Young Green Dragon alone against the BOSS party; a Warrior Veteran
+with 3 Bandits; a Young Red Dragon against Zaki's party; HP and damage scaled per creature). Each plays the boss tier (its tier by the rule)
+against its own tier without that rule (cunning; the Hill Giant animal), same seeds, 200 runs, the party learning, the monster reading the mode.
+
+**Step 1 code** (before step 4), mean change in party win over the ten creatures (negative = the boss tier stronger): open **−7.5**, learn
+**+2.2**, blind **+2.4**. Split by arm (nine SRD creatures and Fiorenzo at 3×, means of party win):
+
+| arm | open | learn | blind |
+|---|---|---|---|
+| its own tier | 79.8 | 75.4 | 76.9 |
+| boss tier | 71.5 | 77.9 | 79.6 |
+| boss tier, full self-care (`solo` 1) | 71.3 | 76.6 | 78.7 |
+| its own tier + weighed Legendary Resistance | 80.6 | 76.2 | 77.4 |
+| its own tier + the boss's open reading of the party's damage (`dprSeen`) | 69.8 | 75.4 | 76.9 |
+
+Weighed Legendary Resistance alone earns nothing on these creatures; the open-mode gain is the boss's reading of the party's damage; the
+learn / blind cost was not self-care but the **recharge price** (the Young Red Dragon: 79.5 / 83.0 on the boss tier, 69.5 / 75.5 without the
+price, 68.5 / 70.0 on cunning). Step 4 removed that price for every boss.
+
+**After step 4** (the tuned boss profile; party win, own tier → boss tier, open / learn / blind):
+
+| creature | open | learn | blind |
+|---|---|---|---|
+| Fiorenzo (234 HP) | 83.5 → 70.5 | 75.0 → 78.0 | 80.5 → 82.5 |
+| Gladiator + 2 Bandits | 94.0 → 74.0 | 86.0 → 83.5 | 86.5 → 81.0 |
+| Gladiator alone | 82.0 → 76.0 | 83.5 → 83.0 | 83.5 → 87.0 |
+| Knight | 55.5 → 52.0 | 63.0 → 68.5 | 67.0 → 74.0 |
+| Mage | 63.0 → 45.0 | 47.0 → 50.0 | 47.5 → 49.5 |
+| Hill Giant (animal) | 93.5 → 86.0 | 90.5 → 89.0 | 93.5 → 93.0 |
+| Warrior Veteran + 3 Bandits | 92.0 → 88.5 | 91.5 → 93.5 | 91.0 → 92.0 |
+| Young Green Dragon | 73.5 → 63.5 | 74.0 → 69.5 | 72.5 → 68.5 |
+| Young Red Dragon (Zaki's party) | 81.5 → 71.5 | 68.5 → 68.5 | 70.0 → 73.0 |
+| **mean change** | **−10.2** | **+0.5** | **+0.9** |
+
+**Decision: Legendary Resistance alone still makes a boss** (`AI_TIERS.rules.boss.legRes` stays true; legendary actions, lair actions and a
+foe-acting reaction too). On the default War Table setting (monsters read open) the boss tier makes these creatures 10 points stronger (6 of 9
+beyond 1.5 SE), and in learn and blind it is level (+0.5 and +0.9 over nine creatures, about 1 SE; the largest cell, the Knight in blind, +7.0 at
+1.5 SE). It is also the option that changes nothing for a saved creature. `ext.aiTier` (the Smartness select) still overrides it both ways.
+The Forge and War Table help texts and the War Table AI-tab help now say "Legendary Resistance (even alone)"; the AI-tab help no longer lists the
+genius tier (merged into cunning in phase 6 step 2). Test: Fiorenzo is a boss by the rule and Smartness overrides it.
+
+### Results (boss tuning)
+
+**The boss rows** (`tests/ai-compare.js` BOSS family, 200 runs, same seeds; party win, boss tier / forced cunning; lower = stronger boss):
+
+| boss | baseline: open / learn / blind | final: open / learn / blind | final cunning |
+|---|---|---|---|
+| dragon (Adult Red + lair) | 25.0 / 23.5 / 33.0 | **19.0 / 21.5 / 27.5** | 33.5 / 36.5 / 32.0 |
+| Lich (110 HP, half damage) | 47.0 / 35.0 / 33.0 | 44.5 / 32.5 / 33.5 | 68.5 / 43.0 / 44.5 |
+| brute (Grukk) | 59.5 / 75.5 / 73.0 | 60.0 / 75.0 / 72.5 | 87.0 / 93.5 / 95.5 |
+| Ember Tyrant | 19.5 / 24.0 / 23.5 | 20.0 / 24.0 / 24.5 | 55.0 / 31.0 / 36.5 |
+| escort (Osric + 4 Bandits) | 42.0 / 90.5 / 90.0 | 41.5 / 89.5 / 87.0 | 75.5 / 95.0 / 92.0 |
+| Malenia (150 HP, 0.35 damage, Zaki's party) | 79.0 / 73.0 / 77.5 | 80.0 / 75.5 / 79.5 | 97.5 / 79.5 / 79.0 |
+| Fiorenzo (234 HP, Zaki's party) | 69.0 / 76.5 / 83.0 | 70.5 / 78.0 / 82.5 | 83.5 / 75.0 / 80.5 |
+
+The re-measured Lich (after the Disrupt Life area fix, baseline): 47.0 / 35.0 / 33.0 on the boss tier against 68.5 / 43.0 / 44.5 forced
+cunning, so the boss tier still leads by 8-21 points. The boss tier is at least as strong as cunning on every row except Fiorenzo in learn and
+blind (78.0 against 75.0, 82.5 against 80.5: 0.7 and 0.5 SE, as at baseline; his kit wants full self-care, step 2) and Malenia blind (79.5
+against 79.0). No boss is weaker than baseline beyond noise; Malenia reads 1-2.5 points weaker in all three modes here (each under 0.6 SE) and
+2.0 / 3.0 / 0.3 points **stronger** on the fresh seeds of the step 4 validation, so that is the dice.
+
+**Every family** (708 rows, 200 runs, same seeds, baseline → final): 210 rows changed, all in the 34 scenarios with a boss-tier creature (BOSS,
+the TIER Lich and Tyrant, FIO, B, K, T1, S3, C-Boss, DUMB C6: the Gladiator with Legendary Resistance). Beyond 2 SE: four B rows in open,
+B6 (the dragon last in a day) 20.5 → 9.0 and 27.0 → 16.0, B1 28.0 → 17.5 and 31.5 → 21.5: the party wins less because its opponent, the
+Adult Red Dragon with 3 Legendary Resistance on the boss tier, got stronger (the BOSS dragon row 25.0 → 19.0, and in the ablation the dragon
+gained most from `lrSpare` 0.3). That is the intended direction; the B family measures the party's burn plan against that boss. No row got
+better for the party beyond 2 SE. The lone young dragon rows are byte-identical (they are not bosses): RC5 77.5 / 81.5 / 77.0, F2 38.0 / 25.5
+/ 14.0, E6 91.5 / 78.0 / 83.0.
+
+**Zaki's party** (600 runs, both sides reading the mode, open / learn / blind): hard day 98.2 / 95.8 / 95.3 → 98.2 / 95.8 / 95.3 (identical:
+no boss); boss day 95.5 / 83.7 / 79.8 → 94.7 / 83.8 / 80.5 (within noise; a cunning Tyrant there: 96.8 / 81.7 / 78.7).
+
+**Hashes** (baseline → final): `play-hash` default, open, learn, blind and `PREFIGHT=0` identical (48 / 48 lines each); `hashes-learn.txt` not
+regenerated (it still matches); the 12-run BOSS + TIER table 30 of 199 lines, every one a boss arm (and the escort's cunning arm, whose
+Osric gains windows in step 1) or the TIER Lich / Tyrant auto arms.
+
+**Tests and run time.** `npm test` 1055 → 1060 checks (legendary windows: 2, Fiorenzo's tier: 1, the tuned profile: 1, the tuned Legendary
+Resistance: 1). `main` against the branch, alternating on one machine: `npm test` 157 / 156 s against 148 / 141 s; the 12-run BOSS + TIER table
+304 s against 310 s (+2%, with the two new BOSS scenarios); `tests/play-hash.js` 14 s against 14 s.
+
+### Boss fights worth watching on the War Table (boss tuning)
+
+1. **Osric with 4 Bandits** (`osric-homebrew.txt` in the Forge, plus 4 Bandits): legendary actions now come after a bandit's turn too, never two
+   in one window and never after his own; with points left near the end of the round he still holds them for an enemy's turn when one is coming.
+2. **The Adult Red Dragon with a lair** against the Fighter / Barbarian / Cleric / Wizard roster: it breathes whenever the breath is its best
+   option (no more waiting for three in the cone), and spends a spare Legendary Resistance on a big Fireball or Lightning Bolt at full HP; its
+   last use should still go to Hold Monster-style control.
+3. **The Lich** against the same roster: casting from range, Disrupt Life only when the emanation holds someone; the boss tier still beats a
+   cunning Lich by 8-21 points. Watch how much turn it spends stepping away: the sweep says it plays better without (backlog).
+4. **Fiorenzo** against Zaki's party (234 HP to see a long fight): he plays the boss tier by his Lucky Seam; watch whether he moves off a square
+   where his Patience would pay (the kit-dependent self-care item in the backlog).
+5. **Zaki's boss day** (hard-day fights 1-2, then the Ember Tyrant): level with baseline; the Tyrant spends Legendary Resistance on control and
+   on a big save when it has spare uses, and its legendary actions spread over the party's turns.
+6. **Malenia** (`malenia.txt`, scaled down for a level-5 party, or as written for a higher party): Scarlet Aeonia costs all three points, so
+   watch whether she saves them for it or spends them one at a time (the old greedy picker did better with her: backlog).

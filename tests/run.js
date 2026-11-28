@@ -2434,52 +2434,69 @@ section('AI v2: the boss tier (phase 4b)');
   check(T(file('long-homebrew-boss.txt')) === 'boss' && T(file('osric-homebrew.txt')) === 'boss' && T(file('brute-legendary-homebrew.txt')) === 'boss' && T(file('dragon-legendary-2024.txt')) === 'boss', 'the Ember Tyrant, Osric (lair), Grukk (legendary, Int 7) and an Adult Blue Dragon are bosses');
   check(T(file('elparin-homebrew.txt')) === 'boss', 'a creature whose only boss trait is a reaction that acts on a foe (Elparin\'s Procedural Nullification) is a boss');
   check(T({ name: 'Lair keeper', type: 'humanoid', ext: { scores: { int: 10 } }, actions: [{ actionSlot: 3, type: 'atk', name: 'Falling Rocks' }] }) === 'boss' && T({ name: 'Warded', type: 'humanoid', ext: { scores: { int: 10 }, legendaryResistance: 1 }, actions: [] }) === 'boss', 'lair actions alone, or Legendary Resistance alone, make a boss');
+  // boss tuning step 3 (docs/ai-v2.md): Legendary Resistance alone stays a boss rule; Fiorenzo (Lucky Seam, no legendary or lair actions) is the test statblock with it
+  { const fio = file('fiorenzo.txt'); check(T(fio) === 'boss' && fio.ext.legendaryResistance > 0 && !fio.actions.some(a => a.actionSlot === 2 || a.actionSlot === 3) && T(file('fiorenzo.txt', 'cunning')) === 'cunning',
+    'Fiorenzo (Legendary Resistance as Lucky Seam, no legendary or lair actions) is a boss by the rule; Smartness overrides it'); }
   check(['Bandit Captain', 'Knight', 'Gladiator', 'Warrior Veteran', 'Mage', 'Hill Giant', 'Owlbear', 'Young Red Dragon', 'Goblin Boss'].every(n => T(srd(n)) !== 'boss'), 'ordinary monsters are not bosses (Parry is a self buff, not a boss reaction; young dragons have no legendary actions)');
   const nonBoss = ctx.M.filter(s => T(srd(s.name)) === 'boss').map(s => s.name);
   check(nonBoss.join() === 'Adult Red Dragon,Lich', `of the SRD monsters only the Adult Red Dragon and the Lich are bosses (${nonBoss.join(', ')})`);
   check(T(srd('Lich', 1, 'cunning')) === 'cunning' && T(srd('Wolf', 1, 'boss')) === 'boss', 'ext.aiTier overrides the boss rule both ways');
   check(Tac.TIER_PROFILES.boss.boss.legendary === 'weigh' && Tac.AI_BASE.boss.legendary === 'rule' && Tac.AI_BASE.boss.solo === 1 && Tac.AI_BASE.boss.recharge === 0 && ['mindless', 'animal', 'cunning'].every(k => Tac.TIER_PROFILES[k].boss.solo === 1 && Tac.TIER_PROFILES[k].boss.legRes === 'rule'),
     'the boss block is neutral in AI_BASE and every other tier (factors 1, weight 0, old pickers); only the boss profile changes it');
+  // boss tuning (docs/ai-v2.md "Boss tuning", step 4): the recharge price is off, a second Legendary Resistance and a kept legendary point are cheaper
+  { const Bp = Tac.TIER_PROFILES.boss.boss, S0 = new Tac.Sim({ seed: 1 });
+    const breath = { id: 'b', actionSlot: 0, freq: { reset: 'recharge', cooldownRounds: 3 } };
+    check(Bp.recharge === 0 && Bp.lrSpare === 0.3 && Bp.legKeep === 0.6 && Bp.solo === 0.25 && Bp.soloOa === 0.5 && S0.bossRecharge({ v2P: { boss: Bp } }, breath, {}) === 0,
+      'boss profile: recharge 0 (a recharge ability is not priced), lrSpare 0.3, legKeep 0.6; self-care solo 0.25 / soloOa 0.5 unchanged'); }
 
   const party = () => ['Fighter', 'Barbarian', 'Cleric', 'Wizard'].map(pc);
   let err = 0;
   const run = (day, opts) => { try { return Tac.runDay(day, opts); } catch (e) { err++; console.log('  ', e.stack.split('\n').slice(0, 3).join(' ')); return []; } };
-  // legendary actions: only after another side's turn, never more points than it has between its own turns; it waits as well as spends
-  const legCheck = (mk, N, opts) => {
-    const out = { uses: 0, holds: 0, badTiming: 0, overspent: 0, lairs: 0, lairNames: new Set(), lairOff: 0 };
+  // legendary actions (2024: "immediately after another creature's turn"): after any other creature's turn, allies' included, never after its own,
+  // one per window, never more points than it has between its own turns (they come back at the start of its turn); it waits as well as spends
+  const legCheck = (mk, N, opts, escort) => {
+    const out = { uses: 0, holds: 0, badTiming: 0, overspent: 0, lairs: 0, lairNames: new Set(), lairOff: 0, afterAlly: 0, twice: 0, regained: 0 };
     for (let i = 0; i < N; i++) {
       const boss = mk(), cost = {}, max = boss.ext.legendaryActions || 3;
       for (const a of boss.actions) if (a.actionSlot === 2) cost[a.name] = (a.ext && a.ext.legendaryCost) || 1;
-      for (const r of run({ players: party(), encounters: [{ monsters: [boss] }] }, Object.assign({ seed: 70 + i * 31, record: true }, opts))) {
+      for (const r of run({ players: party(), encounters: [{ monsters: [boss].concat(escort ? [escort()] : []) }] }, Object.assign({ seed: 70 + i * 31, record: true }, opts))) {
         const team = {}; for (const u of r.units) team[u.uid] = u.team;
-        let lastTurn = null, spent = 0, prevKind = null;
+        let lastTurn = null, spent = 0, prevKind = null, inWindow = 0, fightUses = 0, bossUid = null;
         for (const e of r.events) {
-          if (e.kind === 'turn') { lastTurn = e.uid; if (team[e.uid] === 'foes') spent = 0; }
+          if (e.kind === 'turn') { lastTurn = e.uid; inWindow = 0; if (e.uid === bossUid) spent = 0; }
           if (e.kind === 'legendary') {
-            out.uses++;
+            out.uses++; fightUses++; inWindow++; bossUid = e.uid;
             const nm = (/legendary action: (.*)$/.exec(e.text) || [])[1];
             spent += cost[nm] || 1;
             if (spent > max) out.overspent++;
-            if (!lastTurn || team[lastTurn] === team[e.uid]) out.badTiming++;
+            if (!lastTurn || lastTurn === e.uid) out.badTiming++;
+            else if (team[lastTurn] === team[e.uid]) out.afterAlly++;
+            if (inWindow > 1) out.twice++;
           }
           if (e.kind === 'intent' && /holds its legendary actions/.test(e.text)) out.holds++;
           if (e.kind === 'lair') { out.lairs++; out.lairNames.add((/: (.*)$/.exec(e.text) || [])[1]); if (prevKind !== 'round' && prevKind !== 'lair' && prevKind !== 'save' && prevKind !== 'aoe' && prevKind !== 'effect' && prevKind !== 'attack' && prevKind !== 'react' && prevKind !== 'down') out.lairOff++; }
           prevKind = e.kind;
         }
+        if (fightUses > max) out.regained++;
       }
     }
     return out;
   };
   const tyr = legCheck(() => { const m = file('long-homebrew-boss.txt', null, 140); for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.4)); return m; }, 6);
   const gru = legCheck(() => file('brute-legendary-homebrew.txt', null, 260), 6);
-  check(tyr.uses > 0 && gru.uses > 0 && tyr.badTiming === 0 && gru.badTiming === 0, `legendary actions come only after an enemy's turn (Tyrant ${tyr.uses} uses, Grukk ${gru.uses}; ${tyr.badTiming + gru.badTiming} at a wrong moment)`);
-  check(tyr.overspent === 0 && gru.overspent === 0, `legendary actions never spend more points than it has between its own turns (${tyr.overspent + gru.overspent} over)`);
+  check(tyr.uses > 0 && gru.uses > 0 && tyr.badTiming === 0 && gru.badTiming === 0 && tyr.twice + gru.twice === 0, `legendary actions come only after another creature's turn, one per window (Tyrant ${tyr.uses} uses, Grukk ${gru.uses}; ${tyr.badTiming + gru.badTiming} after its own turn, ${tyr.twice + gru.twice} doubled)`);
+  check(tyr.overspent === 0 && gru.overspent === 0 && tyr.regained + gru.regained > 0, `legendary actions never spend more points than it has between its own turns (${tyr.overspent + gru.overspent} over), and the points come back at its turn (${tyr.regained + gru.regained} fights with more uses than points)`);
   check(tyr.holds + gru.holds > 0, `a boss sometimes holds its legendary actions for a better moment (${tyr.holds + gru.holds} holds)`);
+  // with an escort, the allies' turns are windows too (the rule says another creature, not an enemy); the old picker (forced cunning) as well
+  for (const tier of [null, 'cunning']) {
+    const esc = legCheck(() => { const m = file('osric-homebrew.txt', tier, 120); for (const a of m.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * 0.4)); return m; }, 5, null, () => srd('Bandit', 4));
+    check(esc.afterAlly > 0 && esc.badTiming === 0 && esc.twice === 0 && esc.overspent === 0, `Osric with 4 Bandits (${tier || 'boss'}): legendary actions after an ally's turn too (${esc.afterAlly} of ${esc.uses}), none after its own (${esc.badTiming}), one per window (${esc.twice} doubled), never overspent (${esc.overspent})`);
+  }
   // lair actions: used at the top of the round, chosen by value
   const drg = legCheck(() => lairDragon(160), 5);
   check(drg.lairs > 0 && drg.lairOff === 0, `a boss with a lair uses its lair actions at the start of a round (${drg.lairs} uses: ${[...drg.lairNames].join(', ')})`);
   // Legendary Resistance: spent on control, not on a save for half damage (unless failing would drop it); the old rule spends on both
-  const lrLog = (legRes, N, fireballs) => {
+  const lrLog = (legRes, N, fireballs, spare) => {
     const got = { ctl: 0, half: 0, halfLate: 0, drop: 0 }, proto = Tac.Sim.prototype, sr = proto.saveRoll;
     proto.saveRoll = function (t, dc, src, ab, sopt) {
       const s = sr.call(this, t, dc, src, ab, sopt);
@@ -2493,7 +2510,7 @@ section('AI v2: the boss tier (phase 4b)');
     };
     for (let i = 0; i < N; i++) {
       // Grukk (Wisdom +0) draws Hold Monster; Osric (Wisdom +8) draws Fireballs from the full spell lists
-      const os = fireballs ? file('osric-homebrew.txt', null, 157) : file('brute-legendary-homebrew.txt', null, 260); os.ext.aiProfile = { boss: { legRes } };
+      const os = fireballs ? file('osric-homebrew.txt', null, 157) : file('brute-legendary-homebrew.txt', null, 260); os.ext.aiProfile = { boss: spare ? { legRes, lrSpare: spare } : { legRes } };
       for (const a of os.actions) if (a.dpr) a.dpr = String(Math.round(Tac.avgDice(a.dpr) * (fireballs ? 0.3 : 0.4)));
       // the Wizard and the Sorcerer keep Hold Monster (Hold Person for any creature) and their cantrips; the Cleric's Spirit Guardians brings the half-damage saves
       const pl = ['Fighter', 'Wizard', 'Cleric', 'Sorcerer'].map(pc);
@@ -2506,9 +2523,12 @@ section('AI v2: the boss tier (phase 4b)');
     proto.saveRoll = sr;
     return got;
   };
-  const lw = lrLog('weigh', 12), fw = lrLog('weigh', 12, true), fo = lrLog('rule', 12, true);
+  // the price's mechanism at the phase 4b discount (lrSpare 0.6): a use is kept for what is worse than half a Fireball. The tuned profile (lrSpare 0.3,
+  // docs/ai-v2.md "Boss tuning") makes the spare uses cheap, so it spends them on big half-damage saves too: bosses measured stronger that way
+  const lw = lrLog('weigh', 12), fw = lrLog('weigh', 12, true, 0.6), fo = lrLog('rule', 12, true), ft = lrLog('weigh', 12, true);
   check(lw.ctl > 0 && lw.half === 0, `the boss spends Legendary Resistance on control (Hold Monster: ${lw.ctl}) and not on a save for half damage while above half HP (${lw.half}; ${lw.halfLate} later, ${lw.drop} when failing would drop it)`);
-  check(fw.half === 0 && fo.half > 0, `against Fireballs the boss keeps it while above half HP (${fw.half}; ${fw.halfLate} near its end); the old rule spends it there at any HP (${fo.half} above half, ${fo.halfLate} below)`);
+  check(fw.half === 0 && fo.half > 0, `against Fireballs, at lrSpare 0.6 the boss keeps it while above half HP (${fw.half}; ${fw.halfLate} near its end); the old rule spends it there at any HP (${fo.half} above half, ${fo.halfLate} below)`);
+  check(ft.half > fw.half, `at the tuned lrSpare 0.3 it spends its spare uses on Fireballs too (${ft.half} above half HP, ${ft.halfLate} below)`);
   // knowledge: in blind and learn a boss reads the party through k* (a guess, not the sheet)
   const mk = {}, proto = Tac.Sim.prototype, turn = proto.turn;
   proto.turn = function (u) {
